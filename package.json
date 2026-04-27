@@ -1,0 +1,68 @@
+{
+  "name": "pi-agent-flow",
+  "version": "0.1.0",
+  "description": "Flow-state delegation extension for Pi coding agent.",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "agents.ts",
+    "flow.ts",
+    "runner-cli.js",
+    "runner-events.js",
+    "render.ts",
+    "types.ts",
+    "agents/",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "keywords": [
+    "pi",
+    "flow",
+    "fork",
+    "pi-package"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuanhung303/pi-agent-flow"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": ">=0.37.0",
+    "@mariozechner/pi-ai": ">=0.37.0",
+    "@mariozechner/pi-coding-agent": ">=0.37.0",
+    "@mariozechner/pi-tui": ">=0.37.0",
+    "@sinclair/typebox": ">=0.34.0"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-agent-core": {
+      "optional": true
+    },
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    },
+    "@mariozechner/pi-tui": {
+      "optional": true
+    },
+    "@mariozechner/pi-ai": {
+      "optional": true
+    },
+    "@sinclair/typebox": {
+      "optional": true
+    }
+  }
+}
