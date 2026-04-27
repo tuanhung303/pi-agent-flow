@@ -352,16 +352,6 @@ export default function (pi: ExtensionAPI) {
 
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
-
-		if (discoveredFlows.length > 0 && ctx.hasUI) {
-			const list = discoveredFlows
-				.map((f) => `  - ${f.name} (${f.source})`)
-				.join("\n");
-			ctx.ui.notify(
-				`Found ${discoveredFlows.length} flow(s):\n${list}`,
-				"info",
-			);
-		}
 	});
 
 	// Inject available flows into the system prompt
