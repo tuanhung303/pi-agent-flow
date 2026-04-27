@@ -28,6 +28,8 @@ function shortenPath(p: string): string {
 }
 
 type ThemeFg = (color: string, text: string) => string;
+type ThemeBg = (color: string, text: string) => string;
+type FlowTheme = { fg: ThemeFg; bold: (s: string) => string; bg: ThemeBg };
 
 function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg: ThemeFg): string {
 	const pathArg = (args.file_path || args.path || "...") as string;
@@ -113,7 +115,7 @@ function truncateText(text: string): string {
 	return `${words.slice(0, 3).join(" ")} ... ${words.slice(-8).join(" ")}`;
 }
 
-export function renderFlowCall(args: Record<string, any>, theme: { fg: ThemeFg; bold: (s: string) => string }): Text {
+export function renderFlowCall(args: Record<string, any>, theme: FlowTheme): Text {
 	const flows = args.flow as Array<{ type: string; intent: string }> | undefined;
 
 	// Minimal — renderFlowResult owns the full display
@@ -129,7 +131,7 @@ export function renderFlowCall(args: Record<string, any>, theme: { fg: ThemeFg; 
 export function renderFlowResult(
 	result: { content: Array<{ type: string; text?: string }>; details?: unknown },
 	expanded: boolean,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 ): Container | Text {
 	const details = result.details as FlowDetails | undefined;
 	const streamingText = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
@@ -152,7 +154,7 @@ export function renderFlowResult(
 function renderSingleFlowResult(
 	r: SingleResult,
 	expanded: boolean,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 	streamingText?: string,
 ): Container | Text {
 	const error = isFlowError(r);
@@ -172,7 +174,7 @@ function renderFlowExpanded(
 	error: boolean,
 	displayItems: DisplayItem[],
 	flowOutput: string,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 ): Container {
 	const mdTheme = getMarkdownTheme();
 	const container = new Container();
@@ -225,27 +227,27 @@ function renderFlowCollapsed(
 	icon: string,
 	error: boolean,
 	flowOutput: string,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 	streamingText?: string,
 ): Text {
 	const stats = formatCompactStats(r.usage, r.model);
-	let text = `${theme.fg("accent", r.type)} ─ ${theme.fg("dim", stats)}`;
+	let text = `${theme.bg("selectedBg", theme.fg("accent", theme.bold(r.type)))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
 	// Intent line
 	const hasOutput = !!(flowOutput || streamingText || (error && r.errorMessage));
 	if (r.intent) {
 		const prefix = hasOutput ? "├" : "└";
-		text += `\n${theme.fg("muted", `${prefix}─ int:`)} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
+		text += `\n${theme.fg("dim", `${prefix}─ int:`)} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
 	}
 
 	// Output line
 	if (flowOutput) {
-		text += `\n${theme.fg("muted", "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
+		text += `\n${theme.fg("dim", "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
 	} else if (streamingText) {
-		text += `\n${theme.fg("muted", "└─ msg:")} ${theme.fg("dim", tailText(streamingText, 40))}`;
+		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", tailText(streamingText, 40))}`;
 	} else if (error && r.errorMessage) {
-		text += `\n${theme.fg("muted", "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
+		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
 	}
 
 	return new Text(text, 0, 0);
@@ -258,7 +260,7 @@ function renderFlowCollapsed(
 function renderMultiFlowResult(
 	details: FlowDetails,
 	expanded: boolean,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 ): Container | Text {
 	const results = details.results;
 	const successCount = results.filter((r) => isFlowSuccess(r)).length;
@@ -275,7 +277,7 @@ function renderMultiFlowExpanded(
 	results: SingleResult[],
 	successCount: number,
 	icon: string,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 ): Container {
 	const mdTheme = getMarkdownTheme();
 	const container = new Container();
@@ -324,17 +326,43 @@ function renderMultiFlowCollapsed(
 	results: SingleResult[],
 	successCount: number,
 	icon: string,
-	theme: { fg: ThemeFg; bold: (s: string) => string },
+	theme: FlowTheme,
 ): Text {
 	let text = `${icon} ${theme.fg("toolTitle", theme.bold("flow "))}${theme.fg("accent", `${successCount}/${results.length} flows`)}`;
 
-	for (const r of results) {
+	for (let i = 0; i < results.length; i++) {
+		const r = results[i];
+		const isLast = i === results.length - 1;
 		const flowOutput = getFlowOutput(r.messages);
-		const usageStr = formatFlowUsage(r.usage, r.model);
-		text += `\n${theme.fg("accent", `flow [${r.type}]`)}`;
-		if (usageStr) text += ` ${theme.fg("dim", usageStr)}`;
+		const stats = formatCompactStats(r.usage, r.model);
+		const error = isFlowError(r);
+
+		// Header line
+		const headerPrefix = isLast ? "└─" : "├─";
+		let line = `\n${theme.fg("dim", headerPrefix)} ${theme.bg("selectedBg", theme.fg("accent", theme.bold(r.type)))}`;
+		if (stats) {
+			line += ` ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+		}
+		if (error && r.stopReason) {
+			line += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
+		}
+		text += line;
+
+		// Continuation indent for sub-lines
+		const indent = isLast ? "   " : "│  ";
+
+		// Intent line
+		const hasOutput = !!(flowOutput || (error && r.errorMessage));
+		if (r.intent) {
+			const intentPrefix = hasOutput ? "├─" : "└─";
+			text += `\n${theme.fg("dim", indent + intentPrefix + " int:")} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
+		}
+
+		// Output line
 		if (flowOutput) {
-			text += `\n${renderFlowReport(truncateText(flowOutput), theme)}`;
+			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
+		} else if (error && r.errorMessage) {
+			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
 		}
 	}
 
