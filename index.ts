@@ -36,7 +36,7 @@ const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
 
 const FlowItem = Type.Object({
 	type: Type.String({
-		description: "Flow type. Must match an available flow name exactly: explore, debug, code, architect, review.",
+		description: "Flow type. Must match an available flow name exactly: explore, debug, code, architect, review, brainstorm.",
 	}),
 	intent: Type.String({
 		description: "Clear, specific mission for this flow.",
@@ -371,6 +371,7 @@ Before acting, reason about whether to dive into a flow:
 - [code] — when you are ready to build. Implement features, fix bugs, write tests.
 - [architect] — when you need a plan. Design structure, break down requirements before building.
 - [review] — when you need to verify. Audit security, quality, correctness.
+- [brainstorm] — when you need fresh ideas. Start from a clean slate with only the intent.
 
 Multiple independent flows? Batch them into one call:
 
@@ -416,17 +417,10 @@ flow [type] accomplished
 				const { flows } = discovery;
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
 
-				// Build fork session snapshot (shared across all flows)
+				// Build fork session snapshot (shared across all flows that inherit context)
 				const forkSessionSnapshotJsonl = buildForkSessionSnapshotJsonl(
 					ctx.sessionManager,
 				);
-				if (!forkSessionSnapshotJsonl) {
-					return {
-						content: [{ type: "text", text: "Cannot use fork mode: failed to snapshot current session context." }],
-						details: makeDetails([]),
-						isError: true,
-					};
-				}
 
 				// Collect all requested flow names
 				const requested = new Set(params.flow.map((f) => f.type));
@@ -513,13 +507,14 @@ flow [type] accomplished
 						const effectiveMaxDepth =
 							targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
 
+						const shouldInheritContext = targetFlow?.inheritContext !== false;
 						const result = await runFlow({
 							cwd: ctx.cwd,
 							flows,
 							flowName: item.type,
 							intent: item.intent,
 							taskCwd: item.cwd,
-							forkSessionSnapshotJsonl,
+							forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
 							parentDepth: currentDepth,
 							parentFlowStack: ancestorFlowStack,
 							maxDepth: effectiveMaxDepth,

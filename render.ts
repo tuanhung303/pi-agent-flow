@@ -109,19 +109,11 @@ function flowStatusIcon(r: SingleResult, theme: { fg: ThemeFg }): string {
 // renderFlowCall — shown while the flow is being invoked
 // ---------------------------------------------------------------------------
 
-function truncateText(text: string): string {
-	const words = text.split(/\s+/);
-	if (words.length <= 12) return text;
-	return `${words.slice(0, 3).join(" ")} ... ${words.slice(-8).join(" ")}`;
-}
-
 export function renderFlowCall(args: Record<string, any>, theme: FlowTheme): Text {
 	const flows = args.flow as Array<{ type: string; intent: string }> | undefined;
 
 	// Minimal — renderFlowResult owns the full display
 	return new Text("", 0, 0);
-
-	return new Text(theme.fg("muted", "(empty flow call)"), 0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +344,7 @@ function renderMultiFlowCollapsed(
 
 		// Intent line
 		if (r.intent) {
-			const intentPrefix = hasMsg ? "├─" : "└─";
+			const intentPrefix = "├─";
 			text += `\n${theme.fg("dim", indent + intentPrefix + " int:")} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
 		}
 

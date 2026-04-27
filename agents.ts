@@ -24,6 +24,7 @@ export interface FlowConfig {
 	model?: string;
 	thinking?: string;
 	maxDepth?: number;
+	inheritContext?: boolean;
 	systemPrompt: string;
 	source: "user" | "project" | "bundled";
 	filePath: string;
@@ -140,6 +141,26 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		if (Number.isFinite(parsed) && parsed >= 0) maxDepth = parsed;
 	}
 
+	let inheritContext: boolean | undefined;
+	if (typeof frontmatter.inheritContext === "boolean") {
+		inheritContext = frontmatter.inheritContext;
+	} else if (typeof frontmatter.inheritContext === "string") {
+		const normalized = frontmatter.inheritContext.trim().toLowerCase();
+		if (normalized === "true" || normalized === "yes" || normalized === "1") {
+			inheritContext = true;
+		} else if (normalized === "false" || normalized === "no" || normalized === "0") {
+			inheritContext = false;
+		} else {
+			console.warn(
+				`[pi-agent-flow] Ignoring invalid inheritContext value "${frontmatter.inheritContext}" in "${filePath}". Expected true/false.`,
+			);
+		}
+	} else if (frontmatter.inheritContext !== undefined) {
+		console.warn(
+			`[pi-agent-flow] Ignoring invalid inheritContext field in "${filePath}". Expected boolean or string.`,
+		);
+	}
+
 	return {
 		name,
 		description,
@@ -147,6 +168,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
 		thinking: typeof frontmatter.thinking === "string" ? frontmatter.thinking : undefined,
 		maxDepth,
+		inheritContext,
 		systemPrompt: body,
 		source,
 		filePath,

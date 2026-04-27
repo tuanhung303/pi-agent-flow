@@ -140,7 +140,9 @@ export function getFlowDisplayItems(messages: Message[]): DisplayItem[] {
 				if (part.type === "text") {
 					items.push({ type: "text", text: part.text });
 				} else if (part.type === "toolCall") {
-					items.push({ type: "toolCall", name: part.name, args: part.arguments });
+					const name = part.name ?? part.toolName ?? "unknown";
+					const args = (part.arguments ?? part.input ?? {}) as Record<string, unknown>;
+					items.push({ type: "toolCall", name, args });
 				}
 			}
 		}

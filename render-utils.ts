@@ -21,7 +21,7 @@ export function formatFlowUsage(usage: Partial<UsageStats>, model?: string): str
 	if (usage.cacheWrite) parts.push(`CW:${formatTokens(usage.cacheWrite)}`);
 	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	if (model) parts.push(model);
+	if (model) parts.push(`model:${model}`);
 	return parts.join(" ");
 }
 
@@ -31,7 +31,7 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string): 
 	parts.push(`↓${formatTokens(usage.output || 0)}`);
 	if (usage.cacheRead) parts.push(`cr:${formatTokens(usage.cacheRead)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	if (model) parts.push(model);
+	if (model) parts.push(`model:${model}`);
 	return parts.join(" ");
 }
 

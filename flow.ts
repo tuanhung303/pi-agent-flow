@@ -143,8 +143,8 @@ export interface RunFlowOptions {
 	intent: string;
 	/** Optional override working directory. */
 	taskCwd?: string;
-	/** Serialized parent session snapshot for fork mode. */
-	forkSessionSnapshotJsonl: string;
+	/** Serialized parent session snapshot for fork mode. Null when the flow starts with a clean slate. */
+	forkSessionSnapshotJsonl: string | null;
 	/** Current delegation depth of the caller process. */
 	parentDepth: number;
 	/** Delegation stack from the caller process (ancestor flow names). */
@@ -197,21 +197,6 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		};
 	}
 
-	if (!forkSessionSnapshotJsonl || !forkSessionSnapshotJsonl.trim()) {
-		return {
-			type: flowName,
-			agentSource: flow.source,
-			intent,
-			exitCode: 1,
-			messages: [],
-			stderr: "Cannot run in fork mode: missing parent session snapshot context.",
-			usage: emptyFlowUsage(),
-			model: flow.model,
-			stopReason: "error",
-			errorMessage: "Cannot run in fork mode: missing parent session snapshot context.",
-		};
-	}
-
 	const result: SingleResult = {
 		type: flowName,
 		agentSource: flow.source,
@@ -236,10 +221,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		});
 	};
 
-	// Write forked session snapshot to temp file
-	const forkTmp = writeFlowSessionToTempFile(flow.name, forkSessionSnapshotJsonl);
-	const forkSessionTmpDir = forkTmp.dir;
-	const forkSessionTmpPath = forkTmp.filePath;
+	// Write forked session snapshot to temp file only when provided
+	let forkSessionTmpDir: string | null = null;
+	let forkSessionTmpPath: string | null = null;
+	if (forkSessionSnapshotJsonl) {
+		const forkTmp = writeFlowSessionToTempFile(flow.name, forkSessionSnapshotJsonl);
+		forkSessionTmpDir = forkTmp.dir;
+		forkSessionTmpPath = forkTmp.filePath;
+	}
 
 	try {
 		const piArgs = buildFlowArgs(

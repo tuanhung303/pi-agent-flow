@@ -117,7 +117,7 @@ describe("formatCompactStats", () => {
 	it("full usage → correct format with placeholders", () => {
 		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑2.0k ↓500 cr:30k ctx:21k K2.6");
+		expect(result).toBe("↑2.0k ↓500 cr:30k ctx:21k model:K2.6");
 	});
 
 	it("minimal usage → shows 0 for output", () => {
@@ -131,7 +131,7 @@ describe("formatCompactStats", () => {
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("↑0 ↓0 gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("↑0 ↓0 model:gpt-4o");
 	});
 
 	it("tokens only → no separator", () => {
@@ -160,7 +160,7 @@ describe("formatFlowUsage", () => {
 			contextTokens: 20000,
 		};
 		const result = formatFlowUsage(usage, "K2.6");
-		expect(result).toBe("5 calls 3 turns ↑12k ↓800 CR:50k ctx:20k K2.6");
+		expect(result).toBe("5 calls 3 turns ↑12k ↓800 CR:50k ctx:20k model:K2.6");
 	});
 
 	it("single turn → no plural", () => {
