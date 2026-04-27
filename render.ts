@@ -235,10 +235,8 @@ function renderFlowCollapsed(
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
 	// Intent line
-	const hasOutput = !!(flowOutput || streamingText || (error && r.errorMessage));
 	if (r.intent) {
-		const prefix = hasOutput ? "├" : "└";
-		text += `\n${theme.fg("dim", `${prefix}─ int:`)} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
+		text += `\n${theme.fg("dim", `├─ int:`)} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
 	}
 
 	// Output line
@@ -248,6 +246,8 @@ function renderFlowCollapsed(
 		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", tailText(streamingText, 40))}`;
 	} else if (error && r.errorMessage) {
 		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
+	} else {
+		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", "[n/a]")}`;
 	}
 
 	return new Text(text, 0, 0);
@@ -270,7 +270,7 @@ function renderMultiFlowResult(
 	if (expanded) {
 		return renderMultiFlowExpanded(results, successCount, icon, theme);
 	}
-	return renderMultiFlowCollapsed(results, successCount, icon, theme);
+	return renderMultiFlowCollapsed(results, theme);
 }
 
 function renderMultiFlowExpanded(
@@ -324,11 +324,9 @@ function renderMultiFlowExpanded(
 
 function renderMultiFlowCollapsed(
 	results: SingleResult[],
-	successCount: number,
-	icon: string,
 	theme: FlowTheme,
 ): Text {
-	let text = `${icon} ${theme.fg("toolTitle", theme.bold("flow "))}${theme.fg("accent", `${successCount}/${results.length} flows`)}`;
+	let text = "";
 
 	for (let i = 0; i < results.length; i++) {
 		const r = results[i];
@@ -339,22 +337,22 @@ function renderMultiFlowCollapsed(
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let line = `\n${theme.fg("dim", headerPrefix)} ${theme.bg("selectedBg", theme.fg("accent", theme.bold(r.type)))}`;
+		let line = `${theme.fg("dim", headerPrefix)} ${theme.bg("selectedBg", theme.fg("accent", theme.bold(r.type)))}`;
 		if (stats) {
 			line += ` ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 		}
 		if (error && r.stopReason) {
 			line += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
+		if (i > 0) text += "\n";
 		text += line;
 
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";
 
 		// Intent line
-		const hasOutput = !!(flowOutput || (error && r.errorMessage));
 		if (r.intent) {
-			const intentPrefix = hasOutput ? "├─" : "└─";
+			const intentPrefix = hasMsg ? "├─" : "└─";
 			text += `\n${theme.fg("dim", indent + intentPrefix + " int:")} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
 		}
 
@@ -363,6 +361,8 @@ function renderMultiFlowCollapsed(
 			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
 		} else if (error && r.errorMessage) {
 			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
+		} else {
+			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("dim", "[n/a]")}`;
 		}
 	}
 
