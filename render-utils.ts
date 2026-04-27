@@ -26,17 +26,13 @@ export function formatFlowUsage(usage: Partial<UsageStats>, model?: string): str
 }
 
 export function formatCompactStats(usage: Partial<UsageStats>, model?: string): string {
-	const io: string[] = [];
-	if (usage.input) io.push(`↑${formatTokens(usage.input)}`);
-	if (usage.output) io.push(`↓${formatTokens(usage.output)}`);
-	const meta: string[] = [];
-	if (usage.cacheRead) meta.push(`CR:${formatTokens(usage.cacheRead)}`);
-	if (usage.contextTokens && usage.contextTokens > 0) meta.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	if (model) meta.push(model);
 	const parts: string[] = [];
-	if (io.length) parts.push(io.join(" "));
-	if (meta.length) parts.push(meta.join(" "));
-	return parts.join(" │ ");
+	parts.push(`↑${formatTokens(usage.input || 0)}`);
+	parts.push(`↓${formatTokens(usage.output || 0)}`);
+	if (usage.cacheRead) parts.push(`cr:${formatTokens(usage.cacheRead)}`);
+	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
+	if (model) parts.push(model);
+	return parts.join(" ");
 }
 
 export function truncateChars(text: string, max: number): string {

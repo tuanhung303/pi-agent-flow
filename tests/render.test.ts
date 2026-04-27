@@ -114,24 +114,24 @@ describe("formatTokens", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatCompactStats", () => {
-	it("full usage → correct format with separators", () => {
+	it("full usage → correct format with placeholders", () => {
 		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑2.0k ↓500 │ CR:30k ctx:21k K2.6");
+		expect(result).toBe("↑2.0k ↓500 cr:30k ctx:21k K2.6");
 	});
 
-	it("minimal usage → no empty parts", () => {
+	it("minimal usage → shows 0 for output", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("↑100");
+		expect(result).toBe("↑100 ↓0");
 	});
 
-	it("no usage → empty string", () => {
-		expect(formatCompactStats({})).toBe("");
+	it("no usage → shows 0 placeholders", () => {
+		expect(formatCompactStats({})).toBe("↑0 ↓0");
 	});
 
-	it("only model → just model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("gpt-4o");
+	it("only model → placeholders + model", () => {
+		expect(formatCompactStats({}, "gpt-4o")).toBe("↑0 ↓0 gpt-4o");
 	});
 
 	it("tokens only → no separator", () => {
@@ -139,9 +139,9 @@ describe("formatCompactStats", () => {
 		expect(formatCompactStats(usage)).toBe("↑5.0k ↓1.0k");
 	});
 
-	it("cache + context → no leading separator when no io", () => {
+	it("cache + context → lowercase cr, no separator", () => {
 		const usage = { cacheRead: 8000, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("CR:8.0k ctx:6.0k");
+		expect(formatCompactStats(usage)).toBe("↑0 ↓0 cr:8.0k ctx:6.0k");
 	});
 });
 
