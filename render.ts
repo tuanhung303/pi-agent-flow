@@ -34,11 +34,12 @@ function formatTokens(count: number): string {
 
 function formatFlowUsage(usage: Partial<UsageStats>, model?: string): string {
 	const parts: string[] = [];
+	if (usage.toolCalls && usage.toolCalls > 0) parts.push(`${usage.toolCalls} calls`);
 	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
 	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
 	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
-	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
+	if (usage.cacheRead) parts.push(`CR:${formatTokens(usage.cacheRead)}`);
+	if (usage.cacheWrite) parts.push(`CW:${formatTokens(usage.cacheWrite)}`);
 	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
 	if (model) parts.push(model);
@@ -130,18 +131,32 @@ function flowStatusIcon(r: SingleResult, theme: { fg: ThemeFg }): string {
 // renderFlowCall — shown while the flow is being invoked
 // ---------------------------------------------------------------------------
 
+function truncateText(text: string): string {
+	const words = text.split(/\s+/);
+	if (words.length <= 12) return text;
+	return `${words.slice(0, 3).join(" ")} ... ${words.slice(-8).join(" ")}`;
+}
+
 export function renderFlowCall(args: Record<string, any>, theme: { fg: ThemeFg; bold: (s: string) => string }): Text {
 	const flows = args.flow as Array<{ type: string; intent: string }> | undefined;
 
 	if (flows && flows.length > 0) {
-		let text = theme.fg("toolTitle", "routing to ");
-		for (const item of flows) {
-			text += `${theme.fg("accent", `flow [${item.type}]`)} `;
+		if (flows.length === 1) {
+			const f = flows[0];
+			const text =
+				theme.fg("toolTitle", "routing to ") +
+				theme.fg("accent", `flow [${f.type}]`) +
+				theme.fg("dim", ` — ${truncateText(f.intent)}`);
+			return new Text(text, 0, 0);
 		}
-		for (const item of flows.slice(0, 3)) {
-			text += `\n  ${theme.fg("dim", item.intent)}`;
+
+		let text = theme.fg("toolTitle", "routing to:");
+		for (const f of flows) {
+			text +=
+				`\n  ${theme.fg("muted", "•")} ` +
+				theme.fg("accent", `flow [${f.type}]`) +
+				theme.fg("dim", ` — ${truncateText(f.intent)}`);
 		}
-		if (flows.length > 3) text += `\n  ${theme.fg("muted", `... +${flows.length - 3} more`)}`;
 		return new Text(text, 0, 0);
 	}
 
@@ -249,19 +264,19 @@ function renderFlowCollapsed(
 	flowOutput: string,
 	theme: { fg: ThemeFg; bold: (s: string) => string },
 ): Text {
+	const usageStr = formatFlowUsage(r.usage, r.model);
 	let text = `${icon} ${theme.fg("toolTitle", theme.bold(`[${r.type}]`))}${theme.fg("muted", ` (${r.agentSource})`)}`;
+	if (usageStr) text += `   ${theme.fg("dim", usageStr)}`;
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
 	if (error && r.errorMessage) {
 		text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`;
 	} else if (flowOutput) {
-		text += `\n${renderFlowReport(flowOutput, theme)}`;
+		text += `\n${renderFlowReport(truncateText(flowOutput), theme)}`;
 	} else {
 		text += `\n${theme.fg(error ? "error" : "muted", getFlowSummaryText(r))}`;
 	}
 
-	const usageStr = formatFlowUsage(r.usage, r.model);
-	if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
 	return new Text(text, 0, 0);
 }
 
@@ -345,16 +360,16 @@ function renderMultiFlowCollapsed(
 	for (const r of results) {
 		const rIcon = flowStatusIcon(r, theme);
 		const flowOutput = getFlowOutput(r.messages);
+		const usageStr = formatFlowUsage(r.usage, r.model);
 		text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", `[${r.type}]`)} ${rIcon}`;
+		if (usageStr) text += `   ${theme.fg("dim", usageStr)}`;
 		if (flowOutput) {
-			text += `\n${renderFlowReport(flowOutput, theme)}`;
+			text += `\n${renderFlowReport(truncateText(flowOutput), theme)}`;
 		} else {
 			text += `\n${theme.fg("muted", getFlowSummaryText(r))}`;
 		}
 	}
 
-	const totalUsage = formatFlowUsage(aggregateFlowUsage(results));
-	if (totalUsage) text += `\n\n${theme.fg("dim", `Total: ${totalUsage}`)}`;
 	text += `\n${theme.fg("muted", "(Ctrl+O to expand tool traces)")}`;
 
 	return new Text(text, 0, 0);

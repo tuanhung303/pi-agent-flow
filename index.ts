@@ -387,6 +387,12 @@ Multiple independent flows? Batch them into one call:
 ✅ { "flow": [{ "type": "explore", "intent": "..." }, { "type": "review", "intent": "..." }] }
 ❌ Two separate calls — wastes time
 
+Each call renders as:
+
+routing to:
+  • flow [explore] — Map the full directory structure...
+  • flow [review] — Audit security and quality...
+
 Each flow returns:
 
 flow [type] accomplished

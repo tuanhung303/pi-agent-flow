@@ -63,6 +63,15 @@ function addFlowAssistantMessage(result, message) {
     result.usage.contextTokens = usage.totalTokens || 0;
   }
 
+  // Count tool call parts in the message content
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part.type === "toolCall") {
+        result.usage.toolCalls++;
+      }
+    }
+  }
+
   return true;
 }
 
