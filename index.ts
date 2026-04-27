@@ -379,9 +379,8 @@ Multiple independent flows? Batch them into one call:
 
 Each call renders as:
 
-routing to:
-  • flow [explore] — Map the full directory structure...
-  • flow [review] — Audit security and quality...
+• flow [explore] — Map the full directory structure...
+• flow [review] — Audit security and quality...
 
 Each flow returns:
 
@@ -489,10 +488,12 @@ flow [type] accomplished
 					};
 				}
 
-				const emitProgress = () => {
+				let lastStreamingText = "";
+				const emitProgress = (streamingText?: string) => {
 					if (!onUpdate) return;
+					if (streamingText) lastStreamingText = streamingText;
 					onUpdate({
-						content: [{ type: "text", text: `Flow: ${allResults.filter((r) => r.exitCode !== -1).length}/${allResults.length} done` }],
+						content: [{ type: "text", text: lastStreamingText || "" }],
 						details: makeDetails([...allResults]),
 					});
 				};
@@ -527,7 +528,7 @@ flow [type] accomplished
 							onUpdate: (partial) => {
 								if (partial.details?.results[0]) {
 									allResults[index] = partial.details.results[0];
-									emitProgress();
+									emitProgress(partial.content?.[0]?.text);
 								}
 							},
 							makeDetails,

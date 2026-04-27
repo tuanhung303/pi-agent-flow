@@ -12,7 +12,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { FlowConfig } from "./agents.js";
 import { parseFlowCliArgs } from "./runner-cli.js";
-import { processFlowJsonLine } from "./runner-events.js";
+import { processFlowJsonLine, drainStreamingText } from "./runner-events.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -224,11 +224,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	};
 
 	const emitUpdate = () => {
+		const streaming = drainStreamingText(result);
 		onUpdate?.({
 			content: [
 				{
 					type: "text",
-					text: getFlowOutput(result.messages) || "(running...)",
+					text: streaming || getFlowOutput(result.messages) || "(running...)",
 				},
 			],
 			details: makeDetails([result]),

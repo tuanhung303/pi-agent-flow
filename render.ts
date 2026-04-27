@@ -20,31 +20,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-
-// ---------------------------------------------------------------------------
-// Formatting helpers
-// ---------------------------------------------------------------------------
-
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
-}
-
-function formatFlowUsage(usage: Partial<UsageStats>, model?: string): string {
-	const parts: string[] = [];
-	if (usage.toolCalls && usage.toolCalls > 0) parts.push(`${usage.toolCalls} calls`);
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
-	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
-	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-	if (usage.cacheRead) parts.push(`CR:${formatTokens(usage.cacheRead)}`);
-	if (usage.cacheWrite) parts.push(`CW:${formatTokens(usage.cacheWrite)}`);
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
-	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	if (model) parts.push(model);
-	return parts.join(" ");
-}
+import { formatTokens, formatFlowUsage, formatCompactStats, truncateChars, tailText } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -140,25 +116,8 @@ function truncateText(text: string): string {
 export function renderFlowCall(args: Record<string, any>, theme: { fg: ThemeFg; bold: (s: string) => string }): Text {
 	const flows = args.flow as Array<{ type: string; intent: string }> | undefined;
 
-	if (flows && flows.length > 0) {
-		if (flows.length === 1) {
-			const f = flows[0];
-			const text =
-				theme.fg("toolTitle", "routing to ") +
-				theme.fg("accent", `flow [${f.type}]`) +
-				theme.fg("dim", ` — ${truncateText(f.intent)}`);
-			return new Text(text, 0, 0);
-		}
-
-		let text = theme.fg("toolTitle", "routing to:");
-		for (const f of flows) {
-			text +=
-				`\n  ${theme.fg("muted", "•")} ` +
-				theme.fg("accent", `flow [${f.type}]`) +
-				theme.fg("dim", ` — ${truncateText(f.intent)}`);
-		}
-		return new Text(text, 0, 0);
-	}
+	// Minimal — renderFlowResult owns the full display
+	return new Text("", 0, 0);
 
 	return new Text(theme.fg("muted", "(empty flow call)"), 0, 0);
 }
@@ -173,13 +132,14 @@ export function renderFlowResult(
 	theme: { fg: ThemeFg; bold: (s: string) => string },
 ): Container | Text {
 	const details = result.details as FlowDetails | undefined;
+	const streamingText = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
+
 	if (!details || details.results.length === 0) {
-		const first = result.content[0];
-		return new Text(first?.type === "text" && first.text ? first.text : "(no output)", 0, 0);
+		return new Text(streamingText || "", 0, 0);
 	}
 
 	if (details.results.length === 1) {
-		return renderSingleFlowResult(details.results[0], expanded, theme);
+		return renderSingleFlowResult(details.results[0], expanded, theme, streamingText);
 	}
 
 	return renderMultiFlowResult(details, expanded, theme);
@@ -193,6 +153,7 @@ function renderSingleFlowResult(
 	r: SingleResult,
 	expanded: boolean,
 	theme: { fg: ThemeFg; bold: (s: string) => string },
+	streamingText?: string,
 ): Container | Text {
 	const error = isFlowError(r);
 	const icon = flowStatusIcon(r, theme);
@@ -202,7 +163,7 @@ function renderSingleFlowResult(
 	if (expanded) {
 		return renderFlowExpanded(r, icon, error, displayItems, flowOutput, theme);
 	}
-	return renderFlowCollapsed(r, icon, error, flowOutput, theme);
+	return renderFlowCollapsed(r, icon, error, flowOutput, theme, streamingText);
 }
 
 function renderFlowExpanded(
@@ -257,24 +218,34 @@ function renderFlowExpanded(
 	return container;
 }
 
+
+
 function renderFlowCollapsed(
 	r: SingleResult,
 	icon: string,
 	error: boolean,
 	flowOutput: string,
 	theme: { fg: ThemeFg; bold: (s: string) => string },
+	streamingText?: string,
 ): Text {
-	const usageStr = formatFlowUsage(r.usage, r.model);
-	let text = `${icon} ${theme.fg("toolTitle", theme.bold(`[${r.type}]`))}${theme.fg("muted", ` (${r.agentSource})`)}`;
-	if (usageStr) text += `   ${theme.fg("dim", usageStr)}`;
+	const stats = formatCompactStats(r.usage, r.model);
+	let text = `${theme.fg("accent", r.type)} ─ ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
-	if (error && r.errorMessage) {
-		text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`;
-	} else if (flowOutput) {
-		text += `\n${renderFlowReport(truncateText(flowOutput), theme)}`;
-	} else {
-		text += `\n${theme.fg(error ? "error" : "muted", getFlowSummaryText(r))}`;
+	// Intent line
+	const hasOutput = !!(flowOutput || streamingText || (error && r.errorMessage));
+	if (r.intent) {
+		const prefix = hasOutput ? "├" : "└";
+		text += `\n${theme.fg("muted", `${prefix}─ int:`)} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
+	}
+
+	// Output line
+	if (flowOutput) {
+		text += `\n${theme.fg("muted", "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
+	} else if (streamingText) {
+		text += `\n${theme.fg("muted", "└─ msg:")} ${theme.fg("dim", tailText(streamingText, 40))}`;
+	} else if (error && r.errorMessage) {
+		text += `\n${theme.fg("muted", "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
 	}
 
 	return new Text(text, 0, 0);
@@ -358,15 +329,12 @@ function renderMultiFlowCollapsed(
 	let text = `${icon} ${theme.fg("toolTitle", theme.bold("flow "))}${theme.fg("accent", `${successCount}/${results.length} flows`)}`;
 
 	for (const r of results) {
-		const rIcon = flowStatusIcon(r, theme);
 		const flowOutput = getFlowOutput(r.messages);
 		const usageStr = formatFlowUsage(r.usage, r.model);
-		text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", `[${r.type}]`)} ${rIcon}`;
-		if (usageStr) text += `   ${theme.fg("dim", usageStr)}`;
+		text += `\n${theme.fg("accent", `flow [${r.type}]`)}`;
+		if (usageStr) text += ` ${theme.fg("dim", usageStr)}`;
 		if (flowOutput) {
 			text += `\n${renderFlowReport(truncateText(flowOutput), theme)}`;
-		} else {
-			text += `\n${theme.fg("muted", getFlowSummaryText(r))}`;
 		}
 	}
 

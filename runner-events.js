@@ -14,6 +14,51 @@ function getSeenFlowMessageSignatures(result) {
   return result.__seenMessageSignatures;
 }
 
+function getStreamingTextBuffer(result) {
+  if (!Object.prototype.hasOwnProperty.call(result, "__streamingTextBuffer")) {
+    Object.defineProperty(result, "__streamingTextBuffer", {
+      value: "",
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+    Object.defineProperty(result, "__lastEmittedWordCount", {
+      value: 0,
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+  }
+  return result.__streamingTextBuffer;
+}
+
+/**
+ * Drain the accumulated streaming text buffer and return it.
+ * Updates the last-emitted word count for threshold tracking.
+ */
+export function drainStreamingText(result) {
+  const buf = getStreamingTextBuffer(result);
+  if (!buf) return "";
+  result.__streamingTextBuffer = "";
+  result.__lastEmittedWordCount = 0;
+  return buf;
+}
+
+/**
+ * Accumulate a text or thinking delta into the streaming buffer.
+ * Returns true if the caller should emit an update.
+ */
+function accumulateStreamingDelta(result, delta) {
+  if (!delta) return false;
+  const buf = getStreamingTextBuffer(result);
+  result.__streamingTextBuffer = buf + delta;
+  if (result.__streamingTextBuffer.length - result.__lastEmittedWordCount >= 40) {
+    result.__lastEmittedWordCount = result.__streamingTextBuffer.length;
+    return true;
+  }
+  return false;
+}
+
 function stableStringify(value) {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
@@ -97,6 +142,18 @@ export function processFlowEvent(event, result) {
     case "agent_end":
       result.sawAgentEnd = true;
       return addFlowAssistantMessages(result, event.messages);
+
+    case "message_update": {
+      const evt = event.assistantMessageEvent;
+      if (!evt || typeof evt !== "object") return false;
+      if (evt.type === "text_delta") {
+        return accumulateStreamingDelta(result, evt.delta);
+      }
+      if (evt.type === "thinking_delta") {
+        return accumulateStreamingDelta(result, evt.delta);
+      }
+      return false;
+    }
 
     default:
       return false;

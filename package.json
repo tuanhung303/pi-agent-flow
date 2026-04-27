@@ -36,10 +36,11 @@
   },
   "scripts": {
     "lint": "tsc --noEmit",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   },
   "peerDependencies": {
     "@mariozechner/pi-agent-core": ">=0.37.0",
