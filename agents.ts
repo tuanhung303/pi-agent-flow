@@ -110,7 +110,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 	const frontmatter = parsed.frontmatter ?? {};
 	const body = parsed.body ?? "";
 
-	const name = typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
+	const name = typeof frontmatter.name === "string" ? frontmatter.name.trim().toLowerCase() : "";
 	const description = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
 	if (!name || !description) return null;
 
@@ -197,7 +197,7 @@ function loadFlowsFromDir(dir: string, source: "user" | "project" | "bundled"): 
 function mergeFlows(...groups: FlowConfig[][]): FlowConfig[] {
 	const flowMap = new Map<string, FlowConfig>();
 	for (const group of groups) {
-		for (const flow of group) flowMap.set(flow.name, flow);
+		for (const flow of group) flowMap.set(flow.name.toLowerCase(), flow);
 	}
 	return Array.from(flowMap.values());
 }

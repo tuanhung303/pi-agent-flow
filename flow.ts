@@ -195,11 +195,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		makeDetails,
 	} = opts;
 
-	const flow = flows.find((f) => f.name === flowName);
+	const normalizedFlowName = flowName.toLowerCase();
+	const flow = flows.find((f) => f.name === normalizedFlowName);
 	if (!flow) {
 		const available = flows.map((f) => `"${f.name}"`).join(", ") || "none";
 		return {
-			type: flowName,
+			type: normalizedFlowName,
 			agentSource: "unknown",
 			intent,
 			exitCode: 1,
@@ -210,7 +211,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	}
 
 	const result: SingleResult = {
-		type: flowName,
+		type: normalizedFlowName,
 		agentSource: flow.source,
 		intent,
 		exitCode: -1,
@@ -255,7 +256,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		const exitCode = await new Promise<number>((resolve) => {
 			const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 			const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
-			const propagatedStack = [...parentFlowStack, flowName];
+			const propagatedStack = [...parentFlowStack, normalizedFlowName];
 			const { command, prefixArgs } = resolveFlowSpawn();
 			const proc = spawn(command, [...prefixArgs, ...piArgs], {
 				cwd: taskCwd ?? cwd,

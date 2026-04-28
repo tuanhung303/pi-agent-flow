@@ -11,7 +11,7 @@ export default defineConfig({
       '@mariozechner/pi-tui': path.resolve(__dirname, 'tests/__mocks__/pi-tui.ts'),
       '@mariozechner/pi-ai': path.resolve(__dirname, 'tests/__mocks__/pi-tui.ts'),
       '@mariozechner/pi-agent-core': path.resolve(__dirname, 'tests/__mocks__/pi-tui.ts'),
-      '@sinclair/typebox': path.resolve(__dirname, 'tests/__mocks__/pi-tui.ts'),
+      '@sinclair/typebox': path.resolve(__dirname, 'tests/__mocks__/@sinclair/typebox.ts'),
     },
   },
 });

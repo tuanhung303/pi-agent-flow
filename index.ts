@@ -36,7 +36,7 @@ const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
 
 const FlowItem = Type.Object({
 	type: Type.String({
-		description: "Flow type. Must match an available flow name exactly: explore, debug, code, architect, review, brainstorm.",
+		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as explore, debug, code, architect, review, or brainstorm.",
 	}),
 	intent: Type.String({
 		description: "Clear, specific mission for this flow.",
@@ -137,7 +137,7 @@ function parseFlowStack(raw: unknown): string[] | null {
 	if (!Array.isArray(parsed)) return null;
 	if (!parsed.every((value) => typeof value === "string")) return null;
 	return parsed
-		.map((value) => value.trim())
+		.map((value) => value.trim().toLowerCase())
 		.filter((value) => value.length > 0);
 }
 
@@ -303,7 +303,7 @@ function getRequestedProjectFlows(
 	requestedNames: Set<string>,
 ): FlowConfig[] {
 	return Array.from(requestedNames)
-		.map((name) => flows.find((f) => f.name === name))
+		.map((name) => flows.find((f) => f.name === name.toLowerCase()))
 		.filter((f): f is FlowConfig => f?.source === "project");
 }
 
@@ -423,7 +423,7 @@ flow [type] accomplished
 				);
 
 				// Collect all requested flow names
-				const requested = new Set(params.flow.map((f) => f.type));
+				const requested = new Set(params.flow.map((f) => f.type.toLowerCase()));
 
 				// Cycle check
 				if (preventCycles) {
@@ -483,58 +483,52 @@ flow [type] accomplished
 				}
 
 				let lastStreamingText = "";
+				let lastEmittedText: string | undefined;
 				const emitProgress = (streamingText?: string) => {
 					if (!onUpdate) return;
-					if (streamingText) lastStreamingText = streamingText;
+					if (streamingText !== undefined) lastStreamingText = streamingText;
+					const text = lastStreamingText || "";
+					if (text === lastEmittedText) return;
+					lastEmittedText = text;
 					onUpdate({
-						content: [{ type: "text", text: lastStreamingText || "" }],
+						content: [{ type: "text", text }],
 						details: makeDetails([...allResults]),
 					});
 				};
 
-				let heartbeat: NodeJS.Timeout | undefined;
-				if (onUpdate) {
-					emitProgress();
-					heartbeat = setInterval(() => {
-						if (allResults.some((r) => r.exitCode === -1)) emitProgress();
-					}, 1000);
-				}
+				if (onUpdate) emitProgress();
 
-				let results: SingleResult[];
-				try {
-					results = await mapFlowConcurrent(params.flow, 4, async (item, index) => {
-						const targetFlow = flows.find((f) => f.name === item.type);
-						const effectiveMaxDepth =
-							targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
+				const results = await mapFlowConcurrent(params.flow, 4, async (item, index) => {
+					const normalizedType = item.type.toLowerCase();
+					const targetFlow = flows.find((f) => f.name === normalizedType);
+					const effectiveMaxDepth =
+						targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
 
-						const shouldInheritContext = targetFlow?.inheritContext !== false;
-						const result = await runFlow({
-							cwd: ctx.cwd,
-							flows,
-							flowName: item.type,
-							intent: item.intent,
-							taskCwd: item.cwd,
-							forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
-							parentDepth: currentDepth,
-							parentFlowStack: ancestorFlowStack,
-							maxDepth: effectiveMaxDepth,
-							preventCycles,
-							signal,
-							onUpdate: (partial) => {
-								if (partial.details?.results[0]) {
-									allResults[index] = partial.details.results[0];
-									emitProgress(partial.content?.[0]?.text);
-								}
-							},
-							makeDetails,
-						});
-						allResults[index] = result;
-						emitProgress();
-						return result;
+					const shouldInheritContext = targetFlow?.inheritContext !== false;
+					const result = await runFlow({
+						cwd: ctx.cwd,
+						flows,
+						flowName: normalizedType,
+						intent: item.intent,
+						taskCwd: item.cwd,
+						forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+						parentDepth: currentDepth,
+						parentFlowStack: ancestorFlowStack,
+						maxDepth: effectiveMaxDepth,
+						preventCycles,
+						signal,
+						onUpdate: (partial) => {
+							if (partial.details?.results[0]) {
+								allResults[index] = partial.details.results[0];
+								emitProgress(partial.content?.[0]?.text);
+							}
+						},
+						makeDetails,
 					});
-				} finally {
-					if (heartbeat) clearInterval(heartbeat);
-				}
+					allResults[index] = result;
+					emitProgress();
+					return result;
+				});
 
 				// Build tool result with FULL flow output — no truncation
 				const successCount = results.filter((r) => isFlowSuccess(r)).length;
