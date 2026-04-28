@@ -26,24 +26,24 @@ export function formatFlowUsage(usage: Partial<UsageStats>, model?: string): str
 }
 
 /**
- * Format a token count to exactly 5 characters.
+ * Format a token count to exactly 5 characters with leading zeros.
  * Shifts from k to M when value would exceed 5 chars.
- * Examples: 500 → "  500", 1300 → " 1.3k", 32000 → "32.0k", 950500 → "0.95M"
+ * Examples: 500 → "00500", 1300 → "01.3k", 32000 → "32.0k", 950500 → "0.95M"
  */
 export function formatFixedTokens(count: number): string {
 	if (count < 1000) {
-		return count.toString().padStart(5);
+		return count.toString().padStart(5, '0');
 	}
 
 	const k = count / 1000;
 	if (k < 100) {
-		return (k.toFixed(1) + "k").padStart(5);
+		return (k.toFixed(1) + "k").padStart(5, '0');
 	} else if (k < 1000) {
 		const m = count / 1000000;
-		return (m.toFixed(2) + "M").padStart(5);
+		return (m.toFixed(2) + "M").padStart(5, '0');
 	} else {
 		const m = count / 1000000;
-		return (m.toFixed(2) + "M").padStart(5);
+		return (m.toFixed(2) + "M").padStart(5, '0');
 	}
 }
 
@@ -64,7 +64,24 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string): 
 	parts.push(`${formatFixedTokens(usage.output || 0)}↓`);
 	if (usage.cacheRead) parts.push(`cr:${formatFixedTokens(usage.cacheRead)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatFixedTokens(usage.contextTokens)}`);
-	return `[${parts.join(" ")}]${model ? ` ─ ${model}` : ""}`;
+	return `[ ${parts.join(" ")} ]${model ? ` ─ ${model}` : ""}`;
+}
+
+/**
+ * Format usage stats for expanded view with context tokens on separate line.
+ * Returns stats line and optional context tokens line.
+ * Example: { stats: "[12.4k↑ 2.1k↓ cr:85.0k] ─ mimo-v2.5-pro", contextTokens: "ctx: 32.0k" }
+ */
+export function formatExpandedStats(usage: Partial<UsageStats>, model?: string): { stats: string; contextTokens: string | null } {
+	const parts: string[] = [];
+	parts.push(`${formatFixedTokens(usage.input || 0)}↑`);
+	parts.push(`${formatFixedTokens(usage.output || 0)}↓`);
+	if (usage.cacheRead) parts.push(`cr:${formatFixedTokens(usage.cacheRead)}`);
+
+	const stats = `[${parts.join(" ")}]${model ? ` ─ ${model}` : ""}`;
+	const contextTokens = usage.contextTokens && usage.contextTokens > 0 ? `ctx:${formatFixedTokens(usage.contextTokens)}` : null;
+
+	return { stats, contextTokens };
 }
 
 export function truncateChars(text: string, max: number): string {

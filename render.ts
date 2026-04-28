@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatTokens, formatFlowUsage, formatCompactStats, formatFlowTypeName, truncateChars, tailText } from "./render-utils.js";
+import { formatTokens, formatFixedTokens, formatFlowUsage, formatCompactStats, formatExpandedStats, formatFlowTypeName, truncateChars, tailText } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -173,13 +173,23 @@ function renderFlowExpanded(
 	const mdTheme = getMarkdownTheme();
 	const container = new Container();
 
-	// Header
-	let header = `${icon} ${theme.fg("toolTitle", theme.bold(`[${r.type}]`))}${theme.fg("muted", ` (${r.agentSource})`)}`;
+	// Header: uppercase type name with dots, no icon, no source
+	const typeName = formatFlowTypeName(r.type);
+	let header = theme.fg("toolTitle", theme.bold(typeName));
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new Text(header, 0, 0));
 	if (error && r.errorMessage) {
 		container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
 	}
+
+	// Stats: all-in-one bracket format with context inline
+	const statsParts: string[] = [];
+	statsParts.push(`${formatFixedTokens(r.usage.input || 0)}↑`);
+	statsParts.push(`${formatFixedTokens(r.usage.output || 0)}↓`);
+	if (r.usage.cacheRead) statsParts.push(`cr:${formatFixedTokens(r.usage.cacheRead)}`);
+	if (r.usage.contextTokens > 0) statsParts.push(`ctx:${formatFixedTokens(r.usage.contextTokens)}`);
+	const inlineStats = `[ ${statsParts.join(" ")} ]${r.model ? ` ─ ${r.model}` : ""}`;
+	container.addChild(new Text(theme.fg("dim", inlineStats), 0, 0));
 
 	// Intent
 	container.addChild(new Spacer(1));
@@ -202,13 +212,6 @@ function renderFlowExpanded(
 		container.addChild(new Spacer(1));
 		container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
 		container.addChild(new Text(toolTraces, 0, 0));
-	}
-
-	// Usage
-	const usageStr = formatFlowUsage(r.usage, r.model);
-	if (usageStr) {
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("dim", usageStr), 0, 0));
 	}
 
 	return container;
@@ -284,19 +287,32 @@ function renderMultiFlowExpanded(
 	const mdTheme = getMarkdownTheme();
 	const container = new Container();
 
+	// Summary: just show count, no icon
 	container.addChild(new Text(
-		`${icon} ${theme.fg("toolTitle", theme.bold("flow "))}${theme.fg("accent", `${successCount}/${results.length} flows`)}`,
+		theme.fg("accent", `${results.length} flows`),
 		0, 0,
 	));
 
 	for (const r of results) {
-		const rIcon = flowStatusIcon(r, theme);
 		const displayItems = getFlowDisplayItems(r.messages);
 		const flowOutput = getFlowOutput(r.messages);
+		const typeName = formatFlowTypeName(r.type);
 
 		container.addChild(new Spacer(1));
-		container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", `[${r.type}]`)} ${rIcon}`, 0, 0));
-		container.addChild(new Text(theme.fg("muted", "Intent: ") + theme.fg("dim", r.intent), 0, 0));
+		// Per-flow header: ─── EXPLORER (no icon)
+		container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", typeName)}`, 0, 0));
+
+		// Stats: all-in-one bracket format with context inline
+		const flowParts: string[] = [];
+		flowParts.push(`${formatFixedTokens(r.usage.input || 0)}↑`);
+		flowParts.push(`${formatFixedTokens(r.usage.output || 0)}↓`);
+		if (r.usage.cacheRead) flowParts.push(`cr:${formatFixedTokens(r.usage.cacheRead)}`);
+		if (r.usage.contextTokens > 0) flowParts.push(`ctx:${formatFixedTokens(r.usage.contextTokens)}`);
+		const flowStats = `[ ${flowParts.join(" ")} ]${r.model ? ` ─ ${r.model}` : ""}`;
+		container.addChild(new Text(theme.fg("dim", flowStats), 0, 0));
+
+		// Intent: just show text, no prefix
+		container.addChild(new Text(theme.fg("dim", r.intent), 0, 0));
 
 		if (flowOutput) {
 			container.addChild(new Spacer(1));
@@ -310,16 +326,19 @@ function renderMultiFlowExpanded(
 			container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
 			container.addChild(new Text(toolTraces, 0, 0));
 		}
-
-		const taskUsage = formatFlowUsage(r.usage, r.model);
-		if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
 	}
 
-	const totalUsage = formatFlowUsage(aggregateFlowUsage(results));
-	if (totalUsage) {
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("dim", `Total: ${totalUsage}`), 0, 0));
-	}
+	// Total stats: all-in-one bracket format with context inline
+	const totalUsage = aggregateFlowUsage(results);
+	const totalModel = results[0]?.model;
+	const totalParts: string[] = [];
+	totalParts.push(`${formatFixedTokens(totalUsage.input || 0)}↑`);
+	totalParts.push(`${formatFixedTokens(totalUsage.output || 0)}↓`);
+	if (totalUsage.cacheRead) totalParts.push(`cr:${formatFixedTokens(totalUsage.cacheRead)}`);
+	if (totalUsage.contextTokens > 0) totalParts.push(`ctx:${formatFixedTokens(totalUsage.contextTokens)}`);
+	const totalStats = `[ ${totalParts.join(" ")} ]${totalModel ? ` ─ ${totalModel}` : ""}`;
+	container.addChild(new Spacer(1));
+	container.addChild(new Text(theme.fg("dim", totalStats), 0, 0));
 
 	return container;
 }

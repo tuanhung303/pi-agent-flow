@@ -6,6 +6,7 @@ import {
 	truncateChars,
 	tailText,
 	formatCompactStats,
+	formatExpandedStats,
 	formatFlowUsage,
 } from "../render-utils.js";
 import { renderFlowResult } from "../render.js";
@@ -130,16 +131,16 @@ describe("formatTokens", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatFixedTokens", () => {
-	it("< 1000 → right-aligned to 5 chars", () => {
-		expect(formatFixedTokens(0)).toBe("    0");
-		expect(formatFixedTokens(100)).toBe("  100");
-		expect(formatFixedTokens(500)).toBe("  500");
-		expect(formatFixedTokens(999)).toBe("  999");
+	it("< 1000 → zero-padded to 5 chars", () => {
+		expect(formatFixedTokens(0)).toBe("00000");
+		expect(formatFixedTokens(100)).toBe("00100");
+		expect(formatFixedTokens(500)).toBe("00500");
+		expect(formatFixedTokens(999)).toBe("00999");
 	});
 
 	it("1000-99999 → XX.Xk format (5 chars)", () => {
-		expect(formatFixedTokens(1000)).toBe(" 1.0k");
-		expect(formatFixedTokens(1300)).toBe(" 1.3k");
+		expect(formatFixedTokens(1000)).toBe("01.0k");
+		expect(formatFixedTokens(1300)).toBe("01.3k");
 		expect(formatFixedTokens(12400)).toBe("12.4k");
 		expect(formatFixedTokens(32000)).toBe("32.0k");
 		expect(formatFixedTokens(99900)).toBe("99.9k");
@@ -189,31 +190,31 @@ describe("formatCompactStats", () => {
 	it("full usage → correct format with brackets", () => {
 		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("[ 2.0k↑   500↓ cr:30.0k ctx:21.0k] ─ K2.6");
+		expect(result).toBe("[ 02.0k↑ 00500↓ cr:30.0k ctx:21.0k ] ─ K2.6");
 	});
 
 	it("minimal usage → shows 0 for output", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("[  100↑     0↓]");
+		expect(result).toBe("[ 00100↑ 00000↓ ]");
 	});
 
 	it("no usage → shows 0 placeholders", () => {
-		expect(formatCompactStats({})).toBe("[    0↑     0↓]");
+		expect(formatCompactStats({})).toBe("[ 00000↑ 00000↓ ]");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("[    0↑     0↓] ─ gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("[ 00000↑ 00000↓ ] ─ gpt-4o");
 	});
 
 	it("tokens only → no separator", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("[ 5.0k↑  1.0k↓]");
+		expect(formatCompactStats(usage)).toBe("[ 05.0k↑ 01.0k↓ ]");
 	});
 
 	it("cache + context → lowercase cr, no separator", () => {
 		const usage = { cacheRead: 8000, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("[    0↑     0↓ cr: 8.0k ctx: 6.0k]");
+		expect(formatCompactStats(usage)).toBe("[ 00000↑ 00000↓ cr:08.0k ctx:06.0k ]");
 	});
 });
 
@@ -282,6 +283,35 @@ function makeToolCallMessage(toolName: string, args: Record<string, unknown>, te
 function makeTextMessage(text: string) {
 	return { role: "assistant" as const, content: [{ type: "text" as const, text }] };
 }
+
+describe("formatExpandedStats", () => {
+	it("full usage → stats + context tokens", () => {
+		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
+		const result = formatExpandedStats(usage, "K2.6");
+		expect(result.stats).toBe("[02.0k↑ 00500↓ cr:30.0k] ─ K2.6");
+		expect(result.contextTokens).toBe("ctx:21.0k");
+	});
+
+	it("no context tokens → null", () => {
+		const usage = { input: 2000, output: 500 };
+		const result = formatExpandedStats(usage);
+		expect(result.stats).toBe("[02.0k↑ 00500↓]");
+		expect(result.contextTokens).toBeNull();
+	});
+
+	it("minimal usage → shows 0 for output", () => {
+		const usage = { input: 100 };
+		const result = formatExpandedStats(usage);
+		expect(result.stats).toBe("[00100↑ 00000↓]");
+		expect(result.contextTokens).toBeNull();
+	});
+
+	it("only model → placeholders + model", () => {
+		const result = formatExpandedStats({}, "gpt-4o");
+		expect(result.stats).toBe("[00000↑ 00000↓] ─ gpt-4o");
+		expect(result.contextTokens).toBeNull();
+	});
+});
 
 describe("activity panel rendering", () => {
 	it("renders single flow with DIR, EXE, LOG lines", () => {
@@ -356,5 +386,97 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
 		const text = (rendered as any).text || rendered.toString();
 		expect(text).toContain("[n/a]");
+	});
+});
+
+describe("expanded view rendering", () => {
+	it("single expanded shows type name not icon", () => {
+		const result = makeResult({
+			type: "debug",
+			intent: "Trace the BigQuery 400 error",
+			messages: [makeTextMessage("Found the migration config.")],
+			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
+		const text = extractText(rendered);
+		expect(text).toContain("DEBUG.....");
+		expect(text).not.toContain("✓");
+		expect(text).not.toContain("✗");
+		expect(text).not.toContain("(user)");
+	});
+
+	it("single expanded stats use bracket format with context inline", () => {
+		const result = makeResult({
+			type: "debug",
+			intent: "Trace the BigQuery 400 error",
+			messages: [makeTextMessage("Found the migration config.")],
+			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
+		const text = extractText(rendered);
+		expect(text).toContain("[ 09.8k↑ 01.3k↓ cr:42.0k ctx:10.0k ] ─ mimo-v2.5-pro");
+	});
+
+	it("context tokens on separate line", () => {
+		const result = makeResult({
+			type: "debug",
+			intent: "Trace the BigQuery 400 error",
+			messages: [makeTextMessage("Found the migration config.")],
+			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
+		const text = extractText(rendered);
+		expect(text).toContain("ctx:10.0k");
+	});
+
+	it("multi expanded summary shows count only", () => {
+		const result1 = makeResult({
+			type: "debug",
+			intent: "Trace the BigQuery 400 error",
+			messages: [makeTextMessage("Found the migration config.")],
+			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const result2 = makeResult({
+			type: "explore",
+			intent: "Map the view rebuild code",
+			messages: [makeTextMessage("Let me also check scripts.")],
+			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
+		const text = extractText(rendered);
+		expect(text).toContain("2 flows");
+		expect(text).not.toContain("✓");
+		expect(text).not.toContain("✗");
+	});
+
+	it("multi expanded per-flow uses formatFlowTypeName", () => {
+		const result1 = makeResult({
+			type: "debug",
+			intent: "Trace the BigQuery 400 error",
+			messages: [makeTextMessage("Found the migration config.")],
+			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const result2 = makeResult({
+			type: "explore",
+			intent: "Map the view rebuild code",
+			messages: [makeTextMessage("Let me also check scripts.")],
+			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
+			model: "mimo-v2.5-pro",
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
+		const text = extractText(rendered);
+		expect(text).toContain("DEBUG.....");
+		expect(text).toContain("EXPLORE...");
 	});
 });
