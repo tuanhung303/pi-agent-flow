@@ -153,7 +153,7 @@ function truncateAnsi(text: string, max: number): string {
 
 	const tailRaw = takeVisibleFromEnd(text, tail);
 
-	return headResult.raw + "\x1b[39m ... " + tailRaw;
+	return headResult.raw + " ... " + tailRaw;
 }
 
 export function truncateChars(text: string, max: number): string {

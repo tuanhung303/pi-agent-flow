@@ -113,19 +113,21 @@ describe("truncateChars", () => {
 		expect(result).toContain("\x1b[31m");
 	});
 
-	it("reset code added before ellipsis", () => {
+	it("no reset code before ellipsis", () => {
 		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// Should contain fg-only reset code before ellipsis
-		expect(result).toContain("\x1b[39m ... ");
+		// Should NOT contain a reset code — outer wrapper provides styling
+		expect(result).not.toContain("\x1b[39m ... ");
+		expect(result).toContain(" ... ");
 	});
 
 	it("multi-byte ANSI sequences not split", () => {
 		// Truecolor ANSI: \x1b[38;2;R;G;Bm
 		const colored = "\x1b[38;2;255;128;0m" + "x".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// Should not have orphaned escape fragments
-		expect(result).toContain("\x1b[39m ... ");
+		// Should NOT contain a reset code before ellipsis
+		expect(result).not.toContain("\x1b[39m ... ");
+		expect(result).toContain(" ... ");
 		// Visible length should be reasonable
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 	});
@@ -415,9 +417,9 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
 		const text = (rendered as any).text || rendered.toString();
 		expect(text).toContain("DEBUG.....");
-		expect(text).toContain("DIR:");
-		expect(text).toContain("EXE:");
-		expect(text).toContain("LOG:");
+		expect(text).toContain("dir:");
+		expect(text).toContain("exe:");
+		expect(text).toContain("log:");
 	});
 
 	it("renders multi-flow with tree connectors", () => {
@@ -477,7 +479,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
 		const text = (rendered as any).text || rendered.toString();
 		// Find the EXE line and verify it's truncated
-		const exeLine = text.split("\n").find((l: string) => l.includes("EXE:"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
 		expect(exeLine).toContain("...");
 	});
@@ -493,7 +495,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
 		const text = (rendered as any).text || rendered.toString();
-		const exeLine = text.split("\n").find((l: string) => l.includes("EXE:"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
 		// Should not contain newlines in the EXE line itself
 		expect(exeLine).not.toContain("\n");

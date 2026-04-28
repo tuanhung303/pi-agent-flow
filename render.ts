@@ -193,12 +193,12 @@ function renderFlowExpanded(
 
 	// Intent
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("muted", "─── Intent ───"), 0, 0));
+	container.addChild(new Text(theme.fg("muted", "─── intent ───"), 0, 0));
 	container.addChild(new Text(theme.fg("dim", r.intent), 0, 0));
 
 	// Flow report (structured output)
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("muted", "─── Report ───"), 0, 0));
+	container.addChild(new Text(theme.fg("muted", "─── report ───"), 0, 0));
 	if (flowOutput) {
 		container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));
 	} else {
@@ -210,7 +210,7 @@ function renderFlowExpanded(
 	const toolTraces = renderToolTraces(displayItems, theme);
 	if (toolTraces) {
 		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
+		container.addChild(new Text(theme.fg("muted", "─── tool calls ───"), 0, 0));
 		container.addChild(new Text(toolTraces, 0, 0));
 	}
 
@@ -232,27 +232,27 @@ function renderFlowCollapsed(
 	let text = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
-	// DIR: line (intent/objective)
+	// dir: line (intent/objective)
 	if (r.intent) {
-		text += `\n${theme.fg("dim", "├─ DIR:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`;
+		text += `\n${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`;
 	}
 
-	// EXE: line (last tool call)
+	// exe: line (last tool call)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		text += `\n${theme.fg("dim", "├─ EXE:")} ${truncateChars(exeStr, 50)}`;
+		text += `\n${theme.fg("dim", "├─ exe:")} ${truncateChars(exeStr, 50)}`;
 	}
 
-	// LOG: line (last assistant text or streaming)
+	// log: line (last assistant text or streaming)
 	if (flowOutput) {
-		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("dim", truncateChars(flowOutput, 50))}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", truncateChars(flowOutput, 50))}`;
 	} else if (streamingText) {
-		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("dim", tailText(streamingText, 50))}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", tailText(streamingText, 50))}`;
 	} else if (error && r.errorMessage) {
-		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`;
 	} else {
-		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("dim", "[n/a]")}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", "[n/a]")}`;
 	}
 
 	return new Text(text, 0, 0);
@@ -323,7 +323,7 @@ function renderMultiFlowExpanded(
 		const toolTraces = renderToolTraces(displayItems, theme);
 		if (toolTraces) {
 			container.addChild(new Spacer(1));
-			container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
+			container.addChild(new Text(theme.fg("muted", "─── tool calls ───"), 0, 0));
 			container.addChild(new Text(toolTraces, 0, 0));
 		}
 	}
@@ -367,26 +367,26 @@ function renderActivityPanel(
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";
 
-		// DIR: line (intent/objective)
+		// dir: line (intent/objective)
 		if (r.intent) {
-			container.addChild(new Text(`${theme.fg("dim", indent + "├─ DIR:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`, 0, 0));
 		}
 
-		// EXE: line (last tool call)
+		// exe: line (last tool call)
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
 			const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			container.addChild(new Text(`${theme.fg("dim", indent + "├─ EXE:")} ${truncateChars(exeStr, 50)}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ exe:")} ${truncateChars(exeStr, 50)}`, 0, 0));
 		}
 
-		// LOG: line (last assistant text)
+		// log: line (last assistant text)
 		const lastText = getLastAssistantText(r.messages);
 		if (lastText) {
-			container.addChild(new Text(`${theme.fg("dim", indent + "└─ LOG:")} ${theme.fg("dim", truncateChars(lastText, 50))}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", truncateChars(lastText, 50))}`, 0, 0));
 		} else if (error && r.errorMessage) {
-			container.addChild(new Text(`${theme.fg("dim", indent + "└─ LOG:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`, 0, 0));
 		} else {
-			container.addChild(new Text(`${theme.fg("dim", indent + "└─ LOG:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 		}
 
 		// Add blank line separator between flows (with continuation pipe)
