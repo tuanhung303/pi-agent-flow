@@ -8,6 +8,7 @@ import {
 	formatCompactStats,
 	formatExpandedStats,
 	formatFlowUsage,
+	visibleLength,
 } from "../render-utils.js";
 import { renderFlowResult } from "../render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types.js";
@@ -25,7 +26,36 @@ function extractText(node: Text | Container): string {
 }
 
 // ---------------------------------------------------------------------------
-// truncateChars
+// visibleLength
+// ---------------------------------------------------------------------------
+
+describe("visibleLength", () => {
+	it("plain text → length unchanged", () => {
+		expect(visibleLength("hello")).toBe(5);
+	});
+
+	it("ANSI-colored text → visible chars only", () => {
+		const colored = "\x1b[32mhello\x1b[39m";
+		expect(visibleLength(colored)).toBe(5);
+	});
+
+	it("multiple ANSI sequences → correct visible count", () => {
+		const colored = "\x1b[2m$ \x1b[22m\x1b[32mdeploy_dags.sh\x1b[39m";
+		expect(visibleLength(colored)).toBe(16); // "$ deploy_dags.sh"
+	});
+
+	it("empty string → 0", () => {
+		expect("").toBe("");
+		expect(visibleLength("")).toBe(0);
+	});
+
+	it("only ANSI codes → 0 visible", () => {
+		expect(visibleLength("\x1b[32m\x1b[39m")).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// truncateChars (ANSI-aware)
 // ---------------------------------------------------------------------------
 
 describe("truncateChars", () => {
@@ -42,9 +72,10 @@ describe("truncateChars", () => {
 		const text = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP";
 		const result = truncateChars(text, 40);
 		expect(result).toContain(" ... ");
-		// head = ceil(40*0.6) = 24, tail = 40-24-3 = 13, total = 24+5+13 = 42
-		// The function guarantees head+tail content fits, delimiter may push slightly over
-		const [head, tail] = result.split(" ... ");
+		// Split on " ... " (may be preceded by ANSI reset code)
+		const parts = result.split(/(?:\x1b\[0m)? ... /);
+		const head = parts[0];
+		const tail = parts[parts.length - 1];
 		expect(text.startsWith(head)).toBe(true);
 		expect(text.endsWith(tail)).toBe(true);
 	});
@@ -53,9 +84,50 @@ describe("truncateChars", () => {
 		const text = "Find every occurrence of ingestion_data in the codebase and check all references";
 		const result = truncateChars(text, 40);
 		expect(result).toContain(" ... ");
-		const [head, tail] = result.split(" ... ");
+		const parts = result.split(/(?:\x1b\[0m)? ... /);
+		const head = parts[0];
+		const tail = parts[parts.length - 1];
 		expect(text.startsWith(head)).toBe(true);
 		expect(text.endsWith(tail)).toBe(true);
+	});
+
+	it("short ANSI text → unchanged (no truncation)", () => {
+		const colored = "\x1b[32mhello\x1b[39m";
+		expect(truncateChars(colored, 10)).toBe(colored);
+	});
+
+	it("long ANSI text → truncated at visible boundaries", () => {
+		const cmd = "bash deploy_dags.sh && echo 'Syntax is OK. Now let me run the deploy script'";
+		const colored = "\x1b[2m$ \x1b[22m\x1b[32m" + cmd + "\x1b[39m";
+		const result = truncateChars(colored, 40);
+		// Should not contain raw ANSI escape fragments
+		expect(visibleLength(result)).toBeLessThanOrEqual(40 + 5); // allow small margin for ellipsis
+		// Should contain the ellipsis
+		expect(result).toContain(" ... ");
+	});
+
+	it("ANSI codes preserved in kept portions", () => {
+		const colored = "\x1b[31m" + "a".repeat(30) + "\x1b[32m" + "b".repeat(30) + "\x1b[39m";
+		const result = truncateChars(colored, 40);
+		// The result should contain ANSI codes from the head portion
+		expect(result).toContain("\x1b[31m");
+	});
+
+	it("reset code added before ellipsis", () => {
+		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
+		const result = truncateChars(colored, 40);
+		// Should contain reset code before ellipsis
+		expect(result).toContain("\x1b[0m ... ");
+	});
+
+	it("multi-byte ANSI sequences not split", () => {
+		// Truecolor ANSI: \x1b[38;2;R;G;Bm
+		const colored = "\x1b[38;2;255;128;0m" + "x".repeat(60) + "\x1b[39m";
+		const result = truncateChars(colored, 40);
+		// Should not have orphaned escape fragments
+		expect(result).toContain("\x1b[0m ... ");
+		// Visible length should be reasonable
+		expect(visibleLength(result)).toBeLessThanOrEqual(40 + 5);
 	});
 });
 
@@ -81,19 +153,33 @@ describe("tailText", () => {
 	it("long text → last N chars", () => {
 		const text = "this is a long streaming text that keeps going and going";
 		const result = tailText(text, 25);
-		expect(result.length).toBeLessThanOrEqual(25);
+		expect(visibleLength(result)).toBeLessThanOrEqual(25);
 		expect(result).toBe(text.slice(-25));
 	});
 
 	it("newlines in long text → flattened then truncated", () => {
 		const text = "first line\nsecond line\nthird line\nfourth line";
 		const result = tailText(text, 20);
-		expect(result.length).toBeLessThanOrEqual(20);
+		expect(visibleLength(result)).toBeLessThanOrEqual(20);
 		expect(result).not.toContain("\n");
 	});
 
 	it("trims leading/trailing whitespace", () => {
 		expect(tailText("  hello  ", 40)).toBe("hello");
+	});
+
+	it("ANSI-colored long text → last N visible chars, codes preserved", () => {
+		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
+		const result = tailText(colored, 20);
+		expect(visibleLength(result)).toBeLessThanOrEqual(20);
+		// Should contain the closing ANSI code from the tail
+		expect(result).toContain("\x1b[39m");
+	});
+
+	it("ANSI text with mixed content → correct visible truncation", () => {
+		const colored = "\x1b[2mfirst part\x1b[22m \x1b[32msecond part\x1b[39m";
+		const result = tailText(colored, 15);
+		expect(visibleLength(result)).toBeLessThanOrEqual(15);
 	});
 });
 

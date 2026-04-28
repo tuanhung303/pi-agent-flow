@@ -84,15 +84,100 @@ export function formatExpandedStats(usage: Partial<UsageStats>, model?: string):
 	return { stats, contextTokens };
 }
 
-export function truncateChars(text: string, max: number): string {
-	if (text.length <= max) return text;
+/** Regex matching ANSI escape sequences. */
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+/** Return the visible (ANSI-stripped) character count. */
+export function visibleLength(text: string): number {
+	return text.replace(ANSI_RE, "").length;
+}
+
+/**
+ * Truncate an ANSI-colored string to at most `max` visible characters,
+ * preserving ANSI codes in the kept portions and appending a reset before
+ * the ellipsis so colors don't bleed.
+ */
+function truncateAnsi(text: string, max: number): string {
+	if (visibleLength(text) <= max) return text;
+
 	const head = Math.ceil(max * 0.6);
-	const tail = max - head - 3;
-	return text.slice(0, head) + " ... " + text.slice(-tail);
+	const tail = max - head - 3; // 3 = " ...".length
+
+	// Walk through the string, collecting raw chars until we've consumed
+	// `count` visible characters. ANSI sequences are copied through without
+	// counting toward the limit.
+	function takeVisible(src: string, count: number): { raw: string; consumed: number } {
+		let raw = "";
+		let visible = 0;
+		let i = 0;
+		while (i < src.length && visible < count) {
+			// Check for ANSI escape sequence at current position
+			if (src[i] === "\x1b" && src[i + 1] === "[") {
+				const end = src.indexOf("m", i + 2);
+				if (end !== -1) {
+					raw += src.slice(i, end + 1);
+					i = end + 1;
+					continue;
+				}
+			}
+			raw += src[i];
+			visible++;
+			i++;
+		}
+		return { raw, consumed: visible };
+	}
+
+	// Take head from the start
+	const headResult = takeVisible(text, head);
+
+	// Take tail from the end (walk backwards)
+	function takeVisibleFromEnd(src: string, count: number): string {
+		let visible = 0;
+		let i = src.length - 1;
+		while (i >= 0 && visible < count) {
+			// Check if current char is end of an ANSI sequence
+			if (src[i] === "m") {
+				const escStart = src.lastIndexOf("\x1b[", i);
+				if (escStart !== -1 && escStart < i) {
+					// This is an ANSI sequence — don't count, skip past it
+					i = escStart - 1;
+					continue;
+				}
+			}
+			visible++;
+			i--;
+		}
+		// Extract the raw substring from (i+1) to end, including any trailing ANSI
+		return src.slice(i + 1);
+	}
+
+	const tailRaw = takeVisibleFromEnd(text, tail);
+
+	return headResult.raw + "\x1b[0m ... " + tailRaw;
+}
+
+export function truncateChars(text: string, max: number): string {
+	if (visibleLength(text) <= max) return text;
+	return truncateAnsi(text, max);
 }
 
 export function tailText(text: string, max: number): string {
 	const flat = text.replace(/[\n\r\t]+/g, " ").replace(/ +/g, " ").trim();
-	if (flat.length <= max) return flat;
-	return flat.slice(-max);
+	if (visibleLength(flat) <= max) return flat;
+
+	// Take last `max` visible characters from the end
+	let visible = 0;
+	let i = flat.length - 1;
+	while (i >= 0 && visible < max) {
+		if (flat[i] === "m") {
+			const escStart = flat.lastIndexOf("\x1b[", i);
+			if (escStart !== -1 && escStart < i) {
+				i = escStart - 1;
+				continue;
+			}
+		}
+		visible++;
+		i--;
+	}
+	return flat.slice(i + 1);
 }
