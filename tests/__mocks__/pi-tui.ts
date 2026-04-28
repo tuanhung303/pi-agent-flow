@@ -8,6 +8,16 @@ export class Text {
 	}
 }
 
+export class TruncatedText {
+	text: string;
+	constructor(text: string, _paddingX: number = 0, _paddingY: number = 0) {
+		this.text = text;
+	}
+	toString() {
+		return this.text;
+	}
+}
+
 export class Container {
 	children: any[] = [];
 	addChild(child: any) {

@@ -10,10 +10,10 @@ import {
 } from "../render-utils.js";
 import { renderFlowResult } from "../render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types.js";
-import type { Text, Container } from "@mariozechner/pi-tui";
+import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
 
-// Helper to extract text from Text or Container objects
-function extractText(node: Text | Container): string {
+// Helper to extract text from Text, TruncatedText, or Container objects
+function extractText(node: Text | Container | TruncatedText): string {
 	if ("text" in node && typeof node.text === "string") {
 		return node.text;
 	}
@@ -445,7 +445,7 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("explore...");
 	});
 
-	it("truncates long DIR text", () => {
+	it("includes long DIR text in TruncatedText", () => {
 		const longIntent = "A" + "b".repeat(100) + "Z";
 		const result = makeResult({
 			intent: longIntent,
@@ -454,10 +454,10 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
 		const text = extractText(rendered);
-		expect(text).toContain("...");
+		expect(text).toContain(longIntent);
 	});
 
-	it("truncates long EXE text", () => {
+	it("includes long EXE text in TruncatedText", () => {
 		const longCmd = "a".repeat(100);
 		const result = makeResult({
 			intent: "test",
@@ -469,10 +469,9 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
 		const text = extractText(rendered);
-		// Find the EXE line and verify it's truncated
 		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
-		expect(exeLine).toContain("...");
+		expect(exeLine).toContain(longCmd);
 	});
 
 	it("flattens multi-line bash commands to single line", () => {
@@ -504,7 +503,7 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("[n/a]");
 	});
 
-	it("truncates EXE to terminal budget in single flow collapsed", () => {
+	it("passes full EXE text to TruncatedText in single flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
@@ -521,13 +520,13 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 			expect(exeLine).toBeDefined();
-			expect(exeLine).toContain("...");
+			expect(exeLine).toContain(longCmd);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
 	});
 
-	it("truncates DIR to terminal budget in multi-flow collapsed", () => {
+	it("passes full DIR text to TruncatedText in multi-flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
@@ -541,13 +540,13 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
 			expect(dirLine).toBeDefined();
-			expect(dirLine).toContain("...");
+			expect(dirLine).toContain(longIntent);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
 	});
 
-	it("truncates streaming LOG to terminal budget in single flow collapsed", () => {
+	it("passes full streaming LOG text to TruncatedText in single flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
@@ -562,7 +561,7 @@ describe("activity panel rendering", () => {
 			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
 			expect(logLine).toBeDefined();
 			const logContent = logLine.split("log:")[1].trim();
-			expect(visibleLength(logContent)).toBeLessThanOrEqual(32); // 40 - 8 prefix
+			expect(logContent).toBe(longStreaming);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
