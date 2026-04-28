@@ -131,16 +131,16 @@ describe("formatTokens", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatFixedTokens", () => {
-	it("< 1000 → zero-padded to 5 chars", () => {
-		expect(formatFixedTokens(0)).toBe("00000");
-		expect(formatFixedTokens(100)).toBe("00100");
-		expect(formatFixedTokens(500)).toBe("00500");
-		expect(formatFixedTokens(999)).toBe("00999");
+	it("< 1000 → space-padded to 5 chars", () => {
+		expect(formatFixedTokens(0)).toBe("    0");
+		expect(formatFixedTokens(100)).toBe("  100");
+		expect(formatFixedTokens(500)).toBe("  500");
+		expect(formatFixedTokens(999)).toBe("  999");
 	});
 
 	it("1000-99999 → XX.Xk format (5 chars)", () => {
-		expect(formatFixedTokens(1000)).toBe("01.0k");
-		expect(formatFixedTokens(1300)).toBe("01.3k");
+		expect(formatFixedTokens(1000)).toBe(" 1.0k");
+		expect(formatFixedTokens(1300)).toBe(" 1.3k");
 		expect(formatFixedTokens(12400)).toBe("12.4k");
 		expect(formatFixedTokens(32000)).toBe("32.0k");
 		expect(formatFixedTokens(99900)).toBe("99.9k");
@@ -190,31 +190,31 @@ describe("formatCompactStats", () => {
 	it("full usage → correct format with brackets", () => {
 		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("[ 02.0k↑ 00500↓ cr:30.0k ctx:21.0k ] ─ K2.6");
+		expect(result).toBe("[  2.0k↑   500↓ cr:30.0k ctx:21.0k ] ─ K2.6");
 	});
 
 	it("minimal usage → shows 0 for output", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("[ 00100↑ 00000↓ ]");
+		expect(result).toBe("[   100↑     0↓ ]");
 	});
 
 	it("no usage → shows 0 placeholders", () => {
-		expect(formatCompactStats({})).toBe("[ 00000↑ 00000↓ ]");
+		expect(formatCompactStats({})).toBe("[     0↑     0↓ ]");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("[ 00000↑ 00000↓ ] ─ gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("[     0↑     0↓ ] ─ gpt-4o");
 	});
 
 	it("tokens only → no separator", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("[ 05.0k↑ 01.0k↓ ]");
+		expect(formatCompactStats(usage)).toBe("[  5.0k↑  1.0k↓ ]");
 	});
 
 	it("cache + context → lowercase cr, no separator", () => {
 		const usage = { cacheRead: 8000, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("[ 00000↑ 00000↓ cr:08.0k ctx:06.0k ]");
+		expect(formatCompactStats(usage)).toBe("[     0↑     0↓ cr: 8.0k ctx: 6.0k ]");
 	});
 });
 
@@ -288,27 +288,27 @@ describe("formatExpandedStats", () => {
 	it("full usage → stats + context tokens", () => {
 		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
 		const result = formatExpandedStats(usage, "K2.6");
-		expect(result.stats).toBe("[02.0k↑ 00500↓ cr:30.0k] ─ K2.6");
+		expect(result.stats).toBe("[ 2.0k↑   500↓ cr:30.0k] ─ K2.6");
 		expect(result.contextTokens).toBe("ctx:21.0k");
 	});
 
 	it("no context tokens → null", () => {
 		const usage = { input: 2000, output: 500 };
 		const result = formatExpandedStats(usage);
-		expect(result.stats).toBe("[02.0k↑ 00500↓]");
+		expect(result.stats).toBe("[ 2.0k↑   500↓]");
 		expect(result.contextTokens).toBeNull();
 	});
 
 	it("minimal usage → shows 0 for output", () => {
 		const usage = { input: 100 };
 		const result = formatExpandedStats(usage);
-		expect(result.stats).toBe("[00100↑ 00000↓]");
+		expect(result.stats).toBe("[  100↑     0↓]");
 		expect(result.contextTokens).toBeNull();
 	});
 
 	it("only model → placeholders + model", () => {
 		const result = formatExpandedStats({}, "gpt-4o");
-		expect(result.stats).toBe("[00000↑ 00000↓] ─ gpt-4o");
+		expect(result.stats).toBe("[    0↑     0↓] ─ gpt-4o");
 		expect(result.contextTokens).toBeNull();
 	});
 });
@@ -418,7 +418,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
 		const text = extractText(rendered);
-		expect(text).toContain("[ 09.8k↑ 01.3k↓ cr:42.0k ctx:10.0k ] ─ mimo-v2.5-pro");
+		expect(text).toContain("[  9.8k↑  1.3k↓ cr:42.0k ctx:10.0k ] ─ mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {

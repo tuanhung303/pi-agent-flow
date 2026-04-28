@@ -26,24 +26,24 @@ export function formatFlowUsage(usage: Partial<UsageStats>, model?: string): str
 }
 
 /**
- * Format a token count to exactly 5 characters with leading zeros.
+ * Format a token count to exactly 5 characters with leading spaces.
  * Shifts from k to M when value would exceed 5 chars.
- * Examples: 500 → "00500", 1300 → "01.3k", 32000 → "32.0k", 950500 → "0.95M"
+ * Examples: 500 → "  500", 1300 → " 1.3k", 32000 → "32.0k", 950500 → "0.95M"
  */
 export function formatFixedTokens(count: number): string {
 	if (count < 1000) {
-		return count.toString().padStart(5, '0');
+		return count.toString().padStart(5);
 	}
 
 	const k = count / 1000;
 	if (k < 100) {
-		return (k.toFixed(1) + "k").padStart(5, '0');
+		return (k.toFixed(1) + "k").padStart(5);
 	} else if (k < 1000) {
 		const m = count / 1000000;
-		return (m.toFixed(2) + "M").padStart(5, '0');
+		return (m.toFixed(2) + "M").padStart(5);
 	} else {
 		const m = count / 1000000;
-		return (m.toFixed(2) + "M").padStart(5, '0');
+		return (m.toFixed(2) + "M").padStart(5);
 	}
 }
 
