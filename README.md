@@ -1,9 +1,5 @@
 <p align="center"><code>pi install npm:pi-agent-flow</code></p>
 <p align="center"><strong>Pi Agent Flow</strong> is a flow-state delegation extension for the <a href="https://pi.dev">Pi coding agent</a> that runs locally in your terminal.</p>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/pi-agent-flow-demo.png" alt="Pi Agent Flow demo" width="80%" />
-</p>
-<br/>
 
 ---
 
