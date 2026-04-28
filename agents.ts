@@ -227,7 +227,7 @@ export function discoverFlows(cwd: string, scope: FlowScope): FlowDiscoveryResul
 		return { flows: mergeFlows(bundledFlows, userFlows), projectFlowsDir };
 	}
 	if (scope === "project") {
-		return { flows: projectFlows, projectFlowsDir };
+		return { flows: mergeFlows(projectFlows), projectFlowsDir };
 	}
 	return {
 		flows: mergeFlows(bundledFlows, userFlows, projectFlows),

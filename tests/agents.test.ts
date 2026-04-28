@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -8,13 +8,13 @@ describe("discoverFlows", () => {
 	let tmpDir: string;
 	let originalCwd: string;
 
-	beforeAll(() => {
+	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-test-"));
 		originalCwd = process.cwd();
 		process.chdir(tmpDir);
 	});
 
-	afterAll(() => {
+	afterEach(() => {
 		process.chdir(originalCwd);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
@@ -59,6 +59,24 @@ describe("discoverFlows", () => {
 		expect(exploreFlows[0].description).toBe("Project explore");
 		expect(exploreFlows[0].source).toBe("project");
 	});
+
+	it("deduplicates project-scoped flows with mixed-case filenames", () => {
+		const agentsDir = path.join(tmpDir, ".pi", "agents");
+		writeFlow(
+			agentsDir,
+			"Code.md",
+			`---\nname: Code\ndescription: Uppercase code\n---\nPrompt.`,
+		);
+		writeFlow(
+			agentsDir,
+			"code.md",
+			`---\nname: code\ndescription: Lowercase code\n---\nPrompt.`,
+		);
+
+		const result = discoverFlows(tmpDir, "project");
+		const codeFlows = result.flows.filter((f) => f.name === "code");
+		expect(codeFlows).toHaveLength(1);
+	});
 });
 
 describe("mergeFlows case-insensitivity", () => {
@@ -67,22 +85,24 @@ describe("mergeFlows case-insensitivity", () => {
 		const originalCwd2 = process.cwd();
 		process.chdir(tmpDir2);
 
-		const agentsDir = path.join(tmpDir2, ".pi", "agents");
-		fs.mkdirSync(agentsDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(agentsDir, "Code.md"),
-			`---\nname: Code\ndescription: Uppercase code\n---\nPrompt.`,
-		);
-		fs.writeFileSync(
-			path.join(agentsDir, "code.md"),
-			`---\nname: code\ndescription: Lowercase code\n---\nPrompt.`,
-		);
+		try {
+			const agentsDir = path.join(tmpDir2, ".pi", "agents");
+			fs.mkdirSync(agentsDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(agentsDir, "Code.md"),
+				`---\nname: Code\ndescription: Uppercase code\n---\nPrompt.`,
+			);
+			fs.writeFileSync(
+				path.join(agentsDir, "code.md"),
+				`---\nname: code\ndescription: Lowercase code\n---\nPrompt.`,
+			);
 
-		const result = discoverFlows(tmpDir2, "project");
-		process.chdir(originalCwd2);
-		fs.rmSync(tmpDir2, { recursive: true, force: true });
-
-		const codeFlows = result.flows.filter((f) => f.name === "code");
-		expect(codeFlows).toHaveLength(1);
+			const result = discoverFlows(tmpDir2, "project");
+			const codeFlows = result.flows.filter((f) => f.name === "code");
+			expect(codeFlows).toHaveLength(1);
+		} finally {
+			process.chdir(originalCwd2);
+			fs.rmSync(tmpDir2, { recursive: true, force: true });
+		}
 	});
 });
