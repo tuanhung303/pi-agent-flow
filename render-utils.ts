@@ -93,6 +93,17 @@ export function visibleLength(text: string): number {
 }
 
 /**
+ * Compute the remaining visible-character budget for a line,
+ * given the length of its prefix (indent + label + space).
+ * Respects `process.stdout.columns` with a floor of 40 and default of 80.
+ */
+export function getTruncationBudget(prefixLength: number): number {
+	const cols = process.stdout.columns ?? 80;
+	const width = Math.max(cols, 40);
+	return Math.max(width - prefixLength, 1);
+}
+
+/**
  * Truncate an ANSI-colored string to at most `max` visible characters,
  * preserving ANSI codes in the kept portions and appending a reset before
  * the ellipsis so colors don't bleed.
@@ -115,9 +126,12 @@ function truncateAnsi(text: string, max: number): string {
 			if (src[i] === "\x1b" && src[i + 1] === "[") {
 				const end = src.indexOf("m", i + 2);
 				if (end !== -1) {
-					raw += src.slice(i, end + 1);
-					i = end + 1;
-					continue;
+					const seq = src.slice(i, end + 1);
+					if (/^\x1b\[[0-9;]*m$/.test(seq)) {
+						raw += seq;
+						i = end + 1;
+						continue;
+					}
 				}
 			}
 			raw += src[i];
@@ -139,9 +153,12 @@ function truncateAnsi(text: string, max: number): string {
 			if (src[i] === "m") {
 				const escStart = src.lastIndexOf("\x1b[", i);
 				if (escStart !== -1 && escStart < i) {
-					// This is an ANSI sequence — don't count, skip past it
-					i = escStart - 1;
-					continue;
+					const seq = src.slice(escStart, i + 1);
+					if (/^\x1b\[[0-9;]*m$/.test(seq)) {
+						// This is an ANSI sequence — don't count, skip past it
+						i = escStart - 1;
+						continue;
+					}
 				}
 			}
 			visible++;
@@ -173,8 +190,11 @@ export function tailText(text: string, max: number): string {
 		if (flat[i] === "m") {
 			const escStart = flat.lastIndexOf("\x1b[", i);
 			if (escStart !== -1 && escStart < i) {
-				i = escStart - 1;
-				continue;
+				const seq = flat.slice(escStart, i + 1);
+				if (/^\x1b\[[0-9;]*m$/.test(seq)) {
+					i = escStart - 1;
+					continue;
+				}
 			}
 		}
 		visible++;

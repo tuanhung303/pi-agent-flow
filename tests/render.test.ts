@@ -9,6 +9,7 @@ import {
 	formatExpandedStats,
 	formatFlowUsage,
 	visibleLength,
+	getTruncationBudget,
 } from "../render-utils.js";
 import { renderFlowResult } from "../render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types.js";
@@ -130,6 +131,67 @@ describe("truncateChars", () => {
 		expect(result).toContain(" ... ");
 		// Visible length should be reasonable
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
+	});
+
+	it("does not treat plain 'm' as ANSI terminator when truncating from end", () => {
+		// ANSI prefix followed by many 'm' chars — old bug would skip all 'm's
+		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
+		const result = truncateChars(colored, 40);
+		expect(visibleLength(result)).toBeLessThanOrEqual(40);
+		expect(result).toContain(" ... ");
+		// Should contain some 'm' chars (they are visible content, not ANSI)
+		expect(result).toContain("m");
+	});
+
+	it("does not treat plain 'm' as ANSI terminator when truncating head", () => {
+		// ANSI prefix followed by many 'm' chars — old bug in takeVisible would also skip
+		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
+		const result = truncateChars(colored, 40);
+		expect(visibleLength(result)).toBeLessThanOrEqual(40);
+		expect(result).toContain(" ... ");
+		expect(result).toContain("echo");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getTruncationBudget
+// ---------------------------------------------------------------------------
+
+describe("getTruncationBudget", () => {
+	it("returns terminal width minus prefix length", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 100;
+			expect(getTruncationBudget(10)).toBe(90);
+
+			(process.stdout as any).columns = 60;
+			expect(getTruncationBudget(8)).toBe(52);
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
+	it("floors terminal width at 40", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 30;
+			expect(getTruncationBudget(0)).toBe(40);
+
+			(process.stdout as any).columns = 20;
+			expect(getTruncationBudget(10)).toBe(30);
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
+	it("defaults to 80 when columns is undefined", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = undefined;
+			expect(getTruncationBudget(10)).toBe(70);
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
 	});
 });
 
@@ -511,6 +573,70 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
 		const text = (rendered as any).text || rendered.toString();
 		expect(text).toContain("[n/a]");
+	});
+
+	it("truncates EXE to terminal budget in single flow collapsed", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40; // narrow terminal
+			const longCmd = "a".repeat(45);
+			const result = makeResult({
+				intent: "test",
+				messages: [
+					makeToolCallMessage("bash", { command: longCmd }),
+					makeTextMessage("done"),
+				],
+			});
+			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
+			const text = (rendered as any).text || rendered.toString();
+			const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
+			expect(exeLine).toBeDefined();
+			expect(exeLine).toContain("...");
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
+	it("truncates DIR to terminal budget in multi-flow collapsed", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40; // narrow terminal
+			const longIntent = "b".repeat(45);
+			const result = makeResult({
+				intent: longIntent,
+				messages: [makeTextMessage("done")],
+			});
+			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult()] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+			const text = extractText(rendered);
+			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
+			expect(dirLine).toBeDefined();
+			expect(dirLine).toContain("...");
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
+	it("truncates streaming LOG to terminal budget in single flow collapsed", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40; // narrow terminal
+			const longStreaming = "c".repeat(45);
+			const result = makeResult({
+				intent: "test",
+				messages: [],
+			});
+			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme()) as Text;
+			const text = (rendered as any).text || rendered.toString();
+			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
+			expect(logLine).toBeDefined();
+			const logContent = logLine.split("log:")[1].trim();
+			expect(visibleLength(logContent)).toBeLessThanOrEqual(32); // 40 - 8 prefix
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
 	});
 });
 

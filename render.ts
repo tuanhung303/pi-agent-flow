@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatTokens, formatFixedTokens, formatFlowUsage, formatCompactStats, formatExpandedStats, formatFlowTypeName, truncateChars, tailText } from "./render-utils.js";
+import { formatTokens, formatFixedTokens, formatFlowUsage, formatCompactStats, formatExpandedStats, formatFlowTypeName, truncateChars, tailText, getTruncationBudget } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -234,23 +234,23 @@ function renderFlowCollapsed(
 
 	// dir: line (intent/objective)
 	if (r.intent) {
-		text += `\n${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`;
+		text += `\n${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, getTruncationBudget(8)))}`;
 	}
 
 	// exe: line (last tool call)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		text += `\n${theme.fg("dim", "├─ exe:")} ${truncateChars(exeStr, 50)}`;
+		text += `\n${theme.fg("dim", "├─ exe:")} ${truncateChars(exeStr, getTruncationBudget(8))}`;
 	}
 
 	// log: line (last assistant text or streaming)
 	if (flowOutput) {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", truncateChars(flowOutput, 50))}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", truncateChars(flowOutput, getTruncationBudget(8)))}`;
 	} else if (streamingText) {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", tailText(streamingText, 50))}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", tailText(streamingText, getTruncationBudget(8)))}`;
 	} else if (error && r.errorMessage) {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`;
+		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, getTruncationBudget(8)))}`;
 	} else {
 		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", "[n/a]")}`;
 	}
@@ -369,22 +369,22 @@ function renderActivityPanel(
 
 		// dir: line (intent/objective)
 		if (r.intent) {
-			container.addChild(new Text(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, getTruncationBudget(11)))}`, 0, 0));
 		}
 
 		// exe: line (last tool call)
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
 			const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			container.addChild(new Text(`${theme.fg("dim", indent + "├─ exe:")} ${truncateChars(exeStr, 50)}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ exe:")} ${truncateChars(exeStr, getTruncationBudget(11))}`, 0, 0));
 		}
 
 		// log: line (last assistant text)
 		const lastText = getLastAssistantText(r.messages);
 		if (lastText) {
-			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", truncateChars(lastText, 50))}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", truncateChars(lastText, getTruncationBudget(11)))}`, 0, 0));
 		} else if (error && r.errorMessage) {
-			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, getTruncationBudget(11)))}`, 0, 0));
 		} else {
 			container.addChild(new Text(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 		}
