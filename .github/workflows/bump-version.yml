@@ -1,3 +1,9 @@
+# Manual override workflow — use when auto-bump is insufficient
+# or when you need a specific bump type (minor/major) that conventional
+# commits didn't trigger automatically.
+#
+# For automatic bumps based on conventional commits, see auto-bump.yml.
+
 name: Bump Version
 
 on:

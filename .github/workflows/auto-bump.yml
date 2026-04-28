@@ -1,0 +1,73 @@
+name: Auto Bump
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: auto-bump
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    # Only run if CI succeeded on main (not PRs)
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Detect bump type from conventional commits
+        id: detect
+        run: |
+          # Get the latest commit message (skip any [skip ci] commits)
+          COMMIT_MSG=$(git log -1 --pretty=%B | head -n1)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Detect bump type from conventional commit
+          if echo "$COMMIT_MSG" | grep -qiE '(BREAKING|^[a-z]+(\(.+\))?!:)'; then
+            BUMP_TYPE="major"
+          elif echo "$COMMIT_MSG" | grep -qiE '^feat(\(.+\))?:'; then
+            BUMP_TYPE="minor"
+          else
+            BUMP_TYPE="patch"
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+
+      - name: Bump version
+        id: bump
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          echo "Current: $CURRENT"
+          NEW_VERSION=$(npx semver $CURRENT -i ${{ steps.detect.outputs.bump_type }})
+          echo "New: $NEW_VERSION"
+          npm version $NEW_VERSION --no-git-tag-version
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit and tag
+        run: |
+          git add package.json
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }} [skip ci]"
+          git tag v${{ steps.bump.outputs.version }}
+          git push origin main
+          git push origin v${{ steps.bump.outputs.version }}
