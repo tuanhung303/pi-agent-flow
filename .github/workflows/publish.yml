@@ -1,3 +1,6 @@
+# Manual fallback — publish an already-tagged version to npm.
+# The primary release path is bump-version.yml (Release workflow).
+
 name: Publish
 
 on:

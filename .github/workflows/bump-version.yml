@@ -1,10 +1,7 @@
-# Manual override workflow — use when auto-bump is insufficient
-# or when you need a specific bump type (minor/major) that conventional
-# commits didn't trigger automatically.
-#
-# For automatic bumps based on conventional commits, see auto-bump.yml.
+# Full release workflow — bumps version, commits, tags, pushes, and publishes to npm.
+# Run manually when you need a specific bump type (patch/minor/major).
 
-name: Bump Version
+name: Release
 
 on:
   workflow_dispatch:
@@ -21,9 +18,10 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  bump:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - name: Configure git
         run: |
@@ -58,7 +57,10 @@ jobs:
           git push origin main
           git push origin v${{ steps.bump.outputs.version }}
 
-      - name: Trigger Publish workflow
-        run: gh workflow run publish.yml --ref v${{ steps.bump.outputs.version }}
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
