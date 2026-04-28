@@ -229,7 +229,7 @@ function renderFlowCollapsed(
 ): Text {
 	const stats = formatCompactStats(r.usage, r.model);
 	const typeName = formatFlowTypeName(r.type);
-	let text = `${theme.bg("selectedBg", theme.fg("accent", theme.bold(typeName)))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+	let text = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
 	// DIR: line (intent/objective)
@@ -358,7 +358,7 @@ function renderActivityPanel(
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.bg("selectedBg", theme.fg("accent", theme.bold(typeName)))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
