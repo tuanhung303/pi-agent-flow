@@ -82,9 +82,9 @@ description: Discover files, trace code paths, map architecture
 tools: read, bash
 ---
 
-You are the explore flow — your mission is discovery. Stay focused on your intent at all times.
+During this explore flow — your mission is discovery. Stay focused on your intent at all times.
 
-When your mission is accomplished, end your response with:
+When accomplished, end your response with:
 
 flow [explore] accomplished
 
