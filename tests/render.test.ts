@@ -378,6 +378,24 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("...");
 	});
 
+	it("truncates long EXE text", () => {
+		const longCmd = "a".repeat(100);
+		const result = makeResult({
+			intent: "test",
+			messages: [
+				makeToolCallMessage("bash", { command: longCmd }),
+				makeTextMessage("done"),
+			],
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
+		const text = (rendered as any).text || rendered.toString();
+		// Find the EXE line and verify it's truncated
+		const exeLine = text.split("\n").find((l: string) => l.includes("EXE:"));
+		expect(exeLine).toBeDefined();
+		expect(exeLine).toContain("...");
+	});
+
 	it("shows [n/a] when no log text", () => {
 		const result = makeResult({
 			messages: [],

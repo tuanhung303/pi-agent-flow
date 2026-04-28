@@ -241,7 +241,7 @@ function renderFlowCollapsed(
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		text += `\n${theme.fg("dim", "├─ EXE:")} ${exeStr}`;
+		text += `\n${theme.fg("dim", "├─ EXE:")} ${truncateChars(exeStr, 50)}`;
 	}
 
 	// LOG: line (last assistant text or streaming)
@@ -376,7 +376,7 @@ function renderActivityPanel(
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
 			const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			container.addChild(new Text(`${theme.fg("dim", indent + "├─ EXE:")} ${exeStr}`, 0, 0));
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ EXE:")} ${truncateChars(exeStr, 50)}`, 0, 0));
 		}
 
 		// LOG: line (last assistant text)
