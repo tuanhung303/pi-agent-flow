@@ -44,6 +44,46 @@ export function drainStreamingText(result) {
   return buf;
 }
 
+// ---------------------------------------------------------------------------
+// Streaming token estimate
+// ---------------------------------------------------------------------------
+
+/** Chars per token heuristic for output estimation. */
+const CHARS_PER_TOKEN = 4;
+
+function getStreamingEstimate(result) {
+  if (!Object.prototype.hasOwnProperty.call(result, "__streamingEstimate")) {
+    Object.defineProperty(result, "__streamingEstimate", {
+      value: { chars: 0 },
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+  }
+  return result.__streamingEstimate;
+}
+
+/**
+ * Track streaming characters and estimate output tokens.
+ * Called on every streaming delta.
+ */
+function updateStreamingEstimate(result, deltaLength) {
+  if (deltaLength <= 0) return;
+  const est = getStreamingEstimate(result);
+  est.chars += deltaLength;
+}
+
+/**
+ * Drain the current streaming estimate and return estimated output tokens.
+ * Returns 0 when no streaming has occurred.
+ */
+export function drainStreamingEstimate(result) {
+  const est = getStreamingEstimate(result);
+  const tokens = Math.floor(est.chars / CHARS_PER_TOKEN);
+  est.chars = 0;
+  return tokens;
+}
+
 /**
  * Accumulate a text or thinking delta into the streaming buffer.
  * Returns true if the caller should emit an update.
@@ -52,6 +92,7 @@ function accumulateStreamingDelta(result, delta) {
   if (!delta) return false;
   const buf = getStreamingTextBuffer(result);
   result.__streamingTextBuffer = buf + delta;
+  updateStreamingEstimate(result, delta.length);
   if (result.__streamingTextBuffer.length - result.__lastEmittedWordCount >= 40) {
     result.__lastEmittedWordCount = result.__streamingTextBuffer.length;
     return true;
@@ -96,6 +137,10 @@ function addFlowAssistantMessage(result, message) {
   seen.add(signature);
 
   result.messages.push(message);
+
+  // Reset streaming estimate when actual usage arrives
+  const est = getStreamingEstimate(result);
+  est.chars = 0;
 
   result.usage.turns++;
   const usage = message.usage;

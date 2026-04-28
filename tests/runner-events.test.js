@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   processFlowJsonLine,
   drainStreamingText,
+  drainStreamingEstimate,
   getFlowFinalText,
   getFlowSummaryText,
 } from "../runner-events.js";
@@ -293,5 +294,78 @@ describe("getFlowSummaryText", () => {
   it("handles null/undefined gracefully", () => {
     expect(getFlowSummaryText(null)).toBe("(no output)");
     expect(getFlowSummaryText(undefined)).toBe("(no output)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// drainStreamingEstimate
+// ---------------------------------------------------------------------------
+
+describe("drainStreamingEstimate", () => {
+  it("returns 0 on fresh result", () => {
+    const r = makeResult();
+    expect(drainStreamingEstimate(r)).toBe(0);
+  });
+
+  it("estimates output tokens from streaming chars (4 chars/token)", () => {
+    const r = makeResult();
+    // 400 chars = 100 tokens
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      r,
+    );
+    expect(drainStreamingEstimate(r)).toBe(100);
+  });
+
+  it("estimates accumulates across multiple deltas", () => {
+    const r = makeResult();
+    // 200 chars + 200 chars = 400 chars = 100 tokens
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(200) } }),
+      r,
+    );
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "b".repeat(200) } }),
+      r,
+    );
+    expect(drainStreamingEstimate(r)).toBe(100);
+  });
+
+  it("resets estimate on drain", () => {
+    const r = makeResult();
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      r,
+    );
+    drainStreamingEstimate(r);
+    expect(drainStreamingEstimate(r)).toBe(0);
+  });
+
+  it("resets estimate when message completes", () => {
+    const r = makeResult();
+    // Stream 400 chars = 100 estimated tokens
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      r,
+    );
+    expect(drainStreamingEstimate(r)).toBe(100);
+    // Message completes with actual usage
+    const msg = makeAssistantMessage("done", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 200 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    // Estimate should be reset
+    expect(drainStreamingEstimate(r)).toBe(0);
+    // Actual usage should be tracked
+    expect(r.usage.output).toBe(50);
+  });
+
+  it("handles thinking_delta the same as text_delta", () => {
+    const r = makeResult();
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "c".repeat(800) } }),
+      r,
+    );
+    expect(drainStreamingEstimate(r)).toBe(200);
   });
 });

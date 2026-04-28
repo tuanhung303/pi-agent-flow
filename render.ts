@@ -17,10 +17,12 @@ import {
 	aggregateFlowUsage,
 	getFlowDisplayItems,
 	getFlowOutput,
+	getLastToolCall,
+	getLastAssistantText,
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatTokens, formatFlowUsage, formatCompactStats, truncateChars, tailText } from "./render-utils.js";
+import { formatTokens, formatFlowUsage, formatCompactStats, formatFlowTypeName, truncateChars, tailText } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -223,23 +225,31 @@ function renderFlowCollapsed(
 	streamingText?: string,
 ): Text {
 	const stats = formatCompactStats(r.usage, r.model);
-	let text = `${theme.bg("selectedBg", theme.fg("accent", theme.bold(r.type)))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+	const typeName = formatFlowTypeName(r.type);
+	let text = `${theme.bg("selectedBg", theme.fg("accent", theme.bold(typeName)))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 
-	// Intent line
+	// DIR: line (intent/objective)
 	if (r.intent) {
-		text += `\n${theme.fg("dim", `├─ int:`)} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
+		text += `\n${theme.fg("dim", "├─ DIR:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`;
 	}
 
-	// Output line
+	// EXE: line (last tool call)
+	const lastTool = getLastToolCall(r.messages);
+	if (lastTool) {
+		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
+		text += `\n${theme.fg("dim", "├─ EXE:")} ${exeStr}`;
+	}
+
+	// LOG: line (last assistant text or streaming)
 	if (flowOutput) {
-		text += `\n${theme.fg("dim", "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
+		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("dim", truncateChars(flowOutput, 50))}`;
 	} else if (streamingText) {
-		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", tailText(streamingText, 40))}`;
+		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("dim", tailText(streamingText, 50))}`;
 	} else if (error && r.errorMessage) {
-		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
+		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`;
 	} else {
-		text += `\n${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", "[n/a]")}`;
+		text += `\n${theme.fg("dim", "└─ LOG:")} ${theme.fg("dim", "[n/a]")}`;
 	}
 
 	return new Text(text, 0, 0);
@@ -314,51 +324,66 @@ function renderMultiFlowExpanded(
 	return container;
 }
 
-function renderMultiFlowCollapsed(
+function renderActivityPanel(
 	results: SingleResult[],
 	theme: FlowTheme,
-): Text {
-	let text = "";
+): Container {
+	const container = new Container();
 
 	for (let i = 0; i < results.length; i++) {
 		const r = results[i];
 		const isLast = i === results.length - 1;
-		const flowOutput = getFlowOutput(r.messages);
 		const stats = formatCompactStats(r.usage, r.model);
 		const error = isFlowError(r);
+		const typeName = formatFlowTypeName(r.type);
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let line = `${theme.fg("dim", headerPrefix)} ${theme.bg("selectedBg", theme.fg("accent", theme.bold(r.type)))}`;
-		if (stats) {
-			line += ` ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
-		}
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.bg("selectedBg", theme.fg("accent", theme.bold(typeName)))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
-			line += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
+			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
-		if (i > 0) text += "\n";
-		text += line;
+		container.addChild(new Text(headerLine, 0, 0));
 
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";
 
-		// Intent line
+		// DIR: line (intent/objective)
 		if (r.intent) {
-			const intentPrefix = "├─";
-			text += `\n${theme.fg("dim", indent + intentPrefix + " int:")} ${theme.fg("dim", truncateChars(r.intent, 40))}`;
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ DIR:")} ${theme.fg("dim", truncateChars(r.intent, 50))}`, 0, 0));
 		}
 
-		// Output line
-		if (flowOutput) {
-			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${renderFlowReport(truncateChars(flowOutput, 25), theme)}`;
+		// EXE: line (last tool call)
+		const lastTool = getLastToolCall(r.messages);
+		if (lastTool) {
+			const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
+			container.addChild(new Text(`${theme.fg("dim", indent + "├─ EXE:")} ${exeStr}`, 0, 0));
+		}
+
+		// LOG: line (last assistant text)
+		const lastText = getLastAssistantText(r.messages);
+		if (lastText) {
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ LOG:")} ${theme.fg("dim", truncateChars(lastText, 50))}`, 0, 0));
 		} else if (error && r.errorMessage) {
-			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("error", truncateChars(r.errorMessage, 25))}`;
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ LOG:")} ${theme.fg("error", truncateChars(r.errorMessage, 50))}`, 0, 0));
 		} else {
-			text += `\n${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("dim", "[n/a]")}`;
+			container.addChild(new Text(`${theme.fg("dim", indent + "└─ LOG:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
+		}
+
+		// Add blank line separator between flows (with continuation pipe)
+		if (!isLast) {
+			container.addChild(new Text(theme.fg("dim", "│"), 0, 0));
 		}
 	}
 
-	text += `\n${theme.fg("muted", "(Ctrl+O to expand tool traces)")}`;
+	container.addChild(new Text(theme.fg("muted", "(Ctrl+O to expand tool traces)"), 0, 0));
 
-	return new Text(text, 0, 0);
+	return container;
+}
+
+function renderMultiFlowCollapsed(
+	results: SingleResult[],
+	theme: FlowTheme,
+): Container {
+	return renderActivityPanel(results, theme);
 }

@@ -25,14 +25,46 @@ export function formatFlowUsage(usage: Partial<UsageStats>, model?: string): str
 	return parts.join(" ");
 }
 
+/**
+ * Format a token count to exactly 5 characters.
+ * Shifts from k to M when value would exceed 5 chars.
+ * Examples: 500 → "  500", 1300 → " 1.3k", 32000 → "32.0k", 950500 → "0.95M"
+ */
+export function formatFixedTokens(count: number): string {
+	if (count < 1000) {
+		return count.toString().padStart(5);
+	}
+
+	const k = count / 1000;
+	if (k < 100) {
+		return (k.toFixed(1) + "k").padStart(5);
+	} else if (k < 1000) {
+		const m = count / 1000000;
+		return (m.toFixed(2) + "M").padStart(5);
+	} else {
+		const m = count / 1000000;
+		return (m.toFixed(2) + "M").padStart(5);
+	}
+}
+
+/**
+ * Format flow type name to fixed width (10 chars) in uppercase with dot padding.
+ * Examples: "debug" → "DEBUG.....", "architect" → "ARCHITECT.", "brainstorm" → "BRAINSTORM"
+ */
+export function formatFlowTypeName(type: string): string {
+	const upper = type.toUpperCase();
+	const targetWidth = 10;
+	if (upper.length >= targetWidth) return upper.slice(0, targetWidth);
+	return upper + ".".repeat(targetWidth - upper.length);
+}
+
 export function formatCompactStats(usage: Partial<UsageStats>, model?: string): string {
 	const parts: string[] = [];
-	parts.push(`↑${formatTokens(usage.input || 0)}`);
-	parts.push(`↓${formatTokens(usage.output || 0)}`);
-	if (usage.cacheRead) parts.push(`cr:${formatTokens(usage.cacheRead)}`);
-	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	if (model) parts.push(`model:${model}`);
-	return parts.join(" ");
+	parts.push(`${formatFixedTokens(usage.input || 0)}↑`);
+	parts.push(`${formatFixedTokens(usage.output || 0)}↓`);
+	if (usage.cacheRead) parts.push(`cr:${formatFixedTokens(usage.cacheRead)}`);
+	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatFixedTokens(usage.contextTokens)}`);
+	return `[${parts.join(" ")}]${model ? ` ─ ${model}` : ""}`;
 }
 
 export function truncateChars(text: string, max: number): string {

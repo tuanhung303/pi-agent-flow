@@ -12,7 +12,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { FlowConfig } from "./agents.js";
 import { parseFlowCliArgs } from "./runner-cli.js";
-import { processFlowJsonLine, drainStreamingText } from "./runner-events.js";
+import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate } from "./runner-events.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -31,6 +31,18 @@ const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 
 type FlowUpdateCallback = (partial: AgentToolResult<FlowDetails>) => void;
+
+/**
+ * Merge actual usage with streaming estimate.
+ * Uses Math.max for output to avoid double-counting.
+ */
+function mergeStreamingUsage(actual: SingleResult["usage"], estimatedTokens: number): SingleResult["usage"] {
+	if (estimatedTokens <= 0) return actual;
+	return {
+		...actual,
+		output: Math.max(actual.output, estimatedTokens),
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Process helpers
@@ -116,12 +128,12 @@ function buildFlowArgs(
 	// Flow instructions go in the intent message instead.
 
 	const flowDirectives =
-		`<flow_directives>\n` +
+		`=== flow directive ===\n` +
 		`You are a flow state executing a mission. The conversation history above is background context — use it for reference, but your sole focus is the intent below.\n` +
-		`</flow_directives>`;
+		`=== end flow directive ===`;
 
 	const flowInstructions = flow.systemPrompt.trim()
-		? `\n\n<flow_instructions>\n${flow.systemPrompt.trim()}\n</flow_instructions>`
+		? `\n\n=== system directive ===\n${flow.systemPrompt.trim()}\n=== end system directive ===`
 		: "";
 
 	args.push(`${flowDirectives}${flowInstructions}\n\nIntent: ${intent}`);
@@ -210,6 +222,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 	const emitUpdate = () => {
 		const streaming = drainStreamingText(result);
+		const estimatedTokens = drainStreamingEstimate(result);
+		const mergedUsage = mergeStreamingUsage(result.usage, estimatedTokens);
 		onUpdate?.({
 			content: [
 				{
@@ -217,7 +231,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					text: streaming || getFlowOutput(result.messages) || "(running...)",
 				},
 			],
-			details: makeDetails([result]),
+			details: makeDetails([{ ...result, usage: mergedUsage }]),
 		});
 	};
 

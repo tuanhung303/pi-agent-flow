@@ -9,6 +9,8 @@ import {
 	normalizeFlowResult,
 	getFlowOutput,
 	getFlowDisplayItems,
+	getLastToolCall,
+	getLastAssistantText,
 	type SingleResult,
 } from "../types.js";
 
@@ -233,6 +235,140 @@ describe("getFlowOutput", () => {
 	it("returns last assistant text", () => {
 		const msgs = [makeAssistantMessage("first"), makeAssistantMessage("last")];
 		expect(getFlowOutput(msgs)).toBe("last");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getLastToolCall
+// ---------------------------------------------------------------------------
+
+describe("getLastToolCall", () => {
+	it("returns undefined for empty messages", () => {
+		expect(getLastToolCall([])).toBeUndefined();
+	});
+
+	it("returns undefined when no tool calls exist", () => {
+		const messages = [makeAssistantMessage("thinking...")];
+		expect(getLastToolCall(messages)).toBeUndefined();
+	});
+
+	it("returns the last tool call from messages", () => {
+		const messages = [
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "toolCall" as const, name: "read", toolCallId: "1", arguments: { file_path: "src/a.ts" } },
+					{ type: "text" as const, text: "reading file" },
+					{ type: "toolCall" as const, name: "bash", toolCallId: "2", arguments: { command: "npm test" } },
+				],
+			},
+		];
+		const result = getLastToolCall(messages);
+		expect(result).toEqual({ type: "toolCall", name: "bash", args: { command: "npm test" } });
+	});
+
+	it("returns last tool call from multiple messages", () => {
+		const messages = [
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "toolCall" as const, name: "read", toolCallId: "1", arguments: { file_path: "src/a.ts" } },
+				],
+			},
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "text" as const, text: "done" },
+				],
+			},
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "toolCall" as const, name: "grep", toolCallId: "3", arguments: { pattern: "TODO", path: "src" } },
+				],
+			},
+		];
+		const result = getLastToolCall(messages);
+		expect(result).toEqual({ type: "toolCall", name: "grep", args: { pattern: "TODO", path: "src" } });
+	});
+
+	it("skips non-assistant messages", () => {
+		const messages = [
+			{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }] },
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "toolCall" as const, name: "bash", toolCallId: "1", arguments: { command: "ls" } },
+				],
+			},
+		];
+		const result = getLastToolCall(messages);
+		expect(result).toEqual({ type: "toolCall", name: "bash", args: { command: "ls" } });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getLastAssistantText
+// ---------------------------------------------------------------------------
+
+describe("getLastAssistantText", () => {
+	it("returns empty string for empty messages", () => {
+		expect(getLastAssistantText([])).toBe("");
+	});
+
+	it("returns empty string when no text exists", () => {
+		const messages = [
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "toolCall" as const, name: "bash", toolCallId: "1", arguments: { command: "ls" } },
+				],
+			},
+		];
+		expect(getLastAssistantText(messages)).toBe("");
+	});
+
+	it("returns last assistant text", () => {
+		const messages = [
+			makeAssistantMessage("first message"),
+			makeAssistantMessage("last message"),
+		];
+		expect(getLastAssistantText(messages)).toBe("last message");
+	});
+
+	it("returns text from mixed content", () => {
+		const messages = [
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "text" as const, text: "thinking..." },
+					{ type: "toolCall" as const, name: "bash", toolCallId: "1", arguments: { command: "ls" } },
+					{ type: "text" as const, text: "Found the migration config." },
+				],
+			},
+		];
+		expect(getLastAssistantText(messages)).toBe("Found the migration config.");
+	});
+
+	it("skips non-assistant messages", () => {
+		const messages = [
+			{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }] },
+			makeAssistantMessage("assistant reply"),
+		];
+		expect(getLastAssistantText(messages)).toBe("assistant reply");
+	});
+
+	it("skips whitespace-only text", () => {
+		const messages = [
+			{
+				role: "assistant" as const,
+				content: [
+					{ type: "text" as const, text: "   " },
+					{ type: "text" as const, text: "real content" },
+				],
+			},
+		];
+		expect(getLastAssistantText(messages)).toBe("real content");
 	});
 });
 

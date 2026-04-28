@@ -149,3 +149,37 @@ export function getFlowDisplayItems(messages: Message[]): DisplayItem[] {
 	}
 	return items;
 }
+
+/** Extract the last tool call from message history. */
+export function getLastToolCall(messages: Message[]): DisplayItem | undefined {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			for (let j = msg.content.length - 1; j >= 0; j--) {
+				const part = msg.content[j];
+				if (part.type === "toolCall") {
+					const name = part.name ?? part.toolName ?? "unknown";
+					const args = (part.arguments ?? part.input ?? {}) as Record<string, unknown>;
+					return { type: "toolCall", name, args };
+				}
+			}
+		}
+	}
+	return undefined;
+}
+
+/** Extract the last assistant text from message history. */
+export function getLastAssistantText(messages: Message[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			for (let j = msg.content.length - 1; j >= 0; j--) {
+				const part = msg.content[j];
+				if (part.type === "text" && part.text.trim()) {
+					return part.text.trim();
+				}
+			}
+		}
+	}
+	return "";
+}
