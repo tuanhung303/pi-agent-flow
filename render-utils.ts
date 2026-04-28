@@ -87,6 +87,17 @@ export function getTruncationBudget(prefixLength: number): number {
 	return Math.max(width - prefixLength, 1);
 }
 
+/** Fixed content budget for collapsed-line text (dir/exe/log). */
+export const CONTENT_MAX = 40;
+
+/**
+ * Compute how many visible chars of content fit after a prefix,
+ * using the fixed CONTENT_MAX budget. Floor of 8 to keep things readable.
+ */
+export function contentBudget(prefixVisibleLen: number): number {
+	return Math.max(CONTENT_MAX - prefixVisibleLen, 8);
+}
+
 /**
  * Truncate an ANSI-colored string to at most `max` visible characters,
  * preserving ANSI codes in the kept portions. Does not inject reset codes
@@ -95,14 +106,14 @@ export function getTruncationBudget(prefixLength: number): number {
 function truncateAnsi(text: string, max: number): string {
 	if (visibleLength(text) <= max) return text;
 
-	if (max < 6) {
-		// Not enough room for " ... " — just truncate without ellipsis
+	if (max < 3) {
+		// Not enough room for '…' — just truncate without ellipsis
 		const { raw } = takeVisible(text, max);
 		return raw;
 	}
 
 	const head = Math.ceil(max * 0.6);
-	const tail = max - head - 5; // 5 = " ... ".length
+	const tail = max - head - 1; // 1 = '…'.length
 
 	// Walk through the string, collecting raw chars until we've consumed
 	// `count` visible characters. ANSI sequences are copied through without
@@ -160,7 +171,7 @@ function truncateAnsi(text: string, max: number): string {
 
 	const tailRaw = takeVisibleFromEnd(text, tail);
 
-	return headResult.raw + " ... " + tailRaw;
+	return headResult.raw + "\u2026" + tailRaw;
 }
 
 export function truncateChars(text: string, max: number): string {

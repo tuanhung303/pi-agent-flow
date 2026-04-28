@@ -7,6 +7,7 @@ import {
 	formatCompactStats,
 	visibleLength,
 	getTruncationBudget,
+	contentBudget,
 } from "../render-utils.js";
 import { renderFlowResult } from "../render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types.js";
@@ -66,12 +67,11 @@ describe("truncateChars", () => {
 		expect(truncateChars(text, 40)).toBe(text);
 	});
 
-	it("long text → head ... tail format", () => {
+	it("long text → head…tail format", () => {
 		const text = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP";
 		const result = truncateChars(text, 40);
-		expect(result).toContain(" ... ");
-		// Split on " ... " (may be preceded by ANSI reset code)
-		const parts = result.split(/(?:\x1b\[39m)? ... /);
+		expect(result).toContain("…");
+		const parts = result.split("…");
 		const head = parts[0];
 		const tail = parts[parts.length - 1];
 		expect(text.startsWith(head)).toBe(true);
@@ -81,8 +81,8 @@ describe("truncateChars", () => {
 	it("preserves head and tail content", () => {
 		const text = "Find every occurrence of ingestion_data in the codebase and check all references";
 		const result = truncateChars(text, 40);
-		expect(result).toContain(" ... ");
-		const parts = result.split(/(?:\x1b\[39m)? ... /);
+		expect(result).toContain("…");
+		const parts = result.split("…");
 		const head = parts[0];
 		const tail = parts[parts.length - 1];
 		expect(text.startsWith(head)).toBe(true);
@@ -101,7 +101,7 @@ describe("truncateChars", () => {
 		// Should not contain raw ANSI escape fragments
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 		// Should contain the ellipsis
-		expect(result).toContain(" ... ");
+		expect(result).toContain("…");
 	});
 
 	it("ANSI codes preserved in kept portions", () => {
@@ -115,8 +115,8 @@ describe("truncateChars", () => {
 		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		// Should NOT contain a reset code — outer wrapper provides styling
-		expect(result).not.toContain("\x1b[39m ... ");
-		expect(result).toContain(" ... ");
+		expect(result).not.toContain("\x1b[39m…");
+		expect(result).toContain("…");
 	});
 
 	it("multi-byte ANSI sequences not split", () => {
@@ -124,8 +124,8 @@ describe("truncateChars", () => {
 		const colored = "\x1b[38;2;255;128;0m" + "x".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		// Should NOT contain a reset code before ellipsis
-		expect(result).not.toContain("\x1b[39m ... ");
-		expect(result).toContain(" ... ");
+		expect(result).not.toContain("\x1b[39m…");
+		expect(result).toContain("…");
 		// Visible length should be reasonable
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 	});
@@ -135,7 +135,7 @@ describe("truncateChars", () => {
 		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
-		expect(result).toContain(" ... ");
+		expect(result).toContain("…");
 		// Should contain some 'm' chars (they are visible content, not ANSI)
 		expect(result).toContain("m");
 	});
@@ -145,7 +145,7 @@ describe("truncateChars", () => {
 		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
-		expect(result).toContain(" ... ");
+		expect(result).toContain("…");
 		expect(result).toContain("echo");
 	});
 
@@ -196,6 +196,32 @@ describe("getTruncationBudget", () => {
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// contentBudget
+// ---------------------------------------------------------------------------
+
+describe("contentBudget", () => {
+	it("returns 40 minus prefix length", () => {
+		expect(contentBudget(0)).toBe(40);
+		expect(contentBudget(10)).toBe(30);
+		expect(contentBudget(15)).toBe(25);
+	});
+
+	it("floors at 8", () => {
+		expect(contentBudget(32)).toBe(8);
+		expect(contentBudget(40)).toBe(8);
+		expect(contentBudget(100)).toBe(8);
+	});
+
+	it("exact boundary: prefix 31 gives 9", () => {
+		expect(contentBudget(31)).toBe(9);
+	});
+
+	it("exact boundary: prefix 32 gives 8", () => {
+		expect(contentBudget(32)).toBe(8);
 	});
 });
 
@@ -454,7 +480,10 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
 		const text = extractText(rendered);
-		expect(text).toContain(longIntent);
+		expect(text).toContain("dir:");
+		// Content is pre-truncated to contentBudget(10) = 30 chars
+		const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
+		expect(dirLine).toContain("…");
 	});
 
 	it("includes long EXE text in TruncatedText", () => {
@@ -471,7 +500,8 @@ describe("activity panel rendering", () => {
 		const text = extractText(rendered);
 		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
-		expect(exeLine).toContain(longCmd);
+		// Content is pre-truncated to contentBudget(10) = 30 chars
+		expect(exeLine).toContain("…");
 	});
 
 	it("flattens multi-line bash commands to single line", () => {
@@ -520,7 +550,8 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 			expect(exeLine).toBeDefined();
-			expect(exeLine).toContain(longCmd);
+			// Content is pre-truncated to contentBudget(10) = 30 chars
+			expect(exeLine).toContain("…");
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -540,7 +571,9 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
 			expect(dirLine).toBeDefined();
-			expect(dirLine).toContain(longIntent);
+			// Content is pre-truncated to contentBudget(10) = 30 chars
+			expect(dirLine).toContain("…");
+			expect(visibleLength(dirLine.split("dir:")[1].trim())).toBeLessThanOrEqual(30);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -560,8 +593,10 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
 			expect(logLine).toBeDefined();
+			// Content is pre-truncated to contentBudget(10) = 30 chars
 			const logContent = logLine.split("log:")[1].trim();
-			expect(logContent).toBe(longStreaming);
+			expect(logContent).toContain("…");
+			expect(visibleLength(logContent)).toBeLessThanOrEqual(30);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}

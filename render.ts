@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatFixedTokens, formatCompactStats, formatFlowTypeName } from "./render-utils.js";
+import { formatFixedTokens, formatCompactStats, formatFlowTypeName, truncateChars, contentBudget } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -235,23 +235,28 @@ function renderFlowCollapsed(
 
 	// dir: line (intent/objective)
 	if (r.intent) {
-		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", r.intent)}`, 0, 0));
+		const dirContent = truncateChars(r.intent, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
 	// exe: line (last tool call)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ exe:")} ${exeStr}`, 0, 0));
+		const exeContent = truncateChars(exeStr, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ exe:")} ${exeContent}`, 0, 0));
 	}
 
 	// log: line (last assistant text or streaming)
 	if (flowOutput) {
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", flowOutput)}`, 0, 0));
+		const logContent = truncateChars(flowOutput, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (streamingText) {
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", streamingText)}`, 0, 0));
+		const logContent = truncateChars(streamingText, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (error && r.errorMessage) {
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("error", r.errorMessage)}`, 0, 0));
+		const logContent = truncateChars(r.errorMessage, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("error", logContent)}`, 0, 0));
 	} else {
 		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 	}
@@ -371,22 +376,26 @@ function renderActivityPanel(
 
 		// dir: line (intent/objective)
 		if (r.intent) {
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", r.intent)}`, 0, 0));
+			const dirContent = truncateChars(r.intent, contentBudget(10));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 
 		// exe: line (last tool call)
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
 			const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ exe:")} ${exeStr}`, 0, 0));
+			const exeContent = truncateChars(exeStr, contentBudget(10));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ exe:")} ${exeContent}`, 0, 0));
 		}
 
 		// log: line (last assistant text)
 		const lastText = getLastAssistantText(r.messages);
 		if (lastText) {
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", lastText)}`, 0, 0));
+			const logContent = truncateChars(lastText, contentBudget(10));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", logContent)}`, 0, 0));
 		} else if (error && r.errorMessage) {
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("error", r.errorMessage)}`, 0, 0));
+			const logContent = truncateChars(r.errorMessage, contentBudget(10));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("error", logContent)}`, 0, 0));
 		} else {
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 		}
