@@ -57,3 +57,8 @@ jobs:
           git tag v${{ steps.bump.outputs.version }}
           git push origin main
           git push origin v${{ steps.bump.outputs.version }}
+
+      - name: Trigger Publish workflow
+        run: gh workflow run publish.yml --ref v${{ steps.bump.outputs.version }}
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
