@@ -158,7 +158,6 @@ flow [explore] accomplished
 ## Docs
 
 - [**Pi Documentation**](https://pi.dev)
-- [**Contributing**](./docs/contributing.md) *(if available)*
 - [**License**](./LICENSE)
 
 This repository is licensed under the [MIT License](LICENSE).

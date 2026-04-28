@@ -174,7 +174,7 @@ function addFlowAssistantMessages(result, messages) {
   return changed;
 }
 
-export function processFlowEvent(event, result) {
+function processFlowEvent(event, result) {
   if (!event || typeof event !== "object") return false;
 
   switch (event.type) {

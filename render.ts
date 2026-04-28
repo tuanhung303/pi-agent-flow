@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatTokens, formatFixedTokens, formatFlowUsage, formatCompactStats, formatExpandedStats, formatFlowTypeName, truncateChars, tailText, getTruncationBudget } from "./render-utils.js";
+import { formatFixedTokens, formatCompactStats, formatFlowTypeName, truncateChars, tailText, getTruncationBudget } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -217,8 +217,6 @@ function renderFlowExpanded(
 	return container;
 }
 
-
-
 function renderFlowCollapsed(
 	r: SingleResult,
 	icon: string,
@@ -226,36 +224,39 @@ function renderFlowCollapsed(
 	flowOutput: string,
 	theme: FlowTheme,
 	streamingText?: string,
-): Text {
-	const stats = formatCompactStats(r.usage, r.model);
+): Container {
+	const container = new Container();
+	const maxWidth = process.stdout.columns ?? 80;
+	const stats = formatCompactStats(r.usage, r.model, maxWidth);
 	const typeName = formatFlowTypeName(r.type);
-	let text = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
-	if (error && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
+	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
+	container.addChild(new Text(truncateChars(header, maxWidth), 0, 0));
 
 	// dir: line (intent/objective)
 	if (r.intent) {
-		text += `\n${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, getTruncationBudget(8)))}`;
+		container.addChild(new Text(`${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", truncateChars(r.intent, getTruncationBudget(8)))}`, 0, 0));
 	}
 
 	// exe: line (last tool call)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		text += `\n${theme.fg("dim", "├─ exe:")} ${truncateChars(exeStr, getTruncationBudget(8))}`;
+		container.addChild(new Text(`${theme.fg("dim", "├─ exe:")} ${truncateChars(exeStr, getTruncationBudget(8))}`, 0, 0));
 	}
 
 	// log: line (last assistant text or streaming)
 	if (flowOutput) {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", truncateChars(flowOutput, getTruncationBudget(8)))}`;
+		container.addChild(new Text(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", truncateChars(flowOutput, getTruncationBudget(8)))}`, 0, 0));
 	} else if (streamingText) {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", tailText(streamingText, getTruncationBudget(8)))}`;
+		container.addChild(new Text(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", tailText(streamingText, getTruncationBudget(8)))}`, 0, 0));
 	} else if (error && r.errorMessage) {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, getTruncationBudget(8)))}`;
+		container.addChild(new Text(`${theme.fg("dim", "└─ log:")} ${theme.fg("error", truncateChars(r.errorMessage, getTruncationBudget(8)))}`, 0, 0));
 	} else {
-		text += `\n${theme.fg("dim", "└─ log:")} ${theme.fg("dim", "[n/a]")}`;
+		container.addChild(new Text(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 	}
 
-	return new Text(text, 0, 0);
+	return container;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,11 +349,12 @@ function renderActivityPanel(
 	theme: FlowTheme,
 ): Container {
 	const container = new Container();
+	const maxWidth = process.stdout.columns ?? 80;
 
 	for (let i = 0; i < results.length; i++) {
 		const r = results[i];
 		const isLast = i === results.length - 1;
-		const stats = formatCompactStats(r.usage, r.model);
+		const stats = formatCompactStats(r.usage, r.model, maxWidth);
 		const error = isFlowError(r);
 		const typeName = formatFlowTypeName(r.type);
 
@@ -362,7 +364,7 @@ function renderActivityPanel(
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
-		container.addChild(new Text(headerLine, 0, 0));
+		container.addChild(new Text(truncateChars(headerLine, maxWidth), 0, 0));
 
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";

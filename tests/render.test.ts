@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-	formatTokens,
 	formatFixedTokens,
 	formatFlowTypeName,
 	truncateChars,
 	tailText,
 	formatCompactStats,
-	formatExpandedStats,
-	formatFlowUsage,
 	visibleLength,
 	getTruncationBudget,
 } from "../render-utils.js";
@@ -151,6 +148,13 @@ describe("truncateChars", () => {
 		expect(result).toContain(" ... ");
 		expect(result).toContain("echo");
 	});
+
+	it("handles max < 6 without ellipsis", () => {
+		const text = "abcdefghijklmnopqrstuvwxyz";
+		const result = truncateChars(text, 4);
+		expect(visibleLength(result)).toBeLessThanOrEqual(4);
+		expect(result).not.toContain(" ... ");
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -248,35 +252,6 @@ describe("tailText", () => {
 });
 
 // ---------------------------------------------------------------------------
-// formatTokens
-// ---------------------------------------------------------------------------
-
-describe("formatTokens", () => {
-	it("< 1000 → raw number", () => {
-		expect(formatTokens(0)).toBe("0");
-		expect(formatTokens(500)).toBe("500");
-		expect(formatTokens(999)).toBe("999");
-	});
-
-	it("1000-9999 → one decimal k", () => {
-		expect(formatTokens(1000)).toBe("1.0k");
-		expect(formatTokens(1500)).toBe("1.5k");
-		expect(formatTokens(7800)).toBe("7.8k");
-	});
-
-	it("10000-999999 → rounded k", () => {
-		expect(formatTokens(10000)).toBe("10k");
-		expect(formatTokens(150000)).toBe("150k");
-		expect(formatTokens(999000)).toBe("999k");
-	});
-
-	it(">= 1000000 → M", () => {
-		expect(formatTokens(1000000)).toBe("1.0M");
-		expect(formatTokens(2500000)).toBe("2.5M");
-	});
-});
-
-// ---------------------------------------------------------------------------
 // formatFixedTokens
 // ---------------------------------------------------------------------------
 
@@ -366,36 +341,20 @@ describe("formatCompactStats", () => {
 		const usage = { cacheRead: 8000, contextTokens: 6000 };
 		expect(formatCompactStats(usage)).toBe("[     0↑     0↓ cr: 8.0k ctx: 6.0k ]");
 	});
-});
 
-// ---------------------------------------------------------------------------
-// formatFlowUsage
-// ---------------------------------------------------------------------------
-
-describe("formatFlowUsage", () => {
-	it("full usage → all parts joined by spaces", () => {
-		const usage = {
-			toolCalls: 5,
-			turns: 3,
-			input: 12000,
-			output: 800,
-			cacheRead: 50000,
-			contextTokens: 20000,
-		};
-		const result = formatFlowUsage(usage, "K2.6");
-		expect(result).toBe("5 calls 3 turns ↑12k ↓800 CR:50k ctx:20k model:K2.6");
+	it("narrows when maxWidth is tight", () => {
+		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
+		const result = formatCompactStats(usage, "K2.6", 35);
+		expect(visibleLength(result)).toBeLessThanOrEqual(35);
+		expect(result).toContain("2.0k↑");
 	});
 
-	it("single turn → no plural", () => {
-		expect(formatFlowUsage({ turns: 1 })).toBe("1 turn");
-	});
-
-	it("multiple turns → plural", () => {
-		expect(formatFlowUsage({ turns: 2 })).toBe("2 turns");
-	});
-
-	it("only toolCalls and turns", () => {
-		expect(formatFlowUsage({ toolCalls: 10, turns: 5 })).toBe("10 calls 5 turns");
+	it("drops model and context when maxWidth is very tight", () => {
+		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
+		const result = formatCompactStats(usage, "K2.6", 25);
+		expect(visibleLength(result)).toBeLessThanOrEqual(25);
+		expect(result).not.toContain("K2.6");
+		expect(result).not.toContain("ctx");
 	});
 });
 
@@ -434,35 +393,6 @@ function makeTextMessage(text: string) {
 	return { role: "assistant" as const, content: [{ type: "text" as const, text }] };
 }
 
-describe("formatExpandedStats", () => {
-	it("full usage → stats + context tokens", () => {
-		const usage = { input: 2000, output: 500, cacheRead: 30000, contextTokens: 21000 };
-		const result = formatExpandedStats(usage, "K2.6");
-		expect(result.stats).toBe("[ 2.0k↑   500↓ cr:30.0k] ─ K2.6");
-		expect(result.contextTokens).toBe("ctx:21.0k");
-	});
-
-	it("no context tokens → null", () => {
-		const usage = { input: 2000, output: 500 };
-		const result = formatExpandedStats(usage);
-		expect(result.stats).toBe("[ 2.0k↑   500↓]");
-		expect(result.contextTokens).toBeNull();
-	});
-
-	it("minimal usage → shows 0 for output", () => {
-		const usage = { input: 100 };
-		const result = formatExpandedStats(usage);
-		expect(result.stats).toBe("[  100↑     0↓]");
-		expect(result.contextTokens).toBeNull();
-	});
-
-	it("only model → placeholders + model", () => {
-		const result = formatExpandedStats({}, "gpt-4o");
-		expect(result.stats).toBe("[    0↑     0↓] ─ gpt-4o");
-		expect(result.contextTokens).toBeNull();
-	});
-});
-
 describe("activity panel rendering", () => {
 	it("renders single flow with DIR, EXE, LOG lines", () => {
 		const result = makeResult({
@@ -476,8 +406,8 @@ describe("activity panel rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
-		const text = (rendered as any).text || rendered.toString();
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+		const text = extractText(rendered);
 		expect(text).toContain("debug.....");
 		expect(text).toContain("dir:");
 		expect(text).toContain("exe:");
@@ -507,7 +437,6 @@ describe("activity panel rendering", () => {
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
-		// Container has children, extract text from them
 		const text = extractText(rendered);
 		expect(text).toContain("├─");
 		expect(text).toContain("└─");
@@ -523,8 +452,8 @@ describe("activity panel rendering", () => {
 			messages: [makeTextMessage("done")],
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
-		const text = (rendered as any).text || rendered.toString();
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+		const text = extractText(rendered);
 		expect(text).toContain("...");
 	});
 
@@ -538,8 +467,8 @@ describe("activity panel rendering", () => {
 			],
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
-		const text = (rendered as any).text || rendered.toString();
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+		const text = extractText(rendered);
 		// Find the EXE line and verify it's truncated
 		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
@@ -555,8 +484,8 @@ describe("activity panel rendering", () => {
 			],
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
-		const text = (rendered as any).text || rendered.toString();
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+		const text = extractText(rendered);
 		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
 		// Should not contain newlines in the EXE line itself
@@ -570,8 +499,8 @@ describe("activity panel rendering", () => {
 			messages: [],
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
-		const text = (rendered as any).text || rendered.toString();
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+		const text = extractText(rendered);
 		expect(text).toContain("[n/a]");
 	});
 
@@ -588,8 +517,8 @@ describe("activity panel rendering", () => {
 				],
 			});
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
-			const text = (rendered as any).text || rendered.toString();
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
+			const text = extractText(rendered);
 			const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 			expect(exeLine).toBeDefined();
 			expect(exeLine).toContain("...");
@@ -628,8 +557,8 @@ describe("activity panel rendering", () => {
 				messages: [],
 			});
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
-			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme()) as Text;
-			const text = (rendered as any).text || rendered.toString();
+			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme());
+			const text = extractText(rendered);
 			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
 			expect(logLine).toBeDefined();
 			const logContent = logLine.split("log:")[1].trim();

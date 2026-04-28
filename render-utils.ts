@@ -4,27 +4,6 @@
 
 import type { UsageStats } from "./types.js";
 
-export function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
-}
-
-export function formatFlowUsage(usage: Partial<UsageStats>, model?: string): string {
-	const parts: string[] = [];
-	if (usage.toolCalls && usage.toolCalls > 0) parts.push(`${usage.toolCalls} calls`);
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
-	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
-	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-	if (usage.cacheRead) parts.push(`CR:${formatTokens(usage.cacheRead)}`);
-	if (usage.cacheWrite) parts.push(`CW:${formatTokens(usage.cacheWrite)}`);
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
-	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	if (model) parts.push(`model:${model}`);
-	return parts.join(" ");
-}
-
 /**
  * Format a token count to exactly 5 characters with leading spaces.
  * Shifts from k to M when value would exceed 5 chars.
@@ -58,30 +37,35 @@ export function formatFlowTypeName(type: string): string {
 	return lower + ".".repeat(targetWidth - lower.length);
 }
 
-export function formatCompactStats(usage: Partial<UsageStats>, model?: string): string {
+export function formatCompactStats(usage: Partial<UsageStats>, model?: string, maxWidth?: number): string {
 	const parts: string[] = [];
 	parts.push(`${formatFixedTokens(usage.input || 0)}↑`);
 	parts.push(`${formatFixedTokens(usage.output || 0)}↓`);
 	if (usage.cacheRead) parts.push(`cr:${formatFixedTokens(usage.cacheRead)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatFixedTokens(usage.contextTokens)}`);
-	return `[ ${parts.join(" ")} ]${model ? ` ─ ${model}` : ""}`;
-}
 
-/**
- * Format usage stats for expanded view with context tokens on separate line.
- * Returns stats line and optional context tokens line.
- * Example: { stats: "[12.4k↑ 2.1k↓ cr:85.0k] ─ mimo-v2.5-pro", contextTokens: "ctx: 32.0k" }
- */
-export function formatExpandedStats(usage: Partial<UsageStats>, model?: string): { stats: string; contextTokens: string | null } {
-	const parts: string[] = [];
-	parts.push(`${formatFixedTokens(usage.input || 0)}↑`);
-	parts.push(`${formatFixedTokens(usage.output || 0)}↓`);
-	if (usage.cacheRead) parts.push(`cr:${formatFixedTokens(usage.cacheRead)}`);
+	let result = `[ ${parts.join(" ")} ]${model ? ` ─ ${model}` : ""}`;
 
-	const stats = `[${parts.join(" ")}]${model ? ` ─ ${model}` : ""}`;
-	const contextTokens = usage.contextTokens && usage.contextTokens > 0 ? `ctx:${formatFixedTokens(usage.contextTokens)}` : null;
+	if (maxWidth && visibleLength(result) > maxWidth) {
+		// Drop model first
+		let narrow = `[ ${parts.join(" ")} ]`;
+		if (visibleLength(narrow) <= maxWidth) return narrow;
 
-	return { stats, contextTokens };
+		// Drop context tokens
+		const narrowParts = parts.slice();
+		const ctxIndex = narrowParts.findIndex((p) => p.startsWith("ctx:"));
+		if (ctxIndex !== -1) narrowParts.splice(ctxIndex, 1);
+		narrow = `[ ${narrowParts.join(" ")} ]`;
+		if (visibleLength(narrow) <= maxWidth) return narrow;
+
+		// Bare minimum (just input/output)
+		narrow = `[ ${parts[0]} ${parts[1]} ]`;
+		if (visibleLength(narrow) <= maxWidth) return narrow;
+
+		return truncateChars(result, maxWidth);
+	}
+
+	return result;
 }
 
 /** Regex matching ANSI escape sequences. */
@@ -105,11 +89,17 @@ export function getTruncationBudget(prefixLength: number): number {
 
 /**
  * Truncate an ANSI-colored string to at most `max` visible characters,
- * preserving ANSI codes in the kept portions and appending a reset before
- * the ellipsis so colors don't bleed.
+ * preserving ANSI codes in the kept portions. Does not inject reset codes
+ * — the caller is responsible for closing any open styles.
  */
 function truncateAnsi(text: string, max: number): string {
 	if (visibleLength(text) <= max) return text;
+
+	if (max < 6) {
+		// Not enough room for " ... " — just truncate without ellipsis
+		const { raw } = takeVisible(text, max);
+		return raw;
+	}
 
 	const head = Math.ceil(max * 0.6);
 	const tail = max - head - 5; // 5 = " ... ".length

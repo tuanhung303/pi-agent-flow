@@ -284,10 +284,6 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 	});
 }
 
-function formatFlowNames(flows: FlowConfig[]): string {
-	return flows.map((f) => `${f.name} (${f.source})`).join(", ") || "none";
-}
-
 function getFlowCycleViolations(
 	requestedNames: Set<string>,
 	ancestorFlowStack: string[],
