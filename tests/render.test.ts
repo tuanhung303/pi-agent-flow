@@ -252,21 +252,21 @@ describe("formatFixedTokens", () => {
 
 describe("formatFlowTypeName", () => {
 	it("short name → padded with dots", () => {
-		expect(formatFlowTypeName("debug")).toBe("DEBUG.....");
-		expect(formatFlowTypeName("code")).toBe("CODE......");
+		expect(formatFlowTypeName("debug")).toBe("debug.....");
+		expect(formatFlowTypeName("code")).toBe("code......");
 	});
 
 	it("medium name → partial padding", () => {
-		expect(formatFlowTypeName("architect")).toBe("ARCHITECT.");
-		expect(formatFlowTypeName("explore")).toBe("EXPLORE...");
+		expect(formatFlowTypeName("architect")).toBe("architect.");
+		expect(formatFlowTypeName("explore")).toBe("explore...");
 	});
 
 	it("exact length → no padding", () => {
-		expect(formatFlowTypeName("brainstorm")).toBe("BRAINSTORM");
+		expect(formatFlowTypeName("brainstorm")).toBe("brainstorm");
 	});
 
-	it("already uppercase", () => {
-		expect(formatFlowTypeName("DEBUG")).toBe("DEBUG.....");
+	it("uppercase input → lowercased", () => {
+		expect(formatFlowTypeName("DEBUG")).toBe("debug.....");
 	});
 });
 
@@ -416,7 +416,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
 		const text = (rendered as any).text || rendered.toString();
-		expect(text).toContain("DEBUG.....");
+		expect(text).toContain("debug.....");
 		expect(text).toContain("dir:");
 		expect(text).toContain("exe:");
 		expect(text).toContain("log:");
@@ -450,8 +450,8 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("├─");
 		expect(text).toContain("└─");
 		expect(text).toContain("│");
-		expect(text).toContain("DEBUG.....");
-		expect(text).toContain("EXPLORE...");
+		expect(text).toContain("debug.....");
+		expect(text).toContain("explore...");
 	});
 
 	it("truncates long DIR text", () => {
@@ -526,7 +526,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
 		const text = extractText(rendered);
-		expect(text).toContain("DEBUG.....");
+		expect(text).toContain("debug.....");
 		expect(text).not.toContain("✓");
 		expect(text).not.toContain("✗");
 		expect(text).not.toContain("(user)");
@@ -601,7 +601,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme());
 		const text = extractText(rendered);
-		expect(text).toContain("DEBUG.....");
-		expect(text).toContain("EXPLORE...");
+		expect(text).toContain("debug.....");
+		expect(text).toContain("explore...");
 	});
 });

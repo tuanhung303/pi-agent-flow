@@ -48,14 +48,14 @@ export function formatFixedTokens(count: number): string {
 }
 
 /**
- * Format flow type name to fixed width (10 chars) in uppercase with dot padding.
- * Examples: "debug" → "DEBUG.....", "architect" → "ARCHITECT.", "brainstorm" → "BRAINSTORM"
+ * Format flow type name to fixed width (10 chars) in lowercase with dot padding.
+ * Examples: "debug" → "debug.....", "architect" → "architect.", "brainstorm" → "brainstorm"
  */
 export function formatFlowTypeName(type: string): string {
-	const upper = type.toUpperCase();
+	const lower = type.toLowerCase();
 	const targetWidth = 10;
-	if (upper.length >= targetWidth) return upper.slice(0, targetWidth);
-	return upper + ".".repeat(targetWidth - upper.length);
+	if (lower.length >= targetWidth) return lower.slice(0, targetWidth);
+	return lower + ".".repeat(targetWidth - lower.length);
 }
 
 export function formatCompactStats(usage: Partial<UsageStats>, model?: string): string {
@@ -157,6 +157,7 @@ function truncateAnsi(text: string, max: number): string {
 }
 
 export function truncateChars(text: string, max: number): string {
+	text = text.replace(/[\n\r\t]+/g, " ").replace(/ +/g, " ").trim();
 	if (visibleLength(text) <= max) return text;
 	return truncateAnsi(text, max);
 }
