@@ -38,7 +38,7 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 
 	switch (toolName) {
 		case "bash": {
-			const cmd = (args.command as string) || "...";
+			const cmd = ((args.command as string) || "...").replace(/[\n\r\t]+/g, " ").replace(/ +/g, " ").trim();
 			return fg("muted", "$ ") + fg("toolOutput", cmd);
 		}
 		case "read": {

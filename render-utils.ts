@@ -101,7 +101,7 @@ function truncateAnsi(text: string, max: number): string {
 	if (visibleLength(text) <= max) return text;
 
 	const head = Math.ceil(max * 0.6);
-	const tail = max - head - 3; // 3 = " ...".length
+	const tail = max - head - 5; // 5 = " ... ".length
 
 	// Walk through the string, collecting raw chars until we've consumed
 	// `count` visible characters. ANSI sequences are copied through without
@@ -153,7 +153,7 @@ function truncateAnsi(text: string, max: number): string {
 
 	const tailRaw = takeVisibleFromEnd(text, tail);
 
-	return headResult.raw + "\x1b[0m ... " + tailRaw;
+	return headResult.raw + "\x1b[39m ... " + tailRaw;
 }
 
 export function truncateChars(text: string, max: number): string {

@@ -73,7 +73,7 @@ describe("truncateChars", () => {
 		const result = truncateChars(text, 40);
 		expect(result).toContain(" ... ");
 		// Split on " ... " (may be preceded by ANSI reset code)
-		const parts = result.split(/(?:\x1b\[0m)? ... /);
+		const parts = result.split(/(?:\x1b\[39m)? ... /);
 		const head = parts[0];
 		const tail = parts[parts.length - 1];
 		expect(text.startsWith(head)).toBe(true);
@@ -84,7 +84,7 @@ describe("truncateChars", () => {
 		const text = "Find every occurrence of ingestion_data in the codebase and check all references";
 		const result = truncateChars(text, 40);
 		expect(result).toContain(" ... ");
-		const parts = result.split(/(?:\x1b\[0m)? ... /);
+		const parts = result.split(/(?:\x1b\[39m)? ... /);
 		const head = parts[0];
 		const tail = parts[parts.length - 1];
 		expect(text.startsWith(head)).toBe(true);
@@ -101,7 +101,7 @@ describe("truncateChars", () => {
 		const colored = "\x1b[2m$ \x1b[22m\x1b[32m" + cmd + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		// Should not contain raw ANSI escape fragments
-		expect(visibleLength(result)).toBeLessThanOrEqual(40 + 5); // allow small margin for ellipsis
+		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 		// Should contain the ellipsis
 		expect(result).toContain(" ... ");
 	});
@@ -116,8 +116,8 @@ describe("truncateChars", () => {
 	it("reset code added before ellipsis", () => {
 		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// Should contain reset code before ellipsis
-		expect(result).toContain("\x1b[0m ... ");
+		// Should contain fg-only reset code before ellipsis
+		expect(result).toContain("\x1b[39m ... ");
 	});
 
 	it("multi-byte ANSI sequences not split", () => {
@@ -125,9 +125,9 @@ describe("truncateChars", () => {
 		const colored = "\x1b[38;2;255;128;0m" + "x".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		// Should not have orphaned escape fragments
-		expect(result).toContain("\x1b[0m ... ");
+		expect(result).toContain("\x1b[39m ... ");
 		// Visible length should be reasonable
-		expect(visibleLength(result)).toBeLessThanOrEqual(40 + 5);
+		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 	});
 });
 
@@ -480,6 +480,25 @@ describe("activity panel rendering", () => {
 		const exeLine = text.split("\n").find((l: string) => l.includes("EXE:"));
 		expect(exeLine).toBeDefined();
 		expect(exeLine).toContain("...");
+	});
+
+	it("flattens multi-line bash commands to single line", () => {
+		const result = makeResult({
+			intent: "test",
+			messages: [
+				makeToolCallMessage("bash", { command: "echo hello\necho world\nls -la" }),
+				makeTextMessage("done"),
+			],
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme()) as Text;
+		const text = (rendered as any).text || rendered.toString();
+		const exeLine = text.split("\n").find((l: string) => l.includes("EXE:"));
+		expect(exeLine).toBeDefined();
+		// Should not contain newlines in the EXE line itself
+		expect(exeLine).not.toContain("\n");
+		// Should contain flattened content
+		expect(exeLine).toContain("echo hello");
 	});
 
 	it("shows [n/a] when no log text", () => {
