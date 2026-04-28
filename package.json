@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-flow",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0",
   "description": "Flow-state delegation extension for Pi coding agent.",
   "type": "module",
   "main": "index.ts",
