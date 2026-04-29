@@ -487,7 +487,7 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 	const op: Record<string, unknown> = {};
 
 	// Map operation type
-	op.o = raw.o ?? raw.op ?? (raw.c || raw.content ? "write" : (raw.e || raw.edits ? "edit" : "read"));
+	op.o = raw.o ?? raw.op ?? (raw.c != null || raw.content != null ? "write" : (raw.e != null || raw.edits != null ? "edit" : "read"));
 
 	// Map path
 	op.p = raw.p ?? raw.path;
@@ -688,7 +688,7 @@ async function executeOperations(
 				}
 
 				default:
-					throw new Error(`Unknown operation type: ${op.op}`);
+					throw new Error(`Unknown operation type: ${op.o}`);
 			}
 		} catch (err) {
 			failed = true;

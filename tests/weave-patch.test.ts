@@ -1024,6 +1024,40 @@ describe("weave_patch tool", () => {
 				status: "ok",
 			});
 		});
+
+		it("infers write operation for empty string content", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ p: "empty.txt", c: "" }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "write",
+				status: "ok",
+			});
+			expect(fs.readFileSync(path.join(tmpDir, "empty.txt"), "utf-8")).toBe("");
+		});
+
+		it("throws error with actual op value for unknown operation type", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "bogus", p: "file.txt" }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "bogus",
+				status: "error",
+			});
+			expect(result.details.results[0].error).toContain("bogus");
+		});
 	describe("empty operations", () => {
 		it("returns error for empty operations array", async () => {
 			const tool = createTool();
