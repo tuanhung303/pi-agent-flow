@@ -49,6 +49,8 @@ pi install .
 - **Cycle prevention** — blocks recursive delegation chains
 - **Flow discovery** — reads definitions from `~/.pi/agent/agents/` and `.pi/agents/`
 - **TUI rendering** — rich collapsed/expanded display in interactive mode
+- **Post-flow hooks** — automatic advisory messages after successful flows (e.g., code → review)
+- **Smooth streaming metrics** — context token counters increment tick-by-tick during active streaming instead of jumping at boundaries
 
 ---
 
@@ -113,6 +115,38 @@ flow [explore] accomplished
 
 ---
 
+## Post-Flow Hooks
+
+When certain flows complete successfully, the system can inject advisory messages suggesting follow-up flows. This keeps the agent on the optimal path without requiring the user to manually chain flows.
+
+### Built-in Hooks
+
+| Hook | Trigger | Advice |
+|------|---------|--------|
+| `code → review` | A `[code]` flow succeeds | *"Consider running a [review] flow to audit the changes…"* |
+| `debug → code` | A `[debug]` flow succeeds | *"The root cause has been identified. Consider running a [code] flow to implement the fix."* |
+
+Hooks are smart: if the agent already included the suggested flow in the same batch, the advisory is suppressed to avoid redundancy.
+
+### Extending
+
+Hooks are registered via `registerHook()` in `hooks.ts`. Each hook defines a trigger (flow type + success requirement) and an action that returns advisory text. The hook system mirrors the flow discovery pattern, making it easy to add domain-specific hints.
+
+Example — a custom `explore → architect` hook:
+
+```ts
+registerHook({
+  name: "my/explore-to-architect",
+  trigger: { flowTypes: ["explore"], onlyOnSuccess: true },
+  action: (ctx) => ({
+    content: "Consider running an [architect] flow to design a solution.",
+    priority: 10,
+  }),
+});
+```
+
+---
+
 ## Usage
 
 ### Single flow
@@ -143,6 +177,9 @@ flow [explore] accomplished
 | `--flow-max-depth [n]` | Maximum delegation depth | `3` |
 | `--flow-prevent-cycles` | Block cyclic delegation | `true` |
 | `--no-flow-prevent-cycles` | Disable cycle prevention | — |
+| `--flow-lite-model [model]` | Model for lite-tier flows (`explore`, `debug`) | — |
+| `--flow-flash-model [model]` | Model for flash-tier flows (`code`, `review`) | — |
+| `--flow-full-model [model]` | Model for full-tier flows (`brainstorm`, `architect`) | — |
 
 ### Environment variables (propagated to child processes)
 
