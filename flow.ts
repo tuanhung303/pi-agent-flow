@@ -110,7 +110,6 @@ function buildFlowArgs(
 		"json",
 		...inheritedCliArgs.extensionArgs,
 		...inheritedCliArgs.alwaysProxy,
-		"-p",
 	];
 
 	// Fork mode: always use --session
@@ -140,15 +139,16 @@ function buildFlowArgs(
 	// Flow instructions go in the intent message instead.
 
 	const flowDirectives =
-		`--- flow directive ---\n` +
+		`<flow-directive>\n` +
 		`The conversation history above is background context — use it for reference, but your sole focus is the intent below, and try to execute EXACTLY as requested in the intent.\n` +
-		`--- end flow directive ---`;
+		`</flow-directive>`;
 
 	const flowInstructions = flow.systemPrompt.trim()
-		? `\n\n--- system directive ---\n${flow.systemPrompt.trim()}\n--- end system directive ---`
+		? `\n\n<system-directive>\n${flow.systemPrompt.trim()}\n</system-directive>`
 		: "";
 
-	args.push(`${flowDirectives}${flowInstructions}\n\nIntent: ${intent}`);
+	// -p must immediately precede the prompt so the CLI parser binds it correctly
+	args.push("-p", `${flowDirectives}${flowInstructions}\n\nIntent: ${intent}`);
 	return args;
 }
 
