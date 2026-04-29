@@ -183,3 +183,41 @@ export function getLastAssistantText(messages: Message[]): string {
 	}
 	return "";
 }
+
+// ---------------------------------------------------------------------------
+// Post-flow hook types
+// ---------------------------------------------------------------------------
+
+/** Condition that determines when a hook fires. */
+export interface PostFlowHookTrigger {
+	/** Case-insensitive flow type names that trigger this hook. */
+	flowTypes: string[];
+	/** Only fire when all matching results succeeded. Default: true. */
+	onlyOnSuccess?: boolean;
+}
+
+/** Context passed to a hook's action function. */
+export interface PostFlowHookContext {
+	/** Flow results that matched the trigger. */
+	results: SingleResult[];
+	/** Original flow request params. */
+	params: Array<{ type: string; intent: string }>;
+}
+
+/** Result returned by a hook's action function. */
+export interface PostFlowHookResult {
+	/** Advisory text to inject. */
+	content: string;
+	/** Ordering key; lower runs first. Default: 0. */
+	priority?: number;
+}
+
+/** A post-flow hook that injects advisory messages into tool results. */
+export interface PostFlowHook {
+	/** Unique name for dedup and debugging. */
+	name: string;
+	/** When to fire this hook. */
+	trigger: PostFlowHookTrigger;
+	/** Returns advisory text, or null to skip. */
+	action: (ctx: PostFlowHookContext) => PostFlowHookResult | null;
+}

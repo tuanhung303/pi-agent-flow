@@ -8,8 +8,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type FlowConfig, discoverFlows } from "./agents.js";
+import { loadFlowModels, type FlowModelConfig } from "./config.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
+import { runHooks } from "./hooks.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
 import {
 	type SingleResult,
@@ -373,12 +375,25 @@ export default function (pi: ExtensionAPI) {
 		description: "Block delegating to flows already in the current delegation stack (default: true).",
 		type: "boolean",
 	});
+	pi.registerFlag("flow-lite-model", {
+		description: "Model for lite-tier flows (explore, debug).",
+		type: "string",
+	});
+	pi.registerFlag("flow-flash-model", {
+		description: "Model for flash-tier flows (code, review).",
+		type: "string",
+	});
+	pi.registerFlag("flow-full-model", {
+		description: "Model for full-tier flows (brainstorm, architect).",
+		type: "string",
+	});
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
 	let discoveredFlows: FlowConfig[] = [];
+	let flowModelConfig: FlowModelConfig = {};
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
@@ -386,6 +401,7 @@ export default function (pi: ExtensionAPI) {
 
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
+		flowModelConfig = loadFlowModels(ctx.cwd);
 	});
 
 	// Inject available flows into the system prompt
@@ -476,6 +492,13 @@ flow [type] accomplished
 				const discovery = discoverFlows(ctx.cwd, "all");
 				const { flows } = discovery;
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
+
+				// Resolve tiered models: CLI flags override settings.json overrides parent --model
+				const tieredModels = {
+					lite: (pi.getFlag("flow-lite-model") as string | undefined) ?? flowModelConfig.lite,
+					flash: (pi.getFlag("flow-flash-model") as string | undefined) ?? flowModelConfig.flash,
+					full: (pi.getFlag("flow-full-model") as string | undefined) ?? flowModelConfig.full,
+				};
 
 				// Build fork session snapshot (shared across all flows that inherit context)
 				const forkSessionSnapshotJsonl = buildForkSessionSnapshotJsonl(
@@ -576,6 +599,7 @@ flow [type] accomplished
 						parentFlowStack: ancestorFlowStack,
 						maxDepth: effectiveMaxDepth,
 						preventCycles,
+						tieredModels,
 						signal,
 						onUpdate: (partial) => {
 							if (partial.details?.results[0]) {
@@ -598,10 +622,16 @@ flow [type] accomplished
 					return `flow [${r.type}] ${status}\n\n${output}`;
 				});
 
+				// Post-flow hooks — inject advisory messages
+				const advisors = runHooks(params.flow, results);
+				const advisorBlock = advisors.length > 0
+					? "\n\n---\n\n💡 " + advisors.join("\n💡 ")
+					: "";
+
 				return {
 					content: [{
 						type: "text" as const,
-						text: `Flow: ${successCount}/${results.length} completed\n\n${flowReports.join("\n\n---\n\n")}`,
+						text: `Flow: ${successCount}/${results.length} completed\n\n${flowReports.join("\n\n---\n\n")}${advisorBlock}`,
 					}],
 					details: makeDetails(results),
 				};
