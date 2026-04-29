@@ -41,6 +41,20 @@ const FileOp = Type.Object({
 				"One or more targeted replacements matched against the original file, not incrementally.",
 		}),
 	),
+	offset: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			description:
+				"1-indexed line number to start reading from. Used with op: 'read'.",
+		}),
+	),
+	limit: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			description:
+				"Maximum number of lines to read. Used with op: 'read'.",
+		}),
+	),
 });
 
 export const WeavePatchParams = Type.Object({
@@ -64,6 +78,8 @@ interface FileOpInput {
 	path: string;
 	content?: string;
 	edits?: EditReplacement[];
+	offset?: number;
+	limit?: number;
 }
 
 interface OpResult {
@@ -73,7 +89,18 @@ interface OpResult {
 	content?: string;
 	bytes?: number;
 	blocksChanged?: number;
+	diff?: string;
+	totalLines?: number;
+	truncated?: boolean;
+	nextOffset?: number;
 	error?: string;
+	hint?: string;
+}
+
+interface ReadTruncationResult {
+	content: string;
+	truncated: boolean;
+	nextOffset?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,15 +132,82 @@ function stripBom(content: string): { bom: string; text: string } {
 		: { bom: "", text: content };
 }
 
-function truncateContent(content: string): string {
-	const lines = content.split("\n");
-	if (lines.length > MAX_LINES) {
-		return lines.slice(0, MAX_LINES).join("\n") + "\n... (truncated)";
+function readWithOffsetLimit(
+	content: string,
+	offset?: number,
+	limit?: number,
+): ReadTruncationResult {
+	const allLines = content.split("\n");
+	const totalFileLines = allLines.length;
+
+	// Validate offset
+	if (offset !== undefined && offset > totalFileLines) {
+		throw new Error(
+			`Offset ${offset} is beyond end of file (${totalFileLines} lines total)`,
+		);
 	}
-	if (content.length > MAX_BYTES) {
-		return content.slice(0, MAX_BYTES) + "\n... (truncated)";
+
+	// Determine the start line (convert 1-indexed to 0-indexed)
+	const startLine = offset !== undefined ? Math.max(0, offset - 1) : 0;
+
+	// Determine end line
+	let endLine = totalFileLines;
+	if (limit !== undefined) {
+		endLine = Math.min(startLine + limit, totalFileLines);
 	}
-	return content;
+
+	let selectedLines = allLines.slice(startLine, endLine);
+	let truncated = false;
+	let nextOffset: number | undefined;
+
+	// Apply max-lines cap
+	if (selectedLines.length > MAX_LINES) {
+		selectedLines = selectedLines.slice(0, MAX_LINES);
+		truncated = true;
+	}
+
+	// Join and check byte size
+	let result = selectedLines.join("\n");
+
+	// If first line alone exceeds byte limit, give a specific hint
+	if (selectedLines.length >= 1 && Buffer.byteLength(selectedLines[0], "utf-8") > MAX_BYTES) {
+		const startLineDisplay = startLine + 1;
+		throw new Error(
+			`Line ${startLineDisplay} exceeds limit. Use bash: head -c ... ${content.length > 0 ? "<path>" : "<file>"}`,
+		);
+	}
+
+	// Truncate by bytes if needed
+	if (Buffer.byteLength(result, "utf-8") > MAX_BYTES) {
+		let byteAccum = 0;
+		let keepLines = 0;
+		for (let i = 0; i < selectedLines.length; i++) {
+			byteAccum += Buffer.byteLength(selectedLines[i], "utf-8") + 1; // +1 for \n
+			if (byteAccum > MAX_BYTES) break;
+			keepLines = i + 1;
+		}
+		selectedLines = selectedLines.slice(0, keepLines);
+		result = selectedLines.join("\n");
+		truncated = true;
+	}
+
+	// Calculate nextOffset for continuation
+	const lastLineRead = startLine + selectedLines.length;
+	if (truncated || (limit !== undefined && lastLineRead < totalFileLines)) {
+		nextOffset = lastLineRead + 1; // 1-indexed
+	}
+
+	// Append truncation/continuation hints
+	if (truncated) {
+		const endDisplay = startLine + selectedLines.length;
+		const startDisplay = startLine + 1;
+		result += `\n\n[Showing lines ${startDisplay}-${endDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+	} else if (limit !== undefined && lastLineRead < totalFileLines) {
+		const remaining = totalFileLines - lastLineRead;
+		result += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+	}
+
+	return { content: result, truncated, nextOffset };
 }
 
 function generateDiffSummary(oldContent: string, newContent: string): string {
@@ -131,6 +225,28 @@ function generateDiffSummary(oldContent: string, newContent: string): string {
 	}
 
 	return `+${added} -${removed} lines`;
+}
+
+function getErrorHint(error: string): string {
+	if (error.includes("File not found") || error.includes("file not found"))
+		return "Verify the path exists.";
+	if (error.includes("Could not find"))
+		return "Re-read the file first, then retry with exact oldText.";
+	if (error.includes("occurrences"))
+		return "Add more surrounding context to make oldText unique.";
+	if (error.includes("overlap"))
+		return "Merge overlapping edits into one.";
+	if (error.includes("No changes"))
+		return "File already has this content. No edit needed.";
+	if (error.includes("Path traversal"))
+		return "Use a path within the working directory.";
+	if (error.includes("is not readable") || error.includes("not readable"))
+		return "Check file permissions.";
+	if (error.includes("ENOENT") || error.includes("no such file"))
+		return "Verify the path exists.";
+	if (error.includes("is beyond end of file"))
+		return "Use a smaller offset within the file length.";
+	return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -392,11 +508,14 @@ async function executeOperations(
 	const results: OpResult[] = [];
 	let failed = false;
 
-	const counts = { read: 0, write: 0, edit: 0, delete: 0, error: 0 };
+	const counts = { read: 0, write: 0, edit: 0, delete: 0, error: 0, skipped: 0 };
+	const errors: { path: string; op: string; message: string }[] = [];
+	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
 
 	for (const op of operations) {
 		if (failed) {
 			results.push({ op: op.op, path: op.path, status: "skipped" });
+			counts.skipped++;
 			continue;
 		}
 
@@ -405,13 +524,48 @@ async function executeOperations(
 
 			switch (op.op) {
 				case "read": {
-					const content = await fs.readFile(resolvedPath, "utf-8");
-					const { text } = stripBom(content);
+					// Access check before reading
+					try {
+						await fs.access(resolvedPath);
+					} catch {
+						throw new Error(`File not found: ${op.path}`);
+					}
+					try {
+						await fs.access(resolvedPath, fs.constants.R_OK);
+					} catch {
+						throw new Error(`File not readable: ${op.path}`);
+					}
+
+					const rawContent = await fs.readFile(resolvedPath, "utf-8");
+					const { text } = stripBom(rawContent);
+					const allLines = text.split("\n");
+					const totalFileLines = allLines.length;
+
+					const { content: readContent, truncated, nextOffset } =
+						readWithOffsetLimit(text, op.offset, op.limit);
+
+					if (truncated || (op.limit !== undefined && (op.offset ?? 1) - 1 + op.limit < totalFileLines)) {
+						const shownLines = truncated
+							? (op.limit !== undefined
+									? Math.min(op.limit, MAX_LINES)
+									: MAX_LINES)
+							: op.limit!;
+						truncatedFiles.push({
+							path: op.path,
+							shown: shownLines,
+							total: totalFileLines,
+							nextOffset,
+						});
+					}
+
 					results.push({
 						op: "read",
 						path: op.path,
 						status: "ok",
-						content: truncateContent(text),
+						content: readContent,
+						totalLines: totalFileLines,
+						truncated: truncated || undefined,
+						nextOffset,
 					});
 					counts.read++;
 					break;
@@ -457,6 +611,7 @@ async function executeOperations(
 						path: op.path,
 						status: "ok",
 						blocksChanged,
+						diff: diffSummary,
 					});
 					counts.edit++;
 					break;
@@ -475,38 +630,82 @@ async function executeOperations(
 		} catch (err) {
 			failed = true;
 			counts.error++;
+			const message = err instanceof Error ? err.message : String(err);
+			errors.push({ path: op.path, op: op.op, message });
 			results.push({
 				op: op.op,
 				path: op.path,
 				status: "error",
-				error: err instanceof Error ? err.message : String(err),
+				error: message,
+				hint: getErrorHint(message),
 			});
 		}
 	}
 
-	const totalSuccess = counts.read + counts.write + counts.edit + counts.delete;
-	const summaryParts: string[] = [];
+	// Build the enhanced summary
+	const summary = buildSummary(counts, errors, truncatedFiles);
+
+	return { summary, results };
+}
+
+function buildSummary(
+	counts: { read: number; write: number; edit: number; delete: number; error: number; skipped: number },
+	errors: { path: string; op: string; message: string }[],
+	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
+): string {
+	const totalSuccess =
+		counts.read + counts.write + counts.edit + counts.delete;
+	const totalOps = totalSuccess + counts.error + counts.skipped;
+
+	const parts: string[] = [];
+
+	// Build the success breakdown
+	const successParts: string[] = [];
 	if (counts.read > 0)
-		summaryParts.push(`${counts.read} read${counts.read > 1 ? "s" : ""}`);
+		successParts.push(
+			`${counts.read} read${counts.read > 1 ? "s" : ""}`,
+		);
 	if (counts.write > 0)
-		summaryParts.push(
+		successParts.push(
 			`${counts.write} write${counts.write > 1 ? "s" : ""}`,
 		);
 	if (counts.edit > 0)
-		summaryParts.push(
+		successParts.push(
 			`${counts.edit} edit${counts.edit > 1 ? "s" : ""}`,
 		);
 	if (counts.delete > 0)
-		summaryParts.push(
+		successParts.push(
 			`${counts.delete} delete${counts.delete > 1 ? "s" : ""}`,
 		);
 
-	const summary =
-		summaryParts.length > 0
-			? `${summaryParts.join(", ")}. ${counts.error} failed.`
-			: `${counts.error} failed.`;
+	if (counts.error === 0) {
+		// All success
+		parts.push(`✓ ${totalOps} operations: ${successParts.join(", ")}`);
+	} else {
+		// Mixed success/failure
+		parts.push(
+			`✗ ${counts.error} failed${counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}`,
+		);
+		if (totalSuccess > 0) {
+			parts.push(`  ✓ ${successParts.join(", ")} ok`);
+		}
+		for (const err of errors) {
+			const hint = getErrorHint(err.message);
+			const hintSuffix = hint ? ` — ${hint}` : "";
+			parts.push(`  ✗ ${err.op} ${err.path}: ${err.message}${hintSuffix}`);
+		}
+	}
 
-	return { summary, results };
+	// Truncation warnings
+	for (const tf of truncatedFiles) {
+		if (tf.nextOffset) {
+			parts.push(
+				`  ⚠ ${tf.path} truncated (${tf.shown}/${tf.total} lines) — use offset=${tf.nextOffset}`,
+			);
+		}
+	}
+
+	return parts.join("\n");
 }
 
 // ---------------------------------------------------------------------------

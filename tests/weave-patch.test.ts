@@ -37,12 +37,13 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("1 read. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 1 operations: 1 read");
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				path: "test.txt",
 				status: "ok",
 				content: "hello world\n",
+				totalLines: 2, // "hello world" + "" (split on \n)
 			});
 		});
 
@@ -64,10 +65,12 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("2 reads. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 2 operations: 2 reads");
 			expect(result.details.results).toHaveLength(2);
 			expect(result.details.results[0].content).toBe("content a\n");
 			expect(result.details.results[1].content).toBe("content b\n");
+			expect(result.details.results[0].totalLines).toBe(2);
+			expect(result.details.results[1].totalLines).toBe(2);
 		});
 
 		it("strips BOM from read content", async () => {
@@ -86,7 +89,7 @@ describe("weave_patch tool", () => {
 			expect(result.details.results[0].content).toBe("hello BOM\n");
 		});
 
-		it("returns error for missing file", async () => {
+		it("returns error with hint for missing file", async () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
@@ -96,12 +99,189 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("1 failed.");
+			expect(result.content[0].text).toContain("✗ 1 failed");
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				status: "error",
+				error: expect.stringContaining("nonexistent.txt"),
+				hint: "Verify the path exists.",
 			});
-			expect(result.details.results[0].error).toContain("nonexistent.txt");
+		});
+
+		it("includes totalLines in read results", async () => {
+			fs.writeFileSync(path.join(tmpDir, "lines.txt"), "a\nb\nc\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ operations: [{ op: "read", path: "lines.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].totalLines).toBe(4); // "a", "b", "c", ""
+		});
+
+		describe("offset/limit", () => {
+			it("reads with offset (1-indexed)", async () => {
+				fs.writeFileSync(
+					path.join(tmpDir, "offset.txt"),
+					"line1\nline2\nline3\nline4\nline5\n",
+					"utf-8",
+				);
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "offset.txt", offset: 3 }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0].content).toBe("line3\nline4\nline5\n");
+				expect(result.details.results[0].status).toBe("ok");
+			});
+
+			it("reads with limit", async () => {
+				fs.writeFileSync(
+					path.join(tmpDir, "limit.txt"),
+					"line1\nline2\nline3\nline4\nline5\n",
+					"utf-8",
+				);
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "limit.txt", limit: 2 }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0].content).toBe("line1\nline2\n\n[4 more lines in file. Use offset=3 to continue.]");
+				// Should include continuation hint since there are more lines
+				// Should include continuation hint since there are more lines
+				expect(result.details.results[0].content).toContain("more lines in file");
+				expect(result.details.results[0].content).toContain("offset=3");
+			});
+
+			it("reads with offset and limit combined", async () => {
+				fs.writeFileSync(
+					path.join(tmpDir, "both.txt"),
+					"a\nb\nc\nd\ne\n",
+					"utf-8",
+				);
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "both.txt", offset: 2, limit: 2 }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0].content).toBe("b\nc\n\n[3 more lines in file. Use offset=4 to continue.]");
+				expect(result.details.results[0].content).toContain("3 more lines in file");
+				expect(result.details.results[0].content).toContain("offset=4");
+			});
+
+			it("throws when offset is beyond file length", async () => {
+				fs.writeFileSync(path.join(tmpDir, "short.txt"), "a\nb\n", "utf-8");
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "short.txt", offset: 10 }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0]).toMatchObject({
+					op: "read",
+					status: "error",
+					error: expect.stringContaining("Offset 10 is beyond end of file"),
+					hint: "Use a smaller offset within the file length.",
+				});
+			});
+
+			it("reads entire file when no offset/limit specified", async () => {
+				fs.writeFileSync(
+					path.join(tmpDir, "full.txt"),
+					"first\nsecond\nthird\n",
+					"utf-8",
+				);
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "full.txt" }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0].content).toBe("first\nsecond\nthird\n");
+				expect(result.details.results[0].content).not.toContain("more lines");
+				expect(result.details.results[0].truncated).toBeUndefined();
+			});
+
+			it("reads with limit beyond file length returns full remaining content", async () => {
+				fs.writeFileSync(path.join(tmpDir, "small.txt"), "a\nb\n", "utf-8");
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "small.txt", limit: 100 }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0].content).toBe("a\nb\n");
+				expect(result.details.results[0].content).not.toContain("more lines");
+			});
+		});
+
+		describe("truncation", () => {
+			it("truncates large files at 2000 lines", async () => {
+				const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+				fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "large.txt" }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.details.results[0].truncated).toBe(true);
+				expect(result.details.results[0].content).toContain("[Showing lines 1-2000 of 3000");
+				expect(result.details.results[0].content).toContain("offset=2001");
+				expect(result.details.results[0].totalLines).toBe(3000);
+			});
+
+			it("includes truncation warning in summary", async () => {
+				const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+				fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
+
+				const tool = createTool();
+				const result = await tool.execute(
+					"call-1",
+					{ operations: [{ op: "read", path: "large.txt" }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				);
+
+				expect(result.content[0].text).toContain("⚠ large.txt truncated");
+				expect(result.content[0].text).toContain("offset=2001");
+			});
 		});
 	});
 
@@ -120,7 +300,7 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("1 write. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 1 operations: 1 write");
 			expect(result.details.results[0]).toMatchObject({
 				op: "write",
 				path: "new.txt",
@@ -185,7 +365,7 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("2 writes. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 2 operations: 2 writes");
 			expect(fs.readFileSync(path.join(tmpDir, "x.txt"), "utf-8")).toBe("x\n");
 			expect(fs.readFileSync(path.join(tmpDir, "y.txt"), "utf-8")).toBe("y\n");
 		});
@@ -212,11 +392,12 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("1 edit. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 1 operations: 1 edit");
 			expect(result.details.results[0]).toMatchObject({
 				op: "edit",
 				status: "ok",
 				blocksChanged: 1,
+				diff: expect.stringContaining("+"),
 			});
 
 			const edited = fs.readFileSync(path.join(tmpDir, "edit.txt"), "utf-8");
@@ -251,6 +432,7 @@ describe("weave_patch tool", () => {
 			);
 
 			expect(result.details.results[0].blocksChanged).toBe(2);
+			expect(result.details.results[0].diff).toBeDefined();
 
 			const edited = fs.readFileSync(path.join(tmpDir, "multi.txt"), "utf-8");
 			expect(edited).toBe("LINE 1\nline 2\nLINE 3\n");
@@ -282,7 +464,7 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("2 edits. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 2 operations: 2 edits");
 			expect(fs.readFileSync(path.join(tmpDir, "a.txt"), "utf-8")).toBe("ALPHA\n");
 			expect(fs.readFileSync(path.join(tmpDir, "b.txt"), "utf-8")).toBe("BETA\n");
 		});
@@ -317,7 +499,7 @@ describe("weave_patch tool", () => {
 			expect(edited).toContain("changed line");
 		});
 
-		it("returns error for missing oldText", async () => {
+		it("returns error with hint for missing oldText", async () => {
 			fs.writeFileSync(path.join(tmpDir, "miss.txt"), "hello\n", "utf-8");
 
 			const tool = createTool();
@@ -340,11 +522,12 @@ describe("weave_patch tool", () => {
 			expect(result.details.results[0]).toMatchObject({
 				op: "edit",
 				status: "error",
+				error: expect.stringContaining("Could not find"),
+				hint: "Re-read the file first, then retry with exact oldText.",
 			});
-			expect(result.details.results[0].error).toContain("Could not find");
 		});
 
-		it("returns error for duplicate oldText", async () => {
+		it("returns error with hint for duplicate oldText", async () => {
 			fs.writeFileSync(
 				path.join(tmpDir, "dup.txt"),
 				"same same different\n",
@@ -371,8 +554,39 @@ describe("weave_patch tool", () => {
 			expect(result.details.results[0]).toMatchObject({
 				op: "edit",
 				status: "error",
+				error: expect.stringContaining("occurrences"),
+				hint: "Add more surrounding context to make oldText unique.",
 			});
-			expect(result.details.results[0].error).toContain("occurrences");
+		});
+
+		it("includes diff summary in edit results", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "diff.txt"),
+				"line1\nline2\nline3\n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					operations: [
+						{
+							op: "edit",
+							path: "diff.txt",
+							edits: [
+								{ oldText: "line1", newText: "LINE1" },
+								{ oldText: "line3", newText: "LINE3" },
+							],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].diff).toBe("+2 -2 lines");
 		});
 
 		it("preserves line endings (CRLF)", async () => {
@@ -419,7 +633,7 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("1 delete. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 1 operations: 1 delete");
 			expect(result.details.results[0]).toMatchObject({
 				op: "delete",
 				status: "ok",
@@ -469,7 +683,7 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("1 read, 1 write, 1 edit. 0 failed.");
+			expect(result.content[0].text).toBe("✓ 3 operations: 1 read, 1 write, 1 edit");
 			expect(result.details.results).toHaveLength(3);
 			expect(result.details.results[0].status).toBe("ok");
 			expect(result.details.results[1].status).toBe("ok");
@@ -537,6 +751,10 @@ describe("weave_patch tool", () => {
 
 			// The skipped write should not have created the file
 			expect(fs.existsSync(path.join(tmpDir, "skipped.txt"))).toBe(false);
+
+			// Summary should show the failure with hint
+			expect(result.content[0].text).toContain("✗ 1 failed, 1 skipped");
+			expect(result.content[0].text).toContain("✓ 1 read ok");
 		});
 
 		it("continues after skipped operations are not executed", async () => {
@@ -575,8 +793,9 @@ describe("weave_patch tool", () => {
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				status: "error",
+				error: expect.stringContaining("Path traversal"),
+				hint: "Use a path within the working directory.",
 			});
-			expect(result.details.results[0].error).toContain("Path traversal");
 		});
 
 		it("allows relative paths within cwd", async () => {
@@ -634,7 +853,6 @@ describe("weave_patch tool", () => {
 			fs.writeFileSync(path.join(tmpDir, "infer.txt"), "content\n", "utf-8");
 
 			const tool = createTool();
-			// Call prepareArguments directly if exposed, or test via execute
 			const result = await tool.execute(
 				"call-1",
 				{
@@ -715,21 +933,118 @@ describe("weave_patch tool", () => {
 		});
 	});
 
-	describe("truncation", () => {
-		it("truncates large files at 2000 lines", async () => {
-			const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}\n`);
-			fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join(""), "utf-8");
-
+	describe("error hints", () => {
+		it("provides hint for file not found on edit", async () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "large.txt" }] },
+				{
+					operations: [
+						{
+							op: "edit",
+							path: "nonexistent.txt",
+							edits: [{ oldText: "a", newText: "b" }],
+						},
+					],
+				},
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
 			);
 
-			expect(result.details.results[0].content).toContain("(truncated)");
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				hint: "Verify the path exists.",
+			});
+		});
+
+		it("provides hint for no changes needed", async () => {
+			fs.writeFileSync(path.join(tmpDir, "same.txt"), "same content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					operations: [
+						{
+							op: "edit",
+							path: "same.txt",
+							edits: [{ oldText: "same content\n", newText: "same content\n" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				error: expect.stringContaining("No changes"),
+				hint: "File already has this content. No edit needed.",
+			});
+		});
+
+		it("provides hint for path traversal on delete", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					operations: [{ op: "delete", path: "../../../tmp/trap.txt" }],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				hint: "Use a path within the working directory.",
+			});
+		});
+
+		it("includes error and hint in the summary line", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					operations: [
+						{ op: "read", path: "missing.txt" },
+						{ op: "write", path: "skipped.txt", content: "nope" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			const text = result.content[0].text;
+			expect(text).toContain("✗ 1 failed, 1 skipped");
+			expect(text).toContain("✗ read missing.txt:");
+			expect(text).toContain("— Verify the path exists.");
+		});
+	});
+
+	describe("first-line exceeds byte limit", () => {
+		it("throws when a single line exceeds the byte limit", async () => {
+			// Create a file with a single very long line (> 50KB)
+			const hugeLine = "x".repeat(60 * 1024); // 60KB
+			fs.writeFileSync(path.join(tmpDir, "huge-line.txt"), hugeLine, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ operations: [{ op: "read", path: "huge-line.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "error",
+				error: expect.stringContaining("Line 1 exceeds limit"),
+			});
 		});
 	});
 });
