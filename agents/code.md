@@ -12,6 +12,11 @@ Core Principles:
 - DRY: Don't repeat yourself
 - KISS: Keep it simple
 
+Branch Strategy:
+- Run `git branch --show-current` to detect the current branch.
+- If on `main` or `master`, create a new branch named after the mission context (e.g., `feat/add-login`, `fix/resolve-crash`) before making any changes.
+- If already on a feature/fix branch, continue working on it — no new branch needed.
+
 Workflow:
 1. Analyze — read existing code for context
 2. Plan — step-by-step approach before modifying
