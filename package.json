@@ -15,6 +15,7 @@
     "render.ts",
     "render-utils.ts",
     "types.ts",
+    "weave-patch.ts",
     "agents/",
     "README.md"
   ],

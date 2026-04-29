@@ -337,3 +337,70 @@ describe("flow tool execute", () => {
 		expect(sameTextCalls.length).toBe(1);
 	});
 });
+
+describe("weave_patch tool registration", () => {
+	let tmpDir: string;
+	let originalCwd: string;
+	let originalEnv: NodeJS.ProcessEnv;
+
+	beforeAll(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-weave-reg-test-"));
+		originalCwd = process.cwd();
+		process.chdir(tmpDir);
+		originalEnv = { ...process.env };
+	});
+
+	afterAll(() => {
+		process.chdir(originalCwd);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		process.env = originalEnv;
+	});
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		delete process.env.PI_FLOW_DEPTH;
+		delete process.env.PI_FLOW_STACK;
+		process.env.PI_FLOW_MAX_DEPTH = "2";
+		delete process.env.PI_FLOW_PREVENT_CYCLES;
+		delete process.env.PI_FLOW_TOOL_OPTIMIZE;
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("registers weave_patch tool by default", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("weave_patch");
+		expect(tool).toBeDefined();
+		expect(tool.name).toBe("weave_patch");
+	});
+
+	it("does not register weave_patch when toolOptimize is false via env", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("weave_patch");
+		expect(tool).toBeUndefined();
+	});
+
+	it("registers weave_patch when toolOptimize is true via env", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("weave_patch");
+		expect(tool).toBeDefined();
+	});
+});

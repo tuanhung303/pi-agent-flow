@@ -4,4 +4,6 @@ export const Type = {
 	Array: (items: any, options?: any) => ({ kind: "array", items, ...options }),
 	Optional: (schema: any) => ({ kind: "optional", schema }),
 	Boolean: (options?: any) => ({ kind: "boolean", ...options }),
+	Union: (variants: any[]) => ({ kind: "union", variants }),
+	Literal: (value: string) => ({ kind: "literal", value }),
 };

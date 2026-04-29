@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadFlowModels } from "../config.js";
+import { loadFlowModels, loadFlowSettings } from "../config.js";
 
 describe("loadFlowModels", () => {
 	let tmpDir: string;
@@ -122,5 +122,107 @@ describe("loadFlowModels", () => {
 		);
 		const result = loadFlowModels(tmpDir);
 		expect(result).toEqual({ lite: "custom-model" });
+	});
+});
+
+describe("loadFlowSettings", () => {
+	let tmpDir: string;
+	let originalHome: string | undefined;
+	let originalAgentDir: string | undefined;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-config-test-"));
+		originalHome = process.env.HOME;
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.HOME = tmpDir;
+		delete process.env.PI_CODING_AGENT_DIR;
+	});
+
+	afterEach(() => {
+		process.env.HOME = originalHome;
+		if (originalAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function writeGlobalSettings(content: Record<string, unknown>) {
+		const dir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify(content, null, 2), "utf-8");
+	}
+
+	function writeProjectSettings(cwd: string, content: Record<string, unknown>) {
+		const dir = path.join(cwd, ".pi");
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify(content, null, 2), "utf-8");
+	}
+
+	it("returns empty object when no settings files exist", () => {
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({});
+	});
+
+	it("reads global toolOptimize setting", () => {
+		writeGlobalSettings({
+			flowSettings: {
+				toolOptimize: true,
+			},
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({ toolOptimize: true });
+	});
+
+	it("reads project toolOptimize setting", () => {
+		writeProjectSettings(tmpDir, {
+			flowSettings: {
+				toolOptimize: false,
+			},
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({ toolOptimize: false });
+	});
+
+	it("project overrides global toolOptimize", () => {
+		writeGlobalSettings({
+			flowSettings: {
+				toolOptimize: true,
+			},
+		});
+		writeProjectSettings(tmpDir, {
+			flowSettings: {
+				toolOptimize: false,
+			},
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({ toolOptimize: false });
+	});
+
+	it("ignores non-boolean toolOptimize", () => {
+		writeGlobalSettings({
+			flowSettings: {
+				toolOptimize: "yes",
+			},
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({});
+	});
+
+	it("gracefully handles invalid JSON", () => {
+		const dir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, "settings.json"), "not json", "utf-8");
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({});
+	});
+
+	it("gracefully handles missing flowSettings key", () => {
+		writeGlobalSettings({
+			defaultModel: "claude-sonnet-4",
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({});
 	});
 });

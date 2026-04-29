@@ -28,6 +28,7 @@ const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
+export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 
 type FlowUpdateCallback = (partial: AgentToolResult<FlowDetails>) => void;
@@ -99,6 +100,25 @@ function cleanupFlowTempDir(dir: string | null): void {
 
 const inheritedCliArgs = parseFlowCliArgs(process.argv);
 
+/**
+ * Transform a flow's tool list when toolOptimize is enabled.
+ * Replaces separate read/write/edit tools with the unified weave_patch tool.
+ */
+export function getOptimizedTools(
+	flowTools: string[] | undefined,
+	toolOptimize: boolean,
+): string[] | undefined {
+	if (!toolOptimize || !flowTools) return flowTools;
+	const hasLegacyTools = flowTools.some(
+		(t) => t === "read" || t === "write" || t === "edit",
+	);
+	if (!hasLegacyTools) return flowTools;
+	const filtered = flowTools.filter(
+		(t) => t !== "read" && t !== "write" && t !== "edit",
+	);
+	return [...filtered, "weave_patch"];
+}
+
 function buildFlowArgs(
 	flow: FlowConfig,
 	intent: string,
@@ -106,6 +126,7 @@ function buildFlowArgs(
 	tieredModels?: { lite?: string; flash?: string; full?: string },
 	parentDepth: number = 0,
 	maxDepth: number = 0,
+	toolOptimize: boolean = false,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -128,7 +149,8 @@ function buildFlowArgs(
 	if (thinking) args.push("--thinking", thinking);
 
 	if (flow.tools && flow.tools.length > 0) {
-		args.push("--tools", flow.tools.join(","));
+		const effectiveTools = getOptimizedTools(flow.tools, toolOptimize);
+		args.push("--tools", effectiveTools!.join(","));
 	} else if (flow.tools === undefined) {
 		if (inheritedCliArgs.fallbackTools !== undefined) {
 			args.push("--tools", inheritedCliArgs.fallbackTools);
@@ -208,6 +230,8 @@ export interface RunFlowOptions {
 	maxDepth: number;
 	/** Whether cycle prevention should be enforced in child processes. */
 	preventCycles: boolean;
+	/** Whether to transform tool lists to use weave_patch. */
+	toolOptimize?: boolean;
 	/** Tiered model overrides (lite/flash/full). */
 	tieredModels?: { lite?: string; flash?: string; full?: string };
 	/** Abort signal for cancellation. */
@@ -235,6 +259,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		parentFlowStack,
 		maxDepth,
 		preventCycles,
+		toolOptimize = false,
 		signal,
 		onUpdate,
 		makeDetails,
@@ -302,6 +327,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			opts.tieredModels,
 			parentDepth,
 			maxDepth,
+			toolOptimize,
 		);
 		let wasAborted = false;
 
@@ -320,6 +346,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					[FLOW_MAX_DEPTH_ENV]: String(propagatedMaxDepth),
 					[FLOW_STACK_ENV]: JSON.stringify(propagatedStack),
 					[FLOW_PREVENT_CYCLES_ENV]: preventCycles ? "1" : "0",
+					[FLOW_TOOL_OPTIMIZE_ENV]: toolOptimize ? "1" : "0",
 					[PI_OFFLINE_ENV]: "1",
 				},
 			});

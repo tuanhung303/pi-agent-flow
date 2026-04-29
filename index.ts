@@ -8,7 +8,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type FlowConfig, discoverFlows } from "./agents.js";
-import { loadFlowModels, type FlowModelConfig } from "./config.js";
+import { loadFlowModels, loadFlowSettings, type FlowModelConfig } from "./config.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks } from "./hooks.js";
@@ -20,6 +20,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
+import { createWeavePatchTool } from "./weave-patch.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -31,6 +32,7 @@ const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
+export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 
 // ---------------------------------------------------------------------------
 // Tool parameter schema
@@ -387,21 +389,47 @@ export default function (pi: ExtensionAPI) {
 		description: "Model for full-tier flows (brainstorm, architect).",
 		type: "string",
 	});
+	pi.registerFlag("tool-optimize", {
+		description: "Use the unified weave_patch tool instead of separate read/write/edit tools (default: true).",
+		type: "boolean",
+	});
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
 		depthConfig;
+
+	// toolOptimize: CLI flag > env var > settings.json > default (true)
+	let toolOptimize = true;
+	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
+	if (envToolOptimize !== undefined) {
+		toolOptimize = envToolOptimize === "1" || envToolOptimize === "true";
+	}
 
 	let discoveredFlows: FlowConfig[] = [];
 	let flowModelConfig: FlowModelConfig = {};
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
-		if (!canDelegate) return;
-
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
 		flowModelConfig = loadFlowModels(ctx.cwd);
+
+		// Resolve toolOptimize: CLI flag > env var > settings.json > default
+		const cliFlag = pi.getFlag("tool-optimize");
+		if (typeof cliFlag === "boolean") {
+			toolOptimize = cliFlag;
+		} else if (typeof cliFlag === "string") {
+			const normalized = cliFlag.trim().toLowerCase();
+			if (["1", "true", "yes"].includes(normalized)) toolOptimize = true;
+			else if (["0", "false", "no"].includes(normalized)) toolOptimize = false;
+		} else if (envToolOptimize !== undefined) {
+			// Already set above
+		} else {
+			const flowSettings = loadFlowSettings(ctx.cwd);
+			if (typeof flowSettings.toolOptimize === "boolean") {
+				toolOptimize = flowSettings.toolOptimize;
+			}
+		}
 	});
 
 	// Inject available flows into the system prompt
@@ -471,6 +499,11 @@ flow [type] accomplished
 
 		return { messages: modified };
 	});
+
+	// Register weave_patch tool when toolOptimize is enabled
+	if (toolOptimize) {
+		pi.registerTool(createWeavePatchTool());
+	}
 
 	// Register the flow tool
 	if (canDelegate) {
@@ -599,6 +632,7 @@ flow [type] accomplished
 						parentFlowStack: ancestorFlowStack,
 						maxDepth: effectiveMaxDepth,
 						preventCycles,
+						toolOptimize,
 						tieredModels,
 						signal,
 						onUpdate: (partial) => {

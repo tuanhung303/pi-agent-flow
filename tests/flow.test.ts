@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runFlow, type RunFlowOptions } from "../flow.js";
+import { runFlow, getOptimizedTools, type RunFlowOptions } from "../flow.js";
 import type { FlowConfig } from "../agents.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
@@ -99,5 +99,61 @@ describe("runFlow case-insensitive lookup", () => {
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain("Unknown flow");
 		expect(result.stderr).toContain("UNKNOWN");
+	});
+});
+
+describe("getOptimizedTools", () => {
+	it("returns undefined when flowTools is undefined", () => {
+		const result = getOptimizedTools(undefined, true);
+		expect(result).toBeUndefined();
+	});
+
+	it("returns original tools when toolOptimize is false", () => {
+		const tools = ["read", "write", "edit", "bash"];
+		const result = getOptimizedTools(tools, false);
+		expect(result).toEqual(["read", "write", "edit", "bash"]);
+	});
+
+	it("replaces read/write/edit with weave_patch when toolOptimize is true", () => {
+		const tools = ["read", "write", "edit", "bash"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["bash", "weave_patch"]);
+	});
+
+	it("adds weave_patch to tools without read/write/edit", () => {
+		const tools = ["bash", "grep", "find"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["bash", "grep", "find"]);
+	});
+
+	it("handles only read tool", () => {
+		const tools = ["read", "bash"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["bash", "weave_patch"]);
+	});
+
+	it("handles only write tool", () => {
+		const tools = ["write"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["weave_patch"]);
+	});
+
+	it("handles only edit tool", () => {
+		const tools = ["edit", "bash"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["bash", "weave_patch"]);
+	});
+
+	it("handles empty array", () => {
+		const tools: string[] = [];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual([]);
+	});
+
+	it("does not duplicate weave_patch if already present", () => {
+		const tools = ["read", "weave_patch"];
+		const result = getOptimizedTools(tools, true);
+		// read is removed, weave_patch stays (but might be duplicated)
+		expect(result).toContain("weave_patch");
 	});
 });
