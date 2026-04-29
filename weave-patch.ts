@@ -136,6 +136,7 @@ function readWithOffsetLimit(
 	content: string,
 	offset?: number,
 	limit?: number,
+	filePath?: string,
 ): ReadTruncationResult {
 	const allLines = content.split("\n");
 	const totalFileLines = allLines.length;
@@ -173,7 +174,7 @@ function readWithOffsetLimit(
 	if (selectedLines.length >= 1 && Buffer.byteLength(selectedLines[0], "utf-8") > MAX_BYTES) {
 		const startLineDisplay = startLine + 1;
 		throw new Error(
-			`Line ${startLineDisplay} exceeds limit. Use bash: head -c ... ${content.length > 0 ? "<path>" : "<file>"}`,
+			`Line ${startLineDisplay} exceeds limit. Use bash: head -c ... ${filePath ?? "<file>"}`,
 		);
 	}
 
@@ -182,7 +183,7 @@ function readWithOffsetLimit(
 		let byteAccum = 0;
 		let keepLines = 0;
 		for (let i = 0; i < selectedLines.length; i++) {
-			byteAccum += Buffer.byteLength(selectedLines[i], "utf-8") + 1; // +1 for \n
+			byteAccum += Buffer.byteLength(selectedLines[i], "utf-8") + (i > 0 ? 1 : 0); // newline separator between lines
 			if (byteAccum > MAX_BYTES) break;
 			keepLines = i + 1;
 		}
@@ -227,7 +228,7 @@ function generateDiffSummary(oldContent: string, newContent: string): string {
 	return `+${added} -${removed} lines`;
 }
 
-// Insert before getErrorHint function (line 230)
+// Insert before getErrorHint function (line 286)
 
 function levenshtein(a: string, b: string): number {
 	const m = a.length;
@@ -283,6 +284,7 @@ export async function suggestSimilarFiles(
 		return [];
 	}
 }
+
 function getErrorHint(error: string): string {
 	if (error.includes("File not found") || error.includes("file not found"))
 		return "Verify the path exists.";
@@ -572,7 +574,7 @@ async function executeOperations(
 	let failed = false;
 
 	const counts = { read: 0, write: 0, edit: 0, delete: 0, error: 0, skipped: 0 };
-	const errors: { path: string; op: string; message: string }[] = [];
+	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
 
 	for (const op of operations) {
@@ -605,7 +607,7 @@ async function executeOperations(
 					const totalFileLines = allLines.length;
 
 					const { content: readContent, truncated, nextOffset } =
-						readWithOffsetLimit(text, op.s, op.l);
+						readWithOffsetLimit(text, op.s, op.l, op.p);
 
 					if (truncated || (op.l !== undefined && (op.s ?? 1) - 1 + op.l < totalFileLines)) {
 						const shownLines = truncated
@@ -694,7 +696,6 @@ async function executeOperations(
 			failed = true;
 			counts.error++;
 			const message = err instanceof Error ? err.message : String(err);
-			errors.push({ path: op.p, op: op.o, message });
 
 			// Enrich file-not-found errors with fuzzy filename suggestions
 			let hint = getErrorHint(message);
@@ -710,6 +711,7 @@ async function executeOperations(
 				}
 			}
 
+			errors.push({ path: op.p, op: op.o, message, hint });
 			results.push({
 				op: op.o,
 				path: op.p,
@@ -718,8 +720,8 @@ async function executeOperations(
 				hint,
 			});
 		}
-	}
 
+	}
 	// Build the enhanced summary and content text
 	const summary = buildSummary(counts, errors, truncatedFiles);
 	const contentText = buildContentText(summary, results);
@@ -729,7 +731,7 @@ async function executeOperations(
 
 function buildSummary(
 	counts: { read: number; write: number; edit: number; delete: number; error: number; skipped: number },
-	errors: { path: string; op: string; message: string }[],
+	errors: { path: string; op: string; message: string; hint?: string }[],
 	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
 ): string {
 	const totalSuccess =
@@ -769,7 +771,7 @@ function buildSummary(
 			parts.push(`  ✓ ${successParts.join(", ")} ok`);
 		}
 		for (const err of errors) {
-			const hint = getErrorHint(err.message);
+			const hint = err.hint ?? "";
 			const hintSuffix = hint ? ` — ${hint}` : "";
 			parts.push(`  ✗ ${err.op} ${err.path}: ${err.message}${hintSuffix}`);
 		}

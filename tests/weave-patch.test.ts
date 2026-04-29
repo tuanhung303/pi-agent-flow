@@ -934,6 +934,7 @@ describe("weave_patch tool", () => {
 	});
 
 
+	describe("single-letter format and new features", () => {
 		it("accepts new single-letter format directly", async () => {
 			fs.writeFileSync(path.join(tmpDir, "newfmt.txt"), "hello\n", "utf-8");
 
@@ -1058,6 +1059,7 @@ describe("weave_patch tool", () => {
 			});
 			expect(result.details.results[0].error).toContain("bogus");
 		});
+	});
 	describe("empty operations", () => {
 		it("returns error for empty operations array", async () => {
 			const tool = createTool();
