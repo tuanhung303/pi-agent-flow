@@ -1192,6 +1192,188 @@ describe("weave_patch tool", () => {
 	});
 });
 
+describe("tilde expansion", () => {
+	let tmpDir: string;
+
+	function createTool() {
+		return createWeavePatchTool();
+	}
+
+	function makeCtx(cwd: string) {
+		return { cwd };
+	}
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-tilde-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("reads a file using ~ path", async () => {
+		const subDir = path.join(tmpDir, "sub");
+		fs.mkdirSync(subDir, { recursive: true });
+		fs.writeFileSync(path.join(subDir, "tilde-test.txt"), "hello tilde\n", "utf-8");
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ op: [{ op: "read", p: "~/tilde-test.txt" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		// ~ expands to os.homedir(), NOT tmpDir. The error should be about
+		// file not found or path traversal (homedir is outside cwd), NOT a crash.
+		expect(result.details.results[0].status).toBe("error");
+		const err = result.details.results[0].error ?? "";
+		const isExpectedError =
+			err.includes("File not found") ||
+			err.includes("Path not found") ||
+			err.includes("Path traversal") ||
+			err.includes("ENOENT");
+		expect(isExpectedError).toBe(true);
+	});
+
+	it("rejects ~ path that resolves outside cwd for write", async () => {
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ op: [{ o: "write", p: "~/malicious.txt", c: "hacked\n" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		// ~ expands to os.homedir() which is outside tmpDir cwd
+		expect(result.details.results[0].status).toBe("error");
+		expect(result.details.results[0].error).toContain("Path traversal");
+	});
+});
+
+describe("symlink traversal guard", () => {
+	let tmpDir: string;
+
+	function createTool() {
+		return createWeavePatchTool();
+	}
+
+	function makeCtx(cwd: string) {
+		return { cwd };
+	}
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-sym-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("blocks reading a symlink that points outside cwd", async () => {
+		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
+		fs.writeFileSync(path.join(outsideDir, "secret.txt"), "secret content\n", "utf-8");
+
+		const symPath = path.join(tmpDir, "leak.txt");
+		fs.symlinkSync(path.join(outsideDir, "secret.txt"), symPath);
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ op: [{ op: "read", p: "leak.txt" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0]).toMatchObject({
+			op: "read",
+			status: "error",
+			error: expect.stringContaining("symlink points outside"),
+		});
+
+		fs.rmSync(outsideDir, { recursive: true, force: true });
+	});
+
+	it("blocks writing through a symlink that points outside cwd", async () => {
+		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
+		fs.writeFileSync(path.join(outsideDir, "target.txt"), "original\n", "utf-8");
+
+		const symPath = path.join(tmpDir, "symlink.txt");
+		fs.symlinkSync(path.join(outsideDir, "target.txt"), symPath);
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ op: [{ o: "write", p: "symlink.txt", c: "hacked\n" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0]).toMatchObject({
+			op: "write",
+			status: "error",
+			error: expect.stringContaining("symlink points outside"),
+		});
+
+		// Verify the original file was NOT modified
+		const content = fs.readFileSync(path.join(outsideDir, "target.txt"), "utf-8");
+		expect(content).toBe("original\n");
+
+		fs.rmSync(outsideDir, { recursive: true, force: true });
+	});
+
+	it("allows reading a symlink that points within cwd", async () => {
+		fs.writeFileSync(path.join(tmpDir, "real.txt"), "real content\n", "utf-8");
+
+		const symPath = path.join(tmpDir, "link.txt");
+		fs.symlinkSync(path.join(tmpDir, "real.txt"), symPath);
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ op: [{ op: "read", p: "link.txt" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0]).toMatchObject({
+			op: "read",
+			status: "ok",
+		});
+		expect(result.details.results[0].content).toBe("real content\n");
+	});
+
+	it("blocks directory symlink traversal", async () => {
+		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
+		fs.writeFileSync(path.join(outsideDir, "nested-secret.txt"), "secret\n", "utf-8");
+
+		const symDir = path.join(tmpDir, "leak-dir");
+		fs.symlinkSync(outsideDir, symDir);
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ op: [{ op: "read", p: "leak-dir/nested-secret.txt" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0]).toMatchObject({
+			op: "read",
+			status: "error",
+			error: expect.stringContaining("Path traversal"),
+		});
+
+		fs.rmSync(outsideDir, { recursive: true, force: true });
+	});
+});
+
 describe("suggestSimilarFiles", () => {
 	let tmpDir: string;
 

@@ -6,6 +6,7 @@
  */
 
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import { Type } from "@sinclair/typebox";
 
@@ -462,8 +463,15 @@ function applyEdits(
 // Path validation
 // ---------------------------------------------------------------------------
 
-function validatePath(inputPath: string, cwd: string): string {
-	const resolved = path.resolve(cwd, inputPath);
+function expandTilde(inputPath: string): string {
+	if (inputPath === "~") return os.homedir();
+	if (inputPath.startsWith("~/")) return path.join(os.homedir(), inputPath.slice(2));
+	return inputPath;
+}
+
+async function validatePath(inputPath: string, cwd: string): Promise<string> {
+	const expandedPath = expandTilde(inputPath);
+	const resolved = path.resolve(cwd, expandedPath);
 	const normalizedResolved = path.normalize(resolved);
 	const normalizedCwd = path.normalize(cwd);
 	if (
@@ -474,7 +482,55 @@ function validatePath(inputPath: string, cwd: string): string {
 			`Path traversal detected: ${inputPath} resolves outside working directory.`,
 		);
 	}
-	return resolved;
+
+	// Resolve cwd and file symlinks to prevent traversal via symlink targets.
+	// cwd must also be resolved (e.g. macOS /var -> /private/var).
+	const realCwd = await fs.realpath(cwd);
+
+	let realPath: string;
+	try {
+		realPath = await fs.realpath(resolved);
+	} catch {
+		// File doesn't exist yet (e.g. write creates new file).
+		// Walk up to the nearest existing ancestor and validate it is within realCwd.
+		const normalizedRealCwd = path.normalize(realCwd);
+		let ancestor = path.dirname(resolved);
+		let ancestorReal: string | null = null;
+		while (ancestor && ancestor !== path.dirname(ancestor)) {
+			try {
+				ancestorReal = await fs.realpath(ancestor);
+				break;
+			} catch {
+				ancestor = path.dirname(ancestor);
+			}
+		}
+		if (!ancestorReal) {
+			throw new Error(`Path not found: ${inputPath}`);
+		}
+		const normalizedAncestor = path.normalize(ancestorReal);
+		if (
+			normalizedAncestor !== normalizedRealCwd &&
+			!normalizedAncestor.startsWith(normalizedRealCwd + path.sep)
+		) {
+			throw new Error(
+				`Path traversal detected: ${inputPath} ancestor directory is outside working directory.`,
+			);
+		}
+		return resolved;
+	}
+
+	// Validate resolved real path is within realCwd
+	const normalizedReal = path.normalize(realPath);
+	const normalizedRealCwd = path.normalize(realCwd);
+	if (
+		normalizedReal !== normalizedRealCwd &&
+		!normalizedReal.startsWith(normalizedRealCwd + path.sep)
+	) {
+		throw new Error(
+			`Path traversal detected: ${inputPath} symlink points outside working directory.`,
+		);
+	}
+	return realPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -520,8 +576,13 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 	return op;
 }
 
-function prepareArguments(input: unknown): unknown {
-	if (!input || typeof input !== "object") return input;
+/**
+ * Normalize input arguments to the canonical { op: [...] } shape.
+ * Handles legacy formats, bare arrays, and single-operation shorthands.
+ * Always returns { op: FileOpInput[] } to match WeavePatchParams schema.
+ */
+function prepareArguments(input: unknown): { op: unknown[] } | unknown {
+	if (!input || typeof input !== "object") return { op: [] };
 
 	const args = input as Record<string, unknown>;
 
@@ -531,16 +592,18 @@ function prepareArguments(input: unknown): unknown {
 		typeof args.newText === "string" &&
 		typeof args.path === "string"
 	) {
-		return [
-			normalizeOp({
-				o: "edit",
-				p: args.path,
-				e: [{ oldText: args.oldText, newText: args.newText }],
-			}),
-		];
+		return {
+			op: [
+				normalizeOp({
+					o: "edit",
+					p: args.path,
+					e: [{ oldText: args.oldText, newText: args.newText }],
+				}),
+			],
+		};
 	}
 
-	// Unwrap to op array — canonical { op: [...] }, legacy { operations: [...] }, or bare array
+	// Extract ops array — canonical { op: [...] }, legacy { operations: [...] }, or bare array
 	let opsArray: unknown[];
 	if (Array.isArray(args.op)) {
 		opsArray = args.op;
@@ -552,14 +615,16 @@ function prepareArguments(input: unknown): unknown {
 		// Single-operation shorthand: { p: "...", o: "read" }
 		opsArray = [args];
 	} else {
-		return input;
+		return { op: [] };
 	}
 
 	// Normalize each operation to single-letter form
-	return opsArray.map((op: unknown) => {
-		if (!op || typeof op !== "object") return op;
-		return normalizeOp(op as Record<string, unknown>);
-	});
+	return {
+		op: opsArray.map((op: unknown) => {
+			if (!op || typeof op !== "object") return op;
+			return normalizeOp(op as Record<string, unknown>);
+		}),
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -585,7 +650,7 @@ async function executeOperations(
 		}
 
 		try {
-			const resolvedPath = validatePath(op.p, cwd);
+			const resolvedPath = await validatePath(op.p, cwd);
 
 			switch (op.o) {
 				case "read": {
@@ -846,7 +911,11 @@ export function createWeavePatchTool() {
 			ctx: { cwd: string },
 		) {
 			const prepared = prepareArguments(input);
-			const ops = prepared as FileOpInput[];
+			// prepareArguments always returns { op: [...] }, but handle
+			// legacy bare arrays for backward compatibility
+			const ops = Array.isArray(prepared)
+				? prepared as FileOpInput[]
+				: (prepared as { op: FileOpInput[] }).op;
 
 			if (!Array.isArray(ops) || ops.length === 0) {
 				return {
