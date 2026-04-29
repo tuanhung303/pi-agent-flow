@@ -204,24 +204,24 @@ describe("getTruncationBudget", () => {
 // ---------------------------------------------------------------------------
 
 describe("contentBudget", () => {
-	it("returns 40 minus prefix length", () => {
-		expect(contentBudget(0)).toBe(40);
-		expect(contentBudget(10)).toBe(30);
-		expect(contentBudget(15)).toBe(25);
+	it("returns 60 minus prefix length", () => {
+		expect(contentBudget(0)).toBe(60);
+		expect(contentBudget(10)).toBe(50);
+		expect(contentBudget(15)).toBe(45);
 	});
 
 	it("floors at 8", () => {
-		expect(contentBudget(32)).toBe(8);
-		expect(contentBudget(40)).toBe(8);
+		expect(contentBudget(52)).toBe(8);
+		expect(contentBudget(60)).toBe(8);
 		expect(contentBudget(100)).toBe(8);
 	});
 
-	it("exact boundary: prefix 31 gives 9", () => {
-		expect(contentBudget(31)).toBe(9);
+	it("exact boundary: prefix 51 gives 9", () => {
+		expect(contentBudget(51)).toBe(9);
 	});
 
-	it("exact boundary: prefix 32 gives 8", () => {
-		expect(contentBudget(32)).toBe(8);
+	it("exact boundary: prefix 52 gives 8", () => {
+		expect(contentBudget(52)).toBe(8);
 	});
 });
 
@@ -481,7 +481,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme());
 		const text = extractText(rendered);
 		expect(text).toContain("dir:");
-		// Content is pre-truncated to contentBudget(10) = 30 chars
+		// Content is pre-truncated to contentBudget(10) = 50 chars
 		const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
 		expect(dirLine).toContain("…");
 	});
@@ -500,7 +500,7 @@ describe("activity panel rendering", () => {
 		const text = extractText(rendered);
 		const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 		expect(exeLine).toBeDefined();
-		// Content is pre-truncated to contentBudget(10) = 30 chars
+		// Content is pre-truncated to contentBudget(10) = 50 chars
 		expect(exeLine).toContain("…");
 	});
 
@@ -537,7 +537,7 @@ describe("activity panel rendering", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longCmd = "a".repeat(45);
+			const longCmd = "a".repeat(55);
 			const result = makeResult({
 				intent: "test",
 				messages: [
@@ -550,7 +550,7 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const exeLine = text.split("\n").find((l: string) => l.includes("exe:"));
 			expect(exeLine).toBeDefined();
-			// Content is pre-truncated to contentBudget(10) = 30 chars
+			// Content is pre-truncated to contentBudget(10) = 50 chars
 			expect(exeLine).toContain("…");
 		} finally {
 			(process.stdout as any).columns = originalColumns;
@@ -561,7 +561,7 @@ describe("activity panel rendering", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longIntent = "b".repeat(45);
+			const longIntent = "b".repeat(55);
 			const result = makeResult({
 				intent: longIntent,
 				messages: [makeTextMessage("done")],
@@ -571,9 +571,9 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
 			expect(dirLine).toBeDefined();
-			// Content is pre-truncated to contentBudget(10) = 30 chars
+			// Content is pre-truncated to contentBudget(10) = 50 chars
 			expect(dirLine).toContain("…");
-			expect(visibleLength(dirLine.split("dir:")[1].trim())).toBeLessThanOrEqual(30);
+			expect(visibleLength(dirLine.split("dir:")[1].trim())).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -583,7 +583,7 @@ describe("activity panel rendering", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longStreaming = "c".repeat(45);
+			const longStreaming = "c".repeat(55);
 			const result = makeResult({
 				intent: "test",
 				messages: [],
@@ -593,10 +593,10 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
 			expect(logLine).toBeDefined();
-			// Content is pre-truncated to contentBudget(10) = 30 chars
+			// Content is pre-truncated to contentBudget(10) = 50 chars
 			const logContent = logLine.split("log:")[1].trim();
 			expect(logContent).toContain("…");
-			expect(visibleLength(logContent)).toBeLessThanOrEqual(30);
+			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}

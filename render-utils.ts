@@ -88,7 +88,7 @@ export function getTruncationBudget(prefixLength: number): number {
 }
 
 /** Fixed content budget for collapsed-line text (dir/exe/log). */
-export const CONTENT_MAX = 40;
+export const CONTENT_MAX = 60;
 
 /**
  * Compute how many visible chars of content fit after a prefix,
