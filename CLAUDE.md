@@ -32,6 +32,8 @@ Six flow-state prompts live in `agents/`:
 | `review` | read, bash, find, grep, ls | 0 | **Read-only audit** — reports only, no edits |
 | `brainstorm` | read, bash | 0 | Clean slate, diverge → evaluate → recommend |
 
+Note: Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3, but each flow's `maxDepth` overrides it.
+
 ## Key Implementation Details
 
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
