@@ -41,8 +41,8 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string, m
 	const parts: string[] = [];
 	parts.push(`↑ ${formatFixedTokens(usage.input || 0)}`);
 	parts.push(`↓ ${formatFixedTokens(usage.output || 0)}`);
-	parts.push(`act:${formatFixedTokens(usage.toolCalls || 0)}`);
-	parts.push(`ctx:${formatFixedTokens(usage.contextTokens || 0)}`);
+	parts.push(`act: ${formatFixedTokens(usage.toolCalls || 0)}`);
+	parts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
 
 	let result = parts.join(" · ") + (model ? ` · ${model}` : "");
 

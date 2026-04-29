@@ -126,11 +126,26 @@ export function renderFlowResult(
 	result: { content: Array<{ type: string; text?: string }>; details?: unknown },
 	expanded: boolean,
 	theme: FlowTheme,
+	args?: Record<string, any>,
 ): Container | Text {
 	const details = result.details as FlowDetails | undefined;
 	const streamingText = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
 
 	if (!details || details.results.length === 0) {
+		// Ghost Dashboard: render a placeholder status line during the zero state
+		const flowRequest = args?.flow?.[0];
+		if (flowRequest) {
+			const ghostResult: SingleResult = {
+				type: flowRequest.type || "unknown",
+				agentSource: "user",
+				intent: flowRequest.intent || "Processing...",
+				exitCode: -1, // In progress
+				messages: [],
+				stderr: "",
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0, toolCalls: 0 },
+			};
+			return renderFlowCollapsed(ghostResult, flowStatusIcon(ghostResult, theme), false, streamingText || "", theme);
+		}
 		return new Text(streamingText || "", 0, 0);
 	}
 

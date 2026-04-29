@@ -217,6 +217,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		};
 	}
 
+	const resolvedModel = flow.model ?? inheritedCliArgs.fallbackModel;
 	const result: SingleResult = {
 		type: normalizedFlowName,
 		agentSource: flow.source,
@@ -225,7 +226,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		messages: [],
 		stderr: "",
 		usage: emptyFlowUsage(),
-		model: flow.model,
+		model: resolvedModel,
 	};
 
 	const emitUpdate = () => {

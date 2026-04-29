@@ -609,7 +609,7 @@ flow [type] accomplished
 
 			renderCall: (args, theme) => renderFlowCall(args, theme),
 			renderResult: (result, { expanded }, theme, args) =>
-				renderFlowResult(result, expanded, theme, args),
+				renderFlowResult(result, expanded, theme),
 		});
 	}
 }

@@ -191,6 +191,87 @@ describe("flow tool execute", () => {
 		expect(setIntervalSpy).not.toHaveBeenCalled();
 	});
 
+	describe("context event handler", () => {
+		it("appends reminder to the latest user message only", async () => {
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
+				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
+				{ role: "user" as const, content: "second prompt", timestamp: 3 },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect((modified[0] as any).content).toBe("first prompt");
+			expect((modified[2] as any).content).toBe(
+				"second prompt\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]",
+			);
+		});
+
+		it("strips reminder from earlier user messages and moves it to latest", async () => {
+			const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "user" as const, content: `first prompt${reminder}`, timestamp: 1 },
+				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
+				{ role: "user" as const, content: "second prompt", timestamp: 3 },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect((modified[0] as any).content).toBe("first prompt");
+			expect((modified[2] as any).content).toBe(`second prompt${reminder}`);
+		});
+
+		it("handles array content (text blocks)", async () => {
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{
+					role: "user" as const,
+					content: [{ type: "text" as const, text: "first prompt" }],
+					timestamp: 1,
+				},
+				{
+					role: "user" as const,
+					content: [
+						{ type: "text" as const, text: "second prompt" },
+						{ type: "image" as const, data: "base64", mimeType: "image/png" },
+					],
+					timestamp: 2,
+				},
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect((modified[0] as any).content[0].text).toBe("first prompt");
+			expect((modified[1] as any).content[0].text).toBe(
+				"second prompt\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]",
+			);
+			expect((modified[1] as any).content[1].type).toBe("image");
+		});
+
+		it("returns undefined when there are no user messages", async () => {
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 1, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			expect(results[0]).toBeUndefined();
+		});
+	});
+
 	it("deduplicates identical streaming text in onUpdate", async () => {
 		setupFlowsDir([
 			{

@@ -454,7 +454,7 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
 		expect(text).toContain("act:     0");
-		expect(text).toContain("ctx:     0");
+		expect(text).toContain("ctx:    0");
 		expect(text).toContain("Starting...");
 	});
 
