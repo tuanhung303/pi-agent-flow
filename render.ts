@@ -67,15 +67,16 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 		case "grep":
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "weave_patch": {
-			const ops = Array.isArray(args.operations) ? args.operations : [];
+			const ops = Array.isArray(args) ? args : Array.isArray(args.operations) ? args.operations : [];
 			if (ops.length === 0) return fg("muted", "patch (empty)");
 			const parts: string[] = [];
 			for (const op of ops) {
-				const opName = (op as Record<string, unknown>).op as string;
-				const opPath = ((op as Record<string, unknown>).path || "?") as string;
+				const opObj = op as Record<string, unknown>;
+				const opName = (opObj.o ?? opObj.op) as string;
+				const opPath = ((opObj.p ?? opObj.path) || "?") as string;
 				const shortPath = shortenPath(opPath);
 				if (opName === "edit") {
-					const edits = (op as Record<string, unknown>).edits as unknown[] | undefined;
+					const edits = (opObj.e ?? opObj.edits) as unknown[] | undefined;
 					const blockInfo = edits && edits.length > 1 ? ` (${edits.length} blocks)` : "";
 					parts.push(`edit ${shortPath}${blockInfo}`);
 				} else {

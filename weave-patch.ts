@@ -14,54 +14,52 @@ import { Type } from "@sinclair/typebox";
 // ---------------------------------------------------------------------------
 
 const EditOp = Type.Object({
-	oldText: Type.String({
+	f: Type.String({
 		description:
-			"Exact text to replace. Must be unique in the file. All edits matched against original file, not incrementally.",
+			"Exact text to find (oldText). Must be unique in the file. All edits matched against original file, not incrementally.",
 	}),
-	newText: Type.String({ description: "Replacement text." }),
+	r: Type.String({ description: "Replacement text (newText)." }),
 });
 
 const FileOp = Type.Object({
-	op: Type.Union([
+	o: Type.Union([
 		Type.Literal("read"),
 		Type.Literal("write"),
 		Type.Literal("edit"),
 		Type.Literal("delete"),
 	]),
-	path: Type.String({ description: "Path to the file (relative or absolute)" }),
-	content: Type.Optional(
+	p: Type.String({ description: "Path to the file (relative or absolute)" }),
+	c: Type.Optional(
 		Type.String({
 			description:
-				"Full file content. Creates if new, overwrites if exists. Auto-creates parent dirs. Used with op: 'write'.",
+				"Full file content. Creates if new, overwrites if exists. Auto-creates parent dirs. Used with o: 'write'.",
 		}),
 	),
-	edits: Type.Optional(
+	e: Type.Optional(
 		Type.Array(EditOp, {
 			description:
 				"One or more targeted replacements matched against the original file, not incrementally.",
 		}),
 	),
-	offset: Type.Optional(
+	s: Type.Optional(
 		Type.Number({
 			minimum: 1,
 			description:
-				"1-indexed line number to start reading from. Used with op: 'read'.",
+				"1-indexed line number to start reading from (offset). Used with o: 'read'.",
 		}),
 	),
-	limit: Type.Optional(
+	l: Type.Optional(
 		Type.Number({
 			minimum: 1,
 			description:
-				"Maximum number of lines to read. Used with op: 'read'.",
+				"Maximum number of lines to read (limit). Used with o: 'read'.",
 		}),
 	),
 });
 
-export const WeavePatchParams = Type.Object({
-	operations: Type.Array(FileOp, {
-		description:
-			"Ordered list of file operations. Executed sequentially. On failure, remaining operations are skipped.",
-	}),
+export const WeavePatchParams = Type.Array(FileOp, {
+	description:
+		"Ordered list of file operations. Executed sequentially. On failure, remaining operations are skipped.",
 });
 
 // ---------------------------------------------------------------------------
@@ -69,17 +67,17 @@ export const WeavePatchParams = Type.Object({
 // ---------------------------------------------------------------------------
 
 interface EditReplacement {
-	oldText: string;
-	newText: string;
+	f: string;
+	r: string;
 }
 
 interface FileOpInput {
-	op: "read" | "write" | "edit" | "delete";
-	path: string;
-	content?: string;
-	edits?: EditReplacement[];
-	offset?: number;
-	limit?: number;
+	o: "read" | "write" | "edit" | "delete";
+	p: string;
+	c?: string;
+	e?: EditReplacement[];
+	s?: number;
+	l?: number;
 }
 
 interface OpResult {
@@ -201,10 +199,10 @@ function readWithOffsetLimit(
 	if (truncated) {
 		const endDisplay = startLine + selectedLines.length;
 		const startDisplay = startLine + 1;
-		result += `\n\n[Showing lines ${startDisplay}-${endDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+		result += `\n\n[Showing lines ${startDisplay}-${endDisplay} of ${totalFileLines}. Use s=${nextOffset} to continue.]`;
 	} else if (limit !== undefined && lastLineRead < totalFileLines) {
 		const remaining = totalFileLines - lastLineRead;
-		result += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+		result += `\n\n[${remaining} more lines in file. Use s=${nextOffset} to continue.]`;
 	}
 
 	return { content: result, truncated, nextOffset };
@@ -287,7 +285,7 @@ function getErrorHint(error: string): string {
 	if (error.includes("File not found") || error.includes("file not found"))
 		return "Verify the path exists.";
 	if (error.includes("Could not find"))
-		return "Re-read the file first, then retry with exact oldText.";
+		return "Re-read the file first, then retry with exact f (oldText).";
 	if (error.includes("occurrences"))
 		return "Add more surrounding context to make oldText unique.";
 	if (error.includes("overlap"))
@@ -361,14 +359,14 @@ function applyEdits(
 	filePath: string,
 ): { newContent: string; diffSummary: string; blocksChanged: number } {
 	const normalizedEdits = edits.map((e) => ({
-		oldText: normalizeToLF(e.oldText),
-		newText: normalizeToLF(e.newText),
+		oldText: normalizeToLF(e.f),
+		newText: normalizeToLF(e.r),
 	}));
 
 	// Validate non-empty
 	for (let i = 0; i < normalizedEdits.length; i++) {
 		if (normalizedEdits[i].oldText.length === 0) {
-			throw new Error(`edits[${i}].oldText must not be empty in ${filePath}.`);
+			throw new Error(`edits[${i}].f (oldText) must not be empty in ${filePath}.`);
 		}
 	}
 
@@ -396,7 +394,7 @@ function applyEdits(
 			throw new Error(
 				edits.length === 1
 					? `Could not find the exact text in ${filePath}. The old text must match exactly including all whitespace and newlines.`
-					: `Could not find edits[${i}] in ${filePath}. The oldText must match exactly including all whitespace and newlines.`,
+					: `Could not find edits[${i}] in ${filePath}. The f (oldText) must match exactly including all whitespace and newlines.`,
 			);
 		}
 
@@ -405,7 +403,7 @@ function applyEdits(
 			throw new Error(
 				edits.length === 1
 					? `Found ${occurrences} occurrences of the text in ${filePath}. The text must be unique. Please provide more context to make it unique.`
-					: `Found ${occurrences} occurrences of edits[${i}] in ${filePath}. Each oldText must be unique. Please provide more context to make it unique.`,
+					: `Found ${occurrences} occurrences of edits[${i}] in ${filePath}. Each f (oldText) must be unique. Please provide more context to make it unique.`,
 			);
 		}
 
@@ -479,78 +477,83 @@ function validatePath(inputPath: string, cwd: string): string {
 // prepareArguments shim
 // ---------------------------------------------------------------------------
 
+/**
+ * Normalize a single operation object from any legacy format to the new
+ * single-letter canonical form: { o, p, c, e, s, l }.
+ */
+function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
+	const op: Record<string, unknown> = {};
+
+	// Map operation type
+	op.o = raw.o ?? raw.op ?? (raw.c || raw.content ? "write" : (raw.e || raw.edits ? "edit" : "read"));
+
+	// Map path
+	op.p = raw.p ?? raw.path;
+
+	// Map content
+	if (raw.c !== undefined) op.c = raw.c;
+	else if (raw.content !== undefined) op.c = raw.content;
+
+	// Map edits
+	let editsRaw = raw.e ?? raw.edits;
+	if (typeof editsRaw === "string") {
+		try { editsRaw = JSON.parse(editsRaw); } catch { /* ignore */ }
+	}
+	if (Array.isArray(editsRaw)) {
+		op.e = editsRaw.map((e: unknown) => {
+			if (!e || typeof e !== "object") return e;
+			const edit = e as Record<string, unknown>;
+			return { f: edit.f ?? edit.oldText, r: edit.r ?? edit.newText };
+		});
+	}
+
+	// Map offset / limit
+	if (raw.s !== undefined) op.s = raw.s;
+	else if (raw.offset !== undefined) op.s = raw.offset;
+	if (raw.l !== undefined) op.l = raw.l;
+	else if (raw.limit !== undefined) op.l = raw.limit;
+
+	return op;
+}
+
 function prepareArguments(input: unknown): unknown {
 	if (!input || typeof input !== "object") return input;
 
 	const args = input as Record<string, unknown>;
 
-	// Handle top-level edits stringification (some models do this)
-	if (typeof args.edits === "string") {
-		try {
-			const parsed = JSON.parse(args.edits);
-			if (Array.isArray(parsed)) args.edits = parsed;
-		} catch {
-			/* ignore */
-		}
-	}
-
-	// Handle legacy format at top level: { path, oldText, newText }
+	// Handle legacy top-level format: { path, oldText, newText }
 	if (
 		typeof args.oldText === "string" &&
 		typeof args.newText === "string" &&
 		typeof args.path === "string"
 	) {
-		return {
-			operations: [
-				{
-					op: "edit",
-					path: args.path,
-					edits: [{ oldText: args.oldText, newText: args.newText }],
-				},
-			],
-		};
+		return [
+			normalizeOp({
+				o: "edit",
+				p: args.path,
+				e: [{ oldText: args.oldText, newText: args.newText }],
+			}),
+		];
 	}
 
-	// If no operations array, try to infer from shape
-	if (!Array.isArray(args.operations)) {
-		if (typeof args.path === "string") {
-			// Single operation
-			const op: FileOpInput = {
-				op: args.content ? "write" : args.edits ? "edit" : "read",
-				path: args.path as string,
-				content: args.content as string | undefined,
-				edits: args.edits as EditReplacement[] | undefined,
-			};
-			return { operations: [op] };
-		}
+	// Unwrap legacy { operations: [...] } wrapper
+	let opsArray: unknown[];
+	if (Array.isArray(args)) {
+		opsArray = args;
+	} else if (Array.isArray(args.operations)) {
+		opsArray = args.operations;
+	} else if (typeof args.p === "string" || typeof args.path === "string") {
+		// Single-operation shorthand: { p: "...", o: "read" }
+		opsArray = [args];
+	} else {
+		return input;
 	}
 
-	// Normalize each operation in the array
-	if (Array.isArray(args.operations)) {
-		args.operations = args.operations.map((op: unknown) => {
-			if (!op || typeof op !== "object") return op;
-			const opObj = op as Record<string, unknown>;
-
-			// Infer op if missing
-			if (!opObj.op) {
-				opObj.op = opObj.content ? "write" : opObj.edits ? "edit" : "read";
-			}
-
-			// Handle stringified edits in operation
-			if (typeof opObj.edits === "string") {
-				try {
-					const parsed = JSON.parse(opObj.edits);
-					if (Array.isArray(parsed)) opObj.edits = parsed;
-				} catch {
-					/* ignore */
-				}
-			}
-
-			return opObj;
-		});
-	}
-
-	return args;
+	// Normalize each operation to single-letter form
+	return opsArray.map((op: unknown) => {
+		if (!op || typeof op !== "object") return op;
+		return normalizeOp(op as Record<string, unknown>);
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -570,26 +573,26 @@ async function executeOperations(
 
 	for (const op of operations) {
 		if (failed) {
-			results.push({ op: op.op, path: op.path, status: "skipped" });
+			results.push({ op: op.o, path: op.p, status: "skipped" });
 			counts.skipped++;
 			continue;
 		}
 
 		try {
-			const resolvedPath = validatePath(op.path, cwd);
+			const resolvedPath = validatePath(op.p, cwd);
 
-			switch (op.op) {
+			switch (op.o) {
 				case "read": {
 					// Access check before reading
 					try {
 						await fs.access(resolvedPath);
 					} catch {
-						throw new Error(`File not found: ${op.path}`);
+						throw new Error(`File not found: ${op.p}`);
 					}
 					try {
 						await fs.access(resolvedPath, fs.constants.R_OK);
 					} catch {
-						throw new Error(`File not readable: ${op.path}`);
+						throw new Error(`File not readable: ${op.p}`);
 					}
 
 					const rawContent = await fs.readFile(resolvedPath, "utf-8");
@@ -598,16 +601,16 @@ async function executeOperations(
 					const totalFileLines = allLines.length;
 
 					const { content: readContent, truncated, nextOffset } =
-						readWithOffsetLimit(text, op.offset, op.limit);
+						readWithOffsetLimit(text, op.s, op.l);
 
-					if (truncated || (op.limit !== undefined && (op.offset ?? 1) - 1 + op.limit < totalFileLines)) {
+					if (truncated || (op.l !== undefined && (op.s ?? 1) - 1 + op.l < totalFileLines)) {
 						const shownLines = truncated
-							? (op.limit !== undefined
-									? Math.min(op.limit, MAX_LINES)
+							? (op.l !== undefined
+									? Math.min(op.l, MAX_LINES)
 									: MAX_LINES)
-							: op.limit!;
+							: op.l!;
 						truncatedFiles.push({
-							path: op.path,
+							path: op.p,
 							shown: shownLines,
 							total: totalFileLines,
 							nextOffset,
@@ -616,7 +619,7 @@ async function executeOperations(
 
 					results.push({
 						op: "read",
-						path: op.path,
+						path: op.p,
 						status: "ok",
 						content: readContent,
 						totalLines: totalFileLines,
@@ -628,24 +631,24 @@ async function executeOperations(
 				}
 
 				case "write": {
-					if (!op.content && op.content !== "") {
-						throw new Error("content is required for write operations.");
+					if (!op.c && op.c !== "") {
+						throw new Error("c (content) is required for write operations.");
 					}
 					await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-					await fs.writeFile(resolvedPath, op.content!, "utf-8");
+					await fs.writeFile(resolvedPath, op.c!, "utf-8");
 					results.push({
 						op: "write",
-						path: op.path,
+						path: op.p,
 						status: "ok",
-						bytes: Buffer.byteLength(op.content!, "utf-8"),
+						bytes: Buffer.byteLength(op.c!, "utf-8"),
 					});
 					counts.write++;
 					break;
 				}
 
 				case "edit": {
-					if (!op.edits || op.edits.length === 0) {
-						throw new Error("edits array is required for edit operations.");
+					if (!op.e || op.e.length === 0) {
+						throw new Error("e (edits) array is required for edit operations.");
 					}
 
 					const rawContent = await fs.readFile(resolvedPath, "utf-8");
@@ -655,8 +658,8 @@ async function executeOperations(
 
 					const { newContent, diffSummary, blocksChanged } = applyEdits(
 						normalizedContent,
-						op.edits,
-						op.path,
+						op.e,
+						op.p,
 					);
 
 					const finalContent = bom + restoreLineEndings(newContent, originalEnding);
@@ -664,7 +667,7 @@ async function executeOperations(
 
 					results.push({
 						op: "edit",
-						path: op.path,
+						path: op.p,
 						status: "ok",
 						blocksChanged,
 						diff: diffSummary,
@@ -675,7 +678,7 @@ async function executeOperations(
 
 				case "delete": {
 					await fs.unlink(resolvedPath);
-					results.push({ op: "delete", path: op.path, status: "ok" });
+					results.push({ op: "delete", path: op.p, status: "ok" });
 					counts.delete++;
 					break;
 				}
@@ -687,7 +690,7 @@ async function executeOperations(
 			failed = true;
 			counts.error++;
 			const message = err instanceof Error ? err.message : String(err);
-			errors.push({ path: op.path, op: op.op, message });
+			errors.push({ path: op.p, op: op.o, message });
 
 			// Enrich file-not-found errors with fuzzy filename suggestions
 			let hint = getErrorHint(message);
@@ -697,15 +700,15 @@ async function executeOperations(
 				message.includes("ENOENT") ||
 				message.includes("no such file")
 			) {
-				const suggestions = await suggestSimilarFiles(op.path, cwd);
+				const suggestions = await suggestSimilarFiles(op.p, cwd);
 				if (suggestions.length > 0) {
 					hint += ` Did you mean: ${suggestions.join(", ")}?`;
 				}
 			}
 
 			results.push({
-				op: op.op,
-				path: op.path,
+				op: op.o,
+				path: op.p,
 				status: "error",
 				error: message,
 				hint,
@@ -772,7 +775,7 @@ function buildSummary(
 	for (const tf of truncatedFiles) {
 		if (tf.nextOffset) {
 			parts.push(
-				`  ⚠ ${tf.path} truncated (${tf.shown}/${tf.total} lines) — use offset=${tf.nextOffset}`,
+				`  ⚠ ${tf.path} truncated (${tf.shown}/${tf.total} lines) — use s=${tf.nextOffset}`,
 			);
 		}
 	}
@@ -837,9 +840,9 @@ export function createWeavePatchTool() {
 			ctx: { cwd: string },
 		) {
 			const prepared = prepareArguments(input);
-			const args = prepared as { operations: FileOpInput[] };
+			const ops = prepared as FileOpInput[];
 
-			if (!Array.isArray(args.operations) || args.operations.length === 0) {
+			if (!Array.isArray(ops) || ops.length === 0) {
 				return {
 					content: [
 						{ type: "text", text: "Error: operations array is required and must not be empty." },
@@ -855,7 +858,7 @@ export function createWeavePatchTool() {
 				};
 			}
 
-			const { contentText, results } = await executeOperations(args.operations, ctx.cwd);
+			const { contentText, results } = await executeOperations(ops, ctx.cwd);
 
 			return {
 				content: [{ type: "text", text: contentText }],

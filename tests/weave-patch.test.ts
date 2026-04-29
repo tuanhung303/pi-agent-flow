@@ -166,11 +166,10 @@ describe("weave_patch tool", () => {
 					makeCtx(tmpDir),
 				);
 
-				expect(result.details.results[0].content).toBe("line1\nline2\n\n[4 more lines in file. Use offset=3 to continue.]");
-				// Should include continuation hint since there are more lines
+				expect(result.details.results[0].content).toBe("line1\nline2\n\n[4 more lines in file. Use s=3 to continue.]");
 				// Should include continuation hint since there are more lines
 				expect(result.details.results[0].content).toContain("more lines in file");
-				expect(result.details.results[0].content).toContain("offset=3");
+				expect(result.details.results[0].content).toContain("s=3");
 			});
 
 			it("reads with offset and limit combined", async () => {
@@ -189,9 +188,9 @@ describe("weave_patch tool", () => {
 					makeCtx(tmpDir),
 				);
 
-				expect(result.details.results[0].content).toBe("b\nc\n\n[3 more lines in file. Use offset=4 to continue.]");
+				expect(result.details.results[0].content).toBe("b\nc\n\n[3 more lines in file. Use s=4 to continue.]");
 				expect(result.details.results[0].content).toContain("3 more lines in file");
-				expect(result.details.results[0].content).toContain("offset=4");
+				expect(result.details.results[0].content).toContain("s=4");
 			});
 
 			it("throws when offset is beyond file length", async () => {
@@ -268,7 +267,7 @@ describe("weave_patch tool", () => {
 
 				expect(result.details.results[0].truncated).toBe(true);
 				expect(result.details.results[0].content).toContain("[Showing lines 1-2000 of 3000");
-				expect(result.details.results[0].content).toContain("offset=2001");
+				expect(result.details.results[0].content).toContain("s=2001");
 				expect(result.details.results[0].totalLines).toBe(3000);
 			});
 
@@ -286,7 +285,7 @@ describe("weave_patch tool", () => {
 				);
 
 				expect(result.content[0].text).toContain("⚠ large.txt truncated");
-				expect(result.content[0].text).toContain("offset=2001");
+				expect(result.content[0].text).toContain("s=2001");
 			});
 		});
 	});
@@ -536,7 +535,7 @@ describe("weave_patch tool", () => {
 				op: "edit",
 				status: "error",
 				error: expect.stringContaining("Could not find"),
-				hint: "Re-read the file first, then retry with exact oldText.",
+				hint: "Re-read the file first, then retry with exact f (oldText).",
 			});
 		});
 
@@ -934,6 +933,97 @@ describe("weave_patch tool", () => {
 		});
 	});
 
+
+		it("accepts new single-letter format directly", async () => {
+			fs.writeFileSync(path.join(tmpDir, "newfmt.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "read", p: "newfmt.txt" }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+			});
+		});
+
+		it("accepts new single-letter edit format", async () => {
+			fs.writeFileSync(path.join(tmpDir, "newedit.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "edit", p: "newedit.txt", e: [{ f: "hello", r: "world" }] }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "edit",
+				status: "ok",
+			});
+			expect(fs.readFileSync(path.join(tmpDir, "newedit.txt"), "utf-8")).toBe("world\n");
+		});
+
+		it("accepts new single-letter write format", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "write", p: "newwrite.txt", c: "content\n" }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "write",
+				status: "ok",
+			});
+			expect(fs.readFileSync(path.join(tmpDir, "newwrite.txt"), "utf-8")).toBe("content\n");
+		});
+
+		it("accepts new single-letter read with s and l", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "sl.txt"),
+				"a\nb\nc\nd\ne\n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "read", p: "sl.txt", s: 2, l: 2 }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].content).toBe("b\nc\n\n[3 more lines in file. Use s=4 to continue.]");
+		});
+
+		it("handles bare array with legacy property names (no operations wrapper)", async () => {
+			fs.writeFileSync(path.join(tmpDir, "bare.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ op: "read", path: "bare.txt" }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+			});
+		});
 	describe("empty operations", () => {
 		it("returns error for empty operations array", async () => {
 			const tool = createTool();

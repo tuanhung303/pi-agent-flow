@@ -750,9 +750,9 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "explore",
 			intent: "Read files",
 			messages: [
-				makeToolCallMessage("weave_patch", {
-					operations: [{ op: "read", path: "src/index.ts" }],
-				}),
+				makeToolCallMessage("weave_patch", [
+					{ o: "read", p: "src/index.ts" },
+				]),
 			],
 			usage: emptyFlowUsage(),
 		});
@@ -769,12 +769,10 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "code",
 			intent: "Refactor",
 			messages: [
-				makeToolCallMessage("weave_patch", {
-					operations: [
-						{ op: "read", path: "src/a.ts" },
-						{ op: "edit", path: "src/b.ts", edits: [{ oldText: "old", newText: "new" }] },
-					],
-				}),
+				makeToolCallMessage("weave_patch", [
+					{ o: "read", p: "src/a.ts" },
+					{ o: "edit", p: "src/b.ts", e: [{ f: "old", r: "new" }] },
+				]),
 			],
 			usage: emptyFlowUsage(),
 		});
@@ -791,18 +789,16 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "code",
 			intent: "Multi-edit",
 			messages: [
-				makeToolCallMessage("weave_patch", {
-					operations: [
-						{
-							op: "edit",
-							path: "src/foo.ts",
-							edits: [
-								{ oldText: "a", newText: "b" },
-								{ oldText: "c", newText: "d" },
-							],
-						},
-					],
-				}),
+				makeToolCallMessage("weave_patch", [
+					{
+						o: "edit",
+						p: "src/foo.ts",
+						e: [
+							{ f: "a", r: "b" },
+							{ f: "c", r: "d" },
+						],
+					},
+				]),
 			],
 			usage: emptyFlowUsage(),
 		});
@@ -818,14 +814,12 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "code",
 			intent: "Bulk changes",
 			messages: [
-				makeToolCallMessage("weave_patch", {
-					operations: [
-						{ op: "read", path: "a.ts" },
-						{ op: "read", path: "b.ts" },
-						{ op: "read", path: "c.ts" },
-						{ op: "read", path: "d.ts" },
-					],
-				}),
+				makeToolCallMessage("weave_patch", [
+					{ o: "read", p: "a.ts" },
+					{ o: "read", p: "b.ts" },
+					{ o: "read", p: "c.ts" },
+					{ o: "read", p: "d.ts" },
+				]),
 			],
 			usage: emptyFlowUsage(),
 		});
@@ -841,7 +835,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "explore",
 			intent: "Empty",
 			messages: [
-				makeToolCallMessage("weave_patch", { operations: [] }),
+				makeToolCallMessage("weave_patch", []),
 			],
 			usage: emptyFlowUsage(),
 		});
