@@ -140,12 +140,12 @@ function buildFlowArgs(
 	// Flow instructions go in the intent message instead.
 
 	const flowDirectives =
-		`=== flow directive ===\n` +
-		`You are a flow state executing a mission. The conversation history above is background context — use it for reference, but your sole focus is the intent below.\n` +
-		`=== end flow directive ===`;
+		`--- flow directive ---\n` +
+		`The conversation history above is background context — use it for reference, but your sole focus is the intent below, and try to execute EXACTLY as requested in the intent.\n` +
+		`--- end flow directive ---`;
 
 	const flowInstructions = flow.systemPrompt.trim()
-		? `\n\n=== system directive ===\n${flow.systemPrompt.trim()}\n=== end system directive ===`
+		? `\n\n--- system directive ---\n${flow.systemPrompt.trim()}\n--- end system directive ---`
 		: "";
 
 	args.push(`${flowDirectives}${flowInstructions}\n\nIntent: ${intent}`);
