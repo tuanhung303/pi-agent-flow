@@ -66,6 +66,25 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 			return fg("muted", "find ") + fg("accent", (args.pattern || "*") as string) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "grep":
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
+		case "weave_patch": {
+			const ops = Array.isArray(args.operations) ? args.operations : [];
+			if (ops.length === 0) return fg("muted", "patch (empty)");
+			const parts: string[] = [];
+			for (const op of ops) {
+				const opName = (op as Record<string, unknown>).op as string;
+				const opPath = ((op as Record<string, unknown>).path || "?") as string;
+				const shortPath = shortenPath(opPath);
+				if (opName === "edit") {
+					const edits = (op as Record<string, unknown>).edits as unknown[] | undefined;
+					const blockInfo = edits && edits.length > 1 ? ` (${edits.length} blocks)` : "";
+					parts.push(`edit ${shortPath}${blockInfo}`);
+				} else {
+					parts.push(`${opName} ${shortPath}`);
+				}
+			}
+			const summary = parts.length <= 3 ? parts.join(", ") : `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
+			return fg("muted", "patch ") + fg("accent", summary);
+		}
 		default:
 			return fg("accent", toolName) + fg("dim", ` ${JSON.stringify(args)}`);
 	}

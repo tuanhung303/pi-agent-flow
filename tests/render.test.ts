@@ -743,3 +743,111 @@ describe("expanded view rendering", () => {
 		expect(text).toContain("explore   ");
 	});
 });
+
+describe("formatFlowToolCall — weave_patch", () => {
+	it("renders single read operation", () => {
+		const result = makeResult({
+			type: "explore",
+			intent: "Read files",
+			messages: [
+				makeToolCallMessage("weave_patch", {
+					operations: [{ op: "read", path: "src/index.ts" }],
+				}),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("patch");
+		expect(text).toContain("read");
+		expect(text).toContain("index.ts");
+	});
+
+	it("renders multiple operations", () => {
+		const result = makeResult({
+			type: "code",
+			intent: "Refactor",
+			messages: [
+				makeToolCallMessage("weave_patch", {
+					operations: [
+						{ op: "read", path: "src/a.ts" },
+						{ op: "edit", path: "src/b.ts", edits: [{ oldText: "old", newText: "new" }] },
+					],
+				}),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("patch");
+		expect(text).toContain("a.ts");
+		expect(text).toContain("b.ts");
+	});
+
+	it("renders edit with multiple blocks", () => {
+		const result = makeResult({
+			type: "code",
+			intent: "Multi-edit",
+			messages: [
+				makeToolCallMessage("weave_patch", {
+					operations: [
+						{
+							op: "edit",
+							path: "src/foo.ts",
+							edits: [
+								{ oldText: "a", newText: "b" },
+								{ oldText: "c", newText: "d" },
+							],
+						},
+					],
+				}),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("patch");
+		expect(text).toContain("2 blocks");
+	});
+
+	it("renders many operations with truncation", () => {
+		const result = makeResult({
+			type: "code",
+			intent: "Bulk changes",
+			messages: [
+				makeToolCallMessage("weave_patch", {
+					operations: [
+						{ op: "read", path: "a.ts" },
+						{ op: "read", path: "b.ts" },
+						{ op: "read", path: "c.ts" },
+						{ op: "read", path: "d.ts" },
+					],
+				}),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("patch");
+		expect(text).toContain("+2 more");
+	});
+
+	it("renders empty operations", () => {
+		const result = makeResult({
+			type: "explore",
+			intent: "Empty",
+			messages: [
+				makeToolCallMessage("weave_patch", { operations: [] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("patch (empty)");
+	});
+});

@@ -368,11 +368,18 @@ function formatToolCallShort(tc) {
       return `find ${args.pattern || "*"} in ${args.path || "."}`;
     case "ls":
       return `ls ${args.path || "."}`;
+    case "weave_patch": {
+      const ops = Array.isArray(args.operations) ? args.operations : [];
+      if (ops.length === 0) return "patch (empty)";
+      const first = ops[0] || {};
+      const firstPath = (first.path || "?").split("/").pop();
+      const label = ops.length === 1 ? `${first.op} ${firstPath}` : `${first.op} ${firstPath} +${ops.length - 1} more`;
+      return `patch ${label}`;
+    }
     default:
       return tc.name;
   }
 }
-
 export function getFlowSummaryText(result) {
   const finalText = getFlowFinalText(result?.messages);
   if (finalText) return finalText;

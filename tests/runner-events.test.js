@@ -634,3 +634,85 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     expect(second).toBe(first);
   });
 });
+
+describe("getFlowSummaryText — weave_patch", () => {
+  function makeToolCallMessage(name, args) {
+    return {
+      role: "assistant",
+      content: [{ type: "toolCall", name, arguments: args }],
+    };
+  }
+
+  it("includes weave_patch in partial work for failed flows", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Flow failed";
+    r.messages = [
+      makeToolCallMessage("weave_patch", {
+        operations: [
+          { op: "read", path: "src/index.ts" },
+          { op: "edit", path: "src/utils.ts", edits: [{ oldText: "a", newText: "b" }] },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("Flow failed");
+    expect(summary).toContain("Partial work:");
+    expect(summary).toContain("patch");
+  });
+
+  it("formats single weave_patch operation in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("weave_patch", {
+        operations: [{ op: "write", path: "src/new.ts", content: "export {};" }],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("patch write new.ts");
+  });
+
+  it("formats multiple weave_patch operations in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("weave_patch", {
+        operations: [
+          { op: "read", path: "a.ts" },
+          { op: "read", path: "b.ts" },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("patch read a.ts +1 more");
+  });
+
+  it("formats empty weave_patch operations in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("weave_patch", { operations: [] }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("patch (empty)");
+  });
+
+  it("includes weave_patch alongside other tool calls", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("bash", { command: "npm test" }),
+      makeToolCallMessage("weave_patch", {
+        operations: [{ op: "edit", path: "src/foo.ts", edits: [{ oldText: "a", newText: "b" }] }],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("bash npm test");
+    expect(summary).toContain("patch");
+  });
+});

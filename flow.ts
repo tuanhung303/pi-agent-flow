@@ -148,9 +148,11 @@ function buildFlowArgs(
 	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
 	if (thinking) args.push("--thinking", thinking);
 
-	if (flow.tools && flow.tools.length > 0) {
-		const effectiveTools = getOptimizedTools(flow.tools, toolOptimize);
-		args.push("--tools", effectiveTools!.join(","));
+	// Compute effective tools once — used for both --tools arg and activation prompt
+	const effectiveTools = getOptimizedTools(flow.tools, toolOptimize);
+
+	if (effectiveTools && effectiveTools.length > 0) {
+		args.push("--tools", effectiveTools.join(","));
 	} else if (flow.tools === undefined) {
 		if (inheritedCliArgs.fallbackTools !== undefined) {
 			args.push("--tools", inheritedCliArgs.fallbackTools);
@@ -165,7 +167,7 @@ function buildFlowArgs(
 	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
 	const canDelegate = currentDepth < effectiveMaxDepth;
-	const availableTools = flow.tools?.join(", ") ?? "all";
+	const availableTools = effectiveTools?.join(", ") ?? "all";
 
 	// Phase 1: Context seal — sharp boundary declaring history sealed
 	const contextSeal =

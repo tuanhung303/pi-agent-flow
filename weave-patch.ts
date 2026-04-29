@@ -227,6 +227,62 @@ function generateDiffSummary(oldContent: string, newContent: string): string {
 	return `+${added} -${removed} lines`;
 }
 
+// Insert before getErrorHint function (line 230)
+
+function levenshtein(a: string, b: string): number {
+	const m = a.length;
+	const n = b.length;
+	const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+	for (let i = 0; i <= m; i++) dp[i][0] = i;
+	for (let j = 0; j <= n; j++) dp[0][j] = j;
+	for (let i = 1; i <= m; i++) {
+		for (let j = 1; j <= n; j++) {
+			dp[i][j] =
+				a[i - 1] === b[j - 1]
+					? dp[i - 1][j - 1]
+					: 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+		}
+	}
+	return dp[m][n];
+}
+
+/**
+ * Scan the parent directory (or cwd) for files with similar names.
+ * Returns up to 3 suggestions sorted by similarity.
+ */
+export async function suggestSimilarFiles(
+	inputPath: string,
+	cwd: string,
+): Promise<string[]> {
+	const resolved = path.resolve(cwd, inputPath);
+	const dir = path.dirname(resolved);
+	const target = path.basename(resolved);
+
+	try {
+		const entries = await fs.readdir(dir, { withFileTypes: true });
+		const candidates: { name: string; dist: number }[] = [];
+
+		for (const entry of entries) {
+			const name = entry.name;
+			// Skip hidden files and node_modules
+			if (name.startsWith(".") || name === "node_modules") continue;
+
+			const dist = levenshtein(target.toLowerCase(), name.toLowerCase());
+			const maxLen = Math.max(target.length, name.length);
+			// Only suggest if reasonably similar (within 40% edit distance, or shares prefix)
+			if (dist <= Math.ceil(maxLen * 0.4) || name.startsWith(target.slice(0, 3))) {
+				candidates.push({ name: entry.isDirectory() ? name + "/" : name, dist });
+			}
+		}
+
+		return candidates
+			.sort((a, b) => a.dist - b.dist)
+			.slice(0, 3)
+			.map((c) => path.join(path.relative(cwd, dir), c.name));
+	} catch {
+		return [];
+	}
+}
 function getErrorHint(error: string): string {
 	if (error.includes("File not found") || error.includes("file not found"))
 		return "Verify the path exists.";
@@ -632,12 +688,27 @@ async function executeOperations(
 			counts.error++;
 			const message = err instanceof Error ? err.message : String(err);
 			errors.push({ path: op.path, op: op.op, message });
+
+			// Enrich file-not-found errors with fuzzy filename suggestions
+			let hint = getErrorHint(message);
+			if (
+				message.includes("File not found") ||
+				message.includes("file not found") ||
+				message.includes("ENOENT") ||
+				message.includes("no such file")
+			) {
+				const suggestions = await suggestSimilarFiles(op.path, cwd);
+				if (suggestions.length > 0) {
+					hint += ` Did you mean: ${suggestions.join(", ")}?`;
+				}
+			}
+
 			results.push({
 				op: op.op,
 				path: op.path,
 				status: "error",
 				error: message,
-				hint: getErrorHint(message),
+				hint,
 			});
 		}
 	}

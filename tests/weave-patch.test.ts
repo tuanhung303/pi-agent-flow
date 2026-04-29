@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createWeavePatchTool } from "../weave-patch.js";
+import { createWeavePatchTool, suggestSimilarFiles } from "../weave-patch.js";
 
 describe("weave_patch tool", () => {
 	let tmpDir: string;
@@ -1063,5 +1063,76 @@ describe("weave_patch tool", () => {
 				error: expect.stringContaining("Line 1 exceeds limit"),
 			});
 		});
+	});
+});
+
+describe("suggestSimilarFiles", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-suggest-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("suggests similar filename on typo", async () => {
+		fs.writeFileSync(path.join(tmpDir, "config.json"), "{}", "utf-8");
+		fs.writeFileSync(path.join(tmpDir, "package.json"), "{}", "utf-8");
+
+		const suggestions = await suggestSimilarFiles("confg.json", tmpDir);
+		expect(suggestions).toContain("config.json");
+	});
+
+	it("suggests similar filename with different extension", async () => {
+		fs.writeFileSync(path.join(tmpDir, "data.ts"), "export {};", "utf-8");
+		fs.writeFileSync(path.join(tmpDir, "data.js"), "module.exports = {};", "utf-8");
+
+		const suggestions = await suggestSimilarFiles("data.tx", tmpDir);
+		expect(suggestions.length).toBeGreaterThan(0);
+		expect(suggestions.some(s => s.includes("data.ts") || s.includes("data.js"))).toBe(true);
+	});
+
+	it("returns empty array for completely different names", async () => {
+		fs.writeFileSync(path.join(tmpDir, "abc.txt"), "content", "utf-8");
+
+		const suggestions = await suggestSimilarFiles("zzzzz.txt", tmpDir);
+		expect(suggestions).toEqual([]);
+	});
+
+	it("skips hidden files and node_modules", async () => {
+		fs.writeFileSync(path.join(tmpDir, ".hidden.txt"), "hidden", "utf-8");
+		fs.writeFileSync(path.join(tmpDir, "visible.txt"), "visible", "utf-8");
+		fs.mkdirSync(path.join(tmpDir, "node_modules"));
+		fs.writeFileSync(path.join(tmpDir, "node_modules", "pkg.txt"), "pkg", "utf-8");
+
+		const suggestions = await suggestSimilarFiles("visble.txt", tmpDir);
+		expect(suggestions).toContain("visible.txt");
+		expect(suggestions.every(s => !s.includes(".hidden"))).toBe(true);
+		expect(suggestions.every(s => !s.includes("node_modules"))).toBe(true);
+	});
+
+	it("suggests directories with trailing slash", async () => {
+		fs.mkdirSync(path.join(tmpDir, "src"));
+		fs.writeFileSync(path.join(tmpDir, "srcr"), "file", "utf-8");
+
+		const suggestions = await suggestSimilarFiles("sr", tmpDir);
+		expect(suggestions.some(s => s.includes("src/") || s.includes("src"))).toBe(true);
+	});
+
+	it("returns empty array for non-existent directory", async () => {
+		const suggestions = await suggestSimilarFiles("nonexistent/file.txt", tmpDir);
+		expect(suggestions).toEqual([]);
+	});
+
+	it("limits suggestions to 3", async () => {
+		fs.writeFileSync(path.join(tmpDir, "file1.txt"), "1", "utf-8");
+		fs.writeFileSync(path.join(tmpDir, "file2.txt"), "2", "utf-8");
+		fs.writeFileSync(path.join(tmpDir, "file3.txt"), "3", "utf-8");
+		fs.writeFileSync(path.join(tmpDir, "file4.txt"), "4", "utf-8");
+
+		const suggestions = await suggestSimilarFiles("file.txt", tmpDir);
+		expect(suggestions.length).toBeLessThanOrEqual(3);
 	});
 });
