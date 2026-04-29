@@ -67,25 +67,21 @@ describe("truncateChars", () => {
 		expect(truncateChars(text, 40)).toBe(text);
 	});
 
-	it("long text → head…tail format", () => {
+	it("long text → ...tail format", () => {
 		const text = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP";
 		const result = truncateChars(text, 40);
-		expect(result).toContain("…");
-		const parts = result.split("…");
-		const head = parts[0];
-		const tail = parts[parts.length - 1];
-		expect(text.startsWith(head)).toBe(true);
+		expect(result).toContain("...");
+		expect(result.startsWith("...")).toBe(true);
+		const tail = result.slice(3);
 		expect(text.endsWith(tail)).toBe(true);
 	});
 
-	it("preserves head and tail content", () => {
+	it("preserves tail content", () => {
 		const text = "Find every occurrence of ingestion_data in the codebase and check all references";
 		const result = truncateChars(text, 40);
-		expect(result).toContain("…");
-		const parts = result.split("…");
-		const head = parts[0];
-		const tail = parts[parts.length - 1];
-		expect(text.startsWith(head)).toBe(true);
+		expect(result).toContain("...");
+		expect(result.startsWith("...")).toBe(true);
+		const tail = result.slice(3);
 		expect(text.endsWith(tail)).toBe(true);
 	});
 
@@ -101,22 +97,22 @@ describe("truncateChars", () => {
 		// Should not contain raw ANSI escape fragments
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 		// Should contain the ellipsis
-		expect(result).toContain("…");
+		expect(result).toContain("...");
 	});
 
 	it("ANSI codes preserved in kept portions", () => {
 		const colored = "\x1b[31m" + "a".repeat(30) + "\x1b[32m" + "b".repeat(30) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// The result should contain ANSI codes from the head portion
-		expect(result).toContain("\x1b[31m");
+		// The result should contain ANSI codes from the tail portion (kept)
+		expect(result).toContain("\x1b[32m");
 	});
 
 	it("no reset code before ellipsis", () => {
 		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		// Should NOT contain a reset code — outer wrapper provides styling
-		expect(result).not.toContain("\x1b[39m…");
-		expect(result).toContain("…");
+		expect(result).not.toContain("\x1b[39m...");
+		expect(result).toContain("...");
 	});
 
 	it("multi-byte ANSI sequences not split", () => {
@@ -124,8 +120,8 @@ describe("truncateChars", () => {
 		const colored = "\x1b[38;2;255;128;0m" + "x".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		// Should NOT contain a reset code before ellipsis
-		expect(result).not.toContain("\x1b[39m…");
-		expect(result).toContain("…");
+		expect(result).not.toContain("\x1b[39m...");
+		expect(result).toContain("...");
 		// Visible length should be reasonable
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 	});
@@ -135,7 +131,7 @@ describe("truncateChars", () => {
 		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
-		expect(result).toContain("…");
+		expect(result).toContain("...");
 		// Should contain some 'm' chars (they are visible content, not ANSI)
 		expect(result).toContain("m");
 	});
@@ -145,15 +141,21 @@ describe("truncateChars", () => {
 		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
-		expect(result).toContain("…");
-		expect(result).toContain("echo");
+		expect(result).toContain("...");
+		expect(result).toContain("m"); // Tail 'm's should be preserved
 	});
 
-	it("handles max < 6 without ellipsis", () => {
+	it("handles max < 3 without ellipsis", () => {
 		const text = "abcdefghijklmnopqrstuvwxyz";
-		const result = truncateChars(text, 4);
-		expect(visibleLength(result)).toBeLessThanOrEqual(4);
-		expect(result).not.toContain(" ... ");
+		const result = truncateChars(text, 2);
+		expect(visibleLength(result)).toBeLessThanOrEqual(2);
+		expect(result).not.toContain("...");
+	});
+
+	it("handles max = 3 with ellipsis", () => {
+		const text = "abcdefghijklmnopqrstuvwxyz";
+		const result = truncateChars(text, 3);
+		expect(result).toBe("...");
 	});
 });
 
@@ -501,7 +503,7 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("dir:");
 		// Content is pre-truncated to contentBudget(10) = 50 chars
 		const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
-		expect(dirLine).toContain("…");
+		expect(dirLine).toContain("...");
 	});
 
 	it("includes long EXE text in TruncatedText", () => {
@@ -590,7 +592,7 @@ describe("activity panel rendering", () => {
 			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
 			expect(dirLine).toBeDefined();
 			// Content is pre-truncated to contentBudget(10) = 50 chars
-			expect(dirLine).toContain("…");
+			expect(dirLine).toContain("...");
 			expect(visibleLength(dirLine.split("dir:")[1].trim())).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
@@ -613,7 +615,7 @@ describe("activity panel rendering", () => {
 			expect(logLine).toBeDefined();
 			// Content is pre-truncated to contentBudget(10) = 50 chars
 			const logContent = logLine.split("log:")[1].trim();
-			expect(logContent).toContain("…");
+			expect(logContent).toContain("...");
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;

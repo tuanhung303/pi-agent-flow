@@ -1,5 +1,5 @@
 /**
- * Pure utility functions for rendering — extracted for testability.
+ * Pure utility functions for rendering - extracted for testability.
  */
 
 import type { UsageStats } from "./types.js";
@@ -100,18 +100,11 @@ export function contentBudget(prefixVisibleLen: number): number {
  * Truncate an ANSI-colored string to at most `max` visible characters,
  * preserving ANSI codes in the kept portions. Does not inject reset codes
  * — the caller is responsible for closing any open styles.
+ * 
+ * Refactored to perform head-truncation (start + ...) instead of middle-truncation.
  */
 function truncateAnsi(text: string, max: number): string {
 	if (visibleLength(text) <= max) return text;
-
-	if (max < 3) {
-		// Not enough room for '…' — just truncate without ellipsis
-		const { raw } = takeVisible(text, max);
-		return raw;
-	}
-
-	const head = Math.ceil(max * 0.6);
-	const tail = max - head - 1; // 1 = '…'.length
 
 	// Walk through the string, collecting raw chars until we've consumed
 	// `count` visible characters. ANSI sequences are copied through without
@@ -140,11 +133,20 @@ function truncateAnsi(text: string, max: number): string {
 		return { raw, consumed: visible };
 	}
 
-	// Take head from the start
-	const headResult = takeVisible(text, head);
+	if (max < 3) {
+		// Not enough room for '...' — just truncate without ellipsis
+		const { raw } = takeVisible(text, max);
+		return raw;
+	}
 
-	// Take tail from the end (walk backwards)
-	function takeVisibleFromEnd(src: string, count: number): string {
+	const keep = max - 3; // 3 = '...'.length
+	const ellipsis = "...";
+
+	// Walk through the string backwards, collecting raw chars until we've consumed
+	// `count` visible characters. ANSI sequences are copied through without
+	// counting toward the limit.
+	function takeVisibleFromEnd(src: string, count: number): { raw: string; consumed: number } {
+		let raw = "";
 		let visible = 0;
 		let i = src.length - 1;
 		while (i >= 0 && visible < count) {
@@ -155,21 +157,23 @@ function truncateAnsi(text: string, max: number): string {
 					const seq = src.slice(escStart, i + 1);
 					if (/^\x1b\[[0-9;]*m$/.test(seq)) {
 						// This is an ANSI sequence — don't count, skip past it
+						raw = seq + raw;
 						i = escStart - 1;
 						continue;
 					}
 				}
 			}
+			raw = src[i] + raw;
 			visible++;
 			i--;
 		}
-		// Extract the raw substring from (i+1) to end, including any trailing ANSI
-		return src.slice(i + 1);
+		return { raw, consumed: visible };
 	}
 
-	const tailRaw = takeVisibleFromEnd(text, tail);
+	// Take tail from the end
+	const tailResult = takeVisibleFromEnd(text, keep);
 
-	return headResult.raw + "\u2026" + tailRaw;
+	return ellipsis + tailResult.raw;
 }
 
 export function truncateChars(text: string, max: number): string {
