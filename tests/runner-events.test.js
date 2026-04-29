@@ -287,7 +287,7 @@ describe("getFlowSummaryText", () => {
     expect(getFlowSummaryText(result)).toBe("stderr output");
   });
 
-  it("returns (no output) as fallback", () => {
+  it("returns (no output) as fallback for success", () => {
     const result = { messages: [], exitCode: 0, stderr: "" };
     expect(getFlowSummaryText(result)).toBe("(no output)");
   });
@@ -295,6 +295,82 @@ describe("getFlowSummaryText", () => {
   it("handles null/undefined gracefully", () => {
     expect(getFlowSummaryText(null)).toBe("(no output)");
     expect(getFlowSummaryText(undefined)).toBe("(no output)");
+  });
+
+  it("aborted flow with tool calls includes partial work", () => {
+    const result = {
+      messages: [{
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "edit", toolCallId: "1", arguments: { file_path: "src/foo.ts" } },
+          { type: "toolCall", name: "bash", toolCallId: "2", arguments: { command: "npm test" } },
+        ],
+      }],
+      exitCode: 130,
+      stopReason: "aborted",
+      errorMessage: "Flow was aborted.",
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Flow was aborted.");
+    expect(summary).toContain("Partial work:");
+    expect(summary).toContain("edit foo.ts");
+    expect(summary).toContain("bash npm test");
+  });
+
+  it("aborted flow with only read calls has no partial work line", () => {
+    const result = {
+      messages: [{
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "read", toolCallId: "1", arguments: { file_path: "src/foo.ts" } },
+          { type: "toolCall", name: "read", toolCallId: "2", arguments: { file_path: "src/bar.ts" } },
+        ],
+      }],
+      exitCode: 130,
+      stopReason: "aborted",
+      errorMessage: "Flow was aborted.",
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toBe("Flow was aborted.");
+    expect(summary).not.toContain("Partial work");
+  });
+
+  it("aborted flow with no messages returns base error", () => {
+    const result = { messages: [], exitCode: 130, stopReason: "aborted", errorMessage: "Flow was aborted." };
+    expect(getFlowSummaryText(result)).toBe("Flow was aborted.");
+  });
+
+  it("failed flow with tool calls includes partial work", () => {
+    const result = {
+      messages: [{
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "edit", toolCallId: "1", arguments: { file_path: "src/render.ts" } },
+          { type: "toolCall", name: "bash", toolCallId: "2", arguments: { command: "npm test" } },
+        ],
+      }],
+      exitCode: 1,
+      stderr: "Build failed",
+      stopReason: "error",
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Build failed");
+    expect(summary).toContain("Partial work:");
+    expect(summary).toContain("edit render.ts");
+  });
+
+  it("successful flow with text ignores tool calls (happy path)", () => {
+    const result = {
+      messages: [{
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "edit", toolCallId: "1", arguments: { file_path: "src/foo.ts" } },
+          { type: "text", text: "All changes applied successfully." },
+        ],
+      }],
+      exitCode: 0,
+    };
+    expect(getFlowSummaryText(result)).toBe("All changes applied successfully.");
   });
 });
 

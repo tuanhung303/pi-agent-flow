@@ -338,22 +338,68 @@ export function getFlowFinalText(messages) {
   return "";
 }
 
+function extractNonReadToolCalls(messages) {
+  const calls = [];
+  if (!Array.isArray(messages)) return calls;
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (part.type === "toolCall" && part.name !== "read") {
+        calls.push({ name: part.name, args: part.arguments || part.input || {} });
+      }
+    }
+  }
+  return calls;
+}
+
+function formatToolCallShort(tc) {
+  const args = tc.args || {};
+  switch (tc.name) {
+    case "edit":
+    case "write":
+      return `${tc.name} ${(args.file_path || args.path || "?").split("/").pop()}`;
+    case "bash": {
+      const cmd = (args.command || "").replace(/[\n\r\t]+/g, " ").replace(/ +/g, " ").trim();
+      return `bash ${cmd.length > 40 ? cmd.slice(0, 40) + "..." : cmd}`;
+    }
+    case "grep":
+      return `grep /${args.pattern || "?"}/ in ${args.path || "."}`;
+    case "find":
+      return `find ${args.pattern || "*"} in ${args.path || "."}`;
+    case "ls":
+      return `ls ${args.path || "."}`;
+    default:
+      return tc.name;
+  }
+}
+
 export function getFlowSummaryText(result) {
   const finalText = getFlowFinalText(result?.messages);
   if (finalText) return finalText;
-
-  if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
-    return result.errorMessage.trim();
-  }
 
   const isError =
     (typeof result?.exitCode === "number" && result.exitCode > 0) ||
     result?.stopReason === "error" ||
     result?.stopReason === "aborted";
 
-  if (isError && typeof result?.stderr === "string" && result.stderr.trim()) {
-    return result.stderr.trim();
+  // Build base message for failed/aborted flows
+  let base = "";
+  if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
+    base = result.errorMessage.trim();
+  } else if (isError && typeof result?.stderr === "string" && result.stderr.trim()) {
+    base = result.stderr.trim();
+  } else if (isError) {
+    base = "Flow failed";
+  } else {
+    return "(no output)";
   }
 
-  return "(no output)";
+  // Surface partial tool calls (excluding read) for failed/aborted flows
+  const toolCalls = extractNonReadToolCalls(result?.messages);
+  if (toolCalls.length > 0) {
+    const formatted = toolCalls.map(formatToolCallShort).join(", ");
+    return `${base}\nPartial work: ${formatted}`;
+  }
+
+  return base;
 }
