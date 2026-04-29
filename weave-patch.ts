@@ -504,7 +504,7 @@ function prepareArguments(input: unknown): unknown {
 async function executeOperations(
 	operations: FileOpInput[],
 	cwd: string,
-): Promise<{ summary: string; results: OpResult[] }> {
+): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
 	let failed = false;
 
@@ -642,10 +642,11 @@ async function executeOperations(
 		}
 	}
 
-	// Build the enhanced summary
+	// Build the enhanced summary and content text
 	const summary = buildSummary(counts, errors, truncatedFiles);
+	const contentText = buildContentText(summary, results);
 
-	return { summary, results };
+	return { summary, contentText, results };
 }
 
 function buildSummary(
@@ -708,6 +709,29 @@ function buildSummary(
 	return parts.join("\n");
 }
 
+function buildContentText(summary: string, results: OpResult[]): string {
+	const sections: string[] = [summary];
+
+	for (const r of results) {
+		if (r.op === "read" && r.status === "ok" && r.content) {
+			const lineInfo = r.totalLines !== undefined ? ` (${r.totalLines} lines)` : "";
+			sections.push(`\n--- ${r.path}${lineInfo} ---\n${r.content}`);
+		} else if (r.op === "edit" && r.status === "ok") {
+			const diffInfo = r.diff ? ` — ${r.diff}` : "";
+			const blockInfo = r.blocksChanged !== undefined ? `${r.blocksChanged} block${r.blocksChanged > 1 ? "s" : ""}` : "";
+			sections.push(`\n--- edit: ${r.path} (${blockInfo}${diffInfo}) ---`);
+		} else if (r.op === "write" && r.status === "ok") {
+			sections.push(`\n--- write: ${r.path} (${r.bytes ?? 0} bytes) ---`);
+		} else if (r.op === "delete" && r.status === "ok") {
+			sections.push(`\n--- delete: ${r.path} ---`);
+		} else if (r.status === "error") {
+			sections.push(`\n--- ${r.op}: ${r.path} ---\nError: ${r.error}`);
+		}
+	}
+
+	return sections.join("");
+}
+
 // ---------------------------------------------------------------------------
 // Tool definition factory
 // ---------------------------------------------------------------------------
@@ -760,10 +784,10 @@ export function createWeavePatchTool() {
 				};
 			}
 
-			const { summary, results } = await executeOperations(args.operations, ctx.cwd);
+			const { contentText, results } = await executeOperations(args.operations, ctx.cwd);
 
 			return {
-				content: [{ type: "text", text: summary }],
+				content: [{ type: "text", text: contentText }],
 				details: { results },
 			};
 		},

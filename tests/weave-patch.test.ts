@@ -37,7 +37,9 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 1 operations: 1 read");
+			expect(result.content[0].text).toContain("✓ 1 operations: 1 read");
+    expect(result.content[0].text).toContain("--- test.txt (2 lines) ---");
+    expect(result.content[0].text).toContain("hello world");
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				path: "test.txt",
@@ -65,7 +67,11 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 2 operations: 2 reads");
+			expect(result.content[0].text).toContain("✓ 2 operations: 2 reads");
+    expect(result.content[0].text).toContain("--- a.txt (2 lines) ---");
+    expect(result.content[0].text).toContain("content a");
+    expect(result.content[0].text).toContain("--- b.txt (2 lines) ---");
+    expect(result.content[0].text).toContain("content b");
 			expect(result.details.results).toHaveLength(2);
 			expect(result.details.results[0].content).toBe("content a\n");
 			expect(result.details.results[1].content).toBe("content b\n");
@@ -300,7 +306,9 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 1 operations: 1 write");
+			expect(result.content[0].text).toContain("✓ 1 operations: 1 write");
+    expect(result.content[0].text).toContain("write: new.txt");
+    expect(result.content[0].text).toContain("12 bytes");
 			expect(result.details.results[0]).toMatchObject({
 				op: "write",
 				path: "new.txt",
@@ -365,7 +373,9 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 2 operations: 2 writes");
+			expect(result.content[0].text).toContain("✓ 2 operations: 2 writes");
+    expect(result.content[0].text).toContain("write: x.txt");
+    expect(result.content[0].text).toContain("write: y.txt");
 			expect(fs.readFileSync(path.join(tmpDir, "x.txt"), "utf-8")).toBe("x\n");
 			expect(fs.readFileSync(path.join(tmpDir, "y.txt"), "utf-8")).toBe("y\n");
 		});
@@ -392,7 +402,8 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 1 operations: 1 edit");
+			expect(result.content[0].text).toContain("✓ 1 operations: 1 edit");
+    expect(result.content[0].text).toContain("edit: edit.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "edit",
 				status: "ok",
@@ -464,7 +475,9 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 2 operations: 2 edits");
+			expect(result.content[0].text).toContain("✓ 2 operations: 2 edits");
+    expect(result.content[0].text).toContain("edit: a.txt");
+    expect(result.content[0].text).toContain("edit: b.txt");
 			expect(fs.readFileSync(path.join(tmpDir, "a.txt"), "utf-8")).toBe("ALPHA\n");
 			expect(fs.readFileSync(path.join(tmpDir, "b.txt"), "utf-8")).toBe("BETA\n");
 		});
@@ -633,7 +646,8 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 1 operations: 1 delete");
+			expect(result.content[0].text).toContain("✓ 1 operations: 1 delete");
+    expect(result.content[0].text).toContain("delete: delete-me.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "delete",
 				status: "ok",
@@ -683,7 +697,10 @@ describe("weave_patch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toBe("✓ 3 operations: 1 read, 1 write, 1 edit");
+			expect(result.content[0].text).toContain("✓ 3 operations: 1 read, 1 write, 1 edit");
+    expect(result.content[0].text).toContain("--- existing.txt");
+    expect(result.content[0].text).toContain("write: new.txt");
+    expect(result.content[0].text).toContain("edit: existing.txt");
 			expect(result.details.results).toHaveLength(3);
 			expect(result.details.results[0].status).toBe("ok");
 			expect(result.details.results[1].status).toBe("ok");
