@@ -430,6 +430,13 @@ export default function (pi: ExtensionAPI) {
 				toolOptimize = flowSettings.toolOptimize;
 			}
 		}
+
+		// Explicitly disable legacy standalone tools when toolOptimize is enabled
+		if (toolOptimize) {
+			const activeTools = ["weave_patch", "bash", "find", "grep", "ls"];
+			if (canDelegate) activeTools.push("flow");
+			pi.setActiveTools(activeTools);
+		}
 	});
 
 	// Inject available flows into the system prompt
@@ -677,11 +684,4 @@ flow [type] accomplished
 		});
 	}
 
-	// Explicitly disable legacy standalone tools when toolOptimize is enabled
-	// Must run AFTER both weave_patch and flow registrations to ensure all tools are in the active set
-	if (toolOptimize) {
-		const activeTools = ["weave_patch", "bash", "find", "grep", "ls"];
-		if (canDelegate) activeTools.push("flow");
-		pi.setActiveTools(activeTools);
-	}
 }

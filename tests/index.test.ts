@@ -436,4 +436,19 @@ describe("weave_patch tool registration", () => {
 
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
+
+	it("defers setActiveTools to session_start, not extension loading", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		// Should NOT be called during extension loading
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		// Should be called during session_start
+		expect(pi.setActiveTools).toHaveBeenCalled();
+	});
 });
