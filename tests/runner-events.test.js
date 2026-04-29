@@ -3,6 +3,7 @@ import {
   processFlowJsonLine,
   drainStreamingText,
   drainStreamingEstimate,
+  drainCtxEstimate,
   getFlowFinalText,
   getFlowSummaryText,
 } from "../runner-events.js";
@@ -367,5 +368,122 @@ describe("drainStreamingEstimate", () => {
       r,
     );
     expect(drainStreamingEstimate(r)).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// drainCtxEstimate — smooth context token streaming
+// ---------------------------------------------------------------------------
+
+describe("drainCtxEstimate", () => {
+  it("returns 0 on fresh result (no baseline yet)", () => {
+    const r = makeResult();
+    expect(drainCtxEstimate(r)).toBe(0);
+  });
+
+  it("returns baseline after message_end, no streaming since", () => {
+    const r = makeResult();
+    const msg = makeAssistantMessage("done", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 500 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    expect(drainCtxEstimate(r)).toBe(500);
+  });
+
+  it("increments smoothly during streaming after a baseline", () => {
+    const r = makeResult();
+    // First turn completes with totalTokens = 500
+    const msg = makeAssistantMessage("turn 1", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 500 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    expect(drainCtxEstimate(r)).toBe(500);
+
+    // Now stream 400 chars = 100 estimated tokens
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      r,
+    );
+    expect(drainCtxEstimate(r)).toBe(600); // 500 baseline + 100 estimated
+
+    // Stream more — ctx keeps climbing
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "b".repeat(200) } }),
+      r,
+    );
+    expect(drainCtxEstimate(r)).toBe(650); // 500 baseline + 150 estimated
+  });
+
+  it("resets baseline on next message_end with new totalTokens", () => {
+    const r = makeResult();
+    // Turn 1: totalTokens = 500
+    const msg1 = makeAssistantMessage("turn 1", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 500 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg1 }), r);
+
+    // Stream 400 chars = 100 tokens
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      r,
+    );
+    expect(drainCtxEstimate(r)).toBe(600);
+
+    // Turn 2: totalTokens = 700 (real value overwrites estimate)
+    const msg2 = makeAssistantMessage("turn 2", {
+      usage: { input: 150, output: 80, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 700 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg2 }), r);
+    expect(drainCtxEstimate(r)).toBe(700);
+  });
+
+  it("ctx estimate does not go below real totalTokens", () => {
+    const r = makeResult();
+    // message_end sets real totalTokens = 1000
+    const msg = makeAssistantMessage("done", {
+      usage: { input: 200, output: 100, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 1000 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    // No streaming yet — baseline is the floor
+    expect(drainCtxEstimate(r)).toBe(1000);
+  });
+
+  it("first-turn cold start: climbs from 0 with streaming estimate", () => {
+    const r = makeResult();
+    // No message_end yet — baseline is 0
+    expect(drainCtxEstimate(r)).toBe(0);
+
+    // Stream 800 chars = 200 tokens
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "x".repeat(800) } }),
+      r,
+    );
+    expect(drainCtxEstimate(r)).toBe(200); // 0 baseline + 200 estimated
+  });
+
+  it("ctx streaming chars accumulate independently of drainStreamingEstimate", () => {
+    const r = makeResult();
+    // Set baseline
+    const msg = makeAssistantMessage("done", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 500 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+
+    // Stream 400 chars
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      r,
+    );
+
+    // Drain the output estimate (resets est.chars to 0)
+    expect(drainStreamingEstimate(r)).toBe(100);
+
+    // ctx estimate should still be 600 — it uses its own char counter
+    expect(drainCtxEstimate(r)).toBe(600);
+
+    // Drain output again — returns 0 since already drained
+    expect(drainStreamingEstimate(r)).toBe(0);
+    // ctx still 600
+    expect(drainCtxEstimate(r)).toBe(600);
   });
 });

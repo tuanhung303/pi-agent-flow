@@ -64,6 +64,29 @@ function getStreamingEstimate(result) {
 }
 
 /**
+ * Lazily initialize ctx baseline tracking properties on the result object.
+ * - __ctxBaseline: last known real totalTokens from message_end
+ * - __ctxStreamingChars: cumulative output chars since last baseline reset
+ */
+function getCtxBaseline(result) {
+  if (!Object.prototype.hasOwnProperty.call(result, "__ctxBaseline")) {
+    Object.defineProperty(result, "__ctxBaseline", {
+      value: 0,
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+    Object.defineProperty(result, "__ctxStreamingChars", {
+      value: 0,
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+  }
+  return result.__ctxBaseline;
+}
+
+/**
  * Track streaming characters and estimate output tokens.
  * Called on every streaming delta.
  */
@@ -71,6 +94,9 @@ function updateStreamingEstimate(result, deltaLength) {
   if (deltaLength <= 0) return;
   const est = getStreamingEstimate(result);
   est.chars += deltaLength;
+  // Also accumulate chars for ctx estimation (not drained on emit)
+  getCtxBaseline(result);
+  result.__ctxStreamingChars += deltaLength;
 }
 
 /**
@@ -82,6 +108,18 @@ export function drainStreamingEstimate(result) {
   const tokens = Math.floor(est.chars / CHARS_PER_TOKEN);
   est.chars = 0;
   return tokens;
+}
+
+/**
+ * Return the estimated context tokens: last known real totalTokens (baseline)
+ * plus any additional output tokens estimated since that baseline was set.
+ * Returns 0 before the first message_end when no baseline exists yet,
+ * in which case the caller should fall back to the streaming output estimate.
+ */
+export function drainCtxEstimate(result) {
+  getCtxBaseline(result);
+  const streamingTokens = Math.floor(result.__ctxStreamingChars / CHARS_PER_TOKEN);
+  return result.__ctxBaseline + streamingTokens;
 }
 
 /**
@@ -151,6 +189,10 @@ function addFlowAssistantMessage(result, message) {
     result.usage.cacheWrite += usage.cacheWrite || 0;
     result.usage.cost += usage.cost?.total || 0;
     result.usage.contextTokens = usage.totalTokens || 0;
+
+    // Snapshot ctx baseline for smooth streaming estimation
+    result.__ctxBaseline = usage.totalTokens || 0;
+    result.__ctxStreamingChars = 0;
   }
 
   // Count tool call parts in the message content

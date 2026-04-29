@@ -12,7 +12,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { FlowConfig } from "./agents.js";
 import { parseFlowCliArgs } from "./runner-cli.js";
-import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate } from "./runner-events.js";
+import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate } from "./runner-events.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -33,14 +33,21 @@ const PI_OFFLINE_ENV = "PI_OFFLINE";
 type FlowUpdateCallback = (partial: AgentToolResult<FlowDetails>) => void;
 
 /**
- * Merge actual usage with streaming estimate.
+ * Merge actual usage with streaming estimates.
  * Uses Math.max for output to avoid double-counting.
+ * Uses Math.max for contextTokens so the ctx estimate (baseline + streaming)
+ * smoothly increments during active streaming.
  */
-function mergeStreamingUsage(actual: SingleResult["usage"], estimatedTokens: number): SingleResult["usage"] {
-	if (estimatedTokens <= 0) return actual;
+function mergeStreamingUsage(
+	actual: SingleResult["usage"],
+	estimatedOutputTokens: number,
+	ctxEstimate: number,
+): SingleResult["usage"] {
+	if (estimatedOutputTokens <= 0 && ctxEstimate <= 0) return actual;
 	return {
 		...actual,
-		output: Math.max(actual.output, estimatedTokens),
+		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
+		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
 	};
 }
 
@@ -224,7 +231,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const emitUpdate = () => {
 		const streaming = drainStreamingText(result);
 		const estimatedTokens = drainStreamingEstimate(result);
-		const mergedUsage = mergeStreamingUsage(result.usage, estimatedTokens);
+		const ctxEst = drainCtxEstimate(result);
+		const mergedUsage = mergeStreamingUsage(result.usage, estimatedTokens, ctxEst);
 		onUpdate?.({
 			content: [
 				{
