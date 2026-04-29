@@ -369,11 +369,12 @@ function formatToolCallShort(tc) {
     case "ls":
       return `ls ${args.path || "."}`;
     case "weave_patch": {
-      const ops = Array.isArray(args.operations) ? args.operations : [];
+      const ops = Array.isArray(args) ? args : Array.isArray(args.operations) ? args.operations : [];
       if (ops.length === 0) return "patch (empty)";
       const first = ops[0] || {};
-      const firstPath = (first.path || "?").split("/").pop();
-      const label = ops.length === 1 ? `${first.op} ${firstPath}` : `${first.op} ${firstPath} +${ops.length - 1} more`;
+      const firstPath = (first.p || first.path || "?").split("/").pop();
+      const opType = first.o || first.op || "?";
+      const label = ops.length === 1 ? `${opType} ${firstPath}` : `${opType} ${firstPath} +${ops.length - 1} more`;
       return `patch ${label}`;
     }
     default:
