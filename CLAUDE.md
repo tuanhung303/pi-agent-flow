@@ -35,6 +35,6 @@ Six flow-state prompts live in `agents/`:
 ## Key Implementation Details
 
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
-- **Directive delimiters**: `buildFlowArgs` wraps flow directives in `<flow-directive>` / `<system-directive>` XML-style tags to avoid CLI argument parsing conflicts (tags don't start with `-`).
+- **Directive delimiters**: `buildFlowArgs` uses a 4-part XML-style prompt structure: `<context-seal>` (sharp boundary sealing conversation history), `<activation>` (dynamic role/tools/delegation rules from flow config), `<directive>` (the flow's system prompt body), and `<mission>` (intent with execution contract). Tags avoid CLI parsing conflicts (none start with `-`).
 - **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.
 - **Cycle prevention**: Blocks re-entering flows already in the ancestor stack.

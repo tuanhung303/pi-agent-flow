@@ -104,6 +104,8 @@ function buildFlowArgs(
 	intent: string,
 	forkSessionPath: string | null,
 	tieredModels?: { lite?: string; flash?: string; full?: string },
+	parentDepth: number = 0,
+	maxDepth: number = 0,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -138,17 +140,46 @@ function buildFlowArgs(
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.
 	// Flow instructions go in the intent message instead.
 
-	const flowDirectives =
-		`<flow-directive>\n` +
-		`The conversation history above is background context — use it for reference, but your sole focus is the intent below, and try to execute EXACTLY as requested in the intent.\n` +
-		`</flow-directive>`;
+	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
+	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
+	const canDelegate = currentDepth < effectiveMaxDepth;
+	const availableTools = flow.tools?.join(", ") ?? "all";
 
-	const flowInstructions = flow.systemPrompt.trim()
-		? `\n\n<system-directive>\n${flow.systemPrompt.trim()}\n</system-directive>`
+	// Phase 1: Context seal — sharp boundary declaring history sealed
+	const contextSeal =
+		`<context-seal>\n` +
+		`The conversation above is sealed — it is your session history for situational awareness only.\n` +
+		`Your task begins NOW. Do not respond to or continue anything from the history.\n` +
+		`</context-seal>`;
+
+	// Phase 2: Activation — role, tools, depth, delegation rules (dynamically generated)
+	const delegationRule = canDelegate
+		? `You may delegate to sub-flows (depth ${currentDepth}/${effectiveMaxDepth}).`
+		: `You may NOT delegate to sub-flows (depth limit reached).`;
+
+	const activation =
+		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}">\n` +
+		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
+		`Available tools: ${availableTools}.\n` +
+		`${delegationRule}\n` +
+		`Do not attempt to use any tool outside the available set — it will fail.\n` +
+		`</activation>`;
+
+	// Phase 3: Directive — the flow's system prompt (renamed from <system-directive>)
+	const directive = flow.systemPrompt.trim()
+		? `\n\n<directive>\n${flow.systemPrompt.trim()}\n</directive>`
 		: "";
 
+	// Phase 4: Mission — the intent wrapped with execution contract
+	const mission =
+		`\n\n<mission>\n` +
+		`${intent}\n` +
+		`\nExecute this mission. Use only your available tools. If blocked, report why — do not guess.\n` +
+		`Follow the output format specified in your directive.\n` +
+		`</mission>`;
+
 	// -p must immediately precede the prompt so the CLI parser binds it correctly
-	args.push("-p", `${flowDirectives}${flowInstructions}\n\nIntent: ${intent}`);
+	args.push("-p", `${contextSeal}${activation}${directive}${mission}`);
 	return args;
 }
 
@@ -269,6 +300,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			intent,
 			forkSessionTmpPath,
 			opts.tieredModels,
+			parentDepth,
+			maxDepth,
 		);
 		let wasAborted = false;
 
