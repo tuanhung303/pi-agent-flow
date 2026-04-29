@@ -142,38 +142,10 @@ function truncateAnsi(text: string, max: number): string {
 	const keep = max - 3; // 3 = '...'.length
 	const ellipsis = "...";
 
-	// Walk through the string backwards, collecting raw chars until we've consumed
-	// `count` visible characters. ANSI sequences are copied through without
-	// counting toward the limit.
-	function takeVisibleFromEnd(src: string, count: number): { raw: string; consumed: number } {
-		let raw = "";
-		let visible = 0;
-		let i = src.length - 1;
-		while (i >= 0 && visible < count) {
-			// Check if current char is end of an ANSI sequence
-			if (src[i] === "m") {
-				const escStart = src.lastIndexOf("\x1b[", i);
-				if (escStart !== -1 && escStart < i) {
-					const seq = src.slice(escStart, i + 1);
-					if (/^\x1b\[[0-9;]*m$/.test(seq)) {
-						// This is an ANSI sequence — don't count, skip past it
-						raw = seq + raw;
-						i = escStart - 1;
-						continue;
-					}
-				}
-			}
-			raw = src[i] + raw;
-			visible++;
-			i--;
-		}
-		return { raw, consumed: visible };
-	}
+// Take head from the start
+	const headResult = takeVisible(text, keep);
 
-	// Take tail from the end
-	const tailResult = takeVisibleFromEnd(text, keep);
-
-	return ellipsis + tailResult.raw;
+	return headResult.raw + ellipsis;
 }
 
 export function truncateChars(text: string, max: number): string {

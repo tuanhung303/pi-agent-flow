@@ -67,22 +67,22 @@ describe("truncateChars", () => {
 		expect(truncateChars(text, 40)).toBe(text);
 	});
 
-	it("long text → ...tail format", () => {
+	it("long text → head... format", () => {
 		const text = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP";
 		const result = truncateChars(text, 40);
 		expect(result).toContain("...");
-		expect(result.startsWith("...")).toBe(true);
-		const tail = result.slice(3);
-		expect(text.endsWith(tail)).toBe(true);
+		expect(result.endsWith("...")).toBe(true);
+		const head = result.slice(0, -3);
+		expect(text.startsWith(head)).toBe(true);
 	});
 
-	it("preserves tail content", () => {
+	it("preserves head content", () => {
 		const text = "Find every occurrence of ingestion_data in the codebase and check all references";
 		const result = truncateChars(text, 40);
 		expect(result).toContain("...");
-		expect(result.startsWith("...")).toBe(true);
-		const tail = result.slice(3);
-		expect(text.endsWith(tail)).toBe(true);
+		expect(result.endsWith("...")).toBe(true);
+		const head = result.slice(0, -3);
+		expect(text.startsWith(head)).toBe(true);
 	});
 
 	it("short ANSI text → unchanged (no truncation)", () => {
@@ -103,15 +103,15 @@ describe("truncateChars", () => {
 	it("ANSI codes preserved in kept portions", () => {
 		const colored = "\x1b[31m" + "a".repeat(30) + "\x1b[32m" + "b".repeat(30) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// The result should contain ANSI codes from the tail portion (kept)
-		expect(result).toContain("\x1b[32m");
+		// The result should contain ANSI codes from the head portion (kept)
+		expect(result).toContain("\x1b[31m");
 	});
 
-	it("no reset code before ellipsis", () => {
+	it("no reset code after content", () => {
 		const colored = "\x1b[32m" + "a".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// Should NOT contain a reset code — outer wrapper provides styling
-		expect(result).not.toContain("\x1b[39m...");
+		// The reset code is in the tail (dropped) — outer wrapper provides styling
+		expect(result).not.toContain("\x1b[39m");
 		expect(result).toContain("...");
 	});
 
@@ -119,14 +119,14 @@ describe("truncateChars", () => {
 		// Truecolor ANSI: \x1b[38;2;R;G;Bm
 		const colored = "\x1b[38;2;255;128;0m" + "x".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
-		// Should NOT contain a reset code before ellipsis
-		expect(result).not.toContain("\x1b[39m...");
+		// Reset code is in the tail (dropped)
+		expect(result).not.toContain("\x1b[39m");
 		expect(result).toContain("...");
 		// Visible length should be reasonable
 		expect(visibleLength(result)).toBeLessThanOrEqual(40);
 	});
 
-	it("does not treat plain 'm' as ANSI terminator when truncating from end", () => {
+	it("does not treat plain 'm' as ANSI terminator when truncating from start", () => {
 		// ANSI prefix followed by many 'm' chars — old bug would skip all 'm's
 		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
 		const result = truncateChars(colored, 40);
@@ -136,13 +136,13 @@ describe("truncateChars", () => {
 		expect(result).toContain("m");
 	});
 
-	it("does not treat plain 'm' as ANSI terminator when truncating head", () => {
-		// ANSI prefix followed by many 'm' chars — old bug in takeVisible would also skip
-		const colored = "\x1b[32m" + "echo " + "m".repeat(60) + "\x1b[39m";
-		const result = truncateChars(colored, 40);
-		expect(visibleLength(result)).toBeLessThanOrEqual(40);
+	it("head-truncation keeps start of string", () => {
+		const text = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP";
+		const result = truncateChars(text, 40);
 		expect(result).toContain("...");
-		expect(result).toContain("m"); // Tail 'm's should be preserved
+		expect(result.endsWith("...")).toBe(true);
+		// First 37 chars of original should be preserved
+		expect(result.slice(0, -3)).toBe(text.slice(0, 37));
 	});
 
 	it("handles max < 3 without ellipsis", () => {
