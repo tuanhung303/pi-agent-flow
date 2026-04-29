@@ -52,7 +52,7 @@ export function drainStreamingText(result) {
 const CHARS_PER_TOKEN = 4;
 
 /** EMA smoothing factor for tokens-per-second (higher = more responsive). */
-const EMA_ALPHA = 0.3;
+const EMA_ALPHA = 0.15;
 
 function getStreamingEstimate(result) {
   if (!Object.prototype.hasOwnProperty.call(result, "__streamingEstimate")) {

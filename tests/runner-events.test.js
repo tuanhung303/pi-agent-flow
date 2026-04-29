@@ -4,6 +4,8 @@ import {
   drainStreamingText,
   drainStreamingEstimate,
   drainCtxEstimate,
+  updateSmoothedTps,
+  drainSmoothedTps,
   getFlowFinalText,
   getFlowSummaryText,
 } from "../runner-events.js";
@@ -561,5 +563,74 @@ describe("drainCtxEstimate", () => {
     expect(drainStreamingEstimate(r)).toBe(0);
     // ctx still 600
     expect(drainCtxEstimate(r)).toBe(600);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateSmoothedTps / drainSmoothedTps — EMA smoothing
+// ---------------------------------------------------------------------------
+
+describe("updateSmoothedTps / drainSmoothedTps", () => {
+  it("returns 0 on fresh result", () => {
+    const r = makeResult();
+    expect(drainSmoothedTps(r)).toBe(0);
+  });
+
+  it("seeds the value on first emit (skips update, sets timestamp)", () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100);
+    // First emit seeds __lastEmitTime but does not compute a rate
+    expect(drainSmoothedTps(r)).toBe(0);
+  });
+
+  it("computes EMA on second emit with enough time delta", async () => {
+    const r = makeResult();
+    // Seed the tracker
+    updateSmoothedTps(r, 100);
+    // Wait a bit so deltaSec > 0
+    await new Promise((res) => setTimeout(res, 50));
+    updateSmoothedTps(r, 50);
+    const tps = drainSmoothedTps(r);
+    // Should be a positive rate
+    expect(tps).toBeGreaterThan(0);
+  });
+
+  it("uses EMA_ALPHA = 0.15 for smoother averaging", async () => {
+    const r = makeResult();
+    // Seed — first call with non-zero tokens sets __lastEmitTime but doesn't compute rate
+    updateSmoothedTps(r, 100);
+    const seeded = drainSmoothedTps(r);
+    expect(seeded).toBe(0); // seeded, no rate yet
+
+    await new Promise((res) => setTimeout(res, 100));
+    // First real sample: ~100 tokens in ~100ms → ~1000 tps
+    updateSmoothedTps(r, 100);
+    const first = drainSmoothedTps(r);
+    expect(first).toBeGreaterThan(0);
+
+    await new Promise((res) => setTimeout(res, 100));
+    // Second sample: 10 tokens in ~100ms → ~100 tps
+    // With EMA_ALPHA=0.15, the smoothed value should be pulled less toward the new sample
+    updateSmoothedTps(r, 10);
+    const second = drainSmoothedTps(r);
+    // With alpha=0.15, the smoothed value should still be close to the first sample
+    // because only 15% weight goes to the new (lower) sample
+    expect(second).toBeGreaterThan(first * 0.5);
+  });
+
+  it("ignores zero estimated tokens", () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 0);
+    expect(drainSmoothedTps(r)).toBe(0);
+  });
+
+  it("drainSmoothedTps returns the value without resetting it", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 0);
+    await new Promise((res) => setTimeout(res, 50));
+    updateSmoothedTps(r, 100);
+    const first = drainSmoothedTps(r);
+    const second = drainSmoothedTps(r);
+    expect(second).toBe(first);
   });
 });

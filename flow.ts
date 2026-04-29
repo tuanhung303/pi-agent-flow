@@ -49,7 +49,7 @@ function mergeStreamingUsage(
 		...actual,
 		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
 		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
-		...(smoothedTps > 0 ? { smoothedTps } : {}),
+		...(smoothedTps > 0 ? { smoothedTps: Math.max(actual.smoothedTps ?? 0, smoothedTps) } : {}),
 	};
 }
 
@@ -436,6 +436,15 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		});
 
 		result.exitCode = exitCode;
+
+		// Persist final smoothed TPS into the result's usage so it survives after streaming ends.
+		// During streaming, emitUpdate() only merges smoothedTps into a temporary display object;
+		// without this, result.usage.smoothedTps stays at 0 and the UI shows a dash.
+		const finalSmoothedTps = drainSmoothedTps(result);
+		if (finalSmoothedTps > 0) {
+			result.usage.smoothedTps = finalSmoothedTps;
+		}
+
 		return normalizeFlowResult(result, wasAborted);
 	} finally {
 		cleanupFlowTempDir(forkSessionTmpDir);
