@@ -26,10 +26,10 @@ Six flow-state prompts live in `agents/`:
 | Flow | Tools | maxDepth | Notes |
 |------|-------|----------|-------|
 | `explore` | read, bash, find, grep, ls | 0 | Discovery, surgical efficiency |
-| `architect` | read, bash, find, grep, ls | 2 | Conservative design, may delegate to `[explore]` |
-| `code` | read, write, edit, bash, find, grep, ls | 2 | TDD workflow (red → green → refactor → verify) |
+| `architect` | read, bash, find, grep, ls | 0 | Conservative design, may delegate to `[explore]` |
+| `code` | read, write, edit, bash, find, grep, ls | 0 | TDD workflow (red → green → refactor → verify) |
 | `debug` | read, bash, find, grep, ls | 0 | Forensic investigation, evidence-only |
-| `review` | read, bash, find, grep, ls | 2 | **Read-only audit** — reports only, no edits |
+| `review` | read, bash, find, grep, ls | 0 | **Read-only audit** — reports only, no edits |
 | `brainstorm` | read, bash | 0 | Clean slate, diverge → evaluate → recommend |
 
 ## Key Implementation Details

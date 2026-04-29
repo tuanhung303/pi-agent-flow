@@ -69,7 +69,7 @@ describe("flow tool execute", () => {
 		vi.clearAllMocks();
 		delete process.env.PI_FLOW_DEPTH;
 		delete process.env.PI_FLOW_STACK;
-		delete process.env.PI_FLOW_MAX_DEPTH;
+		process.env.PI_FLOW_MAX_DEPTH = "2";
 		delete process.env.PI_FLOW_PREVENT_CYCLES;
 	});
 

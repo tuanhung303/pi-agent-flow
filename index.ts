@@ -25,7 +25,7 @@ import {
 // Limits
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MAX_DELEGATION_DEPTH = 3;
+const DEFAULT_MAX_DELEGATION_DEPTH = 0;
 const DEFAULT_PREVENT_CYCLE_DELEGATION = true;
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
