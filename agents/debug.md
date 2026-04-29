@@ -1,7 +1,7 @@
 ---
 name: debug
 description: Investigate logs, errors, stack traces, root causes
-tools: read, bash, find, grep, ls
+tools: weave_patch, bash, find, grep, ls
 maxDepth: 0
 ---
 

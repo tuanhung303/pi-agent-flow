@@ -25,12 +25,12 @@ Six flow-state prompts live in `agents/`:
 
 | Flow | Tools | maxDepth | Notes |
 |------|-------|----------|-------|
-| `explore` | read, bash, find, grep, ls | 0 | Discovery, surgical efficiency |
-| `architect` | read, bash, find, grep, ls | 0 | Conservative design, may delegate to `[explore]` |
-| `code` | read, write, edit, bash, find, grep, ls | 0 | TDD workflow (red → green → refactor → verify) |
-| `debug` | read, bash, find, grep, ls | 0 | Forensic investigation, evidence-only |
-| `review` | read, bash, find, grep, ls | 0 | **Read-only audit** — reports only, no edits |
-| `brainstorm` | read, bash | 0 | Clean slate, diverge → evaluate → recommend |
+| `explore` | weave_patch, bash, find, grep, ls | 0 | Discovery, surgical efficiency |
+| `architect` | weave_patch, bash, find, grep, ls | 0 | Conservative design, may delegate to `[explore]` |
+| `code` | weave_patch, bash, find, grep, ls | 0 | TDD workflow (red → green → refactor → verify) |
+| `debug` | weave_patch, bash, find, grep, ls | 0 | Forensic investigation, evidence-only |
+| `review` | weave_patch, bash, find, grep, ls | 0 | **Read-only audit** — reports only, no edits |
+| `brainstorm` | weave_patch, bash | 0 | Clean slate, diverge → evaluate → recommend |
 
 Note: Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3, but each flow's `maxDepth` overrides it.
 

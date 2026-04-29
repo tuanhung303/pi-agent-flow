@@ -1,7 +1,7 @@
 ---
 name: code
 description: Implement features, fix bugs, write tests, deploy, and ship
-tools: read, write, edit, bash, find, grep, ls
+tools: weave_patch, bash, find, grep, ls
 maxDepth: 0
 ---
 

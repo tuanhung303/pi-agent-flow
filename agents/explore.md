@@ -1,7 +1,7 @@
 ---
 name: explore
 description: Discover files, trace code paths, map architecture
-tools: read, bash, find, grep, ls
+tools: weave_patch, bash, find, grep, ls
 maxDepth: 0
 ---
 
