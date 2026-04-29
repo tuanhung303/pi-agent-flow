@@ -451,4 +451,22 @@ describe("weave_patch tool registration", () => {
 		// Should be called during session_start
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
+
+	it("re-applies setActiveTools on turn_start to survive registry refreshes", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+		const afterSession = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.length;
+
+		// Simulate a registry refresh (e.g., _refreshToolRegistry re-adds read)
+		await pi.trigger("turn_start");
+
+		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
+		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
+		expect(lastCall).toContain("weave_patch");
+		expect(lastCall).not.toContain("read");
+	});
 });

@@ -439,6 +439,15 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// Re-apply active tools every turn to survive registry refreshes
+	pi.on("turn_start", async () => {
+		if (toolOptimize) {
+			const activeTools = ["weave_patch", "bash", "find", "grep", "ls"];
+			if (canDelegate) activeTools.push("flow");
+			pi.setActiveTools(activeTools);
+		}
+	});
+
 	// Inject available flows into the system prompt
 	pi.on("before_agent_start", async (event) => {
 		if (!canDelegate) return;
