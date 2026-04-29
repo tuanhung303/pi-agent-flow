@@ -28,6 +28,7 @@ function createMockPi() {
 		registerTool: vi.fn((tool) => {
 			tools.push(tool);
 		}),
+		setActiveTools: vi.fn(),
 		getFlag: vi.fn((name: string) => flags[name]),
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
@@ -402,5 +403,37 @@ describe("weave_patch tool registration", () => {
 
 		const tool = pi.getTool("weave_patch");
 		expect(tool).toBeDefined();
+	});
+
+	it("calls setActiveTools to exclude legacy tools when toolOptimize is true", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		expect(pi.setActiveTools).toHaveBeenCalled();
+		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(calledWith).toContain("weave_patch");
+		expect(calledWith).toContain("bash");
+		expect(calledWith).toContain("find");
+		expect(calledWith).toContain("grep");
+		expect(calledWith).toContain("ls");
+		expect(calledWith).toContain("flow");
+		expect(calledWith).not.toContain("read");
+		expect(calledWith).not.toContain("write");
+		expect(calledWith).not.toContain("edit");
+	});
+
+	it("does not call setActiveTools when toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 });
