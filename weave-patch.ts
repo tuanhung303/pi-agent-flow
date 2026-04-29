@@ -174,7 +174,7 @@ function readWithOffsetLimit(
 	if (selectedLines.length >= 1 && Buffer.byteLength(selectedLines[0], "utf-8") > MAX_BYTES) {
 		const startLineDisplay = startLine + 1;
 		throw new Error(
-			`Line ${startLineDisplay} exceeds limit. Use bash: head -c ... ${filePath ?? "<file>"}`,
+			`Line ${startLineDisplay} exceeds limit. Try: weave_patch with o:"read", s:${startLineDisplay}, l:10, or use bash: head -c ... ${filePath ?? "<file>"}`,
 		);
 	}
 
@@ -821,14 +821,14 @@ export function createWeavePatchTool() {
 		name: "weave_patch",
 		label: "patch",
 		description: [
-			"Batch file operations: read, write, edit, or delete multiple files in a single call.",
+			"File operations: read, write, edit, or delete files.",
+			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
 			"Use for cross-cutting changes, multi-file refactors, or when mixing read/write/delete operations.",
-			"Prefer this over separate read/write/edit calls when touching 2+ files.",
 			"",
 			"Pass an object with an `op` array. Operations are executed sequentially in array order.",
 			"On failure, remaining operations are skipped.",
 		].join("\n"),
-		promptSnippet: "Batch read/write/edit/delete files in one call",
+		promptSnippet: "File operations — use o:read with s/l for targeted reading",
 		promptGuidelines: [
 			"Use weave_patch for multi-file changes, refactors, or when mixing creates/edits/deletes.",
 			"Prefer weave_patch over separate write+edit calls when touching 2+ files.",

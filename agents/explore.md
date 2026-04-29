@@ -9,6 +9,7 @@ During this explore flow — your mission is discovery. Move fast and stay surgi
 
 Rules:
 - Use grep/find/ls before reading entire files — be efficient.
+- For targeted file reading, use weave_patch with `o: "read"`, `s: <offset>`, `l: <limit>` instead of bash sed/head/tail.
 - Report findings with file paths and line numbers.
 - Show actual code/data, not excessive summaries.
 - If not found, say so immediately — don't guess.

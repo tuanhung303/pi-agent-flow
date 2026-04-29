@@ -19,6 +19,7 @@ Branch Strategy:
 
 Workflow:
 1. Analyze — read existing code for context
+   - For targeted file reading, use weave_patch with `o: "read"`, `s: <offset>`, `l: <limit>` instead of bash sed/head/tail.
 2. Plan — step-by-step approach before modifying
 3. Test — write a failing test that proves the bug or validates the feature (red)
 4. Execute — implement changes following core principles (green)
