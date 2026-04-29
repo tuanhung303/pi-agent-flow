@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatFixedTokens, formatCompactStats, formatFlowTypeName, truncateChars, contentBudget } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, truncateChars, contentBudget } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -182,13 +182,8 @@ function renderFlowExpanded(
 		container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
 	}
 
-	// Stats: all-in-one bracket format with context inline
-	const statsParts: string[] = [];
-	statsParts.push(`${formatFixedTokens(r.usage.input || 0)}↑`);
-	statsParts.push(`${formatFixedTokens(r.usage.output || 0)}↓`);
-	if (r.usage.cacheRead) statsParts.push(`cr:${formatFixedTokens(r.usage.cacheRead)}`);
-	if (r.usage.contextTokens > 0) statsParts.push(`ctx:${formatFixedTokens(r.usage.contextTokens)}`);
-	const inlineStats = `[ ${statsParts.join(" ")} ]${r.model ? ` ─ ${r.model}` : ""}`;
+	// Stats: dashboard format
+	const inlineStats = formatCompactStats(r.usage, r.model);
 	container.addChild(new Text(theme.fg("dim", inlineStats), 0, 0));
 
 	// Intent
@@ -239,12 +234,12 @@ function renderFlowCollapsed(
 		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
-	// exe: line (last tool call)
+	// act: line (last tool call)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
-		const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		const exeContent = truncateChars(exeStr, contentBudget(10));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ exe:")} ${exeContent}`, 0, 0));
+		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
+		const actContent = truncateChars(actStr, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ act:")} ${actContent}`, 0, 0));
 	}
 
 	// log: line (last assistant text or streaming)
@@ -308,13 +303,8 @@ function renderMultiFlowExpanded(
 		// Per-flow header: ─── EXPLORER (no icon)
 		container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", typeName)}`, 0, 0));
 
-		// Stats: all-in-one bracket format with context inline
-		const flowParts: string[] = [];
-		flowParts.push(`${formatFixedTokens(r.usage.input || 0)}↑`);
-		flowParts.push(`${formatFixedTokens(r.usage.output || 0)}↓`);
-		if (r.usage.cacheRead) flowParts.push(`cr:${formatFixedTokens(r.usage.cacheRead)}`);
-		if (r.usage.contextTokens > 0) flowParts.push(`ctx:${formatFixedTokens(r.usage.contextTokens)}`);
-		const flowStats = `[ ${flowParts.join(" ")} ]${r.model ? ` ─ ${r.model}` : ""}`;
+		// Stats: dashboard format
+		const flowStats = formatCompactStats(r.usage, r.model);
 		container.addChild(new Text(theme.fg("dim", flowStats), 0, 0));
 
 		// Intent: just show text, no prefix
@@ -334,15 +324,10 @@ function renderMultiFlowExpanded(
 		}
 	}
 
-	// Total stats: all-in-one bracket format with context inline
+	// Total stats: dashboard format
 	const totalUsage = aggregateFlowUsage(results);
 	const totalModel = results[0]?.model;
-	const totalParts: string[] = [];
-	totalParts.push(`${formatFixedTokens(totalUsage.input || 0)}↑`);
-	totalParts.push(`${formatFixedTokens(totalUsage.output || 0)}↓`);
-	if (totalUsage.cacheRead) totalParts.push(`cr:${formatFixedTokens(totalUsage.cacheRead)}`);
-	if (totalUsage.contextTokens > 0) totalParts.push(`ctx:${formatFixedTokens(totalUsage.contextTokens)}`);
-	const totalStats = `[ ${totalParts.join(" ")} ]${totalModel ? ` ─ ${totalModel}` : ""}`;
+	const totalStats = formatCompactStats(totalUsage, totalModel);
 	container.addChild(new Spacer(1));
 	container.addChild(new Text(theme.fg("dim", totalStats), 0, 0));
 
@@ -380,12 +365,12 @@ function renderActivityPanel(
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 
-		// exe: line (last tool call)
+		// act: line (last tool call)
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
-			const exeStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			const exeContent = truncateChars(exeStr, contentBudget(10));
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ exe:")} ${exeContent}`, 0, 0));
+			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
+			const actContent = truncateChars(actStr, contentBudget(10));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ act:")} ${actContent}`, 0, 0));
 		}
 
 		// log: line (last assistant text)

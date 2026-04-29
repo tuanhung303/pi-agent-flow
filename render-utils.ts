@@ -27,39 +27,37 @@ export function formatFixedTokens(count: number): string {
 }
 
 /**
- * Format flow type name to fixed width (10 chars) in lowercase with dot padding.
- * Examples: "debug" → "debug.....", "architect" → "architect.", "brainstorm" → "brainstorm"
+ * Format flow type name to fixed width (10 chars) in lowercase with space padding.
+ * Examples: "debug" → "debug     ", "architect" → "architect ", "brainstorm" → "brainstorm"
  */
 export function formatFlowTypeName(type: string): string {
 	const lower = type.toLowerCase();
 	const targetWidth = 10;
 	if (lower.length >= targetWidth) return lower.slice(0, targetWidth);
-	return lower + ".".repeat(targetWidth - lower.length);
+	return lower.padEnd(targetWidth, " ");
 }
 
 export function formatCompactStats(usage: Partial<UsageStats>, model?: string, maxWidth?: number): string {
 	const parts: string[] = [];
-	parts.push(`${formatFixedTokens(usage.input || 0)}↑`);
-	parts.push(`${formatFixedTokens(usage.output || 0)}↓`);
-	if (usage.cacheRead) parts.push(`cr:${formatFixedTokens(usage.cacheRead)}`);
-	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatFixedTokens(usage.contextTokens)}`);
+	parts.push(`↑ ${formatFixedTokens(usage.input || 0)}`);
+	parts.push(`↓ ${formatFixedTokens(usage.output || 0)}`);
+	parts.push(`act:${formatFixedTokens(usage.toolCalls || 0)}`);
+	parts.push(`ctx:${formatFixedTokens(usage.contextTokens || 0)}`);
 
-	let result = `[ ${parts.join(" ")} ]${model ? ` ─ ${model}` : ""}`;
+	let result = parts.join(" · ") + (model ? ` · ${model}` : "");
 
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first
-		let narrow = `[ ${parts.join(" ")} ]`;
+		let narrow = parts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens
-		const narrowParts = parts.slice();
-		const ctxIndex = narrowParts.findIndex((p) => p.startsWith("ctx:"));
-		if (ctxIndex !== -1) narrowParts.splice(ctxIndex, 1);
-		narrow = `[ ${narrowParts.join(" ")} ]`;
+		const narrowParts = parts.slice(0, 3); // up to act
+		narrow = narrowParts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Bare minimum (just input/output)
-		narrow = `[ ${parts[0]} ${parts[1]} ]`;
+		narrow = `${parts[0]} · ${parts[1]}`;
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		return truncateChars(result, maxWidth);
@@ -87,7 +85,7 @@ export function getTruncationBudget(prefixLength: number): number {
 	return Math.max(width - prefixLength, 1);
 }
 
-/** Fixed content budget for collapsed-line text (dir/exe/log). */
+/** Fixed content budget for collapsed-line text (dir/act/log). */
 export const CONTENT_MAX = 60;
 
 /**
