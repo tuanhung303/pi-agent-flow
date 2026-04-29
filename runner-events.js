@@ -369,7 +369,7 @@ function formatToolCallShort(tc) {
     case "ls":
       return `ls ${args.path || "."}`;
     case "weave_patch": {
-      const ops = Array.isArray(args) ? args : Array.isArray(args.operations) ? args.operations : [];
+      const ops = Array.isArray(args.ops) ? args.ops : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
       if (ops.length === 0) return "patch (empty)";
       const first = ops[0] || {};
       const firstPath = (first.p || first.path || "?").split("/").pop();

@@ -31,7 +31,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "test.txt" }] },
+				{ ops: [{ op: "read", path: "test.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -57,7 +57,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "read", path: "a.txt" },
 						{ op: "read", path: "b.txt" },
 					],
@@ -86,7 +86,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "bom.txt" }] },
+				{ ops: [{ op: "read", path: "bom.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -99,7 +99,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "nonexistent.txt" }] },
+				{ ops: [{ op: "read", path: "nonexistent.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -120,7 +120,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "lines.txt" }] },
+				{ ops: [{ op: "read", path: "lines.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -140,7 +140,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "offset.txt", offset: 3 }] },
+					{ ops: [{ op: "read", path: "offset.txt", offset: 3 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -160,7 +160,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "limit.txt", limit: 2 }] },
+					{ ops: [{ op: "read", path: "limit.txt", limit: 2 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -182,7 +182,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "both.txt", offset: 2, limit: 2 }] },
+					{ ops: [{ op: "read", path: "both.txt", offset: 2, limit: 2 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -199,7 +199,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "short.txt", offset: 10 }] },
+					{ ops: [{ op: "read", path: "short.txt", offset: 10 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -223,7 +223,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "full.txt" }] },
+					{ ops: [{ op: "read", path: "full.txt" }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -240,7 +240,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "small.txt", limit: 100 }] },
+					{ ops: [{ op: "read", path: "small.txt", limit: 100 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -259,7 +259,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "large.txt" }] },
+					{ ops: [{ op: "read", path: "large.txt" }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -278,7 +278,7 @@ describe("weave_patch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ operations: [{ op: "read", path: "large.txt" }] },
+					{ ops: [{ op: "read", path: "large.txt" }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -296,7 +296,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "write", path: "new.txt", content: "new content\n" },
 					],
 				},
@@ -326,7 +326,7 @@ describe("weave_patch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "write", path: "existing.txt", content: "new\n" },
 					],
 				},
@@ -344,7 +344,7 @@ describe("weave_patch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "write", path: "a/b/c/deep.txt", content: "deep\n" },
 					],
 				},
@@ -362,7 +362,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "write", path: "x.txt", content: "x\n" },
 						{ op: "write", path: "y.txt", content: "y\n" },
 					],
@@ -388,7 +388,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "edit.txt",
@@ -425,7 +425,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "multi.txt",
@@ -456,7 +456,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "a.txt",
@@ -492,7 +492,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "fuzzy.txt",
@@ -518,7 +518,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "miss.txt",
@@ -550,7 +550,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "dup.txt",
@@ -582,7 +582,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "diff.txt",
@@ -612,7 +612,7 @@ describe("weave_patch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "crlf.txt",
@@ -638,7 +638,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [{ op: "delete", path: "delete-me.txt" }],
+					ops: [{ op: "delete", path: "delete-me.txt" }],
 				},
 				undefined,
 				undefined,
@@ -659,7 +659,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [{ op: "delete", path: "nope.txt" }],
+					ops: [{ op: "delete", path: "nope.txt" }],
 				},
 				undefined,
 				undefined,
@@ -681,7 +681,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "read", path: "existing.txt" },
 						{ op: "write", path: "new.txt", content: "new file\n" },
 						{
@@ -718,7 +718,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "ordered.txt",
@@ -750,7 +750,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "read", path: "ok.txt" },
 						{ op: "read", path: "missing.txt" },
 						{ op: "write", path: "skipped.txt", content: "should not be written\n" },
@@ -778,7 +778,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "read", path: "nonexistent.txt" },
 						{ op: "write", path: "should-skip.txt", content: "nope\n" },
 					],
@@ -799,7 +799,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [{ op: "read", path: "../../../etc/hostname" }],
+					ops: [{ op: "read", path: "../../../etc/hostname" }],
 				},
 				undefined,
 				undefined,
@@ -820,7 +820,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "safe.txt" }] },
+				{ ops: [{ op: "read", path: "safe.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -836,7 +836,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: filePath }] },
+				{ ops: [{ op: "read", path: filePath }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -854,7 +854,7 @@ describe("weave_patch tool", () => {
 
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "any.txt" }] },
+				{ ops: [{ op: "read", path: "any.txt" }] },
 				controller.signal,
 				undefined,
 				makeCtx(tmpDir),
@@ -872,7 +872,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ path: "infer.txt" }, // no op, should infer "read"
 					],
 				},
@@ -894,7 +894,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "str.txt",
@@ -1029,7 +1029,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [] },
+				{ ops: [] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -1046,7 +1046,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "nonexistent.txt",
@@ -1072,7 +1072,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{
 							op: "edit",
 							path: "same.txt",
@@ -1097,7 +1097,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [{ op: "delete", path: "../../../tmp/trap.txt" }],
+					ops: [{ op: "delete", path: "../../../tmp/trap.txt" }],
 				},
 				undefined,
 				undefined,
@@ -1115,7 +1115,7 @@ describe("weave_patch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					operations: [
+					ops: [
 						{ op: "read", path: "missing.txt" },
 						{ op: "write", path: "skipped.txt", content: "nope" },
 					],
@@ -1141,7 +1141,7 @@ describe("weave_patch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ operations: [{ op: "read", path: "huge-line.txt" }] },
+				{ ops: [{ op: "read", path: "huge-line.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),

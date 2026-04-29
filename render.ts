@@ -67,7 +67,7 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 		case "grep":
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "weave_patch": {
-			const ops = Array.isArray(args) ? args : Array.isArray(args.operations) ? args.operations : [];
+			const ops = Array.isArray(args.ops) ? args.ops : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
 			if (ops.length === 0) return fg("muted", "patch (empty)");
 			const parts: string[] = [];
 			for (const op of ops) {

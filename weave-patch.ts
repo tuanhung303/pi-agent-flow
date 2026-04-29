@@ -57,9 +57,11 @@ const FileOp = Type.Object({
 	),
 });
 
-export const WeavePatchParams = Type.Array(FileOp, {
-	description:
-		"Ordered list of file operations. Executed sequentially. On failure, remaining operations are skipped.",
+export const WeavePatchParams = Type.Object({
+	ops: Type.Array(FileOp, {
+		description:
+			"Ordered list of file operations. Executed sequentially. On failure, remaining operations are skipped.",
+	}),
 });
 
 // ---------------------------------------------------------------------------
@@ -536,12 +538,14 @@ function prepareArguments(input: unknown): unknown {
 		];
 	}
 
-	// Unwrap legacy { operations: [...] } wrapper
+	// Unwrap to ops array — canonical { ops: [...] }, legacy { operations: [...] }, or bare array
 	let opsArray: unknown[];
-	if (Array.isArray(args)) {
-		opsArray = args;
+	if (Array.isArray(args.ops)) {
+		opsArray = args.ops;
 	} else if (Array.isArray(args.operations)) {
 		opsArray = args.operations;
+	} else if (Array.isArray(args)) {
+		opsArray = args;
 	} else if (typeof args.p === "string" || typeof args.path === "string") {
 		// Single-operation shorthand: { p: "...", o: "read" }
 		opsArray = [args];
@@ -819,7 +823,7 @@ export function createWeavePatchTool() {
 			"Use for cross-cutting changes, multi-file refactors, or when mixing read/write/delete operations.",
 			"Prefer this over separate read/write/edit calls when touching 2+ files.",
 			"",
-			"Operations are executed sequentially in array order.",
+			"Pass an object with an `ops` array. Operations are executed sequentially in array order.",
 			"On failure, remaining operations are skipped.",
 		].join("\n"),
 		promptSnippet: "Batch read/write/edit/delete files in one call",
