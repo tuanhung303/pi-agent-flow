@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { discoverFlows, type FlowDiscoveryResult } from "../agents.js";
+import { discoverFlows, getFlowTier, type FlowDiscoveryResult } from "../agents.js";
 
 describe("discoverFlows", () => {
 	let tmpDir: string;
@@ -76,6 +76,43 @@ describe("discoverFlows", () => {
 		const result = discoverFlows(tmpDir, "project");
 		const codeFlows = result.flows.filter((f) => f.name === "code");
 		expect(codeFlows).toHaveLength(1);
+	});
+});
+
+describe("getFlowTier", () => {
+	it("maps explore to lite", () => {
+		expect(getFlowTier("explore")).toBe("lite");
+	});
+
+	it("maps debug to lite", () => {
+		expect(getFlowTier("debug")).toBe("lite");
+	});
+
+	it("maps code to flash", () => {
+		expect(getFlowTier("code")).toBe("flash");
+	});
+
+	it("maps review to flash", () => {
+		expect(getFlowTier("review")).toBe("flash");
+	});
+
+	it("maps brainstorm to full", () => {
+		expect(getFlowTier("brainstorm")).toBe("full");
+	});
+
+	it("maps architect to full", () => {
+		expect(getFlowTier("architect")).toBe("full");
+	});
+
+	it("is case-insensitive", () => {
+		expect(getFlowTier("EXPLORE")).toBe("lite");
+		expect(getFlowTier("Code")).toBe("flash");
+		expect(getFlowTier("BRAINSTORM")).toBe("full");
+	});
+
+	it("defaults unknown flows to flash", () => {
+		expect(getFlowTier("custom")).toBe("flash");
+		expect(getFlowTier("")).toBe("flash");
 	});
 });
 

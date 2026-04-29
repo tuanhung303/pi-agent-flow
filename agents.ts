@@ -17,6 +17,8 @@ import * as path from "node:path";
 
 export type FlowScope = "user" | "project" | "both" | "bundled" | "all";
 
+export type FlowTier = "lite" | "flash" | "full";
+
 export interface FlowConfig {
 	name: string;
 	description: string;
@@ -25,6 +27,7 @@ export interface FlowConfig {
 	thinking?: string;
 	maxDepth?: number;
 	inheritContext?: boolean;
+	tier?: FlowTier;
 	systemPrompt: string;
 	source: "user" | "project" | "bundled";
 	filePath: string;
@@ -33,6 +36,24 @@ export interface FlowConfig {
 export interface FlowDiscoveryResult {
 	flows: FlowConfig[];
 	projectFlowsDir: string | null;
+}
+
+/** Determine the model tier for a given flow name. */
+export function getFlowTier(flowName: string): FlowTier {
+	const normalized = flowName.toLowerCase().trim();
+	switch (normalized) {
+		case "explore":
+		case "debug":
+			return "lite";
+		case "code":
+		case "review":
+			return "flash";
+		case "brainstorm":
+		case "architect":
+			return "full";
+		default:
+			return "flash";
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +190,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		thinking: typeof frontmatter.thinking === "string" ? frontmatter.thinking : undefined,
 		maxDepth,
 		inheritContext,
+		tier: getFlowTier(name),
 		systemPrompt: body,
 		source,
 		filePath,

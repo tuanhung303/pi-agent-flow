@@ -75,4 +75,54 @@ describe("parseFlowCliArgs", () => {
     expect(result.alwaysProxy).toContain("--provider");
     expect(result.alwaysProxy).toContain("openai");
   });
+
+  it("extracts --flow-lite-model", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-lite-model", "gemini-flash"]);
+    expect(result.tieredModels.lite).toBe("gemini-flash");
+  });
+
+  it("extracts --flow-flash-model", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-flash-model", "claude-sonnet"]);
+    expect(result.tieredModels.flash).toBe("claude-sonnet");
+  });
+
+  it("extracts --flow-full-model", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-full-model", "claude-opus"]);
+    expect(result.tieredModels.full).toBe("claude-opus");
+  });
+
+  it("extracts tiered models with equals syntax", () => {
+    const result = parseFlowCliArgs([
+      "node", "script",
+      "--flow-lite-model=gemini-flash",
+      "--flow-flash-model=claude-sonnet",
+      "--flow-full-model=claude-opus",
+    ]);
+    expect(result.tieredModels.lite).toBe("gemini-flash");
+    expect(result.tieredModels.flash).toBe("claude-sonnet");
+    expect(result.tieredModels.full).toBe("claude-opus");
+  });
+
+  it("tieredModels defaults are undefined when not provided", () => {
+    const result = parseFlowCliArgs(["node", "script"]);
+    expect(result.tieredModels.lite).toBeUndefined();
+    expect(result.tieredModels.flash).toBeUndefined();
+    expect(result.tieredModels.full).toBeUndefined();
+  });
+
+  it("handles all tiered model flags together with other flags", () => {
+    const result = parseFlowCliArgs([
+      "node", "script",
+      "--model", "gpt-4o",
+      "--flow-lite-model", "gemini-flash",
+      "--flow-flash-model", "claude-sonnet",
+      "--flow-full-model", "claude-opus",
+      "--thinking", "medium",
+    ]);
+    expect(result.fallbackModel).toBe("gpt-4o");
+    expect(result.tieredModels.lite).toBe("gemini-flash");
+    expect(result.tieredModels.flash).toBe("claude-sonnet");
+    expect(result.tieredModels.full).toBe("claude-opus");
+    expect(result.fallbackThinking).toBe("medium");
+  });
 });

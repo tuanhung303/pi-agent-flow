@@ -48,6 +48,9 @@ export function parseFlowCliArgs(argv) {
   let fallbackThinking;
   let fallbackTools;
   let fallbackNoTools = false;
+  let tieredLiteModel;
+  let tieredFlashModel;
+  let tieredFullModel;
 
   let i = 2; // skip executable + script name
   while (i < argv.length) {
@@ -198,6 +201,27 @@ export function parseFlowCliArgs(argv) {
       continue;
     }
 
+    if (flagName === "--flow-lite-model") {
+      const [value, skip] = getValue();
+      if (value !== undefined) tieredLiteModel = value;
+      i += skip;
+      continue;
+    }
+
+    if (flagName === "--flow-flash-model") {
+      const [value, skip] = getValue();
+      if (value !== undefined) tieredFlashModel = value;
+      i += skip;
+      continue;
+    }
+
+    if (flagName === "--flow-full-model") {
+      const [value, skip] = getValue();
+      if (value !== undefined) tieredFullModel = value;
+      i += skip;
+      continue;
+    }
+
     if (inlineValue !== undefined) {
       alwaysProxy.push(flagName, inlineValue);
       i++;
@@ -221,5 +245,10 @@ export function parseFlowCliArgs(argv) {
     fallbackThinking,
     fallbackTools,
     fallbackNoTools,
+    tieredModels: {
+      lite: tieredLiteModel,
+      flash: tieredFlashModel,
+      full: tieredFullModel,
+    },
   };
 }
