@@ -12,7 +12,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { type FlowConfig, getFlowTier } from "./agents.js";
 import { parseFlowCliArgs } from "./runner-cli.js";
-import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate } from "./runner-events.js";
+import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -42,12 +42,14 @@ function mergeStreamingUsage(
 	actual: SingleResult["usage"],
 	estimatedOutputTokens: number,
 	ctxEstimate: number,
+	smoothedTps: number,
 ): SingleResult["usage"] {
-	if (estimatedOutputTokens <= 0 && ctxEstimate <= 0) return actual;
+	if (estimatedOutputTokens <= 0 && ctxEstimate <= 0 && smoothedTps <= 0) return actual;
 	return {
 		...actual,
 		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
 		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
+		...(smoothedTps > 0 ? { smoothedTps } : {}),
 	};
 }
 
@@ -238,7 +240,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		const streaming = drainStreamingText(result);
 		const estimatedTokens = drainStreamingEstimate(result);
 		const ctxEst = drainCtxEstimate(result);
-		const mergedUsage = mergeStreamingUsage(result.usage, estimatedTokens, ctxEst);
+		updateSmoothedTps(result, estimatedTokens);
+		const smoothedTps = drainSmoothedTps(result);
+		const mergedUsage = mergeStreamingUsage(result.usage, estimatedTokens, ctxEst, smoothedTps);
 		onUpdate?.({
 			content: [
 				{

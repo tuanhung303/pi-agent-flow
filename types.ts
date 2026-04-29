@@ -15,6 +15,7 @@ export interface UsageStats {
 	contextTokens: number;
 	turns: number;
 	toolCalls: number;
+	smoothedTps?: number;
 }
 
 /** Result of a single flow invocation. */
@@ -47,7 +48,7 @@ export type DisplayItem =
 
 /** Create an empty UsageStats object. */
 export function emptyFlowUsage(): UsageStats {
-	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0, toolCalls: 0 };
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0, toolCalls: 0, smoothedTps: 0 };
 }
 
 /** Sum usage across multiple results. */
@@ -61,6 +62,9 @@ export function aggregateFlowUsage(results: SingleResult[]): UsageStats {
 		total.cost += r.usage.cost;
 		total.turns += r.usage.turns;
 		total.toolCalls += r.usage.toolCalls;
+		if ((r.usage.smoothedTps ?? 0) > (total.smoothedTps ?? 0)) {
+			total.smoothedTps = r.usage.smoothedTps;
+		}
 	}
 	return total;
 }

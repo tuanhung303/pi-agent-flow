@@ -249,12 +249,13 @@ function renderFlowCollapsed(
 		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
-	// act: line (last tool call)
+	// act: line (last tool call with count)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
+		const actPrefix = `act: [${r.usage.toolCalls}] - `;
 		const actContent = truncateChars(actStr, contentBudget(10));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ act:")} ${actContent}`, 0, 0));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ " + actPrefix)}${actContent}`, 0, 0));
 	}
 
 	// log: line (last assistant text or streaming)
@@ -380,12 +381,13 @@ function renderActivityPanel(
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 
-		// act: line (last tool call)
+		// act: line (last tool call with count)
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
 			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
+			const actPrefix = `act: [${r.usage.toolCalls}] - `;
 			const actContent = truncateChars(actStr, contentBudget(10));
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ act:")} ${actContent}`, 0, 0));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ " + actPrefix)}${actContent}`, 0, 0));
 		}
 
 		// log: line (last assistant text)

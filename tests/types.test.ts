@@ -50,6 +50,7 @@ describe("emptyFlowUsage", () => {
 		expect(u.contextTokens).toBe(0);
 		expect(u.turns).toBe(0);
 		expect(u.toolCalls).toBe(0);
+		expect(u.smoothedTps).toBe(0);
 	});
 });
 

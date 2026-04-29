@@ -51,6 +51,9 @@ export function drainStreamingText(result) {
 /** Chars per token heuristic for output estimation. */
 const CHARS_PER_TOKEN = 4;
 
+/** EMA smoothing factor for tokens-per-second (higher = more responsive). */
+const EMA_ALPHA = 0.3;
+
 function getStreamingEstimate(result) {
   if (!Object.prototype.hasOwnProperty.call(result, "__streamingEstimate")) {
     Object.defineProperty(result, "__streamingEstimate", {
@@ -61,6 +64,62 @@ function getStreamingEstimate(result) {
     });
   }
   return result.__streamingEstimate;
+}
+
+/**
+ * Lazily initialize TPS tracking properties on the result object.
+ * - __lastEmitTime: timestamp (ms) of the last streaming emit
+ * - __smoothedTps: EMA-smoothed tokens-per-second value
+ */
+function getTpsTracker(result) {
+  if (!Object.prototype.hasOwnProperty.call(result, "__smoothedTps")) {
+    Object.defineProperty(result, "__smoothedTps", {
+      value: 0,
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+    Object.defineProperty(result, "__lastEmitTime", {
+      value: 0,
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
+  }
+  return result;
+}
+
+/**
+ * Update the EMA-smoothed tokens-per-second based on a new sample.
+ * Called from emitUpdate() with the estimated output tokens since last emit.
+ * Skips the update when delta time or tokens are zero (e.g., first emit).
+ */
+export function updateSmoothedTps(result, estimatedTokens) {
+  if (estimatedTokens <= 0) return;
+  const tracker = getTpsTracker(result);
+  const now = Date.now();
+  if (tracker.__lastEmitTime === 0) {
+    // First emit — seed the value directly
+    tracker.__lastEmitTime = now;
+    return;
+  }
+  const deltaSec = (now - tracker.__lastEmitTime) / 1000;
+  if (deltaSec <= 0) return;
+  const instantRate = estimatedTokens / deltaSec;
+  if (tracker.__smoothedTps === 0) {
+    tracker.__smoothedTps = instantRate;
+  } else {
+    tracker.__smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.__smoothedTps;
+  }
+  tracker.__lastEmitTime = now;
+}
+
+/**
+ * Return the current EMA-smoothed tokens-per-second value.
+ */
+export function drainSmoothedTps(result) {
+  const tracker = getTpsTracker(result);
+  return tracker.__smoothedTps;
 }
 
 /**

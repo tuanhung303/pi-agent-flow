@@ -37,11 +37,17 @@ export function formatFlowTypeName(type: string): string {
 	return lower.padEnd(targetWidth, " ");
 }
 
+/** Format tokens-per-second to a 5-char display (e.g., " 42.3", "    -"). */
+function formatTps(value: number | undefined): string {
+	if (!value || value <= 0) return "    -";
+	return value.toFixed(1).padStart(5);
+}
+
 export function formatCompactStats(usage: Partial<UsageStats>, model?: string, maxWidth?: number): string {
 	const parts: string[] = [];
 	parts.push(`↑ ${formatFixedTokens(usage.input || 0)}`);
 	parts.push(`↓ ${formatFixedTokens(usage.output || 0)}`);
-	parts.push(`act: ${formatFixedTokens(usage.toolCalls || 0)}`);
+	parts.push(`tps: ${formatTps(usage.smoothedTps)}`);
 	parts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
 
 	let result = parts.join(" · ") + (model ? ` · ${model}` : "");
@@ -52,7 +58,7 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string, m
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens
-		const narrowParts = parts.slice(0, 3); // up to act
+		const narrowParts = parts.slice(0, 3); // up to tps
 		narrow = narrowParts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 

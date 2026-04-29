@@ -343,42 +343,54 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k · ↓   500 · act:     4 · ctx: 21.0k · K2.6");
+		expect(result).toBe("↑  2.0k · ↓   500 · tps:     - · ctx: 21.0k · K2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("↑   100 · ↓     0 · act:     0 · ctx:     0");
+		expect(result).toBe("↑   100 · ↓     0 · tps:     - · ctx:     0");
 	});
 
-	it("no usage → shows 0 placeholders", () => {
-		expect(formatCompactStats({})).toBe("↑     0 · ↓     0 · act:     0 · ctx:     0");
+	it("no usage → shows placeholders", () => {
+		expect(formatCompactStats({})).toBe("↑     0 · ↓     0 · tps:     - · ctx:     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 · ↓     0 · act:     0 · ctx:     0 · gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 · ↓     0 · tps:     - · ctx:     0 · gpt-4o");
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("↑  5.0k · ↓  1.0k · act:     0 · ctx:     0");
+		expect(formatCompactStats(usage)).toBe("↑  5.0k · ↓  1.0k · tps:     - · ctx:     0");
 	});
 
-	it("with tool calls and context", () => {
+	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("↑     0 · ↓     0 · act:     3 · ctx:  6.0k");
+		expect(formatCompactStats(usage)).toBe("↑     0 · ↓     0 · tps:     - · ctx:  6.0k");
+	});
+
+	it("with smoothedTps value", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
+		const result = formatCompactStats(usage, "K2.6");
+		expect(result).toBe("↑  2.0k · ↓   500 · tps:  42.3 · ctx: 21.0k · K2.6");
+	});
+
+	it("with zero smoothedTps shows dash", () => {
+		const usage = { input: 1000, output: 500, smoothedTps: 0 };
+		const result = formatCompactStats(usage);
+		expect(result).toBe("↑  1.0k · ↓   500 · tps:     - · ctx:     0");
 	});
 
 	it("narrows when maxWidth is tight", () => {
-		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", 35);
 		expect(visibleLength(result)).toBeLessThanOrEqual(35);
 		expect(result).toContain("↑  2.0k");
 	});
 
 	it("drops model and context when maxWidth is very tight", () => {
-		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", 25);
 		expect(visibleLength(result)).toBeLessThanOrEqual(25);
 		expect(result).not.toContain("K2.6");
@@ -442,6 +454,23 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("log:");
 	});
 
+	it("renders act line with count prefix [N]", () => {
+		const result = makeResult({
+			type: "explore",
+			intent: "Map the codebase",
+			messages: [
+				makeToolCallMessage("read", { file_path: "src/index.ts" }),
+				makeToolCallMessage("grep", { pattern: "TODO", path: "src" }),
+				makeToolCallMessage("bash", { command: "npm test" }),
+			],
+			usage: { input: 5000, output: 800, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 6000, turns: 3, toolCalls: 3 },
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("act: [3] -");
+	});
+
 	it("renders ghost dashboard during zero state", () => {
 		const rendered = renderFlowResult(
 			{ content: [{ type: "text", text: "Starting..." }], details: undefined },
@@ -455,7 +484,7 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("Refactor the auth module");
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
-		expect(text).toContain("act:     0");
+		expect(text).toContain("tps:     -");
 		expect(text).toContain("ctx:     0");
 		expect(text).toContain("Starting...");
 	});
@@ -652,7 +681,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("↑  9.8k · ↓  1.3k · act:     1 · ctx: 10.0k · mimo-v2.5-pro");
+		expect(text).toContain("↑  9.8k · ↓  1.3k · tps:     - · ctx: 10.0k · mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {
