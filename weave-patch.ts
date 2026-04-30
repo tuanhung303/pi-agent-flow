@@ -359,11 +359,11 @@ function buildPositionMap(original: string): number[] {
 function fuzzyFindText(
 	content: string,
 	oldText: string,
-): { found: boolean; index: number; matchLength: number } {
+): { found: boolean; index: number; matchLength: number; isExact: boolean } {
 	// Try exact match first
 	const exactIndex = content.indexOf(oldText);
 	if (exactIndex !== -1) {
-		return { found: true, index: exactIndex, matchLength: oldText.length };
+		return { found: true, index: exactIndex, matchLength: oldText.length, isExact: true };
 	}
 
 	// Try trimmed match, returning original indices
@@ -374,10 +374,10 @@ function fuzzyFindText(
 		const map = buildPositionMap(content);
 		const originalStart = map[fuzzyIndex];
 		const originalEnd = map[fuzzyIndex + normalizedOld.length];
-		return { found: true, index: originalStart, matchLength: originalEnd - originalStart };
+		return { found: true, index: originalStart, matchLength: originalEnd - originalStart, isExact: false };
 	}
 
-	return { found: false, index: -1, matchLength: 0 };
+	return { found: false, index: -1, matchLength: 0, isExact: false };
 }
 
 function countOccurrences(content: string, oldText: string): number {
@@ -397,6 +397,48 @@ function countOccurrences(content: string, oldText: string): number {
 // ---------------------------------------------------------------------------
 // Edit logic
 // ---------------------------------------------------------------------------
+
+/**
+ * Apply a fuzzy edit, preserving trailing whitespace from the original matched
+ * text that wasn't explicitly present in the oldText.
+ *
+ * This prevents normalizeForMatch from stripping trailing whitespace on lines
+ * that are being edited when fuzzy matching is used.
+ */
+function applyFuzzyEdit(
+	content: string,
+	matchIndex: number,
+	matchLength: number,
+	oldText: string,
+	newText: string,
+): string {
+	const before = content.substring(0, matchIndex);
+	const after = content.substring(matchIndex + matchLength);
+	const matched = content.substring(matchIndex, matchIndex + matchLength);
+
+	const matchedLines = matched.split("\n");
+	const oldLines = oldText.split("\n");
+	const newLines = newText.split("\n");
+
+	const resultLines: string[] = [];
+	for (let i = 0; i < newLines.length; i++) {
+		const newLine = newLines[i];
+		const oldLine = oldLines[i] ?? "";
+		const matchedLine = matchedLines[i] ?? "";
+
+		const oldTrailing = oldLine.length - oldLine.trimEnd().length;
+		const matchedTrailing = matchedLine.length - matchedLine.trimEnd().length;
+
+		if (matchedTrailing > oldTrailing) {
+			const extraStart = matchedLine.trimEnd().length + oldTrailing;
+			resultLines.push(newLine + matchedLine.slice(extraStart));
+		} else {
+			resultLines.push(newLine);
+		}
+	}
+
+	return before + resultLines.join("\n") + after;
+}
 
 function applyEdits(
 	content: string,
@@ -423,6 +465,8 @@ function applyEdits(
 		matchIndex: number;
 		matchLength: number;
 		newText: string;
+		oldText: string;
+		isExact: boolean;
 	}
 
 	const matchedEdits: MatchResult[] = [];
@@ -452,6 +496,8 @@ function applyEdits(
 			matchIndex: matchResult.index,
 			matchLength: matchResult.matchLength,
 			newText: edit.newText,
+			oldText: edit.oldText,
+			isExact: matchResult.isExact,
 		});
 	}
 
@@ -473,10 +519,20 @@ function applyEdits(
 	let newContent = baseContent;
 	for (let i = matchedEdits.length - 1; i >= 0; i--) {
 		const edit = matchedEdits[i];
-		newContent =
-			newContent.substring(0, edit.matchIndex) +
-			edit.newText +
-			newContent.substring(edit.matchIndex + edit.matchLength);
+		if (edit.isExact) {
+			newContent =
+				newContent.substring(0, edit.matchIndex) +
+				edit.newText +
+				newContent.substring(edit.matchIndex + edit.matchLength);
+		} else {
+			newContent = applyFuzzyEdit(
+				newContent,
+				edit.matchIndex,
+				edit.matchLength,
+				edit.oldText,
+				edit.newText,
+			);
+		}
 	}
 
 	if (baseContent === newContent) {

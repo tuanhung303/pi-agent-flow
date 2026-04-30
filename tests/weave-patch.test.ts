@@ -539,6 +539,64 @@ describe("weave_patch tool", () => {
 			expect(edited).toBe("keep trailing  \n  edited  \nalso keep  \n");
 		});
 
+		it("preserves trailing whitespace during fuzzy match when oldText ends with newline", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "trim-nl.txt"),
+				"keep trailing  \n  edit me  \nalso keep  \n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					op: [
+						{
+							op: "edit",
+							path: "trim-nl.txt",
+							edits: [{ oldText: "  edit me\n", newText: "  edited\n" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			const edited = fs.readFileSync(path.join(tmpDir, "trim-nl.txt"), "utf-8");
+			expect(edited).toBe("keep trailing  \n  edited  \nalso keep  \n");
+		});
+
+		it("preserves trailing whitespace on all lines during multi-line fuzzy match", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "multi-trim.txt"),
+				"line1   \nline2  \nline3   \n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					op: [
+						{
+							op: "edit",
+							path: "multi-trim.txt",
+							edits: [{ oldText: "line1\nline2\n", newText: "A\nB\n" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			const edited = fs.readFileSync(path.join(tmpDir, "multi-trim.txt"), "utf-8");
+			expect(edited).toBe("A   \nB  \nline3   \n");
+		});
+
 		it("returns error with hint for missing oldText", async () => {
 			fs.writeFileSync(path.join(tmpDir, "miss.txt"), "hello\n", "utf-8");
 
