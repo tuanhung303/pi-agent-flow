@@ -216,14 +216,26 @@ function generateDiffSummary(oldContent: string, newContent: string): string {
 	const oldLines = oldContent.split("\n");
 	const newLines = newContent.split("\n");
 
-	let added = 0;
-	let removed = 0;
-
-	for (const line of newLines) {
-		if (!oldLines.includes(line)) added++;
-	}
+	const oldCounts = new Map<string, number>();
 	for (const line of oldLines) {
-		if (!newLines.includes(line)) removed++;
+		oldCounts.set(line, (oldCounts.get(line) ?? 0) + 1);
+	}
+
+	const newCounts = new Map<string, number>();
+	for (const line of newLines) {
+		newCounts.set(line, (newCounts.get(line) ?? 0) + 1);
+	}
+
+	let added = 0;
+	for (const [line, count] of newCounts) {
+		const oldCount = oldCounts.get(line) ?? 0;
+		if (count > oldCount) added += count - oldCount;
+	}
+
+	let removed = 0;
+	for (const [line, count] of oldCounts) {
+		const newCount = newCounts.get(line) ?? 0;
+		if (count > newCount) removed += count - newCount;
 	}
 
 	return `+${added} -${removed} lines`;
@@ -319,6 +331,31 @@ function normalizeForMatch(text: string): string {
 		.join("\n");
 }
 
+function buildPositionMap(original: string): number[] {
+	const normalized = normalizeForMatch(original);
+	const map: number[] = new Array(normalized.length + 1);
+	let oi = 0;
+	let ni = 0;
+
+	while (oi < original.length && ni < normalized.length) {
+		map[ni] = oi;
+		if (original[oi] === normalized[ni]) {
+			oi++;
+			ni++;
+		} else {
+			oi++;
+		}
+	}
+
+	while (ni < normalized.length) {
+		map[ni] = oi;
+		ni++;
+	}
+
+	map[normalized.length] = original.length;
+	return map;
+}
+
 function fuzzyFindText(
 	content: string,
 	oldText: string,
@@ -329,12 +366,15 @@ function fuzzyFindText(
 		return { found: true, index: exactIndex, matchLength: oldText.length };
 	}
 
-	// Try trimmed match
+	// Try trimmed match, returning original indices
 	const normalizedContent = normalizeForMatch(content);
 	const normalizedOld = normalizeForMatch(oldText);
 	const fuzzyIndex = normalizedContent.indexOf(normalizedOld);
 	if (fuzzyIndex !== -1) {
-		return { found: true, index: fuzzyIndex, matchLength: normalizedOld.length };
+		const map = buildPositionMap(content);
+		const originalStart = map[fuzzyIndex];
+		const originalEnd = map[fuzzyIndex + normalizedOld.length];
+		return { found: true, index: originalStart, matchLength: originalEnd - originalStart };
 	}
 
 	return { found: false, index: -1, matchLength: 0 };
@@ -375,12 +415,7 @@ function applyEdits(
 		}
 	}
 
-	// Check for fuzzy match need
-	const needsFuzzy = normalizedEdits.some(
-		(edit) => fuzzyFindText(content, edit.oldText).found && !content.includes(edit.oldText),
-	);
-
-	const baseContent = needsFuzzy ? normalizeForMatch(content) : content;
+	const baseContent = content;
 
 	// Match all edits
 	interface MatchResult {
@@ -469,6 +504,14 @@ function expandTilde(inputPath: string): string {
 	return inputPath;
 }
 
+function isWithinDirectory(child: string, parent: string): boolean {
+	if (child === parent) return true;
+	if (process.platform === "win32") {
+		return child.toLowerCase().startsWith(parent.toLowerCase() + path.sep);
+	}
+	return child.startsWith(parent + path.sep);
+}
+
 async function validatePath(inputPath: string, cwd: string): Promise<string> {
 	const expandedPath = expandTilde(inputPath);
 	const resolved = path.resolve(cwd, expandedPath);
@@ -476,7 +519,7 @@ async function validatePath(inputPath: string, cwd: string): Promise<string> {
 	const normalizedCwd = path.normalize(cwd);
 	if (
 		normalizedResolved !== normalizedCwd &&
-		!normalizedResolved.startsWith(normalizedCwd + path.sep)
+		!isWithinDirectory(normalizedResolved, normalizedCwd)
 	) {
 		throw new Error(
 			`Path traversal detected: ${inputPath} resolves outside working directory.`,
@@ -510,7 +553,7 @@ async function validatePath(inputPath: string, cwd: string): Promise<string> {
 		const normalizedAncestor = path.normalize(ancestorReal);
 		if (
 			normalizedAncestor !== normalizedRealCwd &&
-			!normalizedAncestor.startsWith(normalizedRealCwd + path.sep)
+			!isWithinDirectory(normalizedAncestor, normalizedRealCwd)
 		) {
 			throw new Error(
 				`Path traversal detected: ${inputPath} ancestor directory is outside working directory.`,
@@ -524,7 +567,7 @@ async function validatePath(inputPath: string, cwd: string): Promise<string> {
 	const normalizedRealCwd = path.normalize(realCwd);
 	if (
 		normalizedReal !== normalizedRealCwd &&
-		!normalizedReal.startsWith(normalizedRealCwd + path.sep)
+		!isWithinDirectory(normalizedReal, normalizedRealCwd)
 	) {
 		throw new Error(
 			`Path traversal detected: ${inputPath} symlink points outside working directory.`,
@@ -634,6 +677,7 @@ function prepareArguments(input: unknown): { op: unknown[] } | unknown {
 async function executeOperations(
 	operations: FileOpInput[],
 	cwd: string,
+	signal?: AbortSignal,
 ): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
 	let failed = false;
@@ -643,6 +687,12 @@ async function executeOperations(
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
 
 	for (const op of operations) {
+		if (signal?.aborted) {
+			results.push({ op: op.o, path: op.p, status: "skipped", error: "Operation aborted." });
+			counts.skipped++;
+			continue;
+		}
+
 		if (failed) {
 			results.push({ op: op.o, path: op.p, status: "skipped" });
 			counts.skipped++;
@@ -748,6 +798,18 @@ async function executeOperations(
 				}
 
 				case "delete": {
+					let stat;
+					try {
+						stat = await fs.stat(resolvedPath);
+					} catch (err: any) {
+						if (err.code === "ENOENT") {
+							throw new Error(`File not found: ${op.p}`);
+						}
+						throw err;
+					}
+					if (stat.isDirectory()) {
+						throw new Error(`Cannot delete directory: ${op.p}. Use a recursive removal tool or delete files individually.`);
+					}
 					await fs.unlink(resolvedPath);
 					results.push({ op: "delete", path: op.p, status: "ok" });
 					counts.delete++;
@@ -933,7 +995,7 @@ export function createWeavePatchTool() {
 				};
 			}
 
-			const { contentText, results } = await executeOperations(ops, ctx.cwd);
+			const { contentText, results } = await executeOperations(ops, ctx.cwd, signal);
 
 			return {
 				content: [{ type: "text", text: contentText }],

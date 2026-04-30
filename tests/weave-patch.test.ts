@@ -511,6 +511,34 @@ describe("weave_patch tool", () => {
 			expect(edited).toContain("changed line");
 		});
 
+		it("preserves trailing whitespace on unedited lines during fuzzy match", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "trim.txt"),
+				"keep trailing  \n  edit me  \nalso keep  \n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			await tool.execute(
+				"call-1",
+				{
+					op: [
+						{
+							op: "edit",
+							path: "trim.txt",
+							edits: [{ oldText: "  edit me", newText: "  edited" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			const edited = fs.readFileSync(path.join(tmpDir, "trim.txt"), "utf-8");
+			expect(edited).toBe("keep trailing  \n  edited  \nalso keep  \n");
+		});
+
 		it("returns error with hint for missing oldText", async () => {
 			fs.writeFileSync(path.join(tmpDir, "miss.txt"), "hello\n", "utf-8");
 
@@ -600,6 +628,28 @@ describe("weave_patch tool", () => {
 
 			expect(result.details.results[0].diff).toBe("+2 -2 lines");
 		});
+		it("counts duplicate lines linearly in diff summary", async () => {
+			fs.writeFileSync(path.join(tmpDir, "dup.txt"), "A\nB\nA\nC\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					op: [
+						{
+							op: "edit",
+							path: "dup.txt",
+							edits: [{ oldText: "B\nA\n", newText: "D\nE\n" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].diff).toBe("+2 -2 lines");
+		});
 
 		it("preserves line endings (CRLF)", async () => {
 			fs.writeFileSync(
@@ -631,6 +681,29 @@ describe("weave_patch tool", () => {
 	});
 
 	describe("delete operations", () => {
+
+		it("rejects deleting a directory", async () => {
+			fs.mkdirSync(path.join(tmpDir, "a-dir"));
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					op: [{ op: "delete", path: "a-dir" }],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "delete",
+				status: "error",
+				error: expect.stringContaining("Cannot delete directory"),
+			});
+			expect(fs.existsSync(path.join(tmpDir, "a-dir"))).toBe(true);
+		});
+
 		it("deletes a file", async () => {
 			fs.writeFileSync(path.join(tmpDir, "delete-me.txt"), "bye\n", "utf-8");
 
@@ -847,6 +920,36 @@ describe("weave_patch tool", () => {
 	});
 
 	describe("abort signal", () => {
+
+		it("aborts mid-batch between operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "a.txt"), "a\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "b.txt"), "b\n", "utf-8");
+
+			const tool = createTool();
+			const controller = new AbortController();
+
+			const resultPromise = tool.execute(
+				"call-1",
+				{
+					op: [
+						{ op: "read", path: "a.txt" },
+						{ op: "read", path: "b.txt" },
+					],
+				},
+				controller.signal,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			controller.abort();
+
+			const result = await resultPromise;
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[1].status).toBe("skipped");
+			expect(result.details.results[1].error).toBe("Operation aborted.");
+		});
+
 		it("returns error when signal is already aborted", async () => {
 			const tool = createTool();
 			const controller = new AbortController();
