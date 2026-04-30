@@ -394,6 +394,18 @@ function countOccurrences(content: string, oldText: string): number {
 	return count;
 }
 
+function countExactOccurrences(content: string, oldText: string): number {
+	let count = 0;
+	let pos = 0;
+	while (true) {
+		const idx = content.indexOf(oldText, pos);
+		if (idx === -1) break;
+		count++;
+		pos = idx + oldText.length;
+	}
+	return count;
+}
+
 // ---------------------------------------------------------------------------
 // Edit logic
 // ---------------------------------------------------------------------------
@@ -482,7 +494,9 @@ function applyEdits(
 			);
 		}
 
-		const occurrences = countOccurrences(baseContent, edit.oldText);
+		const occurrences = matchResult.isExact
+			? countExactOccurrences(baseContent, edit.oldText)
+			: countOccurrences(baseContent, edit.oldText);
 		if (occurrences > 1) {
 			throw new Error(
 				edits.length === 1
@@ -565,9 +579,12 @@ export function isWithinDirectory(child: string, parent: string): boolean {
 		const childLower = child.toLowerCase();
 		const parentLower = parent.toLowerCase();
 		if (childLower === parentLower) return true;
-		return childLower.startsWith(parentLower + path.win32.sep);
+		const sep = path.win32.sep;
+		const prefix = parentLower.endsWith(sep) ? parentLower : parentLower + sep;
+		return childLower.startsWith(prefix);
 	}
 	if (child === parent) return true;
+	if (parent === "/") return child.startsWith("/");
 	return child.startsWith(parent + path.sep);
 }
 
@@ -593,9 +610,32 @@ async function validatePath(inputPath: string, cwd: string): Promise<string> {
 	try {
 		realPath = await fs.realpath(resolved);
 	} catch {
+		const normalizedRealCwd = path.normalize(realCwd);
+
+		// Check if the final component is a broken symlink pointing outside cwd.
+		try {
+			const lstat = await fs.lstat(resolved);
+			if (lstat.isSymbolicLink()) {
+				const linkTarget = await fs.readlink(resolved);
+				const resolvedTarget = path.resolve(path.dirname(resolved), linkTarget);
+				const normalizedTarget = path.normalize(resolvedTarget);
+				if (
+					normalizedTarget !== normalizedRealCwd &&
+					!isWithinDirectory(normalizedTarget, normalizedRealCwd)
+				) {
+					throw new Error(
+						`Path traversal detected: ${inputPath} symlink points outside working directory.`,
+					);
+				}
+				return resolved;
+			}
+		} catch (lstatErr: any) {
+			if (lstatErr.code !== "ENOENT") throw lstatErr;
+			// Not a symlink, proceed to ancestor fallback
+		}
+
 		// File doesn't exist yet (e.g. write creates new file).
 		// Walk up to the nearest existing ancestor and validate it is within realCwd.
-		const normalizedRealCwd = path.normalize(realCwd);
 		let ancestor = path.dirname(resolved);
 		let ancestorReal: string | null = null;
 		while (ancestor && ancestor !== path.dirname(ancestor)) {
@@ -631,6 +671,17 @@ async function validatePath(inputPath: string, cwd: string): Promise<string> {
 		throw new Error(
 			`Path traversal detected: ${inputPath} symlink points outside working directory.`,
 		);
+	}
+
+	// If the requested path is a symlink, return the original path so that
+	// operations like delete can act on the symlink itself.
+	try {
+		const lstat = await fs.lstat(resolved);
+		if (lstat.isSymbolicLink()) {
+			return resolved;
+		}
+	} catch {
+		// ignore
 	}
 	return realPath;
 }
@@ -859,7 +910,7 @@ async function executeOperations(
 				case "delete": {
 					let stat;
 					try {
-						stat = await fs.stat(resolvedPath);
+						stat = await fs.lstat(resolvedPath);
 					} catch (err: any) {
 						if (err.code === "ENOENT") {
 							throw new Error(`File not found: ${op.p}`);
