@@ -587,7 +587,7 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     const r = makeResult();
     // Seed the tracker
     updateSmoothedTps(r, 100);
-    // Wait enough so deltaSec > MIN_TPS_SAMPLE_MS (100ms)
+    // Wait for MIN_TPS_SAMPLE_MS gate
     await new Promise((res) => setTimeout(res, 150));
     updateSmoothedTps(r, 50);
     const tps = drainSmoothedTps(r);
@@ -595,26 +595,26 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     expect(tps).toBeGreaterThan(0);
   });
 
-  it("uses EMA_ALPHA = 0.15 for smoother averaging", async () => {
+  it("uses EMA_ALPHA = 0.1 for smoother averaging", async () => {
     const r = makeResult();
     // Seed — first call with non-zero tokens sets __lastEmitTime but doesn't compute rate
     updateSmoothedTps(r, 100);
     const seeded = drainSmoothedTps(r);
     expect(seeded).toBe(0); // seeded, no rate yet
 
-    await new Promise((res) => setTimeout(res, 100));
-    // First real sample: ~100 tokens in ~100ms → ~1000 tps
+    await new Promise((res) => setTimeout(res, 110));
+    // First real sample: ~100 tokens in ~110ms → ~909 raw tps → ~90.9 calibrated
     updateSmoothedTps(r, 100);
     const first = drainSmoothedTps(r);
     expect(first).toBeGreaterThan(0);
 
-    await new Promise((res) => setTimeout(res, 100));
-    // Second sample: 10 tokens in ~100ms → ~100 tps
-    // With EMA_ALPHA=0.15, the smoothed value should be pulled less toward the new sample
+    await new Promise((res) => setTimeout(res, 110));
+    // Second sample: 10 tokens in ~110ms → ~90.9 raw tps → ~9.1 calibrated
+    // With EMA_ALPHA=0.1, the smoothed value should be pulled less toward the new sample
     updateSmoothedTps(r, 10);
     const second = drainSmoothedTps(r);
-    // With alpha=0.15, the smoothed value should still be close to the first sample
-    // because only 15% weight goes to the new (lower) sample
+    // With alpha=0.1, the smoothed value should still be close to the first sample
+    // because only 10% weight goes to the new (lower) sample
     expect(second).toBeGreaterThan(first * 0.5);
   });
 
@@ -627,11 +627,55 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
   it("drainSmoothedTps returns the value without resetting it", async () => {
     const r = makeResult();
     updateSmoothedTps(r, 0);
-    await new Promise((res) => setTimeout(res, 50));
+    await new Promise((res) => setTimeout(res, 110));
     updateSmoothedTps(r, 100);
     const first = drainSmoothedTps(r);
     const second = drainSmoothedTps(r);
     expect(second).toBe(first);
+  });
+
+  it("accumulates tokens and gates samples to MIN_TPS_SAMPLE_MS", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 50); // first compute
+    const tps1 = drainSmoothedTps(r);
+    expect(tps1).toBeGreaterThan(0);
+
+    // Call again after only 50ms — should buffer, not compute
+    await new Promise((res) => setTimeout(res, 50));
+    updateSmoothedTps(r, 1000);
+    const tps2 = drainSmoothedTps(r);
+    expect(tps2).toBe(tps1);
+
+    // Wait another 70ms (total ~120ms from last compute)
+    await new Promise((res) => setTimeout(res, 70));
+    updateSmoothedTps(r, 1);
+    const tps3 = drainSmoothedTps(r);
+    // Should now reflect the accumulated burst
+    expect(tps3).not.toBe(tps1);
+  });
+
+  it("applies TPS_CALIBRATION to scale the rate", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    // 100 tokens in ~110ms → raw ~909 tps → calibrated ~90.9 tps
+    updateSmoothedTps(r, 100);
+    const tps = drainSmoothedTps(r);
+    expect(tps).toBeGreaterThan(0);
+    expect(tps).toBeLessThan(200); // well below uncalibrated ~909
+  });
+
+  it("caps instant rate at MAX_INSTANT_TPS", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    // 5000 tokens in ~110ms → raw ~45454 tps → calibrated ~4545 tps, capped to 300
+    updateSmoothedTps(r, 5000);
+    const tps = drainSmoothedTps(r);
+    expect(tps).toBeGreaterThan(0);
+    expect(tps).toBeLessThanOrEqual(300);
   });
 });
 
