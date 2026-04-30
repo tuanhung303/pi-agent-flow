@@ -116,7 +116,9 @@ export function getOptimizedTools(
 	const filtered = flowTools.filter(
 		(t) => t !== "read" && t !== "write" && t !== "edit",
 	);
-	return [...filtered, "weave_patch"];
+	return filtered.includes("weave_patch")
+		? filtered
+		: [...filtered, "weave_patch"];
 }
 
 function buildFlowArgs(
