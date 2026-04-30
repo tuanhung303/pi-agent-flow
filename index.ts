@@ -436,12 +436,12 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Compute active tools: main agent is a pure orchestrator.
-		// toolOptimize=true  → no tools (replies from context or asks user)
+		// Compute active tools: main agent is a orchestrator.
+		// toolOptimize=true  → flow + web only (delegate or search)
 		// toolOptimize=false → legacy full tool set
 		function computeActiveTools(optimize: boolean): string[] {
 			return optimize
-				? []
+				? ["flow", "web"]
 				: ["read", "write", "edit", "bash", "flow", "web"];
 		}
 
@@ -453,7 +453,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Re-apply active tools every turn to survive registry refreshes
 	pi.on("turn_start", async () => {
-		pi.setActiveTools(toolOptimize ? [] : ["read", "write", "edit", "bash", "flow", "web"]);
+		pi.setActiveTools(toolOptimize ? ["flow", "web"] : ["read", "write", "edit", "bash", "flow", "web"]);
 	});
 	// Inject available flows into the system prompt
 	pi.on("before_agent_start", async (event) => {

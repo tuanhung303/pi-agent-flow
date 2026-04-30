@@ -376,7 +376,7 @@ describe("main agent tool restriction", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("clears all active tools when toolOptimize is true", async () => {
+	it("restricts main agent to flow+web when toolOptimize is true", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -386,7 +386,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual([]);
+		expect(calledWith).toEqual(["flow", "web"]);
 	});
 
 	it("restores legacy read+write+edit when toolOptimize is false", async () => {
@@ -423,7 +423,7 @@ describe("main agent tool restriction", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies empty tools on turn_start when optimized", async () => {
+	it("re-applies flow+web on turn_start when optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -437,7 +437,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual([]);
+		expect(lastCall).toEqual(["flow", "web"]);
 	});
 
 	it("restores legacy tools on turn_start when toolOptimize is false", async () => {
@@ -472,7 +472,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual([]);
+		expect(calledWith).toEqual(["flow", "web"]);
 	});
 
 	it("registers weave_patch globally but not in main agent active tools", async () => {
@@ -486,9 +486,9 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// Main agent active tools are completely empty when optimized
+		// Main agent active tools are flow+web when optimized
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual([]);
+		expect(lastCall).toEqual(["flow", "web"]);
 	});
 });
 
