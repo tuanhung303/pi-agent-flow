@@ -490,19 +490,20 @@ describe("main agent tool restriction", () => {
 		expect(calledWith).not.toContain("write");
 	});
 
-	it("does not register weave_patch for main agent", async () => {
+	it("registers weave_patch globally but not in main agent active tools", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
-		// Should NOT be registered during extension loading
-		expect(pi.getTool("weave_patch")).toBeUndefined();
+		// weave_patch IS registered so child flows can use it
+		expect(pi.getTool("weave_patch")).toBeDefined();
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// Should still not be registered
-		expect(pi.getTool("weave_patch")).toBeUndefined();
+		// But main agent active tools should NOT include weave_patch
+		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
+		expect(lastCall).not.toContain("weave_patch");
 	});
 });
 

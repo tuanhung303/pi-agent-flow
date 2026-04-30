@@ -73,9 +73,7 @@ function getUserFlowsDir(): string {
 function getBundledFlowsDir(): string {
 	// Method 1: import.meta.url (ESM)
 	try {
-		// @ts-expect-error — import.meta.url may not exist in all contexts
 		if (import.meta.url) {
-			// @ts-expect-error
 			const pluginDir = path.dirname(new URL(import.meta.url).pathname);
 			const dir = path.join(pluginDir, "agents");
 			if (fs.existsSync(dir)) return dir;
@@ -84,7 +82,6 @@ function getBundledFlowsDir(): string {
 
 	// Method 2: __dirname (CommonJS / jiti)
 	try {
-		// @ts-expect-error — __dirname may not exist in ESM
 		if (typeof __dirname !== "undefined") {
 			const dir = path.join(__dirname, "agents");
 			if (fs.existsSync(dir)) return dir;

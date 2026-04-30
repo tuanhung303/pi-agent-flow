@@ -162,3 +162,126 @@ describe("getOptimizedTools", () => {
 		expect(result).toEqual(["weave_patch", "bash"]);
 	});
 });
+
+describe("child flow harness tools", () => {
+	function makeMockProcess() {
+		const proc = new EventEmitter() as any;
+		proc.stdin = new EventEmitter();
+		proc.stdin.end = vi.fn();
+		proc.stdout = new EventEmitter();
+		proc.stderr = new EventEmitter();
+		proc.pid = 12345;
+		proc.kill = vi.fn();
+		return proc;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("includes weave_patch when flow.tools has legacy tools and toolOptimize is true", async () => {
+		const mockFlow: FlowConfig = {
+			name: "code",
+			description: "Code flow",
+			systemPrompt: "You are code.",
+			source: "bundled",
+			filePath: "/agents/code.md",
+			tools: ["read", "write", "edit", "bash", "flow"],
+		};
+
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "code",
+			intent: "Test intent",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			toolOptimize: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const toolsIndex = args.indexOf("--tools");
+		expect(toolsIndex).toBeGreaterThan(-1);
+		const toolsValue = args[toolsIndex + 1];
+		expect(toolsValue).toContain("weave_patch");
+		expect(toolsValue).not.toContain("read");
+		expect(toolsValue).not.toContain("write");
+		expect(toolsValue).not.toContain("edit");
+	});
+
+	it("filters out web from child flow tools", async () => {
+		const mockFlow: FlowConfig = {
+			name: "explore",
+			description: "Explore flow",
+			systemPrompt: "You are explore.",
+			source: "bundled",
+			filePath: "/agents/explore.md",
+			tools: ["read", "bash", "flow", "web"],
+		};
+
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "explore",
+			intent: "Test intent",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			toolOptimize: false,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const toolsIndex = args.indexOf("--tools");
+		expect(toolsIndex).toBeGreaterThan(-1);
+		const toolsValue = args[toolsIndex + 1];
+		expect(toolsValue).not.toContain("web");
+		expect(toolsValue).toContain("read");
+		expect(toolsValue).toContain("bash");
+		expect(toolsValue).toContain("flow");
+	});
+});

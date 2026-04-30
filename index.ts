@@ -20,9 +20,9 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
+import { createWeavePatchTool } from "./weave-patch.js";
 import {
 	createWebTool,
-	
 	looksLikeUrlPrompt,
 	looksLikeWebSearchPrompt,
 } from "./web-tool.js";
@@ -436,8 +436,8 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Compute active tools dynamically, preserving other extension tools (including web)
 		// Compute active tools: main agent is an orchestrator.
+		// Filters to base tool set; other extension tools are removed.
 		// toolOptimize=true  → read + bash + flow + web
 		// toolOptimize=false → read + write + edit + bash + flow + web
 		function computeActiveTools(enableWeavePatch: boolean): string[] {
@@ -565,6 +565,10 @@ flow [type] accomplished
 
 	// Register the web tool
 	pi.registerTool(createWebTool());
+
+	// Register weave_patch so child flows can use it via getOptimizedTools.
+	// The main agent does NOT have weave_patch in its active tools.
+	pi.registerTool(createWeavePatchTool());
 
 	// Register the flow tool
 	if (canDelegate) {

@@ -150,13 +150,11 @@ function buildFlowArgs(
 	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
 	if (thinking) args.push("--thinking", thinking);
 
-	// Child flows run with a minimal harness: read + bash + flow only.
-	// This prevents write/edit/web/search in forked contexts.
-	const harnessTools = ["read", "bash", "flow"];
+	// Child flows get their configured tools from flow.tools, optimized by
+	// getOptimizedTools, with web explicitly filtered out.
+	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? ["read", "bash", "flow"];
+	const harnessTools = optimizedTools.filter((t) => t !== "web");
 	args.push("--tools", harnessTools.join(","));
-
-	// Keep original flow.tools only for activation-prompt documentation
-	const effectiveTools = getOptimizedTools(flow.tools, toolOptimize) ?? harnessTools;
 
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.
 	// Flow instructions go in the intent message instead.

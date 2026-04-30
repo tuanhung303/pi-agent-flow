@@ -21,7 +21,7 @@ export interface UsageStats {
 /** Result of a single flow invocation. */
 export interface SingleResult {
 	type: string;
-	agentSource: "user" | "project" | "unknown";
+	agentSource: "user" | "project" | "bundled" | "unknown";
 	intent: string;
 	exitCode: number;
 	messages: Message[];
@@ -155,7 +155,7 @@ export function getFlowDisplayItems(messages: Message[]): DisplayItem[] {
 }
 
 /** Extract the last tool call from message history. */
-export function getLastToolCall(messages: Message[]): DisplayItem | undefined {
+export function getLastToolCall(messages: Message[]): { type: "toolCall"; name: string; args: Record<string, unknown> } | undefined {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {
