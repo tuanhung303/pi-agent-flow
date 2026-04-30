@@ -69,6 +69,48 @@ describe("processFlowJsonLine", () => {
     expect(r.messages).toHaveLength(1);
   });
 
+  it("handles agent_end event — stores tool messages alongside assistant", () => {
+    const r = makeResult();
+    const toolMsg = {
+      role: "tool",
+      toolCallId: "tc1",
+      content: [{ type: "text", text: "bash output here" }],
+    };
+    const event = {
+      type: "agent_end",
+      messages: [makeAssistantMessage("running..."), toolMsg],
+    };
+    processFlowJsonLine(JSON.stringify(event), r);
+    expect(r.sawAgentEnd).toBe(true);
+    expect(r.messages).toHaveLength(2);
+    expect(r.messages[0].role).toBe("assistant");
+    expect(r.messages[1].role).toBe("tool");
+    expect(r.messages[1].content[0].text).toBe("bash output here");
+  });
+
+  it("handles agent_end event — deduplicates tool messages", () => {
+    const r = makeResult();
+    const toolMsg = {
+      role: "tool",
+      toolCallId: "tc1",
+      content: [{ type: "text", text: "same output" }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "agent_end", messages: [toolMsg] }), r);
+    processFlowJsonLine(JSON.stringify({ type: "agent_end", messages: [toolMsg] }), r);
+    expect(r.messages).toHaveLength(1);
+  });
+
+  it("getFlowFinalText still skips tool messages", () => {
+    const r = makeResult();
+    const toolMsg = {
+      role: "tool",
+      toolCallId: "tc1",
+      content: [{ type: "text", text: "tool output" }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "agent_end", messages: [toolMsg, makeAssistantMessage("final text")] }), r);
+    expect(getFlowFinalText(r.messages)).toBe("final text");
+  });
+
   it("handles text_delta message_update — accumulates streaming buffer", () => {
     const r = makeResult();
     const event = {

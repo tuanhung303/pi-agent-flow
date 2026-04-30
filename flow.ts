@@ -23,7 +23,7 @@ import {
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
-const AGENT_END_GRACE_MS = 250;
+const AGENT_END_GRACE_MS = 2000;
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
@@ -410,19 +410,17 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				}
 			};
 
+			let semanticCompletionTimerArmed = false;
 			const maybeFinishFromAgentEnd = () => {
-				if (!result.sawAgentEnd || didClose || settled) return;
-				clearSemanticCompletionTimer();
+				if (!result.sawAgentEnd || didClose || settled || semanticCompletionTimerArmed) return;
+				semanticCompletionTimerArmed = true;
 				semanticCompletionTimer = setTimeout(() => {
 					if (didClose || settled || !result.sawAgentEnd) return;
 					if (buffer.trim()) {
 						flushBufferedLines(buffer);
 						buffer = "";
 					}
-					proc.stdout.removeListener("data", onStdoutData);
-					proc.stderr.removeListener("data", onStderrData);
 					finish(0);
-					terminateChild();
 				}, AGENT_END_GRACE_MS);
 				semanticCompletionTimer.unref();
 			};

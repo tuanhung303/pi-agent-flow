@@ -286,6 +286,18 @@ function addFlowAssistantMessage(result, message) {
   return true;
 }
 
+function addFlowToolMessage(result, message) {
+  if (!message || message.role !== "tool") return false;
+
+  const signature = getMessageSignature(message);
+  const seen = getSeenFlowMessageSignatures(result);
+  if (seen.has(signature)) return false;
+  seen.add(signature);
+
+  result.messages.push(message);
+  return true;
+}
+
 function addFlowAssistantMessages(result, messages) {
   if (!Array.isArray(messages)) return false;
   let changed = false;
@@ -295,19 +307,32 @@ function addFlowAssistantMessages(result, messages) {
   return changed;
 }
 
+function addFlowMessages(result, messages) {
+  if (!Array.isArray(messages)) return false;
+  let changed = false;
+  for (const message of messages) {
+    if (message && message.role === "tool") {
+      if (addFlowToolMessage(result, message)) changed = true;
+    } else if (message && message.role === "assistant") {
+      if (addFlowAssistantMessage(result, message)) changed = true;
+    }
+  }
+  return changed;
+}
+
 function processFlowEvent(event, result) {
   if (!event || typeof event !== "object") return false;
 
   switch (event.type) {
     case "message_end":
-      return addFlowAssistantMessage(result, event.message);
+      return addFlowMessages(result, [event.message]);
 
     case "turn_end":
-      return addFlowAssistantMessage(result, event.message);
+      return addFlowMessages(result, [event.message]);
 
     case "agent_end":
       result.sawAgentEnd = true;
-      return addFlowAssistantMessages(result, event.messages);
+      return addFlowMessages(result, event.messages);
 
     case "message_update": {
       const evt = event.assistantMessageEvent;
@@ -401,33 +426,131 @@ function formatToolCallShort(tc) {
       return tc.name;
   }
 }
+
+/**
+ * Extract tool result text from tool messages in the result.
+ * Returns an array of { toolCallId, name, output } entries.
+ */
+function extractToolResults(messages) {
+  const results = [];
+  if (!Array.isArray(messages)) return results;
+  for (const msg of messages) {
+    if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
+    const text = msg.content
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("\n");
+    if (text.trim()) {
+      results.push({
+        toolCallId: msg.toolCallId || msg.tool_call_id || "",
+        output: text,
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Match tool calls with their results to build a paired list.
+ * Returns [{ name, command/args, output }] limited to the most recent pairs.
+ */
+function matchToolCallsWithResults(messages, maxPairs) {
+  if (!Array.isArray(messages)) return [];
+  const pairs = [];
+
+  // Build a map of toolCallId -> tool result output
+  const resultMap = new Map();
+  for (const msg of messages) {
+    if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
+    const id = msg.toolCallId || msg.tool_call_id || "";
+    if (!id) continue;
+    const text = msg.content
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("\n");
+    resultMap.set(id, text);
+  }
+
+  // Walk assistant messages to find tool calls that have matching results
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (part.type !== "toolCall") continue;
+      const id = part.toolCallId || part.tool_call_id || "";
+      if (!id || !resultMap.has(id)) continue;
+      const name = part.name || part.toolName || "unknown";
+      const args = part.arguments || part.input || {};
+      const output = resultMap.get(id);
+      pairs.push({ name, args, output });
+    }
+  }
+
+  // Return the most recent pairs
+  return pairs.slice(-maxPairs);
+}
+
+/** Max tool result output chars to include per tool call in the summary. */
+const TOOL_RESULT_MAX_CHARS = 2000;
+
 export function getFlowSummaryText(result) {
   const finalText = getFlowFinalText(result?.messages);
-  if (finalText) return finalText;
-
   const isError =
     (typeof result?.exitCode === "number" && result.exitCode > 0) ||
     result?.stopReason === "error" ||
     result?.stopReason === "aborted";
 
-  // Build base message for failed/aborted flows
-  let base = "";
-  if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
-    base = result.errorMessage.trim();
-  } else if (isError && typeof result?.stderr === "string" && result.stderr.trim()) {
-    base = result.stderr.trim();
-  } else if (isError) {
-    base = "Flow failed";
-  } else {
-    return "(no output)";
+  // Build error base for failed flows
+  let errorBase = "";
+  if (isError) {
+    if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
+      errorBase = result.errorMessage.trim();
+    } else if (typeof result?.stderr === "string" && result.stderr.trim()) {
+      errorBase = result.stderr.trim();
+    } else {
+      errorBase = "Flow failed";
+    }
   }
 
-  // Surface partial tool calls (excluding read) for failed/aborted flows
-  const toolCalls = extractNonReadToolCalls(result?.messages);
-  if (toolCalls.length > 0) {
-    const formatted = toolCalls.map(formatToolCallShort).join(", ");
-    return `${base}\nPartial work: ${formatted}`;
+  // Extract tool call/result pairs for context
+  const toolPairs = matchToolCallsWithResults(result?.messages, 10);
+  const toolSummaryParts = [];
+
+  for (const pair of toolPairs) {
+    const callLabel = formatToolCallShort({ name: pair.name, args: pair.args });
+    if (pair.output.trim()) {
+      const truncated = pair.output.length > TOOL_RESULT_MAX_CHARS
+        ? pair.output.slice(0, TOOL_RESULT_MAX_CHARS) + "\n... (truncated)"
+        : pair.output;
+      toolSummaryParts.push(`${callLabel}:\n${truncated}`);
+    } else {
+      toolSummaryParts.push(`${callLabel}: (no output)`);
+    }
   }
 
-  return base;
+  const toolContext = toolSummaryParts.length > 0
+    ? "\n\n[Tool Results]\n" + toolSummaryParts.join("\n---\n")
+    : "";
+
+  // If there's final text, include it plus tool context
+  if (finalText) {
+    return finalText + toolContext;
+  }
+
+  // No final text
+  if (isError) {
+    // Surface partial tool calls (excluding read) for failed/aborted flows
+    const toolCalls = extractNonReadToolCalls(result?.messages);
+    if (toolCalls.length > 0) {
+      const formatted = toolCalls.map(formatToolCallShort).join(", ");
+      return `${errorBase}\nPartial work: ${formatted}${toolContext}`;
+    }
+    return errorBase;
+  }
+
+  // Success but no final text — show tool results if any
+  if (toolContext) {
+    return toolContext.trim();
+  }
+
+  return "(no output)";
 }

@@ -490,6 +490,35 @@ describe("main agent tool restriction", () => {
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
 		expect(lastCall).toEqual(["flow", "web"]);
 	});
+
+	it("does NOT override active tools for child flows (depth > 0)", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+		process.env.PI_FLOW_DEPTH = "1";
+		process.env.PI_FLOW_STACK = JSON.stringify(["explore"]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		// Child flow should NOT have setActiveTools called (no override)
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
+
+	it("does NOT override active tools on turn_start for child flows (depth > 0)", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+		process.env.PI_FLOW_DEPTH = "1";
+		process.env.PI_FLOW_STACK = JSON.stringify(["explore"]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+		await pi.trigger("turn_start");
+
+		// Neither session_start nor turn_start should call setActiveTools
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
 });
 
 describe("web tool integration", () => {

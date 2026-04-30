@@ -436,23 +436,26 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Compute active tools: main agent is a orchestrator.
-		// toolOptimize=true  → flow + web only (delegate or search)
-		// toolOptimize=false → legacy full tool set
-		function computeActiveTools(optimize: boolean): string[] {
-			return optimize
-				? ["flow", "web"]
-				: ["read", "write", "edit", "bash", "flow", "web"];
+		// Only restrict tools for the main orchestrator (depth 0).
+		// Child flows (depth > 0) receive their tools via --tools CLI arg;
+		// overriding them here would strip bash/weave_patch from children.
+		if (currentDepth === 0) {
+			function computeActiveTools(optimize: boolean): string[] {
+				return optimize
+					? ["flow", "web"]
+					: ["read", "write", "edit", "bash", "flow", "web"];
+			}
+			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
-
-		pi.setActiveTools(computeActiveTools(toolOptimize));
 
 		// Note: weave_patch is not registered for the main agent.
 		// File operations are delegated to child flows via the flow tool.
 	});
 
-	// Re-apply active tools every turn to survive registry refreshes
+	// Re-apply active tools every turn to survive registry refreshes.
+	// Skip for child flows — they get tools from --tools CLI arg.
 	pi.on("turn_start", async () => {
+		if (currentDepth > 0) return;
 		pi.setActiveTools(toolOptimize ? ["flow", "web"] : ["read", "write", "edit", "bash", "flow", "web"]);
 	});
 	// Inject available flows into the system prompt

@@ -163,6 +163,103 @@ describe("getOptimizedTools", () => {
 	});
 });
 
+describe("agent_end grace period behavior", () => {
+	function makeMockProcess() {
+		const proc = new EventEmitter() as any;
+		proc.stdin = new EventEmitter();
+		proc.stdin.end = vi.fn();
+		proc.stdout = new EventEmitter();
+		proc.stderr = new EventEmitter();
+		proc.pid = 12345;
+		proc.kill = vi.fn();
+		return proc;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it("after agent_end grace, does NOT remove stdout listeners or terminate child", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [{ name: "explore", description: "Explore", systemPrompt: "You are explore.", source: "bundled", filePath: "/agents/explore.md" }],
+			flowName: "explore",
+			intent: "Test",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const promise = runFlow(opts);
+
+		// Emit agent_end to trigger sawAgentEnd
+		await vi.advanceTimersByTimeAsync(10);
+		mockProc.stdout.emit("data", Buffer.from('{"type":"agent_end","messages":[{"role":"assistant","content":[{"type":"text","text":"done"}]}]}\n'));
+
+		// Advance past the 2000ms grace period
+		await vi.advanceTimersByTimeAsync(2500);
+
+		// stdout listeners should still be attached (not removed)
+		const stdoutListeners = mockProc.stdout.listeners("data");
+		expect(stdoutListeners.length).toBeGreaterThan(0);
+
+		// kill should NOT have been called (no terminateChild)
+		expect(mockProc.kill).not.toHaveBeenCalled();
+
+		// Now close the process naturally
+		mockProc.emit("close", 0);
+
+		const result = await promise;
+		expect(result.exitCode).toBe(0);
+	});
+
+	it("still drains buffer on agent_end grace timeout", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [{ name: "explore", description: "Explore", systemPrompt: "You are explore.", source: "bundled", filePath: "/agents/explore.md" }],
+			flowName: "explore",
+			intent: "Test",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const promise = runFlow(opts);
+
+		// Emit agent_end
+		await vi.advanceTimersByTimeAsync(10);
+		mockProc.stdout.emit("data", Buffer.from('{"type":"agent_end","messages":[{"role":"assistant","content":[{"type":"text","text":"final"}]}]}\n'));
+
+		// Advance past grace
+		await vi.advanceTimersByTimeAsync(2500);
+
+		// Close process
+		mockProc.emit("close", 0);
+
+		const result = await promise;
+		expect(result.exitCode).toBe(0);
+		expect(result.messages).toHaveLength(1);
+	});
+});
+
 describe("child flow harness tools", () => {
 	function makeMockProcess() {
 		const proc = new EventEmitter() as any;
