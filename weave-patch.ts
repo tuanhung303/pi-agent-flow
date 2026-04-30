@@ -504,11 +504,14 @@ function expandTilde(inputPath: string): string {
 	return inputPath;
 }
 
-function isWithinDirectory(child: string, parent: string): boolean {
-	if (child === parent) return true;
+export function isWithinDirectory(child: string, parent: string): boolean {
 	if (process.platform === "win32") {
-		return child.toLowerCase().startsWith(parent.toLowerCase() + path.sep);
+		const childLower = child.toLowerCase();
+		const parentLower = parent.toLowerCase();
+		if (childLower === parentLower) return true;
+		return childLower.startsWith(parentLower + path.win32.sep);
 	}
+	if (child === parent) return true;
 	return child.startsWith(parent + path.sep);
 }
 

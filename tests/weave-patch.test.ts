@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createWeavePatchTool, suggestSimilarFiles } from "../weave-patch.js";
+import { createWeavePatchTool, suggestSimilarFiles, isWithinDirectory } from "../weave-patch.js";
 
 describe("weave_patch tool", () => {
 	let tmpDir: string;
@@ -1545,5 +1545,45 @@ describe("suggestSimilarFiles", () => {
 
 		const suggestions = await suggestSimilarFiles("file.txt", tmpDir);
 		expect(suggestions.length).toBeLessThanOrEqual(3);
+	});
+});
+
+describe("isWithinDirectory", () => {
+	const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+
+	afterEach(() => {
+		if (originalPlatform) {
+			Object.defineProperty(process, "platform", originalPlatform);
+		}
+	});
+
+	it("returns true for exact match on POSIX", () => {
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		expect(isWithinDirectory("/project", "/project")).toBe(true);
+	});
+
+	it("returns true for child within parent on POSIX", () => {
+		Object.defineProperty(process, "platform", { value: "linux" });
+		expect(isWithinDirectory("/project/src/file.ts", "/project")).toBe(true);
+	});
+
+	it("returns false for outside path on POSIX", () => {
+		Object.defineProperty(process, "platform", { value: "linux" });
+		expect(isWithinDirectory("/other/file.ts", "/project")).toBe(false);
+	});
+
+	it("returns true for exact match case-insensitive on Windows", () => {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		expect(isWithinDirectory("C:\\Project", "c:\\project")).toBe(true);
+	});
+
+	it("returns true for child within parent case-insensitive on Windows", () => {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		expect(isWithinDirectory("c:\\project\\src\\file.ts", "C:\\Project")).toBe(true);
+	});
+
+	it("returns false for outside path on Windows", () => {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		expect(isWithinDirectory("D:\\other\\file.ts", "C:\\Project")).toBe(false);
 	});
 });
