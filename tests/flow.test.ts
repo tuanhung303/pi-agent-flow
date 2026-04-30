@@ -284,4 +284,57 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
 	});
+
+	it("defaults to weave_patch+bash+flow when flow.tools is undefined and toolOptimize is true", async () => {
+		const mockFlow: FlowConfig = {
+			name: "code",
+			description: "Code flow",
+			systemPrompt: "You are code.",
+			source: "bundled",
+			filePath: "/agents/code.md",
+			// no tools field
+		};
+
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "code",
+			intent: "Test intent",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			toolOptimize: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const toolsIndex = args.indexOf("--tools");
+		expect(toolsIndex).toBeGreaterThan(-1);
+		const toolsValue = args[toolsIndex + 1];
+		expect(toolsValue).toContain("weave_patch");
+		expect(toolsValue).toContain("bash");
+		expect(toolsValue).toContain("flow");
+		expect(toolsValue).not.toContain("read");
+		expect(toolsValue).not.toContain("write");
+		expect(toolsValue).not.toContain("edit");
+	});
 });

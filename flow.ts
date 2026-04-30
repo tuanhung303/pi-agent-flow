@@ -50,7 +50,7 @@ function mergeStreamingUsage(
 		...actual,
 		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
 		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
-		...(smoothedTps > 0 ? { smoothedTps: Math.max(actual.smoothedTps ?? 0, smoothedTps) } : {}),
+		...(smoothedTps > 0 ? { smoothedTps: smoothedTps || actual.smoothedTps || 0 } : {}),
 	};
 }
 
@@ -152,7 +152,12 @@ function buildFlowArgs(
 
 	// Child flows get their configured tools from flow.tools, optimized by
 	// getOptimizedTools, with web explicitly filtered out.
-	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? ["read", "bash", "flow"];
+	// When flow.tools is undefined and toolOptimize=true, default to weave_patch+bash+flow
+	// so child agents have file operations without falling back to legacy read/write/edit.
+	const defaultTools = toolOptimize
+		? ["weave_patch", "bash", "flow"]
+		: ["read", "bash", "flow"];
+	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
 	const harnessTools = optimizedTools.filter((t) => t !== "web");
 	args.push("--tools", harnessTools.join(","));
 

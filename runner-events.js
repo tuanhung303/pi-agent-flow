@@ -51,8 +51,14 @@ export function drainStreamingText(result) {
 /** Chars per token heuristic for output estimation. */
 const CHARS_PER_TOKEN = 4;
 
+/** Minimum elapsed ms between TPS samples. */
+const MIN_TPS_SAMPLE_MS = 100;
+/** Cap on instantaneous TPS to suppress burst artifacts. */
+const MAX_INSTANT_TPS = 300;
+/** Calibration scale to align heuristic tokens with empirical display range. */
+const TPS_CALIBRATION = 0.1;
 /** EMA smoothing factor for tokens-per-second (higher = more responsive). */
-const EMA_ALPHA = 0.15;
+const EMA_ALPHA = 0.1;
 
 function getStreamingEstimate(result) {
   if (!Object.prototype.hasOwnProperty.call(result, "__streamingEstimate")) {
@@ -70,6 +76,7 @@ function getStreamingEstimate(result) {
  * Lazily initialize TPS tracking properties on the result object.
  * - __lastEmitTime: timestamp (ms) of the last streaming emit
  * - __smoothedTps: EMA-smoothed tokens-per-second value
+ * - __pendingTokens: tokens accumulated since last sample window
  */
 function getTpsTracker(result) {
   if (!Object.prototype.hasOwnProperty.call(result, "__smoothedTps")) {
@@ -85,6 +92,12 @@ function getTpsTracker(result) {
       configurable: false,
       writable: true,
     });
+    Object.defineProperty(result, "__pendingTokens", {
+      value: 0,
+      enumerable: false,
+      configurable: false,
+      writable: true,
+    });
   }
   return result;
 }
@@ -92,26 +105,33 @@ function getTpsTracker(result) {
 /**
  * Update the EMA-smoothed tokens-per-second based on a new sample.
  * Called from emitUpdate() with the estimated output tokens since last emit.
- * Skips the update when delta time or tokens are zero (e.g., first emit).
+ * Accumulates tokens in __pendingTokens and only computes a rate when
+ * MIN_TPS_SAMPLE_MS has elapsed. Applies MAX_INSTANT_TPS cap before EMA.
  */
 export function updateSmoothedTps(result, estimatedTokens) {
   if (estimatedTokens <= 0) return;
   const tracker = getTpsTracker(result);
-  const now = Date.now();
   if (tracker.__lastEmitTime === 0) {
     // First emit — seed the value directly
-    tracker.__lastEmitTime = now;
+    tracker.__lastEmitTime = Date.now();
     return;
   }
-  const deltaSec = (now - tracker.__lastEmitTime) / 1000;
-  if (deltaSec <= 0) return;
-  const instantRate = estimatedTokens / deltaSec;
+  tracker.__pendingTokens += estimatedTokens;
+  const now = Date.now();
+  const deltaMs = now - tracker.__lastEmitTime;
+  if (deltaMs < MIN_TPS_SAMPLE_MS) return;
+  const deltaSec = deltaMs / 1000;
+  let instantRate = (tracker.__pendingTokens * TPS_CALIBRATION) / deltaSec;
+  if (instantRate > MAX_INSTANT_TPS) {
+    instantRate = MAX_INSTANT_TPS;
+  }
   if (tracker.__smoothedTps === 0) {
     tracker.__smoothedTps = instantRate;
   } else {
     tracker.__smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.__smoothedTps;
   }
   tracker.__lastEmitTime = now;
+  tracker.__pendingTokens = 0;
 }
 
 /**

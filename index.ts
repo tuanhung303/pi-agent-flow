@@ -436,20 +436,13 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Compute active tools: main agent is an orchestrator.
-		// Filters to base tool set; other extension tools are removed.
-		// toolOptimize=true  → read + bash + flow + web
-		// toolOptimize=false → read + write + edit + bash + flow + web
-		function computeActiveTools(enableWeavePatch: boolean): string[] {
-			const currentTools = pi.getActiveTools();
-			const base = enableWeavePatch
-				? ["read", "bash", "flow", "web"]
+		// Compute active tools: main agent is a pure orchestrator.
+		// toolOptimize=true  → no tools (replies from context or asks user)
+		// toolOptimize=false → legacy full tool set
+		function computeActiveTools(optimize: boolean): string[] {
+			return optimize
+				? []
 				: ["read", "write", "edit", "bash", "flow", "web"];
-			const activeTools = currentTools.filter((t) => base.includes(t));
-			for (const t of base) {
-				if (!activeTools.includes(t)) activeTools.push(t);
-			}
-			return activeTools;
 		}
 
 		pi.setActiveTools(computeActiveTools(toolOptimize));
@@ -460,15 +453,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Re-apply active tools every turn to survive registry refreshes
 	pi.on("turn_start", async () => {
-		const currentTools = pi.getActiveTools();
-		const base = toolOptimize
-			? ["read", "bash", "flow", "web"]
-			: ["read", "write", "edit", "bash", "flow", "web"];
-		const activeTools = currentTools.filter((t) => base.includes(t));
-		for (const t of base) {
-			if (!activeTools.includes(t)) activeTools.push(t);
-		}
-		pi.setActiveTools(activeTools);
+		pi.setActiveTools(toolOptimize ? [] : ["read", "write", "edit", "bash", "flow", "web"]);
 	});
 	// Inject available flows into the system prompt
 	pi.on("before_agent_start", async (event) => {

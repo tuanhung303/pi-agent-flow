@@ -587,8 +587,8 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     const r = makeResult();
     // Seed the tracker
     updateSmoothedTps(r, 100);
-    // Wait a bit so deltaSec > 0
-    await new Promise((res) => setTimeout(res, 50));
+    // Wait enough so deltaSec > MIN_TPS_SAMPLE_MS (100ms)
+    await new Promise((res) => setTimeout(res, 150));
     updateSmoothedTps(r, 50);
     const tps = drainSmoothedTps(r);
     // Should be a positive rate

@@ -376,7 +376,7 @@ describe("main agent tool restriction", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("restricts main agent to read+bash+flow+web when toolOptimize is true", async () => {
+	it("clears all active tools when toolOptimize is true", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -386,16 +386,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toContain("read");
-		expect(calledWith).toContain("bash");
-		expect(calledWith).toContain("flow");
-		expect(calledWith).toContain("web");
-		expect(calledWith).not.toContain("write");
-		expect(calledWith).not.toContain("edit");
-		expect(calledWith).not.toContain("weave_patch");
-		expect(calledWith).not.toContain("find");
-		expect(calledWith).not.toContain("grep");
-		expect(calledWith).not.toContain("ls");
+		expect(calledWith).toEqual([]);
 	});
 
 	it("restores legacy read+write+edit when toolOptimize is false", async () => {
@@ -432,7 +423,7 @@ describe("main agent tool restriction", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies restricted tools on turn_start to survive registry refreshes", async () => {
+	it("re-applies empty tools on turn_start when optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -446,12 +437,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toContain("read");
-		expect(lastCall).toContain("bash");
-		expect(lastCall).toContain("flow");
-		expect(lastCall).toContain("web");
-		expect(lastCall).not.toContain("write");
-		expect(lastCall).not.toContain("edit");
+		expect(lastCall).toEqual([]);
 	});
 
 	it("restores legacy tools on turn_start when toolOptimize is false", async () => {
@@ -486,8 +472,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toContain("read");
-		expect(calledWith).not.toContain("write");
+		expect(calledWith).toEqual([]);
 	});
 
 	it("registers weave_patch globally but not in main agent active tools", async () => {
@@ -501,9 +486,9 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// But main agent active tools should NOT include weave_patch
+		// Main agent active tools are completely empty when optimized
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).not.toContain("weave_patch");
+		expect(lastCall).toEqual([]);
 	});
 });
 
@@ -547,7 +532,9 @@ describe("web tool integration", () => {
 		expect(tool.name).toBe("web");
 	});
 
-	it("includes web tool in active tools on session_start", async () => {
+	it("includes web tool in active tools on session_start when not optimized", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -600,10 +587,6 @@ describe("web tool integration", () => {
 			prompt: "Refactor this function",
 			systemPrompt: "You are a helpful assistant.",
 		});
-
-		expect(pi.setActiveTools).toHaveBeenCalled();
-		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toContain("web");
 
 		const modified = result[0];
 		// Bundled flows are always discovered, so flow instructions are injected
