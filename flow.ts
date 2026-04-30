@@ -117,7 +117,7 @@ export function getOptimizedTools(
 	);
 	if (!hasLegacyTools) return flowTools;
 	const filtered = flowTools.filter(
-		(t) => t !== "read" && t !== "write" && t !== "edit",
+		(t) => t !== "read" && t !== "write" && t !== "edit" && t !== "weave_patch",
 	);
 	return filtered.includes("weave_patch")
 		? filtered

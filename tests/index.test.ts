@@ -481,10 +481,10 @@ describe("main agent tool restriction", () => {
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
 		// weave_patch IS registered so child flows can use it
 		expect(pi.getTool("weave_patch")).toBeDefined();
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
 		// Main agent active tools are flow+web when optimized
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];

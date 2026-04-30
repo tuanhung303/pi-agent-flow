@@ -407,7 +407,6 @@ describe("weave_patch tool", () => {
 				op: "edit",
 				status: "ok",
 				blocksChanged: 1,
-				diff: expect.stringContaining("+"),
 			});
 
 			const edited = fs.readFileSync(path.join(tmpDir, "edit.txt"), "utf-8");
@@ -442,7 +441,6 @@ describe("weave_patch tool", () => {
 			);
 
 			expect(result.details.results[0].blocksChanged).toBe(2);
-			expect(result.details.results[0].diff).toBeDefined();
 
 			const edited = fs.readFileSync(path.join(tmpDir, "multi.txt"), "utf-8");
 			expect(edited).toBe("LINE 1\nline 2\nLINE 3\n");
@@ -655,58 +653,6 @@ describe("weave_patch tool", () => {
 				error: expect.stringContaining("occurrences"),
 				hint: "Add more surrounding context to make oldText unique.",
 			});
-		});
-
-		it("includes diff summary in edit results", async () => {
-			fs.writeFileSync(
-				path.join(tmpDir, "diff.txt"),
-				"line1\nline2\nline3\n",
-				"utf-8",
-			);
-
-			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{
-					op: [
-						{
-							op: "edit",
-							path: "diff.txt",
-							edits: [
-								{ oldText: "line1", newText: "LINE1" },
-								{ oldText: "line3", newText: "LINE3" },
-							],
-						},
-					],
-				},
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.details.results[0].diff).toBe("+2 -2 lines");
-		});
-		it("counts duplicate lines linearly in diff summary", async () => {
-			fs.writeFileSync(path.join(tmpDir, "dup.txt"), "A\nB\nA\nC\n", "utf-8");
-
-			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{
-					op: [
-						{
-							op: "edit",
-							path: "dup.txt",
-							edits: [{ oldText: "B\nA\n", newText: "D\nE\n" }],
-						},
-					],
-				},
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.details.results[0].diff).toBe("+2 -2 lines");
 		});
 
 		it("preserves line endings (CRLF)", async () => {

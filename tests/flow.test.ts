@@ -153,13 +153,15 @@ describe("getOptimizedTools", () => {
 	it("does not duplicate weave_patch if already present", () => {
 		const tools = ["read", "weave_patch"];
 		const result = getOptimizedTools(tools, true);
+		expect(result.filter((t) => t === "weave_patch")).toHaveLength(1);
 		expect(result).toEqual(["weave_patch"]);
 	});
 
 	it("does not duplicate weave_patch when mixed with legacy tools", () => {
 		const tools = ["read", "write", "weave_patch", "bash"];
 		const result = getOptimizedTools(tools, true);
-		expect(result).toEqual(["weave_patch", "bash"]);
+		expect(result.filter((t) => t === "weave_patch")).toHaveLength(1);
+		expect(result).toEqual(["bash", "weave_patch"]);
 	});
 });
 

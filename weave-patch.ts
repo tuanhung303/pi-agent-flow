@@ -90,7 +90,6 @@ interface OpResult {
 	content?: string;
 	bytes?: number;
 	blocksChanged?: number;
-	diff?: string;
 	totalLines?: number;
 	truncated?: boolean;
 	nextOffset?: number;
@@ -211,37 +210,6 @@ function readWithOffsetLimit(
 
 	return { content: result, truncated, nextOffset };
 }
-
-function generateDiffSummary(oldContent: string, newContent: string): string {
-	const oldLines = oldContent.split("\n");
-	const newLines = newContent.split("\n");
-
-	const oldCounts = new Map<string, number>();
-	for (const line of oldLines) {
-		oldCounts.set(line, (oldCounts.get(line) ?? 0) + 1);
-	}
-
-	const newCounts = new Map<string, number>();
-	for (const line of newLines) {
-		newCounts.set(line, (newCounts.get(line) ?? 0) + 1);
-	}
-
-	let added = 0;
-	for (const [line, count] of newCounts) {
-		const oldCount = oldCounts.get(line) ?? 0;
-		if (count > oldCount) added += count - oldCount;
-	}
-
-	let removed = 0;
-	for (const [line, count] of oldCounts) {
-		const newCount = newCounts.get(line) ?? 0;
-		if (count > newCount) removed += count - newCount;
-	}
-
-	return `+${added} -${removed} lines`;
-}
-
-// Insert before getErrorHint function (line 286)
 
 function levenshtein(a: string, b: string): number {
 	const m = a.length;
@@ -456,7 +424,7 @@ function applyEdits(
 	content: string,
 	edits: EditReplacement[],
 	filePath: string,
-): { newContent: string; diffSummary: string; blocksChanged: number } {
+): { newContent: string; blocksChanged: number } {
 	const normalizedEdits = edits.map((e) => ({
 		oldText: normalizeToLF(e.f),
 		newText: normalizeToLF(e.r),
@@ -559,7 +527,6 @@ function applyEdits(
 
 	return {
 		newContent,
-		diffSummary: generateDiffSummary(baseContent, newContent),
 		blocksChanged: matchedEdits.length,
 	};
 }
@@ -887,7 +854,7 @@ async function executeOperations(
 					const originalEnding = detectLineEnding(contentWithoutBom);
 					const normalizedContent = normalizeToLF(contentWithoutBom);
 
-					const { newContent, diffSummary, blocksChanged } = applyEdits(
+					const { newContent, blocksChanged } = applyEdits(
 						normalizedContent,
 						op.e,
 						op.p,
@@ -901,7 +868,6 @@ async function executeOperations(
 						path: op.p,
 						status: "ok",
 						blocksChanged,
-						diff: diffSummary,
 					});
 					counts.edit++;
 					break;

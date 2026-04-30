@@ -447,8 +447,11 @@ export default function (pi: ExtensionAPI) {
 			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
 
-		// Note: weave_patch is not registered for the main agent.
-		// File operations are delegated to child flows via the flow tool.
+		// Register weave_patch so child flows can use it via getOptimizedTools.
+		// The main agent does NOT have weave_patch in its active tools.
+		if (toolOptimize) {
+			pi.registerTool(createWeavePatchTool());
+		}
 	});
 
 	// Re-apply active tools every turn to survive registry refreshes.
@@ -560,10 +563,6 @@ flow [type] accomplished
 
 	// Register the web tool
 	pi.registerTool(createWebTool());
-
-	// Register weave_patch so child flows can use it via getOptimizedTools.
-	// The main agent does NOT have weave_patch in its active tools.
-	pi.registerTool(createWeavePatchTool());
 
 	// Register the flow tool
 	if (canDelegate) {
