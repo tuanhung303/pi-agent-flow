@@ -24,10 +24,12 @@ import {
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
 const AGENT_END_GRACE_MS = 2000;
+const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
+const FLOW_TIMEOUT_ENV = "PI_FLOW_TIMEOUT_MS";
 export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 
@@ -156,7 +158,7 @@ function buildFlowArgs(
 	// so child agents have file operations without falling back to legacy read/write/edit.
 	const defaultTools = toolOptimize
 		? ["weave_patch", "bash", "flow"]
-		: ["read", "bash", "flow"];
+		: ["read", "write", "edit", "bash", "flow"];
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
 	const harnessTools = optimizedTools.filter((t) => t !== "web");
 	args.push("--tools", harnessTools.join(","));
@@ -242,6 +244,8 @@ export interface RunFlowOptions {
 	onUpdate?: FlowUpdateCallback;
 	/** Factory to wrap results into FlowDetails. */
 	makeDetails: (results: SingleResult[]) => FlowDetails;
+	/** Max execution time in ms before child is terminated. Default: 10 minutes. */
+	timeoutMs?: number;
 }
 
 /**
@@ -333,6 +337,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		);
 		let wasAborted = false;
 
+		// Resolve timeout: explicit option > env var > default (10 min)
+		const envTimeoutRaw = process.env[FLOW_TIMEOUT_ENV];
+		const envTimeout = envTimeoutRaw !== undefined ? (() => {
+			const n = Number(envTimeoutRaw);
+			return Number.isSafeInteger(n) && n >= 0 ? n : null;
+		})() : null;
+		const effectiveTimeout = opts.timeoutMs ?? envTimeout ?? DEFAULT_FLOW_TIMEOUT_MS;
+
 		const exitCode = await new Promise<number>((resolve) => {
 			const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 			const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
@@ -342,6 +354,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				cwd: taskCwd ?? cwd,
 				shell: false,
 				stdio: ["pipe", "pipe", "pipe"],
+				// Process group on Unix so we can kill all descendants on timeout/abort.
+				detached: !isWindows,
 				env: {
 					...process.env,
 					[FLOW_DEPTH_ENV]: String(nextDepth),
@@ -382,9 +396,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					return;
 				}
 
-				proc.kill("SIGTERM");
+				// Kill the entire process group (negative PID).
+				try { process.kill(-proc.pid, "SIGTERM"); } catch { proc.kill("SIGTERM"); }
 				const sigkillTimer = setTimeout(() => {
-					if (!didClose) proc.kill("SIGKILL");
+					if (!didClose) {
+						try { process.kill(-proc.pid, "SIGKILL"); } catch { proc.kill("SIGKILL"); }
+					}
 				}, SIGKILL_TIMEOUT_MS);
 				sigkillTimer.unref();
 			};
@@ -459,6 +476,16 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				};
 				if (signal.aborted) abortHandler();
 				else signal.addEventListener("abort", abortHandler, { once: true });
+			}
+
+			// Execution timeout — kill child if it runs too long
+			if (effectiveTimeout > 0) {
+				const timeoutTimer = setTimeout(() => {
+					if (didClose || settled) return;
+					result.stderr += `\nFlow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
+					terminateChild();
+				}, effectiveTimeout);
+				timeoutTimer.unref();
 			}
 		});
 

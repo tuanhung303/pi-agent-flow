@@ -802,3 +802,177 @@ describe("getFlowSummaryText — weave_patch", () => {
     expect(summary).toContain("patch");
   });
 });
+
+// ---------------------------------------------------------------------------
+// getFlowSummaryText — tool result pairing
+// ---------------------------------------------------------------------------
+
+describe("getFlowSummaryText — tool result pairing", () => {
+  it("includes bash output from paired tool result in summary", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Let me check the files." },
+            { type: "toolCall", name: "bash", toolCallId: "tc1", arguments: { command: "ls -la" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc1",
+          content: [{ type: "text", text: "total 48\ndrwxr-xr-x  8 user staff  256 Apr 30 03:20 .\n-rw-r--r--  1 user staff 1141 Apr 30 02:02 index.ts" }],
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "All done." },
+          ],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("All done.");
+    expect(summary).toContain("[Tool Results]");
+    expect(summary).toContain("bash ls -la:");
+    expect(summary).toContain("drwxr-xr-x");
+  });
+
+  it("includes weave_patch read output in summary", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "weave_patch", toolCallId: "tc2", arguments: { op: [{ o: "read", p: "src/index.ts" }] } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc2",
+          content: [{ type: "text", text: "export default function main() { return 42; }" }],
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Found the entry point." },
+          ],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Found the entry point.");
+    expect(summary).toContain("[Tool Results]");
+    expect(summary).toContain("patch read index.ts:");
+    expect(summary).toContain("export default function main");
+  });
+
+  it("truncates large tool outputs at 2000 chars", () => {
+    const bigOutput = "x".repeat(5000);
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc3", arguments: { command: "cat bigfile.txt" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc3",
+          content: [{ type: "text", text: bigOutput }],
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Read the file." }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Read the file.");
+    expect(summary).toContain("[Tool Results]");
+    expect(summary).toContain("... (truncated)");
+    expect(summary.length).toBeLessThan(bigOutput.length);
+  });
+
+  it("does not show tool results section when no paired results exist", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc4", arguments: { command: "echo hi" } },
+          ],
+        },
+        // No tool result message — tool call without result
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toBe("Done.");
+    expect(summary).not.toContain("[Tool Results]");
+  });
+
+  it("shows tool results even without final text on success", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc5", arguments: { command: "echo hello" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc5",
+          content: [{ type: "text", text: "hello" }],
+        },
+        // No final assistant text
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("bash echo hello:");
+    expect(summary).toContain("hello");
+  });
+
+  it("pairs multiple tool calls with their results in order", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc6", arguments: { command: "git log --oneline -3" } },
+            { type: "toolCall", name: "bash", toolCallId: "tc7", arguments: { command: "git diff HEAD" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc6",
+          content: [{ type: "text", text: "abc1234 fix: something\ndef5678 feat: other" }],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc7",
+          content: [{ type: "text", text: "diff --git a/foo.ts b/foo.ts" }],
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Both commands checked." }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Both commands checked.");
+    expect(summary).toContain("abc1234");
+    expect(summary).toContain("diff --git");
+  });
+});

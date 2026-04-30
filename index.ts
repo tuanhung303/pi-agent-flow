@@ -458,8 +458,12 @@ export default function (pi: ExtensionAPI) {
 		if (currentDepth > 0) return;
 		pi.setActiveTools(toolOptimize ? ["flow", "web"] : ["read", "write", "edit", "bash", "flow", "web"]);
 	});
-	// Inject available flows into the system prompt
+	// Inject available flows into the system prompt.
+	// Skip entirely for child flows (depth > 0) — they get their instructions
+	// from the 4-part prompt structure in buildFlowArgs and have no web tool.
 	pi.on("before_agent_start", async (event) => {
+		if (currentDepth > 0) return undefined;
+
 		const prompt = event.prompt;
 		const hasUrl = looksLikeUrlPrompt(prompt);
 		const likelyNeedsWeb = looksLikeWebSearchPrompt(prompt);
@@ -527,8 +531,12 @@ flow [type] accomplished
 		};
 	});
 
-	// Sliding reminder: strip from all earlier user messages, append to latest
+	// Sliding reminder: strip from all earlier user messages, append to latest.
+	// Skip for child flows — they have explicit <mission> instructions and
+	// injecting the reminder is noise.
 	pi.on("context", async (event) => {
+		if (currentDepth > 0) return undefined;
+
 		const messages = event.messages;
 		const userIndices = messages
 			.map((m, i) => (m.role === "user" ? i : -1))
