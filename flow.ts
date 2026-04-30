@@ -52,7 +52,8 @@ function mergeStreamingUsage(
 		...actual,
 		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
 		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
-		...(smoothedTps > 0 ? { smoothedTps: smoothedTps || actual.smoothedTps || 0 } : {}),
+		// Preserve the peak smoothedTPS seen during the stream rather than the live EMA value.
+		...(smoothedTps > 0 ? { smoothedTps: Math.max(actual.smoothedTps || 0, smoothedTps) } : {}),
 	};
 }
 
@@ -160,7 +161,12 @@ function buildFlowArgs(
 		? ["weave_patch", "bash", "flow"]
 		: ["read", "write", "edit", "bash", "flow"];
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
-	const harnessTools = optimizedTools.filter((t) => t !== "web");
+	let harnessTools = optimizedTools.filter((t) => t !== "web");
+	// If the flow explicitly listed only "web" (or nothing after filtering),
+	// fall back to defaultTools so the child isn't orphaned with zero tools.
+	if (harnessTools.length === 0) {
+		harnessTools = defaultTools.filter((t) => t !== "web");
+	}
 	args.push("--tools", harnessTools.join(","));
 
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.

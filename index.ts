@@ -369,6 +369,12 @@ function appendReminder(
 	return copy;
 }
 
+function computeActiveTools(optimize: boolean): string[] {
+	return optimize
+		? ["flow", "web"]
+		: ["read", "write", "edit", "bash", "flow", "web"];
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
@@ -427,8 +433,6 @@ export default function (pi: ExtensionAPI) {
 		} else if (typeof cliFlag === "string") {
 			const parsed = parseBoolean(cliFlag);
 			if (parsed !== null) toolOptimize = parsed;
-		} else if (envToolOptimize !== undefined) {
-			// Already set above
 		} else {
 			const flowSettings = loadFlowSettings(ctx.cwd);
 			if (typeof flowSettings.toolOptimize === "boolean") {
@@ -440,11 +444,6 @@ export default function (pi: ExtensionAPI) {
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
 		// overriding them here would strip bash/weave_patch from children.
 		if (currentDepth === 0) {
-			function computeActiveTools(optimize: boolean): string[] {
-				return optimize
-					? ["flow", "web"]
-					: ["read", "write", "edit", "bash", "flow", "web"];
-			}
 			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
 
@@ -454,9 +453,9 @@ export default function (pi: ExtensionAPI) {
 
 	// Re-apply active tools every turn to survive registry refreshes.
 	// Skip for child flows — they get tools from --tools CLI arg.
-	pi.on("turn_start", async () => {
+	pi.on("turn_start", () => {
 		if (currentDepth > 0) return;
-		pi.setActiveTools(toolOptimize ? ["flow", "web"] : ["read", "write", "edit", "bash", "flow", "web"]);
+		pi.setActiveTools(computeActiveTools(toolOptimize));
 	});
 	// Inject available flows into the system prompt.
 	// Skip entirely for child flows (depth > 0) — they get their instructions
