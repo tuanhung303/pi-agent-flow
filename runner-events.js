@@ -2,34 +2,35 @@
  * Helpers for parsing Pi JSON mode events and summarizing flow results.
  */
 
+// WeakMap-based side tables to avoid polluting caller objects and survive frozen/sealed objects.
+const seenSignaturesMap = new WeakMap();
+const streamingTextBufferMap = new WeakMap();
+const lastEmittedWordCountMap = new WeakMap();
+const streamingEstimateMap = new WeakMap();
+const smoothedTpsMap = new WeakMap();
+const lastEmitTimeMap = new WeakMap();
+const pendingTokensMap = new WeakMap();
+const ctxBaselineMap = new WeakMap();
+const ctxStreamingCharsMap = new WeakMap();
+
 function getSeenFlowMessageSignatures(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__seenMessageSignatures")) {
-    Object.defineProperty(result, "__seenMessageSignatures", {
-      value: new Set(),
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    });
+  if (!seenSignaturesMap.has(result)) {
+    seenSignaturesMap.set(result, new Set());
   }
-  return result.__seenMessageSignatures;
+  return seenSignaturesMap.get(result);
 }
 
-function getStreamingTextBuffer(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__streamingTextBuffer")) {
-    Object.defineProperty(result, "__streamingTextBuffer", {
-      value: "",
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__lastEmittedWordCount", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+function getStreamingTextState(result) {
+  if (!streamingTextBufferMap.has(result)) {
+    streamingTextBufferMap.set(result, "");
+    lastEmittedWordCountMap.set(result, 0);
   }
-  return result.__streamingTextBuffer;
+  return {
+    get buffer() { return streamingTextBufferMap.get(result); },
+    set buffer(v) { streamingTextBufferMap.set(result, v); },
+    get lastEmittedWordCount() { return lastEmittedWordCountMap.get(result); },
+    set lastEmittedWordCount(v) { lastEmittedWordCountMap.set(result, v); },
+  };
 }
 
 /**
@@ -37,10 +38,11 @@ function getStreamingTextBuffer(result) {
  * Updates the last-emitted word count for threshold tracking.
  */
 export function drainStreamingText(result) {
-  const buf = getStreamingTextBuffer(result);
+  const state = getStreamingTextState(result);
+  const buf = state.buffer;
   if (!buf) return "";
-  result.__streamingTextBuffer = "";
-  result.__lastEmittedWordCount = 0;
+  state.buffer = "";
+  state.lastEmittedWordCount = 0;
   return buf;
 }
 
@@ -61,108 +63,89 @@ const TPS_CALIBRATION = 0.1;
 const EMA_ALPHA = 0.1;
 
 function getStreamingEstimate(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__streamingEstimate")) {
-    Object.defineProperty(result, "__streamingEstimate", {
-      value: { chars: 0 },
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+  if (!streamingEstimateMap.has(result)) {
+    streamingEstimateMap.set(result, { chars: 0 });
   }
-  return result.__streamingEstimate;
+  return streamingEstimateMap.get(result);
 }
 
 /**
- * Lazily initialize TPS tracking properties on the result object.
- * - __lastEmitTime: timestamp (ms) of the last streaming emit
- * - __smoothedTps: EMA-smoothed tokens-per-second value
- * - __pendingTokens: tokens accumulated since last sample window
+ * Lazily initialize TPS tracking state on the result object.
+ * Returns an accessor object backed by a WeakMap so frozen/sealed
+ * objects do not throw.
  */
-function getTpsTracker(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__smoothedTps")) {
-    Object.defineProperty(result, "__smoothedTps", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__lastEmitTime", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__pendingTokens", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+function getTpsState(result) {
+  if (!smoothedTpsMap.has(result)) {
+    smoothedTpsMap.set(result, 0);
+    lastEmitTimeMap.set(result, 0);
+    pendingTokensMap.set(result, 0);
   }
-  return result;
+  return {
+    get smoothedTps() { return smoothedTpsMap.get(result); },
+    set smoothedTps(v) { smoothedTpsMap.set(result, v); },
+    get lastEmitTime() { return lastEmitTimeMap.get(result); },
+    set lastEmitTime(v) { lastEmitTimeMap.set(result, v); },
+    get pendingTokens() { return pendingTokensMap.get(result); },
+    set pendingTokens(v) { pendingTokensMap.set(result, v); },
+  };
 }
 
 /**
  * Update the EMA-smoothed tokens-per-second based on a new sample.
  * Called from emitUpdate() with the estimated output tokens since last emit.
- * Accumulates tokens in __pendingTokens and only computes a rate when
+ * Accumulates tokens in pendingTokens and only computes a rate when
  * MIN_TPS_SAMPLE_MS has elapsed. Applies MAX_INSTANT_TPS cap before EMA.
  */
 export function updateSmoothedTps(result, estimatedTokens) {
   if (estimatedTokens <= 0) return;
-  const tracker = getTpsTracker(result);
-  if (tracker.__lastEmitTime === 0) {
+  const tracker = getTpsState(result);
+  if (tracker.lastEmitTime === 0) {
     // First emit — seed the value directly
-    tracker.__lastEmitTime = Date.now();
+    tracker.lastEmitTime = Date.now();
     return;
   }
-  tracker.__pendingTokens += estimatedTokens;
+  tracker.pendingTokens += estimatedTokens;
   const now = Date.now();
-  const deltaMs = now - tracker.__lastEmitTime;
+  const deltaMs = now - tracker.lastEmitTime;
   if (deltaMs < MIN_TPS_SAMPLE_MS) return;
   const deltaSec = deltaMs / 1000;
-  let instantRate = (tracker.__pendingTokens * TPS_CALIBRATION) / deltaSec;
+  let instantRate = (tracker.pendingTokens * TPS_CALIBRATION) / deltaSec;
   if (instantRate > MAX_INSTANT_TPS) {
     instantRate = MAX_INSTANT_TPS;
   }
-  if (tracker.__smoothedTps === 0) {
-    tracker.__smoothedTps = instantRate;
+  if (tracker.smoothedTps === 0) {
+    tracker.smoothedTps = instantRate;
   } else {
-    tracker.__smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.__smoothedTps;
+    tracker.smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.smoothedTps;
   }
-  tracker.__lastEmitTime = now;
-  tracker.__pendingTokens = 0;
+  tracker.lastEmitTime = now;
+  tracker.pendingTokens = 0;
 }
 
 /**
  * Return the current EMA-smoothed tokens-per-second value.
  */
 export function drainSmoothedTps(result) {
-  const tracker = getTpsTracker(result);
-  return tracker.__smoothedTps;
+  const tracker = getTpsState(result);
+  return tracker.smoothedTps;
 }
 
 /**
- * Lazily initialize ctx baseline tracking properties on the result object.
- * - __ctxBaseline: last known real totalTokens from message_end
- * - __ctxStreamingChars: cumulative output chars since last baseline reset
+ * Lazily initialize ctx baseline tracking state on the result object.
+ * Returns an accessor object backed by a WeakMap so frozen/sealed
+ * objects do not throw.
  */
-function getCtxBaseline(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__ctxBaseline")) {
-    Object.defineProperty(result, "__ctxBaseline", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__ctxStreamingChars", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+function getCtxState(result) {
+  if (!ctxBaselineMap.has(result)) {
+    ctxBaselineMap.set(result, 0);
+    ctxStreamingCharsMap.set(result, 0);
   }
-  return result.__ctxBaseline;
+  return {
+    get baseline() { return ctxBaselineMap.get(result); },
+    set baseline(v) { ctxBaselineMap.set(result, v); },
+    get streamingChars() { return ctxStreamingCharsMap.get(result); },
+    set streamingChars(v) { ctxStreamingCharsMap.set(result, v); },
+  };
 }
 
 /**
@@ -174,8 +157,8 @@ function updateStreamingEstimate(result, deltaLength) {
   const est = getStreamingEstimate(result);
   est.chars += deltaLength;
   // Also accumulate chars for ctx estimation (not drained on emit)
-  getCtxBaseline(result);
-  result.__ctxStreamingChars += deltaLength;
+  const ctxState = getCtxState(result);
+  ctxState.streamingChars += deltaLength;
 }
 
 /**
@@ -196,9 +179,9 @@ export function drainStreamingEstimate(result) {
  * in which case the caller should fall back to the streaming output estimate.
  */
 export function drainCtxEstimate(result) {
-  getCtxBaseline(result);
-  const streamingTokens = Math.floor(result.__ctxStreamingChars / CHARS_PER_TOKEN);
-  return result.__ctxBaseline + streamingTokens;
+  const ctxState = getCtxState(result);
+  const streamingTokens = Math.floor(ctxState.streamingChars / CHARS_PER_TOKEN);
+  return ctxState.baseline + streamingTokens;
 }
 
 /**
@@ -207,29 +190,38 @@ export function drainCtxEstimate(result) {
  */
 function accumulateStreamingDelta(result, delta) {
   if (!delta) return false;
-  const buf = getStreamingTextBuffer(result);
-  result.__streamingTextBuffer = buf + delta;
+  const state = getStreamingTextState(result);
+  state.buffer = state.buffer + delta;
   updateStreamingEstimate(result, delta.length);
-  if (result.__streamingTextBuffer.length - result.__lastEmittedWordCount >= 40) {
-    result.__lastEmittedWordCount = result.__streamingTextBuffer.length;
+  if (state.buffer.length - state.lastEmittedWordCount >= 40) {
+    state.lastEmittedWordCount = state.buffer.length;
     return true;
   }
   return false;
 }
 
-function stableStringify(value) {
+export function stableStringify(value, seen = new WeakSet()) {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
 
+  if (seen.has(value)) {
+    return '"[Circular]"';
+  }
+  seen.add(value);
+
   if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+    const out = `[${value.map((item) => stableStringify(item, seen)).join(",")}]`;
+    seen.delete(value);
+    return out;
   }
 
   const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries
-    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+  const out = `{${entries
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue, seen)}`)
     .join(",")}}`;
+  seen.delete(value);
+  return out;
 }
 
 function getMessageSignature(message) {
@@ -270,8 +262,9 @@ function addFlowAssistantMessage(result, message) {
     result.usage.contextTokens = usage.totalTokens || 0;
 
     // Snapshot ctx baseline for smooth streaming estimation
-    result.__ctxBaseline = usage.totalTokens || 0;
-    result.__ctxStreamingChars = 0;
+    const ctxState = getCtxState(result);
+    ctxState.baseline = usage.totalTokens || 0;
+    ctxState.streamingChars = 0;
   }
 
   // Count tool call parts in the message content
@@ -296,15 +289,6 @@ function addFlowToolMessage(result, message) {
 
   result.messages.push(message);
   return true;
-}
-
-function addFlowAssistantMessages(result, messages) {
-  if (!Array.isArray(messages)) return false;
-  let changed = false;
-  for (const message of messages) {
-    if (addFlowAssistantMessage(result, message)) changed = true;
-  }
-  return changed;
 }
 
 function addFlowMessages(result, messages) {
@@ -369,7 +353,13 @@ export function getFlowFinalText(messages) {
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (!message || message.role !== "assistant" || !Array.isArray(message.content)) {
+    if (!message || message.role !== "assistant") {
+      continue;
+    }
+    if (typeof message.content === "string" && message.content.length > 0) {
+      return message.content;
+    }
+    if (!Array.isArray(message.content)) {
       continue;
     }
 
@@ -417,37 +407,14 @@ function formatToolCallShort(tc) {
       const ops = Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
       if (ops.length === 0) return "patch (empty)";
       const first = ops[0] || {};
-      const firstPath = (first.p || first.path || "?").split("/").pop();
-      const opType = first.o || first.op || "?";
+      const firstPath = (first.p ?? first.path ?? "?").split("/").pop();
+      const opType = first.o ?? first.op ?? "?";
       const label = ops.length === 1 ? `${opType} ${firstPath}` : `${opType} ${firstPath} +${ops.length - 1} more`;
       return `patch ${label}`;
     }
     default:
       return tc.name;
   }
-}
-
-/**
- * Extract tool result text from tool messages in the result.
- * Returns an array of { toolCallId, name, output } entries.
- */
-function extractToolResults(messages) {
-  const results = [];
-  if (!Array.isArray(messages)) return results;
-  for (const msg of messages) {
-    if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
-    const text = msg.content
-      .filter((p) => p.type === "text" && typeof p.text === "string")
-      .map((p) => p.text)
-      .join("\n");
-    if (text.trim()) {
-      results.push({
-        toolCallId: msg.toolCallId || msg.tool_call_id || "",
-        output: text,
-      });
-    }
-  }
-  return results;
 }
 
 /**

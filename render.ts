@@ -72,8 +72,8 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 			const parts: string[] = [];
 			for (const op of ops) {
 				const opObj = op as Record<string, unknown>;
-				const opName = (opObj.o ?? opObj.op) as string;
-				const opPath = ((opObj.p ?? opObj.path) || "?") as string;
+				const opName = (opObj.o ?? opObj.op ?? "?") as string;
+				const opPath = (opObj.p ?? opObj.path ?? "?") as string;
 				const shortPath = shortenPath(opPath);
 				if (opName === "edit") {
 					const edits = (opObj.e ?? opObj.edits) as unknown[] | undefined;

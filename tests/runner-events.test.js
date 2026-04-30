@@ -8,6 +8,7 @@ import {
   drainSmoothedTps,
   getFlowFinalText,
   getFlowSummaryText,
+  stableStringify,
 } from "../runner-events.js";
 
 function makeResult() {
@@ -121,7 +122,7 @@ describe("processFlowJsonLine", () => {
     // Under 40 chars threshold — returns false
     expect(result).toBe(false);
     // Buffer should have the text
-    expect(r.__streamingTextBuffer).toBe("some text");
+    expect(drainStreamingText(r)).toBe("some text");
   });
 
   it("handles thinking_delta — accumulates streaming buffer", () => {
@@ -132,7 +133,7 @@ describe("processFlowJsonLine", () => {
     };
     const result = processFlowJsonLine(JSON.stringify(event), r);
     expect(result).toBe(false);
-    expect(r.__streamingTextBuffer).toBe("thinking...");
+    expect(drainStreamingText(r)).toBe("thinking...");
   });
 
   it("text_delta triggers emit at 40 chars", () => {
@@ -219,7 +220,12 @@ describe("drainStreamingText", () => {
       r,
     );
     drainStreamingText(r);
-    expect(r.__lastEmittedWordCount).toBe(0);
+    // After drain, a new 45-char delta should trigger emit because counter was reset
+    const result = processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "b".repeat(45) } }),
+      r,
+    );
+    expect(result).toBe(true);
   });
 });
 
@@ -974,5 +980,87 @@ describe("getFlowSummaryText — tool result pairing", () => {
     expect(summary).toContain("Both commands checked.");
     expect(summary).toContain("abc1234");
     expect(summary).toContain("diff --git");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stableStringify — circular reference guard
+// ---------------------------------------------------------------------------
+
+describe("stableStringify", () => {
+  it("handles circular references without throwing", () => {
+    const obj = { a: 1, b: { c: 2 } };
+    obj.b.self = obj;
+    expect(() => stableStringify(obj)).not.toThrow();
+    const result = stableStringify(obj);
+    expect(result).toContain('"[Circular]"');
+  });
+
+  it("handles nested circular arrays", () => {
+    const arr = [1, 2];
+    arr.push(arr);
+    expect(() => stableStringify(arr)).not.toThrow();
+    const result = stableStringify(arr);
+    expect(result).toContain('"[Circular]"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WeakMap hidden state — frozen objects
+// ---------------------------------------------------------------------------
+
+describe("WeakMap hidden state — frozen objects", () => {
+  it("updateSmoothedTps does not throw on frozen result", async () => {
+    const r = Object.freeze(makeResult());
+    updateSmoothedTps(r, 100);
+    await new Promise((res) => setTimeout(res, 150));
+    updateSmoothedTps(r, 50);
+    expect(drainSmoothedTps(r)).toBeGreaterThan(0);
+  });
+
+  it("drainStreamingText does not throw on frozen result", () => {
+    const r = Object.freeze(makeResult());
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello world" } }),
+      r,
+    );
+    expect(drainStreamingText(r)).toBe("hello world");
+  });
+
+  it("drainCtxEstimate does not throw on frozen result", () => {
+    const r = Object.freeze(makeResult());
+    const msg = makeAssistantMessage("done", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 500 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    expect(drainCtxEstimate(r)).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty path coercion
+// ---------------------------------------------------------------------------
+
+describe("formatToolCallShort — empty path", () => {
+  it("preserves explicit empty string path in weave_patch summary", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "weave_patch", toolCallId: "tc1", arguments: { op: [{ o: "read", p: "" }] } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc1",
+          content: [{ type: "text", text: "content" }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("patch read ");
+    expect(summary).not.toContain("patch read ?");
   });
 });
