@@ -29,6 +29,12 @@ function createMockPi() {
 			tools.push(tool);
 		}),
 		setActiveTools: vi.fn(),
+		getActiveTools: vi.fn(() => ["read", "write", "edit", "bash", "find", "grep", "ls", "flow", "web_search"]),
+		getAllTools: vi.fn(() => [
+			{ name: "read" }, { name: "write" }, { name: "edit" },
+			{ name: "bash" }, { name: "find" }, { name: "grep" }, { name: "ls" }, { name: "flow" },
+			{ name: "web_search" },
+		]),
 		getFlag: vi.fn((name: string) => flags[name]),
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
@@ -424,9 +430,10 @@ describe("weave_patch tool registration", () => {
 		expect(calledWith).not.toContain("read");
 		expect(calledWith).not.toContain("write");
 		expect(calledWith).not.toContain("edit");
+		expect(calledWith).toContain("web_search");
 	});
 
-	it("does not call setActiveTools when toolOptimize is false", async () => {
+	it("restores legacy tools via setActiveTools when toolOptimize is false", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 
 		const pi = createMockPi();
@@ -434,7 +441,13 @@ describe("weave_patch tool registration", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		expect(pi.setActiveTools).not.toHaveBeenCalled();
+		expect(pi.setActiveTools).toHaveBeenCalled();
+		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(calledWith).toContain("read");
+		expect(calledWith).toContain("write");
+		expect(calledWith).toContain("edit");
+		expect(calledWith).not.toContain("weave_patch");
+		expect(calledWith).toContain("web_search");
 	});
 
 	it("defers setActiveTools to session_start, not extension loading", async () => {
@@ -468,5 +481,54 @@ describe("weave_patch tool registration", () => {
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
 		expect(lastCall).toContain("weave_patch");
 		expect(lastCall).not.toContain("read");
+	});
+
+	it("restores legacy tools on turn_start when toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+		const afterSession = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.length;
+
+		await pi.trigger("turn_start");
+
+		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
+		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
+		expect(lastCall).toContain("read");
+		expect(lastCall).toContain("write");
+		expect(lastCall).toContain("edit");
+		expect(lastCall).not.toContain("weave_patch");
+	});
+
+	it("parses env PI_FLOW_TOOL_OPTIMIZE via parseBoolean (yes/on/no/off)", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "yes";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("weave_patch");
+		expect(tool).toBeDefined();
+		expect(pi.setActiveTools).toHaveBeenCalled();
+		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(calledWith).toContain("weave_patch");
+	});
+
+	it("defers weave_patch registration to session_start, not extension loading", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		// Should NOT be registered during extension loading
+		expect(pi.getTool("weave_patch")).toBeUndefined();
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		// Should be registered during session_start
+		expect(pi.getTool("weave_patch")).toBeDefined();
 	});
 });

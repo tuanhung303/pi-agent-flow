@@ -402,7 +402,8 @@ export default function (pi: ExtensionAPI) {
 	let toolOptimize = true;
 	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
 	if (envToolOptimize !== undefined) {
-		toolOptimize = envToolOptimize === "1" || envToolOptimize === "true";
+		const parsed = parseBoolean(envToolOptimize);
+		if (parsed !== null) toolOptimize = parsed;
 	}
 
 	let discoveredFlows: FlowConfig[] = [];
@@ -419,9 +420,8 @@ export default function (pi: ExtensionAPI) {
 		if (typeof cliFlag === "boolean") {
 			toolOptimize = cliFlag;
 		} else if (typeof cliFlag === "string") {
-			const normalized = cliFlag.trim().toLowerCase();
-			if (["1", "true", "yes"].includes(normalized)) toolOptimize = true;
-			else if (["0", "false", "no"].includes(normalized)) toolOptimize = false;
+			const parsed = parseBoolean(cliFlag);
+			if (parsed !== null) toolOptimize = parsed;
 		} else if (envToolOptimize !== undefined) {
 			// Already set above
 		} else {
@@ -431,19 +431,48 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Explicitly disable legacy standalone tools when toolOptimize is enabled
-		if (toolOptimize) {
-			const activeTools = ["weave_patch", "bash", "find", "grep", "ls"];
-			if (canDelegate) activeTools.push("flow");
-			pi.setActiveTools(activeTools);
+		// Compute active tools dynamically, preserving other extension tools
+		function computeActiveTools(enableWeavePatch: boolean): string[] {
+			const currentTools = pi.getActiveTools();
+			if (enableWeavePatch) {
+				const activeTools = currentTools.filter((t) => t !== "read" && t !== "write" && t !== "edit");
+				if (!activeTools.includes("weave_patch")) activeTools.push("weave_patch");
+				return activeTools;
+			} else {
+				const activeTools = currentTools.filter((t) => t !== "weave_patch");
+				const allToolNames = pi.getAllTools().map((t) => t.name);
+				for (const legacy of ["read", "write", "edit"] as const) {
+					if (allToolNames.includes(legacy) && !activeTools.includes(legacy)) {
+						activeTools.push(legacy);
+					}
+				}
+				return activeTools;
+			}
+		}
+
+		pi.setActiveTools(computeActiveTools(toolOptimize));
+
+		// Register weave_patch tool when toolOptimize is enabled
+		if (toolOptimize && !pi.getAllTools().some((t) => t.name === "weave_patch")) {
+			pi.registerTool(createWeavePatchTool());
 		}
 	});
 
 	// Re-apply active tools every turn to survive registry refreshes
 	pi.on("turn_start", async () => {
+		const currentTools = pi.getActiveTools();
 		if (toolOptimize) {
-			const activeTools = ["weave_patch", "bash", "find", "grep", "ls"];
-			if (canDelegate) activeTools.push("flow");
+			const activeTools = currentTools.filter((t) => t !== "read" && t !== "write" && t !== "edit");
+			if (!activeTools.includes("weave_patch")) activeTools.push("weave_patch");
+			pi.setActiveTools(activeTools);
+		} else {
+			const activeTools = currentTools.filter((t) => t !== "weave_patch");
+			const allToolNames = pi.getAllTools().map((t) => t.name);
+			for (const legacy of ["read", "write", "edit"] as const) {
+				if (allToolNames.includes(legacy) && !activeTools.includes(legacy)) {
+					activeTools.push(legacy);
+				}
+			}
 			pi.setActiveTools(activeTools);
 		}
 	});
@@ -515,11 +544,6 @@ flow [type] accomplished
 
 		return { messages: modified };
 	});
-
-	// Register weave_patch tool when toolOptimize is enabled
-	if (toolOptimize) {
-		pi.registerTool(createWeavePatchTool());
-	}
 
 	// Register the flow tool
 	if (canDelegate) {
