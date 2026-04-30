@@ -449,9 +449,9 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("debug     ");
-		expect(text).toContain("dir:");
+		expect(text).toContain("aim:");
 		expect(text).toContain("├─ act:");
-		expect(text).toContain("log:");
+		expect(text).toContain("msg:");
 	});
 
 	it("renders act line with count prefix [N]", () => {
@@ -480,7 +480,7 @@ describe("activity panel rendering", () => {
 		);
 		const text = extractText(rendered);
 		expect(text).toContain("code      ");
-		expect(text).toContain("dir:");
+		expect(text).toContain("aim:");
 		expect(text).toContain("Refactor the auth module");
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
@@ -529,9 +529,9 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("dir:");
+		expect(text).toContain("aim:");
 		// Content is pre-truncated to contentBudget(10) = 50 chars
-		const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
+		const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
 		expect(dirLine).toContain("...");
 	});
 
@@ -618,11 +618,11 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult()] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
+			const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
 			expect(dirLine).toBeDefined();
 			// Content is pre-truncated to contentBudget(10) = 50 chars
 			expect(dirLine).toContain("...");
-			expect(visibleLength(dirLine.split("dir:")[1].trim())).toBeLessThanOrEqual(50);
+			expect(visibleLength(dirLine.split("aim:")[1].trim())).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -640,10 +640,10 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
+			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
 			expect(logLine).toBeDefined();
 			// Content is pre-truncated to contentBudget(10) = 50 chars
-			const logContent = logLine.split("log:")[1].trim();
+			const logContent = logLine.split("msg:")[1].trim();
 			expect(logContent).toContain("...");
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
 		} finally {
