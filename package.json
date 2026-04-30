@@ -6,6 +6,7 @@
   "main": "index.ts",
   "files": [
     "index.ts",
+    "web-tool.ts",
     "agents.ts",
     "config.ts",
     "flow.ts",
@@ -44,7 +45,9 @@
   },
   "devDependencies": {
     "typescript": "^5.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@types/jsdom": "^28.0.1",
+    "@types/turndown": "^5.0.6"
   },
   "peerDependencies": {
     "@mariozechner/pi-agent-core": ">=0.37.0",
@@ -69,5 +72,9 @@
     "@sinclair/typebox": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "jsdom": "^29.1.0",
+    "turndown": "^7.2.4"
   }
 }

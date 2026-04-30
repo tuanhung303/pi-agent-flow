@@ -20,7 +20,12 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { createWeavePatchTool } from "./weave-patch.js";
+import {
+	createWebTool,
+	
+	looksLikeUrlPrompt,
+	looksLikeWebSearchPrompt,
+} from "./web-tool.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -431,60 +436,73 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Compute active tools dynamically, preserving other extension tools
+		// Compute active tools dynamically, preserving other extension tools (including web)
+		// Compute active tools: main agent is an orchestrator.
+		// toolOptimize=true  → read + bash + flow + web
+		// toolOptimize=false → read + write + edit + bash + flow + web
 		function computeActiveTools(enableWeavePatch: boolean): string[] {
 			const currentTools = pi.getActiveTools();
-			if (enableWeavePatch) {
-				const activeTools = currentTools.filter((t) => t !== "read" && t !== "write" && t !== "edit");
-				if (!activeTools.includes("weave_patch")) activeTools.push("weave_patch");
-				return activeTools;
-			} else {
-				const activeTools = currentTools.filter((t) => t !== "weave_patch");
-				const allToolNames = pi.getAllTools().map((t) => t.name);
-				for (const legacy of ["read", "write", "edit"] as const) {
-					if (allToolNames.includes(legacy) && !activeTools.includes(legacy)) {
-						activeTools.push(legacy);
-					}
-				}
-				return activeTools;
+			const base = enableWeavePatch
+				? ["read", "bash", "flow", "web"]
+				: ["read", "write", "edit", "bash", "flow", "web"];
+			const activeTools = currentTools.filter((t) => base.includes(t));
+			for (const t of base) {
+				if (!activeTools.includes(t)) activeTools.push(t);
 			}
+			return activeTools;
 		}
 
 		pi.setActiveTools(computeActiveTools(toolOptimize));
 
-		// Register weave_patch tool when toolOptimize is enabled
-		if (toolOptimize && !pi.getAllTools().some((t) => t.name === "weave_patch")) {
-			pi.registerTool(createWeavePatchTool());
-		}
+		// Note: weave_patch is not registered for the main agent.
+		// File operations are delegated to child flows via the flow tool.
 	});
 
 	// Re-apply active tools every turn to survive registry refreshes
 	pi.on("turn_start", async () => {
 		const currentTools = pi.getActiveTools();
-		if (toolOptimize) {
-			const activeTools = currentTools.filter((t) => t !== "read" && t !== "write" && t !== "edit");
-			if (!activeTools.includes("weave_patch")) activeTools.push("weave_patch");
-			pi.setActiveTools(activeTools);
-		} else {
-			const activeTools = currentTools.filter((t) => t !== "weave_patch");
-			const allToolNames = pi.getAllTools().map((t) => t.name);
-			for (const legacy of ["read", "write", "edit"] as const) {
-				if (allToolNames.includes(legacy) && !activeTools.includes(legacy)) {
-					activeTools.push(legacy);
-				}
-			}
-			pi.setActiveTools(activeTools);
+		const base = toolOptimize
+			? ["read", "bash", "flow", "web"]
+			: ["read", "write", "edit", "bash", "flow", "web"];
+		const activeTools = currentTools.filter((t) => base.includes(t));
+		for (const t of base) {
+			if (!activeTools.includes(t)) activeTools.push(t);
 		}
+		pi.setActiveTools(activeTools);
 	});
-
 	// Inject available flows into the system prompt
 	pi.on("before_agent_start", async (event) => {
-		if (!canDelegate) return;
-		if (discoveredFlows.length === 0) return;
+		const prompt = event.prompt;
+		const hasUrl = looksLikeUrlPrompt(prompt);
+		const likelyNeedsWeb = looksLikeWebSearchPrompt(prompt);
+
+
+		const webInstructions: string[] = [];
+		if (hasUrl) {
+			webInstructions.push(
+				"The prompt includes a URL. Use web tool with op: { o: 'fetch', u: '<url>' } before answering about that page.",
+			);
+		}
+		if (likelyNeedsWeb) {
+			webInstructions.push(
+				"The prompt likely needs external or current info. Prefer web tool with op: [{ o: 'search', q: '<query>' }] over memory.",
+			);
+		}
+
+		let systemPrompt = event.systemPrompt;
+		if (webInstructions.length > 0) {
+			systemPrompt +=
+				"\n\n## pi-web steering\n" +
+				webInstructions.map((line) => `- ${line}`).join("\n");
+		}
+
+		if (!canDelegate || discoveredFlows.length === 0) {
+			return webInstructions.length > 0 ? { systemPrompt } : undefined;
+		}
 
 		return {
 			systemPrompt:
-				event.systemPrompt +
+				systemPrompt +
 				`\n\n## Flows
 
 Before acting, reason about whether to dive into a flow:
@@ -544,6 +562,9 @@ flow [type] accomplished
 
 		return { messages: modified };
 	});
+
+	// Register the web tool
+	pi.registerTool(createWebTool());
 
 	// Register the flow tool
 	if (canDelegate) {

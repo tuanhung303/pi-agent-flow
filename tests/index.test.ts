@@ -29,11 +29,11 @@ function createMockPi() {
 			tools.push(tool);
 		}),
 		setActiveTools: vi.fn(),
-		getActiveTools: vi.fn(() => ["read", "write", "edit", "bash", "find", "grep", "ls", "flow", "web_search"]),
+		getActiveTools: vi.fn(() => ["read", "write", "edit", "bash", "find", "grep", "ls", "flow", "web"]),
 		getAllTools: vi.fn(() => [
 			{ name: "read" }, { name: "write" }, { name: "edit" },
-			{ name: "bash" }, { name: "find" }, { name: "grep" }, { name: "ls" }, { name: "flow" },
-			{ name: "web_search" },
+			{ name: "bash" }, { name: "flow" },
+			{ name: "web" },
 		]),
 		getFlag: vi.fn((name: string) => flags[name]),
 		trigger: (event: string, ...args: any[]) =>
@@ -345,13 +345,13 @@ describe("flow tool execute", () => {
 	});
 });
 
-describe("weave_patch tool registration", () => {
+describe("main agent tool restriction", () => {
 	let tmpDir: string;
 	let originalCwd: string;
 	let originalEnv: NodeJS.ProcessEnv;
 
 	beforeAll(() => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-weave-reg-test-"));
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-tool-restrict-test-"));
 		originalCwd = process.cwd();
 		process.chdir(tmpDir);
 		originalEnv = { ...process.env };
@@ -376,42 +376,7 @@ describe("weave_patch tool registration", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("registers weave_patch tool by default", async () => {
-		const pi = createMockPi();
-		registerExtension(pi as any);
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-
-		const tool = pi.getTool("weave_patch");
-		expect(tool).toBeDefined();
-		expect(tool.name).toBe("weave_patch");
-	});
-
-	it("does not register weave_patch when toolOptimize is false via env", async () => {
-		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
-
-		const pi = createMockPi();
-		registerExtension(pi as any);
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-
-		const tool = pi.getTool("weave_patch");
-		expect(tool).toBeUndefined();
-	});
-
-	it("registers weave_patch when toolOptimize is true via env", async () => {
-		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
-
-		const pi = createMockPi();
-		registerExtension(pi as any);
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-
-		const tool = pi.getTool("weave_patch");
-		expect(tool).toBeDefined();
-	});
-
-	it("calls setActiveTools to exclude legacy tools when toolOptimize is true", async () => {
+	it("restricts main agent to read+bash+flow+web when toolOptimize is true", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -421,19 +386,19 @@ describe("weave_patch tool registration", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toContain("weave_patch");
+		expect(calledWith).toContain("read");
 		expect(calledWith).toContain("bash");
-		expect(calledWith).toContain("find");
-		expect(calledWith).toContain("grep");
-		expect(calledWith).toContain("ls");
 		expect(calledWith).toContain("flow");
-		expect(calledWith).not.toContain("read");
+		expect(calledWith).toContain("web");
 		expect(calledWith).not.toContain("write");
 		expect(calledWith).not.toContain("edit");
-		expect(calledWith).toContain("web_search");
+		expect(calledWith).not.toContain("weave_patch");
+		expect(calledWith).not.toContain("find");
+		expect(calledWith).not.toContain("grep");
+		expect(calledWith).not.toContain("ls");
 	});
 
-	it("restores legacy tools via setActiveTools when toolOptimize is false", async () => {
+	it("restores legacy read+write+edit when toolOptimize is false", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 
 		const pi = createMockPi();
@@ -446,8 +411,10 @@ describe("weave_patch tool registration", () => {
 		expect(calledWith).toContain("read");
 		expect(calledWith).toContain("write");
 		expect(calledWith).toContain("edit");
+		expect(calledWith).toContain("bash");
+		expect(calledWith).toContain("flow");
+		expect(calledWith).toContain("web");
 		expect(calledWith).not.toContain("weave_patch");
-		expect(calledWith).toContain("web_search");
 	});
 
 	it("defers setActiveTools to session_start, not extension loading", async () => {
@@ -465,7 +432,7 @@ describe("weave_patch tool registration", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies setActiveTools on turn_start to survive registry refreshes", async () => {
+	it("re-applies restricted tools on turn_start to survive registry refreshes", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -474,13 +441,17 @@ describe("weave_patch tool registration", () => {
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 		const afterSession = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.length;
 
-		// Simulate a registry refresh (e.g., _refreshToolRegistry re-adds read)
+		// Simulate a registry refresh
 		await pi.trigger("turn_start");
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toContain("weave_patch");
-		expect(lastCall).not.toContain("read");
+		expect(lastCall).toContain("read");
+		expect(lastCall).toContain("bash");
+		expect(lastCall).toContain("flow");
+		expect(lastCall).toContain("web");
+		expect(lastCall).not.toContain("write");
+		expect(lastCall).not.toContain("edit");
 	});
 
 	it("restores legacy tools on turn_start when toolOptimize is false", async () => {
@@ -499,6 +470,9 @@ describe("weave_patch tool registration", () => {
 		expect(lastCall).toContain("read");
 		expect(lastCall).toContain("write");
 		expect(lastCall).toContain("edit");
+		expect(lastCall).toContain("bash");
+		expect(lastCall).toContain("flow");
+		expect(lastCall).toContain("web");
 		expect(lastCall).not.toContain("weave_patch");
 	});
 
@@ -510,14 +484,13 @@ describe("weave_patch tool registration", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		const tool = pi.getTool("weave_patch");
-		expect(tool).toBeDefined();
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toContain("weave_patch");
+		expect(calledWith).toContain("read");
+		expect(calledWith).not.toContain("write");
 	});
 
-	it("defers weave_patch registration to session_start, not extension loading", async () => {
+	it("does not register weave_patch for main agent", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -528,7 +501,112 @@ describe("weave_patch tool registration", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// Should be registered during session_start
-		expect(pi.getTool("weave_patch")).toBeDefined();
+		// Should still not be registered
+		expect(pi.getTool("weave_patch")).toBeUndefined();
+	});
+});
+
+describe("web tool integration", () => {
+	let tmpDir: string;
+	let originalCwd: string;
+	let originalEnv: NodeJS.ProcessEnv;
+
+	beforeAll(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-web-test-"));
+		originalCwd = process.cwd();
+		process.chdir(tmpDir);
+		originalEnv = { ...process.env };
+	});
+
+	afterAll(() => {
+		process.chdir(originalCwd);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		process.env = originalEnv;
+	});
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		delete process.env.PI_FLOW_DEPTH;
+		delete process.env.PI_FLOW_STACK;
+		process.env.PI_FLOW_MAX_DEPTH = "2";
+		delete process.env.PI_FLOW_PREVENT_CYCLES;
+		delete process.env.PI_FLOW_TOOL_OPTIMIZE;
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("registers web tool during extension loading", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		const tool = pi.getTool("web");
+		expect(tool).toBeDefined();
+		expect(tool.name).toBe("web");
+	});
+
+	it("includes web tool in active tools on session_start", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		expect(pi.setActiveTools).toHaveBeenCalled();
+		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
+		expect(lastCall).toContain("web");
+	});
+
+	it("adds URL steering when prompt contains a URL", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const result = await pi.trigger("before_agent_start", {
+			prompt: "Check https://example.com for details",
+			systemPrompt: "You are a helpful assistant.",
+		});
+
+		const modified = result[0];
+		expect(modified.systemPrompt).toContain("pi-web steering");
+		expect(modified.systemPrompt).toContain("fetch");
+	});
+
+	it("adds search steering when prompt looks like a web search", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const result = await pi.trigger("before_agent_start", {
+			prompt: "What is the latest version of Node?",
+			systemPrompt: "You are a helpful assistant.",
+		});
+
+		const modified = result[0];
+		expect(modified.systemPrompt).toContain("pi-web steering");
+		expect(modified.systemPrompt).toContain("search");
+	});
+
+	it("does not modify systemPrompt when web is not needed", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const result = await pi.trigger("before_agent_start", {
+			prompt: "Refactor this function",
+			systemPrompt: "You are a helpful assistant.",
+		});
+
+		expect(pi.setActiveTools).toHaveBeenCalled();
+		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
+		expect(lastCall).toContain("web");
+
+		const modified = result[0];
+		// Bundled flows are always discovered, so flow instructions are injected
+		expect(modified.systemPrompt).toContain("## Flows");
+		expect(modified.systemPrompt).not.toContain("pi-web steering");
 	});
 });

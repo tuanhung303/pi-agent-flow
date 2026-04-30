@@ -150,18 +150,13 @@ function buildFlowArgs(
 	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
 	if (thinking) args.push("--thinking", thinking);
 
-	// Compute effective tools once — used for both --tools arg and activation prompt
-	const effectiveTools = getOptimizedTools(flow.tools, toolOptimize);
+	// Child flows run with a minimal harness: read + bash + flow only.
+	// This prevents write/edit/web/search in forked contexts.
+	const harnessTools = ["read", "bash", "flow"];
+	args.push("--tools", harnessTools.join(","));
 
-	if (effectiveTools && effectiveTools.length > 0) {
-		args.push("--tools", effectiveTools.join(","));
-	} else if (flow.tools === undefined) {
-		if (inheritedCliArgs.fallbackTools !== undefined) {
-			args.push("--tools", inheritedCliArgs.fallbackTools);
-		} else if (inheritedCliArgs.fallbackNoTools) {
-			args.push("--no-tools");
-		}
-	}
+	// Keep original flow.tools only for activation-prompt documentation
+	const effectiveTools = getOptimizedTools(flow.tools, toolOptimize) ?? harnessTools;
 
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.
 	// Flow instructions go in the intent message instead.
@@ -169,7 +164,7 @@ function buildFlowArgs(
 	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
 	const canDelegate = currentDepth < effectiveMaxDepth;
-	const availableTools = effectiveTools?.join(", ") ?? "all";
+	const availableTools = harnessTools.join(", ");
 
 	// Phase 1: Context seal — sharp boundary declaring history sealed
 	const contextSeal =
