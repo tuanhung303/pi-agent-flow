@@ -555,9 +555,14 @@ export function isWithinDirectory(child: string, parent: string): boolean {
 	return child.startsWith(parent + path.sep);
 }
 
-async function validatePath(inputPath: string, cwd: string): Promise<string> {
+async function validatePath(inputPath: string, cwd: string, allowOutside = false): Promise<string> {
 	const expandedPath = expandTilde(inputPath);
 	const resolved = path.resolve(cwd, expandedPath);
+
+	if (allowOutside) {
+		return resolved;
+	}
+
 	const normalizedResolved = path.normalize(resolved);
 	const normalizedCwd = path.normalize(cwd);
 	if (
@@ -780,7 +785,7 @@ async function executeOperations(
 		}
 
 		try {
-			const resolvedPath = await validatePath(op.p, cwd);
+			const resolvedPath = await validatePath(op.p, cwd, op.o === "read");
 
 			switch (op.o) {
 				case "read": {
