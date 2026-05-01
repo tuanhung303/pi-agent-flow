@@ -152,7 +152,7 @@ registerHook({
 ### Single flow
 
 ```json
-{ "flow": [{ "type": "explore", "intent": "Find all authentication-related code" }] }
+{ "flow": [{ "type": "explore", "intent": "Find all authentication-related code", "aim": "Find auth code" }] }
 ```
 
 ### Batch multiple flows

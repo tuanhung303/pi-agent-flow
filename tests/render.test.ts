@@ -414,6 +414,7 @@ function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 		type: "explore",
 		agentSource: "user",
 		intent: "test intent",
+		aim: "test aim",
 		exitCode: 0,
 		messages: [],
 		stderr: "",
@@ -476,12 +477,12 @@ describe("activity panel rendering", () => {
 			{ content: [{ type: "text", text: "Starting..." }], details: undefined },
 			false,
 			makeTheme(),
-			{ flow: [{ type: "code", intent: "Refactor the auth module" }] },
+			{ flow: [{ type: "code", intent: "Refactor the auth module", aim: "Refactor auth module" }] },
 		);
 		const text = extractText(rendered);
 		expect(text).toContain("code      ");
 		expect(text).toContain("aim:");
-		expect(text).toContain("Refactor the auth module");
+		expect(text).toContain("Refactor auth module");
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
 		expect(text).toContain("tps:     -");
@@ -521,9 +522,10 @@ describe("activity panel rendering", () => {
 	});
 
 	it("includes long DIR text in TruncatedText", () => {
-		const longIntent = "A" + "b".repeat(100) + "Z";
+		const longAim = "A" + "b".repeat(100) + "Z";
 		const result = makeResult({
-			intent: longIntent,
+			intent: longAim,
+			aim: longAim,
 			messages: [makeTextMessage("done")],
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
@@ -610,9 +612,10 @@ describe("activity panel rendering", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longIntent = "b".repeat(55);
+			const longAim = "b".repeat(55);
 			const result = makeResult({
-				intent: longIntent,
+				intent: longAim,
+				aim: longAim,
 				messages: [makeTextMessage("done")],
 			});
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult()] };

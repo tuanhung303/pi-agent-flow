@@ -50,6 +50,9 @@ const FlowItem = Type.Object({
 	intent: Type.String({
 		description: "Clear, specific mission for this flow.",
 	}),
+	aim: Type.String({
+		description: "Extreme short intent — one sentence, 5-7 words, headline-style summary of what this flow does.",
+	}),
 	cwd: Type.Optional(
 		Type.String({ description: "Working directory override for this flow." }),
 	),
@@ -59,7 +62,7 @@ const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			'Example: { flow: [{ type: "explore", "intent": "Find auth code" }, { type: "code", "intent": "Fix bug" }] }',
+			'Example: { flow: [{ type: "explore", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }, { type: "code", "intent": "Fix the bug in user registration", "aim": "Fix registration bug" }] }',
 		minItems: 1,
 	}),
 	confirmProjectFlows: Type.Optional(
@@ -649,6 +652,7 @@ flow [type] accomplished
 						type: params.flow[i].type,
 						agentSource: "unknown",
 						intent: params.flow[i].intent,
+						aim: params.flow[i].aim,
 						exitCode: -1,
 						messages: [],
 						stderr: "",
@@ -684,6 +688,7 @@ flow [type] accomplished
 						flows,
 						flowName: normalizedType,
 						intent: item.intent,
+						aim: item.aim,
 						taskCwd: item.cwd,
 						forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
 						parentDepth: currentDepth,

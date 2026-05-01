@@ -229,6 +229,8 @@ export interface RunFlowOptions {
 	flowName: string;
 	/** Intent description. */
 	intent: string;
+	/** Short headline for display. */
+	aim: string;
 	/** Optional override working directory. */
 	taskCwd?: string;
 	/** Serialized parent session snapshot for fork mode. Null when the flow starts with a clean slate. */
@@ -266,6 +268,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		flows,
 		flowName,
 		intent,
+		aim,
 		taskCwd,
 		forkSessionSnapshotJsonl,
 		parentDepth,
@@ -286,6 +289,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			type: normalizedFlowName,
 			agentSource: "unknown",
 			intent,
+			aim,
 			exitCode: 1,
 			messages: [],
 			stderr: `Unknown flow: "${flowName}". Available flows: ${available}.`,
@@ -298,6 +302,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		type: normalizedFlowName,
 		agentSource: flow.source,
 		intent,
+		aim,
 		exitCode: -1,
 		messages: [],
 		stderr: "",

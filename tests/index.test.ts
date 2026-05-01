@@ -113,6 +113,7 @@ describe("flow tool execute", () => {
 			type: "explore",
 			agentSource: "project",
 			intent: "Test",
+			aim: "Test aim",
 			exitCode: 0,
 			messages: [],
 			stderr: "",
@@ -152,7 +153,7 @@ describe("flow tool execute", () => {
 		const tool = pi.getTool("flow");
 		const result = await tool.execute(
 			"call-1",
-			{ flow: [{ type: "explore", intent: "Discover things" }], confirmProjectFlows: false },
+			{ flow: [{ type: "explore", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			undefined,
 			makeMockCtx(tmpDir),
@@ -181,6 +182,7 @@ describe("flow tool execute", () => {
 			type: "explore",
 			agentSource: "project",
 			intent: "Test",
+			aim: "Test aim",
 			exitCode: 0,
 			messages: [],
 			stderr: "",
@@ -189,7 +191,7 @@ describe("flow tool execute", () => {
 
 		await tool.execute(
 			"call-1",
-			{ flow: [{ type: "explore", intent: "Discover things" }], confirmProjectFlows: false },
+			{ flow: [{ type: "explore", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			vi.fn(),
 			makeMockCtx(tmpDir),
@@ -318,6 +320,7 @@ describe("flow tool execute", () => {
 				type: opts.flowName,
 				agentSource: "project",
 				intent: opts.intent,
+				aim: opts.aim,
 				exitCode: 0,
 				messages: [],
 				stderr: "",
@@ -332,7 +335,7 @@ describe("flow tool execute", () => {
 
 		await tool.execute(
 			"call-1",
-			{ flow: [{ type: "explore", intent: "Discover things" }], confirmProjectFlows: false },
+			{ flow: [{ type: "explore", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			onUpdate,
 			makeMockCtx(tmpDir),

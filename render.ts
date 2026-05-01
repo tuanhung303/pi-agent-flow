@@ -159,6 +159,7 @@ export function renderFlowResult(
 				type: flowRequest.type || "unknown",
 				agentSource: "user",
 				intent: flowRequest.intent || "Processing...",
+				aim: flowRequest.aim || flowRequest.intent || "Processing...",
 				exitCode: -1, // In progress
 				messages: [],
 				stderr: "",
@@ -263,9 +264,9 @@ function renderFlowCollapsed(
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
-	// aim: line (intent/objective)
-	if (r.intent) {
-		const dirContent = truncateChars(r.intent, contentBudget(10));
+	// aim: line (short headline)
+	if (r.aim) {
+		const dirContent = truncateChars(r.aim, contentBudget(10));
 		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ aim:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
@@ -395,9 +396,9 @@ function renderActivityPanel(
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";
 
-		// aim: line (intent/objective)
-		if (r.intent) {
-			const dirContent = truncateChars(r.intent, contentBudget(10));
+		// aim: line (short headline)
+		if (r.aim) {
+			const dirContent = truncateChars(r.aim, contentBudget(10));
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ aim:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 

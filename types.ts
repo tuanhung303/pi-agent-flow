@@ -23,6 +23,7 @@ export interface SingleResult {
 	type: string;
 	agentSource: "user" | "project" | "bundled" | "unknown";
 	intent: string;
+	aim: string;
 	exitCode: number;
 	messages: Message[];
 	stderr: string;
