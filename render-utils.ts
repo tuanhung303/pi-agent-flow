@@ -50,20 +50,20 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string, m
 	parts.push(`tps: ${formatTps(usage.smoothedTps)}`);
 	parts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
 
-	let result = parts.join(" ") + (model ? ` ${model}` : "");
+	let result = parts.join(" · ") + (model ? ` · ${model}` : "");
 
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first
-		let narrow = parts.join(" ");
+		let narrow = parts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens
 		const narrowParts = parts.slice(0, 3); // up to tps
-		narrow = narrowParts.join(" ");
+		narrow = narrowParts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Bare minimum (just input/output)
-		narrow = `${parts[0]} ${parts[1]}`;
+		narrow = `${parts[0]} · ${parts[1]}`;
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		return truncateChars(result, maxWidth);
