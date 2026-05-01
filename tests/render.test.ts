@@ -750,7 +750,7 @@ describe("formatFlowToolCall — batch", () => {
 			type: "explore",
 			intent: "Read files",
 			messages: [
-				makeToolCallMessage("batch", { op: [
+				makeToolCallMessage("batch", { o: [
 					{ o: "read", p: "src/index.ts" },
 				] }),
 			],
@@ -769,7 +769,7 @@ describe("formatFlowToolCall — batch", () => {
 			type: "code",
 			intent: "Refactor",
 			messages: [
-				makeToolCallMessage("batch", { op: [
+				makeToolCallMessage("batch", { o: [
 					{ o: "read", p: "src/a.ts" },
 					{ o: "edit", p: "src/b.ts", e: [{ f: "old", r: "new" }] },
 				] }),
@@ -789,7 +789,7 @@ describe("formatFlowToolCall — batch", () => {
 			type: "code",
 			intent: "Multi-edit",
 			messages: [
-				makeToolCallMessage("batch", { op: [
+				makeToolCallMessage("batch", { o: [
 					{
 						o: "edit",
 						p: "src/foo.ts",
@@ -814,7 +814,7 @@ describe("formatFlowToolCall — batch", () => {
 			type: "code",
 			intent: "Bulk changes",
 			messages: [
-				makeToolCallMessage("batch", { op: [
+				makeToolCallMessage("batch", { o: [
 					{ o: "read", p: "a.ts" },
 					{ o: "read", p: "b.ts" },
 					{ o: "read", p: "c.ts" },
@@ -835,7 +835,7 @@ describe("formatFlowToolCall — batch", () => {
 			type: "explore",
 			intent: "Empty",
 			messages: [
-				makeToolCallMessage("batch", { op: [] }),
+				makeToolCallMessage("batch", { o: [] }),
 			],
 			usage: emptyFlowUsage(),
 		});

@@ -31,7 +31,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "test.txt" }] },
+				{ o: [{ op: "read", path: "test.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -57,7 +57,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "read", path: "a.txt" },
 						{ op: "read", path: "b.txt" },
 					],
@@ -86,7 +86,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "bom.txt" }] },
+				{ o: [{ op: "read", path: "bom.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -99,7 +99,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "nonexistent.txt" }] },
+				{ o: [{ op: "read", path: "nonexistent.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -120,7 +120,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "lines.txt" }] },
+				{ o: [{ op: "read", path: "lines.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -140,7 +140,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "offset.txt", offset: 3 }] },
+					{ o: [{ op: "read", path: "offset.txt", offset: 3 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -160,7 +160,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "limit.txt", limit: 2 }] },
+					{ o: [{ op: "read", path: "limit.txt", limit: 2 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -182,7 +182,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "both.txt", offset: 2, limit: 2 }] },
+					{ o: [{ op: "read", path: "both.txt", offset: 2, limit: 2 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -199,7 +199,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "short.txt", offset: 10 }] },
+					{ o: [{ op: "read", path: "short.txt", offset: 10 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -223,7 +223,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "full.txt" }] },
+					{ o: [{ op: "read", path: "full.txt" }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -240,7 +240,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "small.txt", limit: 100 }] },
+					{ o: [{ op: "read", path: "small.txt", limit: 100 }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -259,7 +259,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "large.txt" }] },
+					{ o: [{ op: "read", path: "large.txt" }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -278,7 +278,7 @@ describe("batch tool", () => {
 				const tool = createTool();
 				const result = await tool.execute(
 					"call-1",
-					{ op: [{ op: "read", path: "large.txt" }] },
+					{ o: [{ op: "read", path: "large.txt" }] },
 					undefined,
 					undefined,
 					makeCtx(tmpDir),
@@ -296,7 +296,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "write", path: "new.txt", content: "new content\n" },
 					],
 				},
@@ -326,7 +326,7 @@ describe("batch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "write", path: "existing.txt", content: "new\n" },
 					],
 				},
@@ -344,7 +344,7 @@ describe("batch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "write", path: "a/b/c/deep.txt", content: "deep\n" },
 					],
 				},
@@ -362,7 +362,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "write", path: "x.txt", content: "x\n" },
 						{ op: "write", path: "y.txt", content: "y\n" },
 					],
@@ -388,7 +388,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "edit.txt",
@@ -424,7 +424,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "multi.txt",
@@ -454,7 +454,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "a.txt",
@@ -490,7 +490,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "fuzzy.txt",
@@ -520,7 +520,7 @@ describe("batch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "trim.txt",
@@ -548,7 +548,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "trim-nl.txt",
@@ -577,7 +577,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "multi-trim.txt",
@@ -602,7 +602,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "miss.txt",
@@ -634,7 +634,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "dup.txt",
@@ -666,7 +666,7 @@ describe("batch tool", () => {
 			await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "crlf.txt",
@@ -693,7 +693,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [{ op: "delete", path: "a-dir" }],
+					o: [{ op: "delete", path: "a-dir" }],
 				},
 				undefined,
 				undefined,
@@ -715,7 +715,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [{ op: "delete", path: "delete-me.txt" }],
+					o: [{ op: "delete", path: "delete-me.txt" }],
 				},
 				undefined,
 				undefined,
@@ -736,7 +736,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [{ op: "delete", path: "nope.txt" }],
+					o: [{ op: "delete", path: "nope.txt" }],
 				},
 				undefined,
 				undefined,
@@ -758,7 +758,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "read", path: "existing.txt" },
 						{ op: "write", path: "new.txt", content: "new file\n" },
 						{
@@ -795,7 +795,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "ordered.txt",
@@ -827,7 +827,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "read", path: "ok.txt" },
 						{ op: "read", path: "missing.txt" },
 						{ op: "write", path: "skipped.txt", content: "should not be written\n" },
@@ -855,7 +855,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "read", path: "nonexistent.txt" },
 						{ op: "write", path: "should-skip.txt", content: "nope\n" },
 					],
@@ -876,7 +876,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [{ op: "read", path: "../../../etc/hostname" }],
+					o: [{ op: "read", path: "../../../etc/hostname" }],
 				},
 				undefined,
 				undefined,
@@ -897,7 +897,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "safe.txt" }] },
+				{ o: [{ op: "read", path: "safe.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -913,7 +913,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: filePath }] },
+				{ o: [{ op: "read", path: filePath }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -935,7 +935,7 @@ describe("batch tool", () => {
 			const resultPromise = tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "read", path: "a.txt" },
 						{ op: "read", path: "b.txt" },
 					],
@@ -961,7 +961,7 @@ describe("batch tool", () => {
 
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "any.txt" }] },
+				{ o: [{ op: "read", path: "any.txt" }] },
 				controller.signal,
 				undefined,
 				makeCtx(tmpDir),
@@ -979,7 +979,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ path: "infer.txt" }, // no op, should infer "read"
 					],
 				},
@@ -1001,7 +1001,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "str.txt",
@@ -1172,14 +1172,14 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [] },
+				{ o: [] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
 			);
 
 			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("op array is required");
+			expect(result.content[0].text).toContain("o array is required");
 		});
 	});
 
@@ -1189,7 +1189,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "nonexistent.txt",
@@ -1215,7 +1215,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{
 							op: "edit",
 							path: "same.txt",
@@ -1240,7 +1240,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [{ op: "delete", path: "../../../tmp/trap.txt" }],
+					o: [{ op: "delete", path: "../../../tmp/trap.txt" }],
 				},
 				undefined,
 				undefined,
@@ -1258,7 +1258,7 @@ describe("batch tool", () => {
 			const result = await tool.execute(
 				"call-1",
 				{
-					op: [
+					o: [
 						{ op: "read", path: "missing.txt" },
 						{ op: "write", path: "skipped.txt", content: "nope" },
 					],
@@ -1284,7 +1284,7 @@ describe("batch tool", () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ op: [{ op: "read", path: "huge-line.txt" }] },
+				{ o: [{ op: "read", path: "huge-line.txt" }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -1326,7 +1326,7 @@ describe("tilde expansion", () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
-			{ op: [{ op: "read", p: "~/tilde-test.txt" }] },
+			{ o: [{ op: "read", p: "~/tilde-test.txt" }] },
 			undefined,
 			undefined,
 			makeCtx(tmpDir),
@@ -1348,7 +1348,7 @@ describe("tilde expansion", () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
-			{ op: [{ o: "write", p: "~/malicious.txt", c: "hacked\n" }] },
+			{ o: [{ o: "write", p: "~/malicious.txt", c: "hacked\n" }] },
 			undefined,
 			undefined,
 			makeCtx(tmpDir),
@@ -1389,7 +1389,7 @@ describe("symlink traversal guard", () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
-			{ op: [{ op: "read", p: "leak.txt" }] },
+			{ o: [{ op: "read", p: "leak.txt" }] },
 			undefined,
 			undefined,
 			makeCtx(tmpDir),
@@ -1414,7 +1414,7 @@ describe("symlink traversal guard", () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
-			{ op: [{ o: "write", p: "symlink.txt", c: "hacked\n" }] },
+			{ o: [{ o: "write", p: "symlink.txt", c: "hacked\n" }] },
 			undefined,
 			undefined,
 			makeCtx(tmpDir),
@@ -1442,7 +1442,7 @@ describe("symlink traversal guard", () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
-			{ op: [{ op: "read", p: "link.txt" }] },
+			{ o: [{ op: "read", p: "link.txt" }] },
 			undefined,
 			undefined,
 			makeCtx(tmpDir),
@@ -1465,7 +1465,7 @@ describe("symlink traversal guard", () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
-			{ op: [{ op: "read", p: "leak-dir/nested-secret.txt" }] },
+			{ o: [{ op: "read", p: "leak-dir/nested-secret.txt" }] },
 			undefined,
 			undefined,
 			makeCtx(tmpDir),

@@ -59,7 +59,7 @@ const FileOp = Type.Object({
 });
 
 export const WeavePatchParams = Type.Object({
-	op: Type.Array(FileOp, {
+	o: Type.Array(FileOp, {
 		description:
 			"Ordered list of file operations. Executed sequentially. On failure, remaining operations are skipped.",
 	}),
@@ -697,12 +697,12 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * Normalize input arguments to the canonical { op: [...] } shape.
+ * Normalize input arguments to the canonical { o: [...] } shape.
  * Handles legacy formats, bare arrays, and single-operation shorthands.
- * Always returns { op: FileOpInput[] } to match WeavePatchParams schema.
+ * Always returns { o: FileOpInput[] } to match WeavePatchParams schema.
  */
-function prepareArguments(input: unknown): { op: unknown[] } | unknown {
-	if (!input || typeof input !== "object") return { op: [] };
+function prepareArguments(input: unknown): { o: unknown[] } | unknown {
+	if (!input || typeof input !== "object") return { o: [] };
 
 	const args = input as Record<string, unknown>;
 
@@ -713,7 +713,7 @@ function prepareArguments(input: unknown): { op: unknown[] } | unknown {
 		typeof args.path === "string"
 	) {
 		return {
-			op: [
+			o: [
 				normalizeOp({
 					o: "edit",
 					p: args.path,
@@ -723,9 +723,11 @@ function prepareArguments(input: unknown): { op: unknown[] } | unknown {
 		};
 	}
 
-	// Extract ops array — canonical { op: [...] }, legacy { operations: [...] }, or bare array
+	// Extract ops array — canonical { o: [...] }, legacy { op: [...] }, legacy { operations: [...] }, or bare array
 	let opsArray: unknown[];
-	if (Array.isArray(args.op)) {
+	if (Array.isArray(args.o)) {
+		opsArray = args.o;
+	} else if (Array.isArray(args.op)) {
 		opsArray = args.op;
 	} else if (Array.isArray(args.operations)) {
 		opsArray = args.operations;
@@ -735,12 +737,12 @@ function prepareArguments(input: unknown): { op: unknown[] } | unknown {
 		// Single-operation shorthand: { p: "...", o: "read" }
 		opsArray = [args];
 	} else {
-		return { op: [] };
+		return { o: [] };
 	}
 
 	// Normalize each operation to single-letter form
 	return {
-		op: opsArray.map((op: unknown) => {
+		o: opsArray.map((op: unknown) => {
 			if (!op || typeof op !== "object") return op;
 			return normalizeOp(op as Record<string, unknown>);
 		}),
@@ -1048,16 +1050,16 @@ export function createBatchTool() {
 			ctx: { cwd: string },
 		) {
 			const prepared = prepareArguments(input);
-			// prepareArguments always returns { op: [...] }, but handle
+			// prepareArguments always returns { o: [...] }, but handle
 			// legacy bare arrays for backward compatibility
 			const ops = Array.isArray(prepared)
 				? prepared as FileOpInput[]
-				: (prepared as { op: FileOpInput[] }).op;
+				: (prepared as { o: FileOpInput[] }).o;
 
 			if (!Array.isArray(ops) || ops.length === 0) {
 				return {
 					content: [
-						{ type: "text", text: "Error: op array is required and must not be empty." },
+						{ type: "text", text: "Error: o array is required and must not be empty." },
 					],
 					isError: true,
 				};

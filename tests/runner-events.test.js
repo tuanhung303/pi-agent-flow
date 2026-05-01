@@ -741,7 +741,7 @@ describe("getFlowSummaryText — batch", () => {
     r.stderr = "Flow failed";
     r.messages = [
       makeToolCallMessage("batch", {
-        operations: [
+        o: [
           { op: "read", path: "src/index.ts" },
           { op: "edit", path: "src/utils.ts", edits: [{ oldText: "a", newText: "b" }] },
         ],
@@ -759,7 +759,7 @@ describe("getFlowSummaryText — batch", () => {
     r.stderr = "Error";
     r.messages = [
       makeToolCallMessage("batch", {
-        operations: [{ op: "write", path: "src/new.ts", content: "export {};" }],
+        o: [{ op: "write", path: "src/new.ts", content: "export {};" }],
       }),
     ];
     const summary = getFlowSummaryText(r);
@@ -772,7 +772,7 @@ describe("getFlowSummaryText — batch", () => {
     r.stderr = "Error";
     r.messages = [
       makeToolCallMessage("batch", {
-        operations: [
+        o: [
           { op: "read", path: "a.ts" },
           { op: "read", path: "b.ts" },
         ],
@@ -787,7 +787,7 @@ describe("getFlowSummaryText — batch", () => {
     r.exitCode = 1;
     r.stderr = "Error";
     r.messages = [
-      makeToolCallMessage("batch", { operations: [] }),
+      makeToolCallMessage("batch", { o: [] }),
     ];
     const summary = getFlowSummaryText(r);
     expect(summary).toContain("batch (empty)");
@@ -800,7 +800,7 @@ describe("getFlowSummaryText — batch", () => {
     r.messages = [
       makeToolCallMessage("bash", { command: "npm test" }),
       makeToolCallMessage("batch", {
-        operations: [{ op: "edit", path: "src/foo.ts", edits: [{ oldText: "a", newText: "b" }] }],
+        o: [{ op: "edit", path: "src/foo.ts", edits: [{ oldText: "a", newText: "b" }] }],
       }),
     ];
     const summary = getFlowSummaryText(r);
@@ -852,7 +852,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
         {
           role: "assistant",
           content: [
-            { type: "toolCall", name: "batch", toolCallId: "tc2", arguments: { op: [{ o: "read", p: "src/index.ts" }] } },
+            { type: "toolCall", name: "batch", toolCallId: "tc2", arguments: { o: [{ o: "read", p: "src/index.ts" }] } },
           ],
         },
         {
@@ -1049,7 +1049,7 @@ describe("formatToolCallShort — empty path", () => {
         {
           role: "assistant",
           content: [
-            { type: "toolCall", name: "batch", toolCallId: "tc1", arguments: { op: [{ o: "read", p: "" }] } },
+            { type: "toolCall", name: "batch", toolCallId: "tc1", arguments: { o: [{ o: "read", p: "" }] } },
           ],
         },
         {

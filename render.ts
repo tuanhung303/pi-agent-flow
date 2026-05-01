@@ -67,7 +67,7 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 		case "grep":
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "batch": {
-			const ops = Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
+			const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
 			if (ops.length === 0) return fg("muted", "batch (empty)");
 			const parts: string[] = [];
 			for (const op of ops) {

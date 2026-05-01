@@ -404,7 +404,7 @@ function formatToolCallShort(tc) {
     case "ls":
       return `ls ${args.path || "."}`;
     case "batch": {
-      const ops = Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
+      const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
       if (ops.length === 0) return "batch (empty)";
       const first = ops[0] || {};
       const firstPath = (first.p ?? first.path ?? "?").split("/").pop();
