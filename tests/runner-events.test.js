@@ -125,7 +125,7 @@ describe("processFlowJsonLine", () => {
     expect(drainStreamingText(r)).toBe("some text");
   });
 
-  it("handles thinking_delta — accumulates streaming buffer", () => {
+  it("handles thinking_delta — does not accumulate (reasoning stripped)", () => {
     const r = makeResult();
     const event = {
       type: "message_update",
@@ -133,7 +133,8 @@ describe("processFlowJsonLine", () => {
     };
     const result = processFlowJsonLine(JSON.stringify(event), r);
     expect(result).toBe(false);
-    expect(drainStreamingText(r)).toBe("thinking...");
+    // Thinking is stripped, so streaming buffer should be empty
+    expect(drainStreamingText(r)).toBe("");
   });
 
   it("text_delta triggers emit at 40 chars", () => {
@@ -501,13 +502,14 @@ describe("drainStreamingEstimate", () => {
     expect(r.usage.output).toBe(50);
   });
 
-  it("handles thinking_delta the same as text_delta", () => {
+  it("does not estimate tokens for thinking_delta (reasoning stripped)", () => {
     const r = makeResult();
     processFlowJsonLine(
       JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "c".repeat(800) } }),
       r,
     );
-    expect(drainStreamingEstimate(r)).toBe(200);
+    // Thinking is stripped, so estimate should be 0
+    expect(drainStreamingEstimate(r)).toBe(0);
   });
 });
 

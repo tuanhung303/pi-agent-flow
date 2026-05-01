@@ -335,13 +335,80 @@ async function confirmProjectFlowsIfNeeded(
 }
 
 // ---------------------------------------------------------------------------
-// Reminder flow injection (sliding — always on latest user message)
+// Sliding system prompt (short, inserted before latest user message)
+// Only active when toolOptimize is true (user opt-out via PI_FLOW_TOOL_OPTIMIZE=0).
+// Replaced from older REMINDER_TEXT system to reduce context noise and avoid
+// leaking into child flow directives.
 // ---------------------------------------------------------------------------
 
+const SLIDING_SYSTEM_PROMPT_START = "<pi-flow-sliding-system>";
+const SLIDING_SYSTEM_PROMPT_END = "</pi-flow-sliding-system>";
+
+const SLIDING_SYSTEM_PROMPT =
+	`${SLIDING_SYSTEM_PROMPT_START}\n` +
+	`You are operating with pi-agent-flow routing.\n` +
+	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
+	`${SLIDING_SYSTEM_PROMPT_END}`;
+
+const SLIDING_PROMPT_RE = new RegExp(
+	SLIDING_SYSTEM_PROMPT_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+	"[\\s\\S]*?" +
+	SLIDING_SYSTEM_PROMPT_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+	"g",
+);
+
+/** Strip any old sliding system prompt tags from a string. */
+function stripSlidingPromptText(text: string): string {
+	return text.replace(SLIDING_PROMPT_RE, "");
+}
+
+/** Strip sliding prompt tags from content (string or text-part array). */
+function stripSlidingPromptFromContent(
+	content: string | { type: string; text?: string }[],
+): string | { type: string; text?: string }[] {
+	if (typeof content === "string") {
+		return stripSlidingPromptText(content);
+	}
+	return content.map((c) => {
+		if (c.type === "text" && typeof c.text === "string") {
+			return { ...c, text: stripSlidingPromptText(c.text) };
+		}
+		return c;
+	});
+}
+
+/** Remove any existing sliding-system-prompt system messages and strip tags from user messages. */
+function stripSlidingPromptsFromMessages(messages: any[]): any[] {
+	return messages
+		.filter((msg) => {
+			// Remove dedicated sliding system prompt messages
+			if (msg.role === "system") {
+				const content = typeof msg.content === "string" ? msg.content : "";
+				if (content.includes(SLIDING_SYSTEM_PROMPT_START)) return false;
+			}
+			return true;
+		})
+		.map((msg) => {
+			// Also strip stray tags embedded in user/assistant messages
+			if (!("content" in msg)) return msg;
+			return { ...msg, content: stripSlidingPromptFromContent(msg.content) };
+		});
+}
+
+/** Build a system message containing the sliding prompt. */
+function makeSlidingSystemPromptMessage(referenceMessage?: any): any {
+	return {
+		role: "system",
+		content: SLIDING_SYSTEM_PROMPT,
+		timestamp: referenceMessage?.timestamp,
+	};
+}
+
+// Legacy reminder constants kept for backward compat stripping only
 const REMINDER_TEXT =
 	"\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
 
-function stripReminder(
+function stripLegacyReminder(
 	content: string | { type: string; text?: string }[],
 ): string | { type: string; text?: string }[] {
 	if (typeof content === "string") {
@@ -355,21 +422,47 @@ function stripReminder(
 	});
 }
 
-function appendReminder(
-	content: string | { type: string; text?: string }[],
-): string | { type: string; text?: string }[] {
-	if (typeof content === "string") {
-		return content + REMINDER_TEXT;
+/**
+ * Sanitize a fork session snapshot JSONL to remove sliding system prompts
+ * and legacy reminders before passing to child flows.
+ */
+function sanitizeForkSnapshot(snapshot: string | null): string | null {
+	if (!snapshot) return snapshot;
+
+	const lines = snapshot.trimEnd().split("\n");
+	const sanitizedLines: string[] = [];
+
+	for (const line of lines) {
+		try {
+			const entry = JSON.parse(line);
+
+			// Drop sliding system prompt messages entirely
+			if (
+				entry?.type === "message" &&
+				entry.message?.role === "system" &&
+				typeof entry.message?.content === "string" &&
+				entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
+			) {
+				continue;
+			}
+
+			// Strip sliding prompt tags and legacy reminders from message content
+			if (entry?.type === "message" && entry.message && "content" in entry.message) {
+				entry.message = {
+					...entry.message,
+					content: stripSlidingPromptFromContent(
+						stripLegacyReminder(entry.message.content),
+					),
+				};
+			}
+
+			sanitizedLines.push(JSON.stringify(entry));
+		} catch {
+			sanitizedLines.push(line);
+		}
 	}
-	const copy = [...content];
-	const lastTextIdx = copy.map((c, i) => (c.type === "text" ? i : -1)).filter((i) => i !== -1).pop();
-	if (lastTextIdx === undefined) {
-		copy.push({ type: "text", text: REMINDER_TEXT });
-	} else {
-		const block = copy[lastTextIdx] as { type: "text"; text: string };
-		copy[lastTextIdx] = { ...block, text: block.text + REMINDER_TEXT };
-	}
-	return copy;
+
+	return `${sanitizedLines.join("\n")}\n`;
 }
 
 function computeActiveTools(optimize: boolean): string[] {
@@ -535,30 +628,41 @@ flow [type] accomplished
 		};
 	});
 
-	// Sliding reminder: strip from all earlier user messages, append to latest.
-	// Skip for child flows — they have explicit <mission> instructions and
-	// injecting the reminder is noise.
+	// Sliding system prompt: insert a short tagged system prompt immediately
+	// before the latest user message each turn. Gated behind toolOptimize.
+	// Always strips stale sliding prompts to prevent accumulation.
+	// Skipped for child flows (depth > 0) — they have explicit <mission> directives.
 	pi.on("context", async (event) => {
 		if (currentDepth > 0) return undefined;
 
-		const messages = event.messages;
+		// Always strip old sliding prompts + legacy reminders to prevent accumulation
+		let messages = stripSlidingPromptsFromMessages(event.messages);
+		// Also strip legacy reminder text from user messages
+		messages = messages.map((msg: any) => {
+			if (msg.role !== "user" || !("content" in msg)) return msg;
+			return { ...msg, content: stripLegacyReminder(msg.content) };
+		});
+
+		// Find latest user message
 		const userIndices = messages
 			.map((m: any, i: number) => (m.role === "user" ? i : -1))
 			.filter((i: number) => i !== -1);
 
-		if (userIndices.length === 0) return undefined;
+		if (userIndices.length === 0) {
+			return messages === event.messages ? undefined : { messages };
+		}
+
+		// Only inject sliding prompt when toolOptimize is enabled
+		if (!toolOptimize) {
+			return { messages };
+		}
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
-
-		const modified = messages.map((msg: any, idx: number) => {
-			if (msg.role !== "user") return msg;
-
-			const content = stripReminder(msg.content);
-			if (idx === lastUserIndex) {
-				return { ...msg, content: appendReminder(content) };
-			}
-			return { ...msg, content };
-		});
+		const modified = [
+			...messages.slice(0, lastUserIndex),
+			makeSlidingSystemPromptMessage(messages[lastUserIndex]),
+			...messages.slice(lastUserIndex),
+		];
 
 		return { messages: modified };
 	});
@@ -594,9 +698,10 @@ flow [type] accomplished
 					full: (pi.getFlag("flow-full-model") as string | undefined) ?? flowModelConfig.full,
 				};
 
-				// Build fork session snapshot (shared across all flows that inherit context)
-				const forkSessionSnapshotJsonl = buildForkSessionSnapshotJsonl(
-					ctx.sessionManager,
+				// Build fork session snapshot and sanitize it to remove
+				// sliding system prompts before passing to child flows.
+				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
+					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 				);
 
 				// Collect all requested flow names
