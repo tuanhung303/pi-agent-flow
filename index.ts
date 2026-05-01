@@ -878,8 +878,9 @@ flow [type] accomplished
 					}
 
 					if (result && !isFlowSuccess(result) && attemptedModels.length > 1) {
-						const summary = `\n\nModel failover attempts: ${attemptedModels.join(" -> ")}`;
-						result.stderr = `${result.stderr.trim()}${result.stderr.trim() ? "\n\n" : ""}${summary.replace(/^\n\n/, "")}`;
+						const summary = `Model failover attempts: ${attemptedModels.join(" -> ")}`;
+						const baseStderr = result.stderr.trim();
+						result.stderr = baseStderr ? `${baseStderr}\n\n${summary}` : summary;
 						allResults[index] = result;
 						emitProgress();
 					}
