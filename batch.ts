@@ -294,8 +294,6 @@ export async function suggestSimilarFiles(
 function getErrorHint(error: string): string {
 	if (error.includes("File not found") || error.includes("file not found"))
 		return "Verify the path exists.";
-	if (error.includes("Path traversal"))
-		return "Use a path within the working directory.";
 	if (error.includes("Could not find"))
 		return "Re-read the file first, then retry with exact f (oldText).";
 	if (error.includes("occurrences"))
@@ -580,108 +578,9 @@ export function isWithinDirectory(child: string, parent: string): boolean {
 	return child.startsWith(parent + path.sep);
 }
 
-async function validatePath(inputPath: string, cwd: string, allowOutside = false): Promise<string> {
+async function validatePath(inputPath: string, cwd: string): Promise<string> {
 	const expandedPath = expandTilde(inputPath);
-	const resolved = path.resolve(cwd, expandedPath);
-
-	if (allowOutside) {
-		return resolved;
-	}
-
-	const normalizedResolved = path.normalize(resolved);
-	const normalizedCwd = path.normalize(cwd);
-	if (
-		normalizedResolved !== normalizedCwd &&
-		!isWithinDirectory(normalizedResolved, normalizedCwd)
-	) {
-		throw new Error(
-			`Path traversal detected: ${inputPath} resolves outside working directory.`,
-		);
-	}
-
-	// Resolve cwd and file symlinks to prevent traversal via symlink targets.
-	// cwd must also be resolved (e.g. macOS /var -> /private/var).
-	const realCwd = await fs.realpath(cwd);
-
-	let realPath: string;
-	try {
-		realPath = await fs.realpath(resolved);
-	} catch {
-		const normalizedRealCwd = path.normalize(realCwd);
-
-		// Check if the final component is a broken symlink pointing outside cwd.
-		try {
-			const lstat = await fs.lstat(resolved);
-			if (lstat.isSymbolicLink()) {
-				const linkTarget = await fs.readlink(resolved);
-				const realLinkDir = await fs.realpath(path.dirname(resolved));
-				const resolvedTarget = path.resolve(realLinkDir, linkTarget);
-				const normalizedTarget = path.normalize(resolvedTarget);
-				if (
-					normalizedTarget !== normalizedRealCwd &&
-					!isWithinDirectory(normalizedTarget, normalizedRealCwd)
-				) {
-					throw new Error(
-						`Path traversal detected: ${inputPath} symlink points outside working directory.`,
-					);
-				}
-				return resolved;
-			}
-		} catch (lstatErr: any) {
-			if (lstatErr.code !== "ENOENT") throw lstatErr;
-			// Not a symlink, proceed to ancestor fallback
-		}
-
-		// File doesn't exist yet (e.g. write creates new file).
-		// Walk up to the nearest existing ancestor and validate it is within realCwd.
-		let ancestor = path.dirname(resolved);
-		let ancestorReal: string | null = null;
-		while (ancestor && ancestor !== path.dirname(ancestor)) {
-			try {
-				ancestorReal = await fs.realpath(ancestor);
-				break;
-			} catch {
-				ancestor = path.dirname(ancestor);
-			}
-		}
-		if (!ancestorReal) {
-			throw new Error(`Path not found: ${inputPath}`);
-		}
-		const normalizedAncestor = path.normalize(ancestorReal);
-		if (
-			normalizedAncestor !== normalizedRealCwd &&
-			!isWithinDirectory(normalizedAncestor, normalizedRealCwd)
-		) {
-			throw new Error(
-				`Path traversal detected: ${inputPath} ancestor directory is outside working directory.`,
-			);
-		}
-		return resolved;
-	}
-
-	// Validate resolved real path is within realCwd
-	const normalizedReal = path.normalize(realPath);
-	const normalizedRealCwd = path.normalize(realCwd);
-	if (
-		normalizedReal !== normalizedRealCwd &&
-		!isWithinDirectory(normalizedReal, normalizedRealCwd)
-	) {
-		throw new Error(
-			`Path traversal detected: ${inputPath} symlink points outside working directory.`,
-		);
-	}
-
-	// If the requested path is a symlink, return the original path so that
-	// operations like delete can act on the symlink itself.
-	try {
-		const lstat = await fs.lstat(resolved);
-		if (lstat.isSymbolicLink()) {
-			return resolved;
-		}
-	} catch {
-		// ignore
-	}
-	return realPath;
+	return path.resolve(cwd, expandedPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -812,7 +711,7 @@ async function executeOperations(
 		}
 
 		try {
-			const resolvedPath = await validatePath(op.p, cwd, op.o === "read");
+			const resolvedPath = await validatePath(op.p, cwd);
 
 			switch (op.o) {
 				case "read": {
