@@ -8,7 +8,7 @@ describe("batch tool", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-weave-test-"));
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-batch-test-"));
 	});
 
 	afterEach(() => {
