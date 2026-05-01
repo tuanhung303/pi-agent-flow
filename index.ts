@@ -434,20 +434,37 @@ const REASONING_FIELDS = [
 	"reasoning_signature",
 ];
 
-function stripReasoningFromAssistantMessage(message: any): any {
-	const next = { ...message };
+function stripReasoningFromAssistantMessage(message: any): {
+	message: any;
+	changed: boolean;
+} {
+	let next = message;
+	let changed = false;
 
 	for (const field of REASONING_FIELDS) {
-		if (field in next) delete next[field];
+		if (field in next) {
+			if (next === message) next = { ...message };
+			delete next[field];
+			changed = true;
+		}
 	}
 
-	if (Array.isArray(next.content)) {
-		next.content = next.content.filter(
+	if (Array.isArray(message.content)) {
+		const filteredContent = message.content.filter(
 			(part: any) => !REASONING_PART_TYPES.has(part?.type),
 		);
+		if (filteredContent.length !== message.content.length) {
+			if (next === message) next = { ...message };
+			next.content = filteredContent;
+			changed = true;
+		}
 	}
 
-	return next;
+	return { message: next, changed };
+}
+
+function isJsonEqual(a: any, b: any): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
@@ -470,6 +487,8 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 			continue;
 		}
 
+		let changed = false;
+
 		// Drop sliding system prompt messages entirely.
 		if (
 			entry?.type === "message" &&
@@ -484,22 +503,32 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 			let message = entry.message;
 
 			if (message.role === "assistant") {
-				message = stripReasoningFromAssistantMessage(message);
+				const stripped = stripReasoningFromAssistantMessage(message);
+				message = stripped.message;
+				changed ||= stripped.changed;
 			}
 
 			if ("content" in message) {
-				message = {
-					...message,
-					content: stripSlidingPromptFromContent(
-						stripLegacyReminder(message.content),
-					),
-				};
+				const originalContent = message.content;
+				const strippedContent = stripSlidingPromptFromContent(
+					stripLegacyReminder(originalContent),
+				);
+
+				if (!isJsonEqual(strippedContent, originalContent)) {
+					message = {
+						...message,
+						content: strippedContent,
+					};
+					changed = true;
+				}
 			}
 
-			entry = { ...entry, message };
+			if (changed) {
+				entry = { ...entry, message };
+			}
 		}
 
-		sanitizedLines.push(JSON.stringify(entry));
+		sanitizedLines.push(changed ? JSON.stringify(entry) : line);
 	}
 
 	return `${sanitizedLines.join("\n")}\n`;
@@ -650,7 +679,7 @@ Before acting, reason about whether to dive into a flow:
 - [build] — when you are ready to build. Implement features, fix bugs, write tests.
 - [craft] — when you need a plan. Design structure, break down requirements before building.
 - [audit] — when you need to verify. Audit security, quality, correctness.
-- [ideas] — when you need fresh ideas. Start from a clean slate with only the intent.
+- [ideas] — when you need fresh ideas. Use inherited context as background while exploring alternatives.
 
 Multiple independent flows? Batch them into one call:
 

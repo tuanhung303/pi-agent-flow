@@ -178,6 +178,67 @@ describe("flow tool execute", () => {
 		expect(snapshot).not.toContain("[reminder_flow:");
 	});
 
+	it("preserves unmodified fork snapshot lines exactly", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const slidingPrompt = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
+		const header = { version: 1, meta: { keep: "header formatting" } };
+		const unchangedUser = { type: "message", message: { role: "user", content: "Unchanged requirement", timestamp: 1 } };
+		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }], timestamp: 2 } };
+		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
+		const droppedSystem = { type: "message", message: { role: "system", content: slidingPrompt, timestamp: 4 } };
+		const unchangedTool = { type: "message", message: { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
+		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => header,
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		const lines = snapshot.trimEnd().split("\n");
+
+		expect(lines).toContain(JSON.stringify(header));
+		expect(lines).toContain(JSON.stringify(unchangedUser));
+		expect(lines).toContain(JSON.stringify(unchangedAssistant));
+		expect(lines).toContain(JSON.stringify(unchangedTool));
+		expect(lines).not.toContain(JSON.stringify(changedAssistant));
+		expect(lines).not.toContain(JSON.stringify(droppedSystem));
+		expect(snapshot).toContain("Visible answer");
+		expect(snapshot).not.toContain("SECRET_REASONING");
+		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+	});
+
 	it("preserves flow calls/results in mixed assistant messages", async () => {
 		setupFlowsDir([
 			{
@@ -1093,6 +1154,8 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");
+		expect(modified.systemPrompt).toContain("Use inherited context as background while exploring alternatives.");
+		expect(modified.systemPrompt).not.toContain("Start from a clean slate with only the intent.");
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
 	});
 });
