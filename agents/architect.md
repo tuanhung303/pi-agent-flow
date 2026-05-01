@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Plan structure, break down requirements, design solutions
-tools: weave_patch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls
 maxDepth: 0
 ---
 

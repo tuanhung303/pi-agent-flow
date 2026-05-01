@@ -105,7 +105,7 @@ const inheritedCliArgs = parseFlowCliArgs(process.argv);
 
 /**
  * Transform a flow's tool list when toolOptimize is enabled.
- * Replaces separate read/write/edit tools with the unified weave_patch tool.
+ * Replaces separate read/write/edit tools with the unified batch tool.
  */
 export function getOptimizedTools(
 	flowTools: string[] | undefined,
@@ -117,11 +117,11 @@ export function getOptimizedTools(
 	);
 	if (!hasLegacyTools) return flowTools;
 	const filtered = flowTools.filter(
-		(t) => t !== "read" && t !== "write" && t !== "edit" && t !== "weave_patch",
+		(t) => t !== "read" && t !== "write" && t !== "edit" && t !== "batch",
 	);
-	return filtered.includes("weave_patch")
+	return filtered.includes("batch")
 		? filtered
-		: [...filtered, "weave_patch"];
+		: [...filtered, "batch"];
 }
 
 function buildFlowArgs(
@@ -155,10 +155,10 @@ function buildFlowArgs(
 
 	// Child flows get their configured tools from flow.tools, optimized by
 	// getOptimizedTools, with web explicitly filtered out.
-	// When flow.tools is undefined and toolOptimize=true, default to weave_patch+bash+flow
+	// When flow.tools is undefined and toolOptimize=true, default to batch+bash+flow
 	// so child agents have file operations without falling back to legacy read/write/edit.
 	const defaultTools = toolOptimize
-		? ["weave_patch", "bash", "flow"]
+		? ["batch", "bash", "flow"]
 		: ["read", "write", "edit", "bash", "flow"];
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
 	let harnessTools = optimizedTools.filter((t) => t !== "web");
@@ -240,7 +240,7 @@ export interface RunFlowOptions {
 	maxDepth: number;
 	/** Whether cycle prevention should be enforced in child processes. */
 	preventCycles: boolean;
-	/** Whether to transform tool lists to use weave_patch. */
+	/** Whether to transform tool lists to use batch. */
 	toolOptimize?: boolean;
 	/** Tiered model overrides (lite/flash/full). */
 	tieredModels?: { lite?: string; flash?: string; full?: string };

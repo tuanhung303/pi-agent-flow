@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createWeavePatchTool, suggestSimilarFiles, isWithinDirectory } from "../weave-patch.js";
+import { createBatchTool, suggestSimilarFiles, isWithinDirectory } from "../batch.js";
 
-describe("weave_patch tool", () => {
+describe("batch tool", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
@@ -16,7 +16,7 @@ describe("weave_patch tool", () => {
 	});
 
 	function createTool() {
-		return createWeavePatchTool();
+		return createBatchTool();
 	}
 
 	function makeCtx(cwd: string) {
@@ -1303,7 +1303,7 @@ describe("tilde expansion", () => {
 	let tmpDir: string;
 
 	function createTool() {
-		return createWeavePatchTool();
+		return createBatchTool();
 	}
 
 	function makeCtx(cwd: string) {
@@ -1364,7 +1364,7 @@ describe("symlink traversal guard", () => {
 	let tmpDir: string;
 
 	function createTool() {
-		return createWeavePatchTool();
+		return createBatchTool();
 	}
 
 	function makeCtx(cwd: string) {

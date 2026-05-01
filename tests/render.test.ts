@@ -744,13 +744,13 @@ describe("expanded view rendering", () => {
 	});
 });
 
-describe("formatFlowToolCall — weave_patch", () => {
+describe("formatFlowToolCall — batch", () => {
 	it("renders single read operation", () => {
 		const result = makeResult({
 			type: "explore",
 			intent: "Read files",
 			messages: [
-				makeToolCallMessage("weave_patch", { op: [
+				makeToolCallMessage("batch", { op: [
 					{ o: "read", p: "src/index.ts" },
 				] }),
 			],
@@ -759,7 +759,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("patch");
+		expect(text).toContain("batch");
 		expect(text).toContain("read");
 		expect(text).toContain("index.ts");
 	});
@@ -769,7 +769,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "code",
 			intent: "Refactor",
 			messages: [
-				makeToolCallMessage("weave_patch", { op: [
+				makeToolCallMessage("batch", { op: [
 					{ o: "read", p: "src/a.ts" },
 					{ o: "edit", p: "src/b.ts", e: [{ f: "old", r: "new" }] },
 				] }),
@@ -779,7 +779,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("patch");
+		expect(text).toContain("batch");
 		expect(text).toContain("a.ts");
 		expect(text).toContain("b.ts");
 	});
@@ -789,7 +789,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "code",
 			intent: "Multi-edit",
 			messages: [
-				makeToolCallMessage("weave_patch", { op: [
+				makeToolCallMessage("batch", { op: [
 					{
 						o: "edit",
 						p: "src/foo.ts",
@@ -805,7 +805,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("patch");
+		expect(text).toContain("batch");
 		expect(text).toContain("2 blocks");
 	});
 
@@ -814,7 +814,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "code",
 			intent: "Bulk changes",
 			messages: [
-				makeToolCallMessage("weave_patch", { op: [
+				makeToolCallMessage("batch", { op: [
 					{ o: "read", p: "a.ts" },
 					{ o: "read", p: "b.ts" },
 					{ o: "read", p: "c.ts" },
@@ -826,7 +826,7 @@ describe("formatFlowToolCall — weave_patch", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("patch");
+		expect(text).toContain("batch");
 		expect(text).toContain("+2 more");
 	});
 
@@ -835,13 +835,13 @@ describe("formatFlowToolCall — weave_patch", () => {
 			type: "explore",
 			intent: "Empty",
 			messages: [
-				makeToolCallMessage("weave_patch", { op: [] }),
+				makeToolCallMessage("batch", { op: [] }),
 			],
 			usage: emptyFlowUsage(),
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("patch (empty)");
+		expect(text).toContain("batch (empty)");
 	});
 });

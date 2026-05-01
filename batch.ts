@@ -1,5 +1,5 @@
 /**
- * weave_patch — Unified batch file operations tool.
+ * batch — Unified batch file operations tool.
  *
  * Combines read, write, edit, and delete into a single tool call.
  * Executes operations sequentially with skip-on-failure semantics.
@@ -174,7 +174,7 @@ function readWithOffsetLimit(
 	if (selectedLines.length >= 1 && Buffer.byteLength(selectedLines[0], "utf-8") > MAX_BYTES) {
 		const startLineDisplay = startLine + 1;
 		throw new Error(
-			`Line ${startLineDisplay} exceeds limit. Try: weave_patch with o:"read", s:${startLineDisplay}, l:10, or use bash: head -c ... ${filePath ?? "<file>"}`,
+			`Line ${startLineDisplay} exceeds limit. Try: batch with o:"read", s:${startLineDisplay}, l:10, or use bash: head -c ... ${filePath ?? "<file>"}`,
 		);
 	}
 
@@ -1019,10 +1019,10 @@ function buildContentText(summary: string, results: OpResult[]): string {
 // Tool definition factory
 // ---------------------------------------------------------------------------
 
-export function createWeavePatchTool() {
+export function createBatchTool() {
 	return {
-		name: "weave_patch",
-		label: "patch",
+		name: "batch",
+		label: "batch",
 		description: [
 			"File operations: read, write, edit, or delete files.",
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
@@ -1033,10 +1033,10 @@ export function createWeavePatchTool() {
 		].join("\n"),
 		promptSnippet: "File operations — use o:read with s/l for targeted reading",
 		promptGuidelines: [
-			"Use weave_patch for multi-file changes, refactors, or when mixing creates/edits/deletes.",
-			"Prefer weave_patch over separate write+edit calls when touching 2+ files.",
-			"Each operation is independent — edits are matched against the current on-disk file, not against prior patches in the same call.",
-			"For single-file edits, the edit tool is also fine. weave_patch shines for cross-cutting changes.",
+			"Use batch for multi-file changes, refactors, or when mixing creates/edits/deletes.",
+			"Prefer batch over separate write+edit calls when touching 2+ files.",
+			"Each operation is independent — edits are matched against the current on-disk file, not against prior operations in the same call.",
+			"For single-file edits, the edit tool is also fine. batch shines for cross-cutting changes.",
 		],
 		parameters: WeavePatchParams,
 		prepareArguments: prepareArguments,

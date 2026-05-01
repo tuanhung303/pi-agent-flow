@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 description: Generate ideas, explore possibilities, and think creatively without context bias
-tools: weave_patch, bash
+tools: batch, bash
 inheritContext: false
 maxDepth: 0
 ---

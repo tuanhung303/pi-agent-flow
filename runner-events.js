@@ -403,14 +403,14 @@ function formatToolCallShort(tc) {
       return `find ${args.pattern || "*"} in ${args.path || "."}`;
     case "ls":
       return `ls ${args.path || "."}`;
-    case "weave_patch": {
+    case "batch": {
       const ops = Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
-      if (ops.length === 0) return "patch (empty)";
+      if (ops.length === 0) return "batch (empty)";
       const first = ops[0] || {};
       const firstPath = (first.p ?? first.path ?? "?").split("/").pop();
       const opType = first.o ?? first.op ?? "?";
       const label = ops.length === 1 ? `${opType} ${firstPath}` : `${opType} ${firstPath} +${ops.length - 1} more`;
-      return `patch ${label}`;
+      return `batch ${label}`;
     }
     default:
       return tc.name;

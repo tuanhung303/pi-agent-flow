@@ -77,7 +77,7 @@ Create `.md` files in `~/.pi/agent/agents/` or `.pi/agents/`:
 ---
 name: explore
 description: Discover files, trace code paths, map architecture
-tools: weave_patch, bash
+tools: batch, bash
 ---
 
 During this explore flow — your mission is discovery. Stay focused on your intent at all times.

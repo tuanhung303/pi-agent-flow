@@ -727,7 +727,7 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
   });
 });
 
-describe("getFlowSummaryText — weave_patch", () => {
+describe("getFlowSummaryText — batch", () => {
   function makeToolCallMessage(name, args) {
     return {
       role: "assistant",
@@ -735,12 +735,12 @@ describe("getFlowSummaryText — weave_patch", () => {
     };
   }
 
-  it("includes weave_patch in partial work for failed flows", () => {
+  it("includes batch in partial work for failed flows", () => {
     const r = makeResult();
     r.exitCode = 1;
     r.stderr = "Flow failed";
     r.messages = [
-      makeToolCallMessage("weave_patch", {
+      makeToolCallMessage("batch", {
         operations: [
           { op: "read", path: "src/index.ts" },
           { op: "edit", path: "src/utils.ts", edits: [{ oldText: "a", newText: "b" }] },
@@ -750,28 +750,28 @@ describe("getFlowSummaryText — weave_patch", () => {
     const summary = getFlowSummaryText(r);
     expect(summary).toContain("Flow failed");
     expect(summary).toContain("Partial work:");
-    expect(summary).toContain("patch");
+    expect(summary).toContain("batch");
   });
 
-  it("formats single weave_patch operation in summary", () => {
+  it("formats single batch operation in summary", () => {
     const r = makeResult();
     r.exitCode = 1;
     r.stderr = "Error";
     r.messages = [
-      makeToolCallMessage("weave_patch", {
+      makeToolCallMessage("batch", {
         operations: [{ op: "write", path: "src/new.ts", content: "export {};" }],
       }),
     ];
     const summary = getFlowSummaryText(r);
-    expect(summary).toContain("patch write new.ts");
+    expect(summary).toContain("batch write new.ts");
   });
 
-  it("formats multiple weave_patch operations in summary", () => {
+  it("formats multiple batch operations in summary", () => {
     const r = makeResult();
     r.exitCode = 1;
     r.stderr = "Error";
     r.messages = [
-      makeToolCallMessage("weave_patch", {
+      makeToolCallMessage("batch", {
         operations: [
           { op: "read", path: "a.ts" },
           { op: "read", path: "b.ts" },
@@ -779,33 +779,33 @@ describe("getFlowSummaryText — weave_patch", () => {
       }),
     ];
     const summary = getFlowSummaryText(r);
-    expect(summary).toContain("patch read a.ts +1 more");
+    expect(summary).toContain("batch read a.ts +1 more");
   });
 
-  it("formats empty weave_patch operations in summary", () => {
+  it("formats empty batch operations in summary", () => {
     const r = makeResult();
     r.exitCode = 1;
     r.stderr = "Error";
     r.messages = [
-      makeToolCallMessage("weave_patch", { operations: [] }),
+      makeToolCallMessage("batch", { operations: [] }),
     ];
     const summary = getFlowSummaryText(r);
-    expect(summary).toContain("patch (empty)");
+    expect(summary).toContain("batch (empty)");
   });
 
-  it("includes weave_patch alongside other tool calls", () => {
+  it("includes batch alongside other tool calls", () => {
     const r = makeResult();
     r.exitCode = 1;
     r.stderr = "Error";
     r.messages = [
       makeToolCallMessage("bash", { command: "npm test" }),
-      makeToolCallMessage("weave_patch", {
+      makeToolCallMessage("batch", {
         operations: [{ op: "edit", path: "src/foo.ts", edits: [{ oldText: "a", newText: "b" }] }],
       }),
     ];
     const summary = getFlowSummaryText(r);
     expect(summary).toContain("bash npm test");
-    expect(summary).toContain("patch");
+    expect(summary).toContain("batch");
   });
 });
 
@@ -845,14 +845,14 @@ describe("getFlowSummaryText — tool result pairing", () => {
     expect(summary).toContain("drwxr-xr-x");
   });
 
-  it("includes weave_patch read output in summary", () => {
+  it("includes batch read output in summary", () => {
     const result = {
       exitCode: 0,
       messages: [
         {
           role: "assistant",
           content: [
-            { type: "toolCall", name: "weave_patch", toolCallId: "tc2", arguments: { op: [{ o: "read", p: "src/index.ts" }] } },
+            { type: "toolCall", name: "batch", toolCallId: "tc2", arguments: { op: [{ o: "read", p: "src/index.ts" }] } },
           ],
         },
         {
@@ -871,7 +871,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
     const summary = getFlowSummaryText(result);
     expect(summary).toContain("Found the entry point.");
     expect(summary).toContain("[Tool Results]");
-    expect(summary).toContain("patch read index.ts:");
+    expect(summary).toContain("batch read index.ts:");
     expect(summary).toContain("export default function main");
   });
 
@@ -1042,14 +1042,14 @@ describe("WeakMap hidden state — frozen objects", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatToolCallShort — empty path", () => {
-  it("preserves explicit empty string path in weave_patch summary", () => {
+  it("preserves explicit empty string path in batch summary", () => {
     const result = {
       exitCode: 0,
       messages: [
         {
           role: "assistant",
           content: [
-            { type: "toolCall", name: "weave_patch", toolCallId: "tc1", arguments: { op: [{ o: "read", p: "" }] } },
+            { type: "toolCall", name: "batch", toolCallId: "tc1", arguments: { op: [{ o: "read", p: "" }] } },
           ],
         },
         {
@@ -1060,7 +1060,7 @@ describe("formatToolCallShort — empty path", () => {
       ],
     };
     const summary = getFlowSummaryText(result);
-    expect(summary).toContain("patch read ");
-    expect(summary).not.toContain("patch read ?");
+    expect(summary).toContain("batch read ");
+    expect(summary).not.toContain("batch read ?");
   });
 });

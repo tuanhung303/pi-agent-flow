@@ -1,7 +1,7 @@
 ---
 name: debug
 description: Investigate logs, errors, stack traces, root causes
-tools: weave_patch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls
 maxDepth: 0
 ---
 
@@ -16,7 +16,7 @@ Workflow:
 Rules:
 - Never guess. Every conclusion must be backed by evidence.
 - Read logs before reading code — symptoms point to cause.
-- For targeted file reading, use weave_patch with `o: "read"`, `s: <offset>`, `l: <limit>` instead of bash sed/head/tail.
+- For targeted file reading, use batch with `o: "read"`, `s: <offset>`, `l: <limit>` instead of bash sed/head/tail.
 - Don't suggest fixes until root cause is confirmed.
 
 When accomplished, end your response with:

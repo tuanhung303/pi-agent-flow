@@ -114,13 +114,13 @@ describe("getOptimizedTools", () => {
 		expect(result).toEqual(["read", "write", "edit", "bash"]);
 	});
 
-	it("replaces read/write/edit with weave_patch when toolOptimize is true", () => {
+	it("replaces read/write/edit with batch when toolOptimize is true", () => {
 		const tools = ["read", "write", "edit", "bash"];
 		const result = getOptimizedTools(tools, true);
-		expect(result).toEqual(["bash", "weave_patch"]);
+		expect(result).toEqual(["bash", "batch"]);
 	});
 
-	it("adds weave_patch to tools without read/write/edit", () => {
+	it("adds batch to tools without read/write/edit", () => {
 		const tools = ["bash", "grep", "find"];
 		const result = getOptimizedTools(tools, true);
 		expect(result).toEqual(["bash", "grep", "find"]);
@@ -129,19 +129,19 @@ describe("getOptimizedTools", () => {
 	it("handles only read tool", () => {
 		const tools = ["read", "bash"];
 		const result = getOptimizedTools(tools, true);
-		expect(result).toEqual(["bash", "weave_patch"]);
+		expect(result).toEqual(["bash", "batch"]);
 	});
 
 	it("handles only write tool", () => {
 		const tools = ["write"];
 		const result = getOptimizedTools(tools, true);
-		expect(result).toEqual(["weave_patch"]);
+		expect(result).toEqual(["batch"]);
 	});
 
 	it("handles only edit tool", () => {
 		const tools = ["edit", "bash"];
 		const result = getOptimizedTools(tools, true);
-		expect(result).toEqual(["bash", "weave_patch"]);
+		expect(result).toEqual(["bash", "batch"]);
 	});
 
 	it("handles empty array", () => {
@@ -150,18 +150,18 @@ describe("getOptimizedTools", () => {
 		expect(result).toEqual([]);
 	});
 
-	it("does not duplicate weave_patch if already present", () => {
-		const tools = ["read", "weave_patch"];
+	it("does not duplicate batch if already present", () => {
+		const tools = ["read", "batch"];
 		const result = getOptimizedTools(tools, true);
-		expect(result.filter((t) => t === "weave_patch")).toHaveLength(1);
-		expect(result).toEqual(["weave_patch"]);
+		expect(result.filter((t) => t === "batch")).toHaveLength(1);
+		expect(result).toEqual(["batch"]);
 	});
 
-	it("does not duplicate weave_patch when mixed with legacy tools", () => {
-		const tools = ["read", "write", "weave_patch", "bash"];
+	it("does not duplicate batch when mixed with legacy tools", () => {
+		const tools = ["read", "write", "batch", "bash"];
 		const result = getOptimizedTools(tools, true);
-		expect(result.filter((t) => t === "weave_patch")).toHaveLength(1);
-		expect(result).toEqual(["bash", "weave_patch"]);
+		expect(result.filter((t) => t === "batch")).toHaveLength(1);
+		expect(result).toEqual(["bash", "batch"]);
 	});
 });
 
@@ -282,7 +282,7 @@ describe("child flow harness tools", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("includes weave_patch when flow.tools has legacy tools and toolOptimize is true", async () => {
+	it("includes batch when flow.tools has legacy tools and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
 			name: "code",
 			description: "Code flow",
@@ -327,7 +327,7 @@ describe("child flow harness tools", () => {
 		const toolsIndex = args.indexOf("--tools");
 		expect(toolsIndex).toBeGreaterThan(-1);
 		const toolsValue = args[toolsIndex + 1];
-		expect(toolsValue).toContain("weave_patch");
+		expect(toolsValue).toContain("batch");
 		expect(toolsValue).not.toContain("read");
 		expect(toolsValue).not.toContain("write");
 		expect(toolsValue).not.toContain("edit");
@@ -384,7 +384,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("flow");
 	});
 
-	it("defaults to weave_patch+bash+flow when flow.tools is undefined and toolOptimize is true", async () => {
+	it("defaults to batch+bash+flow when flow.tools is undefined and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
 			name: "code",
 			description: "Code flow",
@@ -429,7 +429,7 @@ describe("child flow harness tools", () => {
 		const toolsIndex = args.indexOf("--tools");
 		expect(toolsIndex).toBeGreaterThan(-1);
 		const toolsValue = args[toolsIndex + 1];
-		expect(toolsValue).toContain("weave_patch");
+		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
 		expect(toolsValue).not.toContain("read");
@@ -483,7 +483,7 @@ describe("child flow harness tools", () => {
 		expect(toolsIndex).toBeGreaterThan(-1);
 		const toolsValue = args[toolsIndex + 1];
 		expect(toolsValue).not.toBe("");
-		expect(toolsValue).toContain("weave_patch");
+		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
 	});

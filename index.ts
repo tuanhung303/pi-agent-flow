@@ -20,7 +20,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { createWeavePatchTool } from "./weave-patch.js";
+import { createBatchTool } from "./batch.js";
 import {
 	createWebTool,
 	looksLikeUrlPrompt,
@@ -401,7 +401,7 @@ export default function (pi: ExtensionAPI) {
 		type: "string",
 	});
 	pi.registerFlag("tool-optimize", {
-		description: "Use the unified weave_patch tool instead of separate read/write/edit tools (default: true).",
+		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
 		type: "boolean",
 	});
 
@@ -442,15 +442,15 @@ export default function (pi: ExtensionAPI) {
 
 		// Only restrict tools for the main orchestrator (depth 0).
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
-		// overriding them here would strip bash/weave_patch from children.
+		// overriding them here would strip bash/batch from children.
 		if (currentDepth === 0) {
 			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
 
-		// Register weave_patch so child flows can use it via getOptimizedTools.
-		// The main agent does NOT have weave_patch in its active tools.
+		// Register batch so child flows can use it via getOptimizedTools.
+		// The main agent does NOT have batch in its active tools.
 		if (toolOptimize) {
-			pi.registerTool(createWeavePatchTool());
+			pi.registerTool(createBatchTool());
 		}
 	});
 

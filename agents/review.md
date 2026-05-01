@@ -1,7 +1,7 @@
 ---
 name: review
 description: Audit security, quality, correctness
-tools: weave_patch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls
 maxDepth: 0
 ---
 

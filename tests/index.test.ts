@@ -405,7 +405,7 @@ describe("main agent tool restriction", () => {
 		expect(calledWith).toContain("bash");
 		expect(calledWith).toContain("flow");
 		expect(calledWith).toContain("web");
-		expect(calledWith).not.toContain("weave_patch");
+		expect(calledWith).not.toContain("batch");
 	});
 
 	it("defers setActiveTools to session_start, not extension loading", async () => {
@@ -459,7 +459,7 @@ describe("main agent tool restriction", () => {
 		expect(lastCall).toContain("bash");
 		expect(lastCall).toContain("flow");
 		expect(lastCall).toContain("web");
-		expect(lastCall).not.toContain("weave_patch");
+		expect(lastCall).not.toContain("batch");
 	});
 
 	it("parses env PI_FLOW_TOOL_OPTIMIZE via parseBoolean (yes/on/no/off)", async () => {
@@ -475,7 +475,7 @@ describe("main agent tool restriction", () => {
 		expect(calledWith).toEqual(["flow", "web"]);
 	});
 
-	it("registers weave_patch globally but not in main agent active tools", async () => {
+	it("registers batch globally but not in main agent active tools", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -483,8 +483,8 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// weave_patch IS registered so child flows can use it
-		expect(pi.getTool("weave_patch")).toBeDefined();
+		// batch IS registered so child flows can use it
+		expect(pi.getTool("batch")).toBeDefined();
 
 		// Main agent active tools are flow+web when optimized
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
