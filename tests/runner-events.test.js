@@ -8,6 +8,7 @@ import {
   drainSmoothedTps,
   getFlowFinalText,
   getFlowSummaryText,
+  stableStringify,
 } from "../runner-events.js";
 
 function makeResult() {
@@ -69,6 +70,48 @@ describe("processFlowJsonLine", () => {
     expect(r.messages).toHaveLength(1);
   });
 
+  it("handles agent_end event — stores tool messages alongside assistant", () => {
+    const r = makeResult();
+    const toolMsg = {
+      role: "tool",
+      toolCallId: "tc1",
+      content: [{ type: "text", text: "bash output here" }],
+    };
+    const event = {
+      type: "agent_end",
+      messages: [makeAssistantMessage("running..."), toolMsg],
+    };
+    processFlowJsonLine(JSON.stringify(event), r);
+    expect(r.sawAgentEnd).toBe(true);
+    expect(r.messages).toHaveLength(2);
+    expect(r.messages[0].role).toBe("assistant");
+    expect(r.messages[1].role).toBe("tool");
+    expect(r.messages[1].content[0].text).toBe("bash output here");
+  });
+
+  it("handles agent_end event — deduplicates tool messages", () => {
+    const r = makeResult();
+    const toolMsg = {
+      role: "tool",
+      toolCallId: "tc1",
+      content: [{ type: "text", text: "same output" }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "agent_end", messages: [toolMsg] }), r);
+    processFlowJsonLine(JSON.stringify({ type: "agent_end", messages: [toolMsg] }), r);
+    expect(r.messages).toHaveLength(1);
+  });
+
+  it("getFlowFinalText still skips tool messages", () => {
+    const r = makeResult();
+    const toolMsg = {
+      role: "tool",
+      toolCallId: "tc1",
+      content: [{ type: "text", text: "tool output" }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "agent_end", messages: [toolMsg, makeAssistantMessage("final text")] }), r);
+    expect(getFlowFinalText(r.messages)).toBe("final text");
+  });
+
   it("handles text_delta message_update — accumulates streaming buffer", () => {
     const r = makeResult();
     const event = {
@@ -79,7 +122,7 @@ describe("processFlowJsonLine", () => {
     // Under 40 chars threshold — returns false
     expect(result).toBe(false);
     // Buffer should have the text
-    expect(r.__streamingTextBuffer).toBe("some text");
+    expect(drainStreamingText(r)).toBe("some text");
   });
 
   it("handles thinking_delta — accumulates streaming buffer", () => {
@@ -90,7 +133,7 @@ describe("processFlowJsonLine", () => {
     };
     const result = processFlowJsonLine(JSON.stringify(event), r);
     expect(result).toBe(false);
-    expect(r.__streamingTextBuffer).toBe("thinking...");
+    expect(drainStreamingText(r)).toBe("thinking...");
   });
 
   it("text_delta triggers emit at 40 chars", () => {
@@ -141,6 +184,20 @@ describe("processFlowJsonLine", () => {
     expect(r.usage.toolCalls).toBe(2);
   });
 
+  it("estimates toolCall tokens and pauses TPS timer", () => {
+    const r = makeResult();
+    const msg = {
+      role: "assistant",
+      content: [
+        { type: "toolCall", toolCallId: "1", toolName: "bash", input: { command: "ls" } },
+      ],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    expect(r.usage.toolCalls).toBe(1);
+    // Tool call JSON should be estimated and available for draining
+    expect(drainStreamingEstimate(r)).toBeGreaterThan(0);
+  });
+
   it("returns false for unknown event types", () => {
     const r = makeResult();
     expect(processFlowJsonLine(JSON.stringify({ type: "unknown_event" }), r)).toBe(false);
@@ -177,7 +234,12 @@ describe("drainStreamingText", () => {
       r,
     );
     drainStreamingText(r);
-    expect(r.__lastEmittedWordCount).toBe(0);
+    // After drain, a new 45-char delta should trigger emit because counter was reset
+    const result = processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "b".repeat(45) } }),
+      r,
+    );
+    expect(result).toBe(true);
   });
 });
 
@@ -587,34 +649,34 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     const r = makeResult();
     // Seed the tracker
     updateSmoothedTps(r, 100);
-    // Wait a bit so deltaSec > 0
-    await new Promise((res) => setTimeout(res, 50));
+    // Wait for MIN_TPS_SAMPLE_MS gate
+    await new Promise((res) => setTimeout(res, 150));
     updateSmoothedTps(r, 50);
     const tps = drainSmoothedTps(r);
     // Should be a positive rate
     expect(tps).toBeGreaterThan(0);
   });
 
-  it("uses EMA_ALPHA = 0.15 for smoother averaging", async () => {
+  it("uses EMA_ALPHA = 0.1 for smoother averaging", async () => {
     const r = makeResult();
     // Seed — first call with non-zero tokens sets __lastEmitTime but doesn't compute rate
     updateSmoothedTps(r, 100);
     const seeded = drainSmoothedTps(r);
     expect(seeded).toBe(0); // seeded, no rate yet
 
-    await new Promise((res) => setTimeout(res, 100));
-    // First real sample: ~100 tokens in ~100ms → ~1000 tps
+    await new Promise((res) => setTimeout(res, 110));
+    // First real sample: ~100 tokens in ~110ms → ~909 raw tps → ~90.9 calibrated
     updateSmoothedTps(r, 100);
     const first = drainSmoothedTps(r);
     expect(first).toBeGreaterThan(0);
 
-    await new Promise((res) => setTimeout(res, 100));
-    // Second sample: 10 tokens in ~100ms → ~100 tps
-    // With EMA_ALPHA=0.15, the smoothed value should be pulled less toward the new sample
+    await new Promise((res) => setTimeout(res, 110));
+    // Second sample: 10 tokens in ~110ms → ~90.9 raw tps → ~9.1 calibrated
+    // With EMA_ALPHA=0.1, the smoothed value should be pulled less toward the new sample
     updateSmoothedTps(r, 10);
     const second = drainSmoothedTps(r);
-    // With alpha=0.15, the smoothed value should still be close to the first sample
-    // because only 15% weight goes to the new (lower) sample
+    // With alpha=0.1, the smoothed value should still be close to the first sample
+    // because only 10% weight goes to the new (lower) sample
     expect(second).toBeGreaterThan(first * 0.5);
   });
 
@@ -627,10 +689,453 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
   it("drainSmoothedTps returns the value without resetting it", async () => {
     const r = makeResult();
     updateSmoothedTps(r, 0);
-    await new Promise((res) => setTimeout(res, 50));
+    await new Promise((res) => setTimeout(res, 110));
     updateSmoothedTps(r, 100);
     const first = drainSmoothedTps(r);
     const second = drainSmoothedTps(r);
     expect(second).toBe(first);
+  });
+
+  it("accumulates tokens and gates samples to MIN_TPS_SAMPLE_MS", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 50); // first compute
+    const tps1 = drainSmoothedTps(r);
+    expect(tps1).toBeGreaterThan(0);
+
+    // Call again after only 50ms — should buffer, not compute
+    await new Promise((res) => setTimeout(res, 50));
+    updateSmoothedTps(r, 1000);
+    const tps2 = drainSmoothedTps(r);
+    expect(tps2).toBe(tps1);
+
+    // Wait another 70ms (total ~120ms from last compute)
+    await new Promise((res) => setTimeout(res, 70));
+    updateSmoothedTps(r, 1);
+    const tps3 = drainSmoothedTps(r);
+    // Should now reflect the accumulated burst
+    expect(tps3).not.toBe(tps1);
+  });
+
+  it("applies TPS_CALIBRATION to scale the rate", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    // 100 tokens in ~110ms → raw ~909 tps → calibrated ~90.9 tps
+    updateSmoothedTps(r, 100);
+    const tps = drainSmoothedTps(r);
+    expect(tps).toBeGreaterThan(0);
+    expect(tps).toBeLessThan(200); // well below uncalibrated ~909
+  });
+
+  it("caps instant rate at MAX_INSTANT_TPS", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    // 5000 tokens in ~110ms → raw ~45454 tps → calibrated ~4545 tps, capped to 300
+    updateSmoothedTps(r, 5000);
+    const tps = drainSmoothedTps(r);
+    expect(tps).toBeGreaterThan(0);
+    expect(tps).toBeLessThanOrEqual(300);
+  });
+
+  it("pauses TPS timer when pauseAfterNextEmit is set", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 100); // first compute
+    const tpsBefore = drainSmoothedTps(r);
+    expect(tpsBefore).toBeGreaterThan(0);
+
+    // Simulate a long gap with tool execution by setting pause flag and waiting
+    const tracker = { __proto__: null };
+    // We can't access the WeakMap directly, so use the tool-call path:
+    const msg = {
+      role: "assistant",
+      content: [{ type: "toolCall", toolCallId: "1", toolName: "bash", input: { command: "ls" } }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    // The tool call chars were estimated and the pause flag was set.
+    // Drain those estimated tokens and update TPS — this should compute the rate then reset the timer.
+    const toolTokens = drainStreamingEstimate(r);
+    expect(toolTokens).toBeGreaterThan(0);
+    updateSmoothedTps(r, toolTokens);
+
+    // Wait a long time (simulating tool execution)
+    await new Promise((res) => setTimeout(res, 500));
+
+    const tpsAfterToolCall = drainSmoothedTps(r);
+
+    // Next update should seed the timer instead of counting the gap
+    updateSmoothedTps(r, 100);
+    // Smoothed TPS should stay at the post-tool-call value, not be dragged down by the 500ms gap
+    expect(drainSmoothedTps(r)).toBe(tpsAfterToolCall);
+  });
+
+  it("resumes TPS correctly after a pause", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 100); // first compute
+    const tpsBefore = drainSmoothedTps(r);
+
+    // Trigger pause via tool call message
+    const msg = {
+      role: "assistant",
+      content: [{ type: "toolCall", toolCallId: "1", toolName: "read", input: { path: "x" } }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    const toolTokens = drainStreamingEstimate(r);
+    updateSmoothedTps(r, toolTokens);
+
+    // After pause, wait then emit — should seed
+    await new Promise((res) => setTimeout(res, 200));
+    updateSmoothedTps(r, 100);
+
+    // Now wait again and emit — should compute a normal rate (not dragged down by 200ms gap)
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 100);
+    const tpsAfter = drainSmoothedTps(r);
+    // Should be back in a reasonable range, not near zero
+    expect(tpsAfter).toBeGreaterThan(tpsBefore * 0.1);
+  });
+});
+
+describe("getFlowSummaryText — batch", () => {
+  function makeToolCallMessage(name, args) {
+    return {
+      role: "assistant",
+      content: [{ type: "toolCall", name, arguments: args }],
+    };
+  }
+
+  it("includes batch in partial work for failed flows", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Flow failed";
+    r.messages = [
+      makeToolCallMessage("batch", {
+        o: [
+          { op: "read", path: "src/index.ts" },
+          { op: "edit", path: "src/utils.ts", edits: [{ oldText: "a", newText: "b" }] },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("Flow failed");
+    expect(summary).toContain("Partial work:");
+    expect(summary).toContain("batch");
+  });
+
+  it("formats single batch operation in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("batch", {
+        o: [{ op: "write", path: "src/new.ts", content: "export {};" }],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("batch write new.ts");
+  });
+
+  it("formats multiple batch operations in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("batch", {
+        o: [
+          { op: "read", path: "a.ts" },
+          { op: "read", path: "b.ts" },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("batch read a.ts +1 more");
+  });
+
+  it("formats empty batch operations in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("batch", { o: [] }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("batch (empty)");
+  });
+
+  it("includes batch alongside other tool calls", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("bash", { command: "npm test" }),
+      makeToolCallMessage("batch", {
+        o: [{ op: "edit", path: "src/foo.ts", edits: [{ oldText: "a", newText: "b" }] }],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("bash npm test");
+    expect(summary).toContain("batch");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getFlowSummaryText — tool result pairing
+// ---------------------------------------------------------------------------
+
+describe("getFlowSummaryText — tool result pairing", () => {
+  it("includes bash output from paired tool result in summary", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Let me check the files." },
+            { type: "toolCall", name: "bash", toolCallId: "tc1", arguments: { command: "ls -la" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc1",
+          content: [{ type: "text", text: "total 48\ndrwxr-xr-x  8 user staff  256 Apr 30 03:20 .\n-rw-r--r--  1 user staff 1141 Apr 30 02:02 index.ts" }],
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "All done." },
+          ],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("All done.");
+    expect(summary).toContain("[Tool Results]");
+    expect(summary).toContain("bash ls -la:");
+    expect(summary).toContain("drwxr-xr-x");
+  });
+
+  it("includes batch read output in summary", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "batch", toolCallId: "tc2", arguments: { o: [{ o: "read", p: "src/index.ts" }] } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc2",
+          content: [{ type: "text", text: "export default function main() { return 42; }" }],
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Found the entry point." },
+          ],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Found the entry point.");
+    expect(summary).toContain("[Tool Results]");
+    expect(summary).toContain("batch read index.ts:");
+    expect(summary).toContain("export default function main");
+  });
+
+  it("truncates large tool outputs at 2000 chars", () => {
+    const bigOutput = "x".repeat(5000);
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc3", arguments: { command: "cat bigfile.txt" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc3",
+          content: [{ type: "text", text: bigOutput }],
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Read the file." }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Read the file.");
+    expect(summary).toContain("[Tool Results]");
+    expect(summary).toContain("... (truncated)");
+    expect(summary.length).toBeLessThan(bigOutput.length);
+  });
+
+  it("does not show tool results section when no paired results exist", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc4", arguments: { command: "echo hi" } },
+          ],
+        },
+        // No tool result message — tool call without result
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toBe("Done.");
+    expect(summary).not.toContain("[Tool Results]");
+  });
+
+  it("shows tool results even without final text on success", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc5", arguments: { command: "echo hello" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc5",
+          content: [{ type: "text", text: "hello" }],
+        },
+        // No final assistant text
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("bash echo hello:");
+    expect(summary).toContain("hello");
+  });
+
+  it("pairs multiple tool calls with their results in order", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "bash", toolCallId: "tc6", arguments: { command: "git log --oneline -3" } },
+            { type: "toolCall", name: "bash", toolCallId: "tc7", arguments: { command: "git diff HEAD" } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc6",
+          content: [{ type: "text", text: "abc1234 fix: something\ndef5678 feat: other" }],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc7",
+          content: [{ type: "text", text: "diff --git a/foo.ts b/foo.ts" }],
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Both commands checked." }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("Both commands checked.");
+    expect(summary).toContain("abc1234");
+    expect(summary).toContain("diff --git");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stableStringify — circular reference guard
+// ---------------------------------------------------------------------------
+
+describe("stableStringify", () => {
+  it("handles circular references without throwing", () => {
+    const obj = { a: 1, b: { c: 2 } };
+    obj.b.self = obj;
+    expect(() => stableStringify(obj)).not.toThrow();
+    const result = stableStringify(obj);
+    expect(result).toContain('"[Circular]"');
+  });
+
+  it("handles nested circular arrays", () => {
+    const arr = [1, 2];
+    arr.push(arr);
+    expect(() => stableStringify(arr)).not.toThrow();
+    const result = stableStringify(arr);
+    expect(result).toContain('"[Circular]"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WeakMap hidden state — frozen objects
+// ---------------------------------------------------------------------------
+
+describe("WeakMap hidden state — frozen objects", () => {
+  it("updateSmoothedTps does not throw on frozen result", async () => {
+    const r = Object.freeze(makeResult());
+    updateSmoothedTps(r, 100);
+    await new Promise((res) => setTimeout(res, 150));
+    updateSmoothedTps(r, 50);
+    expect(drainSmoothedTps(r)).toBeGreaterThan(0);
+  });
+
+  it("drainStreamingText does not throw on frozen result", () => {
+    const r = Object.freeze(makeResult());
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello world" } }),
+      r,
+    );
+    expect(drainStreamingText(r)).toBe("hello world");
+  });
+
+  it("drainCtxEstimate does not throw on frozen result", () => {
+    const r = Object.freeze(makeResult());
+    const msg = makeAssistantMessage("done", {
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: { total: 0 }, totalTokens: 500 },
+    });
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    expect(drainCtxEstimate(r)).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty path coercion
+// ---------------------------------------------------------------------------
+
+describe("formatToolCallShort — empty path", () => {
+  it("preserves explicit empty string path in batch summary", () => {
+    const result = {
+      exitCode: 0,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", name: "batch", toolCallId: "tc1", arguments: { o: [{ o: "read", p: "" }] } },
+          ],
+        },
+        {
+          role: "tool",
+          toolCallId: "tc1",
+          content: [{ type: "text", text: "content" }],
+        },
+      ],
+    };
+    const summary = getFlowSummaryText(result);
+    expect(summary).toContain("batch read ");
+    expect(summary).not.toContain("batch read ?");
   });
 });

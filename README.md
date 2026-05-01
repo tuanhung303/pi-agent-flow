@@ -77,7 +77,7 @@ Create `.md` files in `~/.pi/agent/agents/` or `.pi/agents/`:
 ---
 name: explore
 description: Discover files, trace code paths, map architecture
-tools: read, bash
+tools: batch, bash
 ---
 
 During this explore flow — your mission is discovery. Stay focused on your intent at all times.
@@ -152,7 +152,7 @@ registerHook({
 ### Single flow
 
 ```json
-{ "flow": [{ "type": "explore", "intent": "Find all authentication-related code" }] }
+{ "flow": [{ "type": "explore", "intent": "Find all authentication-related code", "aim": "Find auth code" }] }
 ```
 
 ### Batch multiple flows

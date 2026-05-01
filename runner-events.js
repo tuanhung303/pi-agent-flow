@@ -2,34 +2,36 @@
  * Helpers for parsing Pi JSON mode events and summarizing flow results.
  */
 
+// WeakMap-based side tables to avoid polluting caller objects and survive frozen/sealed objects.
+const seenSignaturesMap = new WeakMap();
+const streamingTextBufferMap = new WeakMap();
+const lastEmittedWordCountMap = new WeakMap();
+const streamingEstimateMap = new WeakMap();
+const smoothedTpsMap = new WeakMap();
+const lastEmitTimeMap = new WeakMap();
+const pendingTokensMap = new WeakMap();
+const ctxBaselineMap = new WeakMap();
+const ctxStreamingCharsMap = new WeakMap();
+const pauseAfterNextEmitMap = new WeakMap();
+
 function getSeenFlowMessageSignatures(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__seenMessageSignatures")) {
-    Object.defineProperty(result, "__seenMessageSignatures", {
-      value: new Set(),
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    });
+  if (!seenSignaturesMap.has(result)) {
+    seenSignaturesMap.set(result, new Set());
   }
-  return result.__seenMessageSignatures;
+  return seenSignaturesMap.get(result);
 }
 
-function getStreamingTextBuffer(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__streamingTextBuffer")) {
-    Object.defineProperty(result, "__streamingTextBuffer", {
-      value: "",
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__lastEmittedWordCount", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+function getStreamingTextState(result) {
+  if (!streamingTextBufferMap.has(result)) {
+    streamingTextBufferMap.set(result, "");
+    lastEmittedWordCountMap.set(result, 0);
   }
-  return result.__streamingTextBuffer;
+  return {
+    get buffer() { return streamingTextBufferMap.get(result); },
+    set buffer(v) { streamingTextBufferMap.set(result, v); },
+    get lastEmittedWordCount() { return lastEmittedWordCountMap.get(result); },
+    set lastEmittedWordCount(v) { lastEmittedWordCountMap.set(result, v); },
+  };
 }
 
 /**
@@ -37,10 +39,11 @@ function getStreamingTextBuffer(result) {
  * Updates the last-emitted word count for threshold tracking.
  */
 export function drainStreamingText(result) {
-  const buf = getStreamingTextBuffer(result);
+  const state = getStreamingTextState(result);
+  const buf = state.buffer;
   if (!buf) return "";
-  result.__streamingTextBuffer = "";
-  result.__lastEmittedWordCount = 0;
+  state.buffer = "";
+  state.lastEmittedWordCount = 0;
   return buf;
 }
 
@@ -51,98 +54,126 @@ export function drainStreamingText(result) {
 /** Chars per token heuristic for output estimation. */
 const CHARS_PER_TOKEN = 4;
 
+/** Minimum elapsed ms between TPS samples. */
+const MIN_TPS_SAMPLE_MS = 100;
+/** Cap on instantaneous TPS to suppress burst artifacts. */
+const MAX_INSTANT_TPS = 300;
+/** Calibration scale to align heuristic tokens with empirical display range. */
+const TPS_CALIBRATION = 0.1;
 /** EMA smoothing factor for tokens-per-second (higher = more responsive). */
-const EMA_ALPHA = 0.15;
+const EMA_ALPHA = 0.1;
 
 function getStreamingEstimate(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__streamingEstimate")) {
-    Object.defineProperty(result, "__streamingEstimate", {
-      value: { chars: 0 },
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+  if (!streamingEstimateMap.has(result)) {
+    streamingEstimateMap.set(result, { chars: 0 });
   }
-  return result.__streamingEstimate;
+  return streamingEstimateMap.get(result);
 }
 
 /**
- * Lazily initialize TPS tracking properties on the result object.
- * - __lastEmitTime: timestamp (ms) of the last streaming emit
- * - __smoothedTps: EMA-smoothed tokens-per-second value
+ * Lazily initialize TPS tracking state on the result object.
+ * Returns an accessor object backed by a WeakMap so frozen/sealed
+ * objects do not throw.
  */
-function getTpsTracker(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__smoothedTps")) {
-    Object.defineProperty(result, "__smoothedTps", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__lastEmitTime", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+function getTpsState(result) {
+  if (!smoothedTpsMap.has(result)) {
+    smoothedTpsMap.set(result, 0);
+    lastEmitTimeMap.set(result, 0);
+    pendingTokensMap.set(result, 0);
+    pauseAfterNextEmitMap.set(result, false);
   }
-  return result;
+  return {
+    get smoothedTps() { return smoothedTpsMap.get(result); },
+    set smoothedTps(v) { smoothedTpsMap.set(result, v); },
+    get lastEmitTime() { return lastEmitTimeMap.get(result); },
+    set lastEmitTime(v) { lastEmitTimeMap.set(result, v); },
+    get pendingTokens() { return pendingTokensMap.get(result); },
+    set pendingTokens(v) { pendingTokensMap.set(result, v); },
+    get pauseAfterNextEmit() { return pauseAfterNextEmitMap.get(result); },
+    set pauseAfterNextEmit(v) { pauseAfterNextEmitMap.set(result, v); },
+  };
 }
 
 /**
  * Update the EMA-smoothed tokens-per-second based on a new sample.
  * Called from emitUpdate() with the estimated output tokens since last emit.
- * Skips the update when delta time or tokens are zero (e.g., first emit).
+ * Accumulates tokens in pendingTokens and only computes a rate when
+ * MIN_TPS_SAMPLE_MS has elapsed. Applies MAX_INSTANT_TPS cap before EMA.
  */
 export function updateSmoothedTps(result, estimatedTokens) {
-  if (estimatedTokens <= 0) return;
-  const tracker = getTpsTracker(result);
-  const now = Date.now();
-  if (tracker.__lastEmitTime === 0) {
-    // First emit — seed the value directly
-    tracker.__lastEmitTime = now;
+  const tracker = getTpsState(result);
+
+  if (estimatedTokens <= 0) {
+    if (tracker.pauseAfterNextEmit) {
+      tracker.lastEmitTime = 0;
+      tracker.pauseAfterNextEmit = false;
+    }
     return;
   }
-  const deltaSec = (now - tracker.__lastEmitTime) / 1000;
-  if (deltaSec <= 0) return;
-  const instantRate = estimatedTokens / deltaSec;
-  if (tracker.__smoothedTps === 0) {
-    tracker.__smoothedTps = instantRate;
-  } else {
-    tracker.__smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.__smoothedTps;
+
+  if (tracker.lastEmitTime === 0) {
+    // First emit after a gap — seed the value directly
+    tracker.lastEmitTime = Date.now();
+    tracker.pauseAfterNextEmit = false;
+    return;
   }
-  tracker.__lastEmitTime = now;
+
+  tracker.pendingTokens += estimatedTokens;
+  const now = Date.now();
+  const deltaMs = now - tracker.lastEmitTime;
+  if (deltaMs < MIN_TPS_SAMPLE_MS) {
+    // If a pause was requested but we can't compute yet, reset the timer
+    // so the upcoming gap (e.g., tool execution) isn't counted.
+    if (tracker.pauseAfterNextEmit) {
+      tracker.lastEmitTime = 0;
+      tracker.pauseAfterNextEmit = false;
+      tracker.pendingTokens = 0;
+    }
+    return;
+  }
+  const deltaSec = deltaMs / 1000;
+  let instantRate = (tracker.pendingTokens * TPS_CALIBRATION) / deltaSec;
+  if (instantRate > MAX_INSTANT_TPS) {
+    instantRate = MAX_INSTANT_TPS;
+  }
+  if (tracker.smoothedTps === 0) {
+    tracker.smoothedTps = instantRate;
+  } else {
+    tracker.smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.smoothedTps;
+  }
+  tracker.lastEmitTime = now;
+  tracker.pendingTokens = 0;
+
+  if (tracker.pauseAfterNextEmit) {
+    tracker.lastEmitTime = 0;
+    tracker.pauseAfterNextEmit = false;
+  }
 }
 
 /**
  * Return the current EMA-smoothed tokens-per-second value.
  */
 export function drainSmoothedTps(result) {
-  const tracker = getTpsTracker(result);
-  return tracker.__smoothedTps;
+  const tracker = getTpsState(result);
+  return tracker.smoothedTps;
 }
 
 /**
- * Lazily initialize ctx baseline tracking properties on the result object.
- * - __ctxBaseline: last known real totalTokens from message_end
- * - __ctxStreamingChars: cumulative output chars since last baseline reset
+ * Lazily initialize ctx baseline tracking state on the result object.
+ * Returns an accessor object backed by a WeakMap so frozen/sealed
+ * objects do not throw.
  */
-function getCtxBaseline(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__ctxBaseline")) {
-    Object.defineProperty(result, "__ctxBaseline", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
-    Object.defineProperty(result, "__ctxStreamingChars", {
-      value: 0,
-      enumerable: false,
-      configurable: false,
-      writable: true,
-    });
+function getCtxState(result) {
+  if (!ctxBaselineMap.has(result)) {
+    ctxBaselineMap.set(result, 0);
+    ctxStreamingCharsMap.set(result, 0);
   }
-  return result.__ctxBaseline;
+  return {
+    get baseline() { return ctxBaselineMap.get(result); },
+    set baseline(v) { ctxBaselineMap.set(result, v); },
+    get streamingChars() { return ctxStreamingCharsMap.get(result); },
+    set streamingChars(v) { ctxStreamingCharsMap.set(result, v); },
+  };
 }
 
 /**
@@ -154,8 +185,8 @@ function updateStreamingEstimate(result, deltaLength) {
   const est = getStreamingEstimate(result);
   est.chars += deltaLength;
   // Also accumulate chars for ctx estimation (not drained on emit)
-  getCtxBaseline(result);
-  result.__ctxStreamingChars += deltaLength;
+  const ctxState = getCtxState(result);
+  ctxState.streamingChars += deltaLength;
 }
 
 /**
@@ -176,9 +207,9 @@ export function drainStreamingEstimate(result) {
  * in which case the caller should fall back to the streaming output estimate.
  */
 export function drainCtxEstimate(result) {
-  getCtxBaseline(result);
-  const streamingTokens = Math.floor(result.__ctxStreamingChars / CHARS_PER_TOKEN);
-  return result.__ctxBaseline + streamingTokens;
+  const ctxState = getCtxState(result);
+  const streamingTokens = Math.floor(ctxState.streamingChars / CHARS_PER_TOKEN);
+  return ctxState.baseline + streamingTokens;
 }
 
 /**
@@ -187,29 +218,38 @@ export function drainCtxEstimate(result) {
  */
 function accumulateStreamingDelta(result, delta) {
   if (!delta) return false;
-  const buf = getStreamingTextBuffer(result);
-  result.__streamingTextBuffer = buf + delta;
+  const state = getStreamingTextState(result);
+  state.buffer = state.buffer + delta;
   updateStreamingEstimate(result, delta.length);
-  if (result.__streamingTextBuffer.length - result.__lastEmittedWordCount >= 40) {
-    result.__lastEmittedWordCount = result.__streamingTextBuffer.length;
+  if (state.buffer.length - state.lastEmittedWordCount >= 40) {
+    state.lastEmittedWordCount = state.buffer.length;
     return true;
   }
   return false;
 }
 
-function stableStringify(value) {
+export function stableStringify(value, seen = new WeakSet()) {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
 
+  if (seen.has(value)) {
+    return '"[Circular]"';
+  }
+  seen.add(value);
+
   if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+    const out = `[${value.map((item) => stableStringify(item, seen)).join(",")}]`;
+    seen.delete(value);
+    return out;
   }
 
   const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries
-    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+  const out = `{${entries
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue, seen)}`)
     .join(",")}}`;
+  seen.delete(value);
+  return out;
 }
 
 function getMessageSignature(message) {
@@ -250,27 +290,52 @@ function addFlowAssistantMessage(result, message) {
     result.usage.contextTokens = usage.totalTokens || 0;
 
     // Snapshot ctx baseline for smooth streaming estimation
-    result.__ctxBaseline = usage.totalTokens || 0;
-    result.__ctxStreamingChars = 0;
+    const ctxState = getCtxState(result);
+    ctxState.baseline = usage.totalTokens || 0;
+    ctxState.streamingChars = 0;
   }
 
-  // Count tool call parts in the message content
+  // Count tool call parts in the message content and estimate their tokens
   if (Array.isArray(message.content)) {
+    let toolCallChars = 0;
     for (const part of message.content) {
       if (part.type === "toolCall") {
         result.usage.toolCalls++;
+        const tcText = JSON.stringify({ name: part.name, args: part.arguments || part.input || {} });
+        toolCallChars += tcText.length;
       }
+    }
+    if (toolCallChars > 0) {
+      updateStreamingEstimate(result, toolCallChars);
+      const tracker = getTpsState(result);
+      tracker.pauseAfterNextEmit = true;
     }
   }
 
   return true;
 }
 
-function addFlowAssistantMessages(result, messages) {
+function addFlowToolMessage(result, message) {
+  if (!message || message.role !== "tool") return false;
+
+  const signature = getMessageSignature(message);
+  const seen = getSeenFlowMessageSignatures(result);
+  if (seen.has(signature)) return false;
+  seen.add(signature);
+
+  result.messages.push(message);
+  return true;
+}
+
+function addFlowMessages(result, messages) {
   if (!Array.isArray(messages)) return false;
   let changed = false;
   for (const message of messages) {
-    if (addFlowAssistantMessage(result, message)) changed = true;
+    if (message && message.role === "tool") {
+      if (addFlowToolMessage(result, message)) changed = true;
+    } else if (message && message.role === "assistant") {
+      if (addFlowAssistantMessage(result, message)) changed = true;
+    }
   }
   return changed;
 }
@@ -280,14 +345,14 @@ function processFlowEvent(event, result) {
 
   switch (event.type) {
     case "message_end":
-      return addFlowAssistantMessage(result, event.message);
+      return addFlowMessages(result, [event.message]);
 
     case "turn_end":
-      return addFlowAssistantMessage(result, event.message);
+      return addFlowMessages(result, [event.message]);
 
     case "agent_end":
       result.sawAgentEnd = true;
-      return addFlowAssistantMessages(result, event.messages);
+      return addFlowMessages(result, event.messages);
 
     case "message_update": {
       const evt = event.assistantMessageEvent;
@@ -324,7 +389,13 @@ export function getFlowFinalText(messages) {
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (!message || message.role !== "assistant" || !Array.isArray(message.content)) {
+    if (!message || message.role !== "assistant") {
+      continue;
+    }
+    if (typeof message.content === "string" && message.content.length > 0) {
+      return message.content;
+    }
+    if (!Array.isArray(message.content)) {
       continue;
     }
 
@@ -368,38 +439,121 @@ function formatToolCallShort(tc) {
       return `find ${args.pattern || "*"} in ${args.path || "."}`;
     case "ls":
       return `ls ${args.path || "."}`;
+    case "batch": {
+      const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
+      if (ops.length === 0) return "batch (empty)";
+      const first = ops[0] || {};
+      const firstPath = (first.p ?? first.path ?? "?").split("/").pop();
+      const opType = first.o ?? first.op ?? "?";
+      const label = ops.length === 1 ? `${opType} ${firstPath}` : `${opType} ${firstPath} +${ops.length - 1} more`;
+      return `batch ${label}`;
+    }
     default:
       return tc.name;
   }
 }
 
+/**
+ * Match tool calls with their results to build a paired list.
+ * Returns [{ name, command/args, output }] limited to the most recent pairs.
+ */
+function matchToolCallsWithResults(messages, maxPairs) {
+  if (!Array.isArray(messages)) return [];
+  const pairs = [];
+
+  // Build a map of toolCallId -> tool result output
+  const resultMap = new Map();
+  for (const msg of messages) {
+    if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
+    const id = msg.toolCallId || msg.tool_call_id || "";
+    if (!id) continue;
+    const text = msg.content
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("\n");
+    resultMap.set(id, text);
+  }
+
+  // Walk assistant messages to find tool calls that have matching results
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (part.type !== "toolCall") continue;
+      const id = part.toolCallId || part.tool_call_id || "";
+      if (!id || !resultMap.has(id)) continue;
+      const name = part.name || part.toolName || "unknown";
+      const args = part.arguments || part.input || {};
+      const output = resultMap.get(id);
+      pairs.push({ name, args, output });
+    }
+  }
+
+  // Return the most recent pairs
+  return pairs.slice(-maxPairs);
+}
+
+/** Max tool result output chars to include per tool call in the summary. */
+const TOOL_RESULT_MAX_CHARS = 2000;
+
 export function getFlowSummaryText(result) {
   const finalText = getFlowFinalText(result?.messages);
-  if (finalText) return finalText;
-
   const isError =
     (typeof result?.exitCode === "number" && result.exitCode > 0) ||
     result?.stopReason === "error" ||
     result?.stopReason === "aborted";
 
-  // Build base message for failed/aborted flows
-  let base = "";
-  if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
-    base = result.errorMessage.trim();
-  } else if (isError && typeof result?.stderr === "string" && result.stderr.trim()) {
-    base = result.stderr.trim();
-  } else if (isError) {
-    base = "Flow failed";
-  } else {
-    return "(no output)";
+  // Build error base for failed flows
+  let errorBase = "";
+  if (isError) {
+    if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
+      errorBase = result.errorMessage.trim();
+    } else if (typeof result?.stderr === "string" && result.stderr.trim()) {
+      errorBase = result.stderr.trim();
+    } else {
+      errorBase = "Flow failed";
+    }
   }
 
-  // Surface partial tool calls (excluding read) for failed/aborted flows
-  const toolCalls = extractNonReadToolCalls(result?.messages);
-  if (toolCalls.length > 0) {
-    const formatted = toolCalls.map(formatToolCallShort).join(", ");
-    return `${base}\nPartial work: ${formatted}`;
+  // Extract tool call/result pairs for context
+  const toolPairs = matchToolCallsWithResults(result?.messages, 10);
+  const toolSummaryParts = [];
+
+  for (const pair of toolPairs) {
+    const callLabel = formatToolCallShort({ name: pair.name, args: pair.args });
+    if (pair.output.trim()) {
+      const truncated = pair.output.length > TOOL_RESULT_MAX_CHARS
+        ? pair.output.slice(0, TOOL_RESULT_MAX_CHARS) + "\n... (truncated)"
+        : pair.output;
+      toolSummaryParts.push(`${callLabel}:\n${truncated}`);
+    } else {
+      toolSummaryParts.push(`${callLabel}: (no output)`);
+    }
   }
 
-  return base;
+  const toolContext = toolSummaryParts.length > 0
+    ? "\n\n[Tool Results]\n" + toolSummaryParts.join("\n---\n")
+    : "";
+
+  // If there's final text, include it plus tool context
+  if (finalText) {
+    return finalText + toolContext;
+  }
+
+  // No final text
+  if (isError) {
+    // Surface partial tool calls (excluding read) for failed/aborted flows
+    const toolCalls = extractNonReadToolCalls(result?.messages);
+    if (toolCalls.length > 0) {
+      const formatted = toolCalls.map(formatToolCallShort).join(", ");
+      return `${errorBase}\nPartial work: ${formatted}${toolContext}`;
+    }
+    return errorBase;
+  }
+
+  // Success but no final text — show tool results if any
+  if (toolContext) {
+    return toolContext.trim();
+  }
+
+  return "(no output)";
 }

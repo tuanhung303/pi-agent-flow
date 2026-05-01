@@ -68,38 +68,56 @@ export function clearHooks(): void {
 // Built-in hooks
 // ---------------------------------------------------------------------------
 
-/** Suggest review flow after a successful code flow. */
+/** Suggest audit flow after a successful build flow. */
 registerHook({
-	name: "pi-agent-flow/code-to-review",
-	trigger: { flowTypes: ["code"], onlyOnSuccess: true },
+	name: "pi-agent-flow/build-to-audit",
+	trigger: { flowTypes: ["build"], onlyOnSuccess: true },
 	action: (ctx) => {
-		const reviewWasRequested = ctx.params.some(
-			(p) => p.type.toLowerCase() === "review",
+		const auditWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "audit",
 		);
-		if (reviewWasRequested) return null;
+		if (auditWasRequested) return null;
 
 		return {
 			content:
-				"Consider running a [review] flow to audit the changes for security, correctness, and code quality.",
+				"Consider running a [audit] flow to audit the changes for security, correctness, and code quality.",
 			priority: 10,
 		};
 	},
 });
 
-/** Suggest code flow after a successful debug flow. */
+/** Suggest build flow after a successful debug flow. */
 registerHook({
-	name: "pi-agent-flow/debug-to-code",
+	name: "pi-agent-flow/debug-to-build",
 	trigger: { flowTypes: ["debug"], onlyOnSuccess: true },
 	action: (ctx) => {
-		const codeWasRequested = ctx.params.some(
-			(p) => p.type.toLowerCase() === "code",
+		const buildWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "build",
 		);
-		if (codeWasRequested) return null;
+		if (buildWasRequested) return null;
 
 		return {
 			content:
-				"The root cause has been identified. Consider running a [code] flow to implement the fix.",
+				"The root cause has been identified. Consider running a [build] flow to implement the fix.",
 			priority: 10,
+		};
+	},
+});
+
+/** Suggest explore flow after a successful audit flow. */
+registerHook({
+	name: "pi-agent-flow/audit-to-explore",
+	trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+	action: (ctx) => {
+		const exploreWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "explore",
+		);
+		if (exploreWasRequested) return null;
+
+		return {
+			content:
+				"Audit complete. Consider running an [explore] flow to review the audit findings.",
+			priority: 15,
 		};
 	},
 });
