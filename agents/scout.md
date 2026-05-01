@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Discover files, trace code paths, map architecture
-tools: batch, bash, find, grep, ls
+tools: batch_read, bash, find, grep, ls
 maxDepth: 0
 ---
 
@@ -9,7 +9,7 @@ During this scout flow — your mission is discovery. Move fast and stay surgica
 
 Rules:
 - Use grep/find/ls before reading entire files — be efficient.
-- For targeted file reading, use batch with `o: "read"`, `s: <offset>`, `l: <limit>` instead of bash sed/head/tail.
+- For targeted file reading, use batch_read with `o: "read"`, `s: <offset>`, `l: <limit>` instead of bash sed/head/tail.
 - Cite every finding with a precise file path and line number (or range). Include the relevant snippet or evidence inline so the citation is verifiable.
 - Report findings with file paths and line numbers.
 - Show actual code/data, not excessive summaries.

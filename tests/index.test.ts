@@ -36,6 +36,7 @@ function createMockPi() {
 			{ name: "web" },
 		]),
 		getFlag: vi.fn((name: string) => flags[name]),
+		setFlag: (name: string, value: unknown) => { flags[name] = value; },
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
 		getTool: (name: string) => tools.find((t) => t.name === name),
@@ -91,6 +92,218 @@ describe("flow tool execute", () => {
 			fs.writeFileSync(path.join(agentsDir, f.fileName), f.content, "utf-8");
 		}
 	}
+
+	it("inherits full parent context while sanitizing prompts and assistant reasoning", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
+		const slidingPrompt = "<pi-flow-sliding-system>\nold routing prompt\n</pi-flow-sliding-system>";
+		const sessionBranch = [
+			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
+			{ type: "message", message: { role: "user", content: `Keep this product requirement${reminder}`, timestamp: 1 } },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					thinking: "SECRET_THINKING_FIELD",
+					reasoning: "SECRET_REASONING_FIELD",
+					content: [
+						{ type: "thinking", text: "SECRET_THINKING_PART" },
+						{ type: "reasoning", text: "SECRET_REASONING_PART" },
+						{ type: "text", text: `Normal assistant context${slidingPrompt}` },
+					],
+					timestamp: 2,
+				},
+			},
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash", toolCallId: "bash-call-1", arguments: { command: "echo normal" } }], timestamp: 3 } },
+			{ type: "message", message: { role: "tool", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Prior flow" }] } }], timestamp: 5 } },
+			{ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "prior flow result should be inherited" }], timestamp: 6 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation" }], timestamp: 7 } },
+			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 8 } },
+		];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		expect(snapshot).toContain("Keep this product requirement");
+		expect(snapshot).toContain("Normal assistant context");
+		expect(snapshot).toContain("bash-call-1");
+		expect(snapshot).toContain("normal bash output");
+		expect(snapshot).toContain("Implementation summary after delegation");
+		expect(snapshot).toContain("flow-call-1");
+		expect(snapshot).toContain('"name":"flow"');
+		expect(snapshot).toContain("prior flow result should be inherited");
+		expect(snapshot).toContain("Current request should be inherited");
+		expect(snapshot).not.toContain("SECRET_THINKING_FIELD");
+		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
+		expect(snapshot).not.toContain("SECRET_THINKING_PART");
+		expect(snapshot).not.toContain("SECRET_REASONING_PART");
+		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
+		expect(snapshot).not.toContain("[reminder_flow:");
+	});
+
+	it("preserves unmodified fork snapshot lines exactly", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const slidingPrompt = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
+		const header = { version: 1, meta: { keep: "header formatting" } };
+		const unchangedUser = { type: "message", message: { role: "user", content: "Unchanged requirement", timestamp: 1 } };
+		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }], timestamp: 2 } };
+		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
+		const droppedSystem = { type: "message", message: { role: "system", content: slidingPrompt, timestamp: 4 } };
+		const unchangedTool = { type: "message", message: { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
+		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => header,
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		const lines = snapshot.trimEnd().split("\n");
+
+		expect(lines).toContain(JSON.stringify(header));
+		expect(lines).toContain(JSON.stringify(unchangedUser));
+		expect(lines).toContain(JSON.stringify(unchangedAssistant));
+		expect(lines).toContain(JSON.stringify(unchangedTool));
+		expect(lines).not.toContain(JSON.stringify(changedAssistant));
+		expect(lines).not.toContain(JSON.stringify(droppedSystem));
+		expect(snapshot).toContain("Visible answer");
+		expect(snapshot).not.toContain("SECRET_REASONING");
+		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+	});
+
+	it("preserves flow calls/results in mixed assistant messages", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const sessionBranch = [
+			{ type: "message", message: { role: "user", content: "Original requirement", timestamp: 1 } },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: "Text before delegation." },
+						{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: { flow: [{ type: "debug", intent: "Prior debug" }] } },
+						{ type: "text", text: "Text after delegation." },
+					],
+					timestamp: 2,
+				},
+			},
+			{ type: "message", message: { role: "tool", content: [{ type: "toolResult", toolCallId: "flow-call-2", content: "FLOW_RESULT_PAYLOAD" }], timestamp: 3 } },
+			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 4 } },
+		];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		expect(snapshot).toContain("Original requirement");
+		expect(snapshot).toContain("Text before delegation.");
+		expect(snapshot).toContain("Text after delegation.");
+		expect(snapshot).toContain("FLOW_RESULT_PAYLOAD");
+		expect(snapshot).toContain("flow-call-2");
+		expect(snapshot).toContain('"name":"flow"');
+		expect(snapshot).toContain("Current request should be inherited");
+	});
 
 	it("matches flow types case-insensitively", async () => {
 		setupFlowsDir([
@@ -362,8 +575,308 @@ describe("flow tool execute", () => {
 		);
 		expect(sameTextCalls.length).toBe(1);
 	});
-});
 
+	it("registers flow-model-config flag", () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		expect(pi.registerFlag).toHaveBeenCalledWith("flow-model-config", expect.objectContaining({
+			description: expect.stringContaining("flow model strategy"),
+			type: "string",
+		}));
+	});
+
+	it("passes strategy primary model to runFlow for lite-tier flow", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		// Isolate from real global settings
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		// Write project settings with strategy
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "balanced",
+				flowModelConfigs: {
+					balanced: {
+						lite: { primary: "custom-lite-model" },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Test",
+			aim: "Test aim",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		const callOpts = vi.mocked(runFlow).mock.calls[0][0];
+		// scout is lite tier, strategy primary is "custom-lite-model"
+		expect(callOpts.model).toBe("custom-lite-model");
+	});
+
+	it("uses CLI --flow-lite-model to override strategy primary for scout", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const pi = createMockPi();
+		pi.setFlag("flow-lite-model", "override-lite");
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Test",
+			aim: "Test aim",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		const callOpts = vi.mocked(runFlow).mock.calls[0][0];
+		expect(callOpts.model).toBe("override-lite");
+	});
+
+	it("retries with next candidate when first model fails", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Code\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "test-strategy",
+				flowModelConfigs: {
+					"test-strategy": {
+						flash: { primary: "model-a", failover: ["model-b"] },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		let callCount = 0;
+		vi.mocked(runFlow).mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					type: "build",
+					agentSource: "project",
+					intent: "Fix bug",
+					aim: "Fix bug",
+					exitCode: 1,
+					messages: [],
+					stderr: "Rate limited",
+					usage: emptyFlowUsage(),
+				};
+			}
+			return {
+				type: "build",
+				agentSource: "project",
+				intent: "Fix bug",
+				aim: "Fix bug",
+				exitCode: 0,
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+				sawAgentEnd: true,
+				stderr: "",
+				usage: emptyFlowUsage(),
+			};
+		});
+
+		const result = await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Fix bug", aim: "Fix bug" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(2);
+		// First call with model-a (primary)
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("model-a");
+		// Second call with model-b (failover)
+		expect(vi.mocked(runFlow).mock.calls[1][0].model).toBe("model-b");
+		expect(result.isError).toBeFalsy();
+	});
+
+	it("stops on first successful attempt", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Code\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "test-strategy",
+				flowModelConfigs: {
+					"test-strategy": {
+						flash: { primary: "model-a", failover: ["model-b", "model-c"] },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "build",
+			agentSource: "project",
+			intent: "Fix bug",
+			aim: "Fix bug",
+			exitCode: 0,
+			messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+			sawAgentEnd: true,
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Fix bug", aim: "Fix bug" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		// Should only try model-a once since it succeeded
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("model-a");
+	});
+
+	it("includes failover attempt summary in stderr on final failure", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Code\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "test-strategy",
+				flowModelConfigs: {
+					"test-strategy": {
+						flash: { primary: "model-a", failover: ["model-b"] },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "build",
+			agentSource: "project",
+			intent: "Fix bug",
+			aim: "Fix bug",
+			exitCode: 1,
+			messages: [],
+			stderr: "Error occurred",
+			usage: emptyFlowUsage(),
+		});
+
+		const result = await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Fix bug", aim: "Fix bug" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(2);
+		// isError should be set on the result's details, not directly on the return
+		const lastResult = vi.mocked(runFlow).mock.results[0]?.value;
+	});
+
+});
 describe("main agent tool restriction", () => {
 	let tmpDir: string;
 	let originalCwd: string;
@@ -405,7 +918,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch", "bash", "flow", "web"]);
+		expect(calledWith).toEqual(["batch_read", "bash", "flow", "web"]);
 	});
 
 	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
@@ -442,7 +955,7 @@ describe("main agent tool restriction", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies batch+bash+flow+web on turn_start when optimized", async () => {
+	it("re-applies batch_read+bash+flow+web on turn_start when optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -456,7 +969,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch", "bash", "flow", "web"]);
+		expect(lastCall).toEqual(["batch_read", "bash", "flow", "web"]);
 	});
 
 	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
@@ -491,10 +1004,10 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch", "bash", "flow", "web"]);
+		expect(calledWith).toEqual(["batch_read", "bash", "flow", "web"]);
 	});
 
-	it("registers batch globally and includes it in main agent active tools", async () => {
+	it("registers batch_read and batch globally; batch_read is active in main agent", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -502,12 +1015,14 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// batch IS registered and active in main agent
+		// Both tools are registered
+		expect(pi.getTool("batch_read")).toBeDefined();
 		expect(pi.getTool("batch")).toBeDefined();
 
-		// Main agent active tools include batch when optimized
+		// Main agent active tools use batch_read, not batch
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch", "bash", "flow", "web"]);
+		expect(lastCall).toEqual(["batch_read", "bash", "flow", "web"]);
+		expect(lastCall).not.toContain("batch");
 	});
 
 	it("does NOT override active tools for child flows (depth > 0)", async () => {
@@ -639,6 +1154,8 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");
+		expect(modified.systemPrompt).toContain("Use inherited context as background while exploring alternatives.");
+		expect(modified.systemPrompt).not.toContain("Start from a clean slate with only the intent.");
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
 	});
 });

@@ -7,8 +7,15 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { type FlowConfig, discoverFlows } from "./agents.js";
-import { loadFlowModels, loadFlowSettings, type FlowModelConfig } from "./config.js";
+import { type FlowConfig, discoverFlows, getFlowTier } from "./agents.js";
+import {
+	loadFlowModelConfigs,
+	loadFlowSettings,
+	resolveFlowModelCandidates,
+	selectFlowModelStrategy,
+	type LoadedFlowModelConfigs,
+} from "./config.js";
+import { parseFlowCliArgs } from "./runner-cli.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks } from "./hooks.js";
@@ -20,7 +27,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { createBatchTool } from "./batch.js";
+import { createBatchTool, createBatchReadTool } from "./batch.js";
 import {
 	createWebTool,
 	looksLikeUrlPrompt,
@@ -73,6 +80,8 @@ const FlowParams = Type.Object({
 	),
 });
 
+const inheritedCliArgs = parseFlowCliArgs(process.argv);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -97,23 +106,8 @@ function buildForkSessionSnapshotJsonl(
 	if (!header || typeof header !== "object") return null;
 
 	const branchEntries = sessionManager.getBranch();
-
-	// Trim the current conversation turn from the fork.
-	let trimFrom = branchEntries.length;
-	for (let i = branchEntries.length - 1; i >= 0; i--) {
-		const entry = branchEntries[i] as Record<string, unknown>;
-		if (entry?.type === "message") {
-			const msg = entry.message as Record<string, unknown> | undefined;
-			if (msg?.role === "user") {
-				trimFrom = i;
-				break;
-			}
-		}
-	}
-
-	const trimmedEntries = branchEntries.slice(0, trimFrom);
 	const lines = [JSON.stringify(header)];
-	for (const entry of trimmedEntries) lines.push(JSON.stringify(entry));
+	for (const entry of branchEntries) lines.push(JSON.stringify(entry));
 	return `${lines.join("\n")}\n`;
 }
 
@@ -422,9 +416,61 @@ function stripLegacyReminder(
 	});
 }
 
+const REASONING_PART_TYPES = new Set([
+	"thinking",
+	"reasoning",
+	"reasoning_content",
+	"reasoningContent",
+]);
+
+const REASONING_FIELDS = [
+	"thinking",
+	"thinkingSignature",
+	"thinking_signature",
+	"reasoning",
+	"reasoningContent",
+	"reasoning_content",
+	"reasoningSignature",
+	"reasoning_signature",
+];
+
+function stripReasoningFromAssistantMessage(message: any): {
+	message: any;
+	changed: boolean;
+} {
+	let next = message;
+	let changed = false;
+
+	for (const field of REASONING_FIELDS) {
+		if (field in next) {
+			if (next === message) next = { ...message };
+			delete next[field];
+			changed = true;
+		}
+	}
+
+	if (Array.isArray(message.content)) {
+		const filteredContent = message.content.filter(
+			(part: any) => !REASONING_PART_TYPES.has(part?.type),
+		);
+		if (filteredContent.length !== message.content.length) {
+			if (next === message) next = { ...message };
+			next.content = filteredContent;
+			changed = true;
+		}
+	}
+
+	return { message: next, changed };
+}
+
+function isJsonEqual(a: any, b: any): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
- * Sanitize a fork session snapshot JSONL to remove sliding system prompts
- * and legacy reminders before passing to child flows.
+ * Sanitize a fork session snapshot JSONL to remove only non-inheritable
+ * artifacts before passing full parent context to child flows: sliding system
+ * prompts, legacy reminders, and assistant reasoning/thinking.
  */
 function sanitizeForkSnapshot(snapshot: string | null): string | null {
 	if (!snapshot) return snapshot;
@@ -433,33 +479,56 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 	const sanitizedLines: string[] = [];
 
 	for (const line of lines) {
+		let entry: any;
 		try {
-			const entry = JSON.parse(line);
-
-			// Drop sliding system prompt messages entirely
-			if (
-				entry?.type === "message" &&
-				entry.message?.role === "system" &&
-				typeof entry.message?.content === "string" &&
-				entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
-			) {
-				continue;
-			}
-
-			// Strip sliding prompt tags and legacy reminders from message content
-			if (entry?.type === "message" && entry.message && "content" in entry.message) {
-				entry.message = {
-					...entry.message,
-					content: stripSlidingPromptFromContent(
-						stripLegacyReminder(entry.message.content),
-					),
-				};
-			}
-
-			sanitizedLines.push(JSON.stringify(entry));
+			entry = JSON.parse(line);
 		} catch {
 			sanitizedLines.push(line);
+			continue;
 		}
+
+		let changed = false;
+
+		// Drop sliding system prompt messages entirely.
+		if (
+			entry?.type === "message" &&
+			entry.message?.role === "system" &&
+			typeof entry.message?.content === "string" &&
+			entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
+		) {
+			continue;
+		}
+
+		if (entry?.type === "message" && entry.message) {
+			let message = entry.message;
+
+			if (message.role === "assistant") {
+				const stripped = stripReasoningFromAssistantMessage(message);
+				message = stripped.message;
+				changed ||= stripped.changed;
+			}
+
+			if ("content" in message) {
+				const originalContent = message.content;
+				const strippedContent = stripSlidingPromptFromContent(
+					stripLegacyReminder(originalContent),
+				);
+
+				if (!isJsonEqual(strippedContent, originalContent)) {
+					message = {
+						...message,
+						content: strippedContent,
+					};
+					changed = true;
+				}
+			}
+
+			if (changed) {
+				entry = { ...entry, message };
+			}
+		}
+
+		sanitizedLines.push(changed ? JSON.stringify(entry) : line);
 	}
 
 	return `${sanitizedLines.join("\n")}\n`;
@@ -467,7 +536,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch", "bash", "flow", "web"]
+		? ["batch_read", "bash", "flow", "web"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
@@ -483,6 +552,10 @@ export default function (pi: ExtensionAPI) {
 	pi.registerFlag("flow-prevent-cycles", {
 		description: "Block delegating to flows already in the current delegation stack (default: true).",
 		type: "boolean",
+	});
+	pi.registerFlag("flow-model-config", {
+		description: "Named flow model strategy from settings.json flowModelConfigs.",
+		type: "string",
 	});
 	pi.registerFlag("flow-lite-model", {
 		description: "Model for lite-tier flows (scout, debug).",
@@ -514,13 +587,17 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	let discoveredFlows: FlowConfig[] = [];
-	let flowModelConfig: FlowModelConfig = {};
+	let loadedFlowModelConfigs: LoadedFlowModelConfigs = {
+		selectedName: "default",
+		configs: { default: {} },
+		strategy: {},
+	};
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
-		flowModelConfig = loadFlowModels(ctx.cwd);
+		loadedFlowModelConfigs = loadFlowModelConfigs(ctx.cwd);
 
 		// Resolve toolOptimize: CLI flag > env var > settings.json > default
 		const cliFlag = pi.getFlag("tool-optimize");
@@ -543,8 +620,9 @@ export default function (pi: ExtensionAPI) {
 			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
 
-		// Register batch so it is available for both main agent and child flows.
+		// Register batch and batch_read so they are available for main agent and child flows.
 		if (toolOptimize) {
+			pi.registerTool(createBatchReadTool());
 			pi.registerTool(createBatchTool());
 		}
 	});
@@ -601,7 +679,7 @@ Before acting, reason about whether to dive into a flow:
 - [build] — when you are ready to build. Implement features, fix bugs, write tests.
 - [craft] — when you need a plan. Design structure, break down requirements before building.
 - [audit] — when you need to verify. Audit security, quality, correctness.
-- [ideas] — when you need fresh ideas. Start from a clean slate with only the intent.
+- [ideas] — when you need fresh ideas. Use inherited context as background while exploring alternatives.
 
 Multiple independent flows? Batch them into one call:
 
@@ -691,15 +769,40 @@ flow [type] accomplished
 				const { flows } = discovery;
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
 
-				// Resolve tiered models: CLI flags override settings.json overrides parent --model
-				const tieredModels = {
-					lite: (pi.getFlag("flow-lite-model") as string | undefined) ?? flowModelConfig.lite,
-					flash: (pi.getFlag("flow-flash-model") as string | undefined) ?? flowModelConfig.flash,
-					full: (pi.getFlag("flow-full-model") as string | undefined) ?? flowModelConfig.full,
+				const cliFlowModelConfig =
+					typeof pi.getFlag("flow-model-config") === "string"
+						? (pi.getFlag("flow-model-config") as string)
+						: inheritedCliArgs.flowModelConfig;
+				const selectedFlowModelConfig = selectFlowModelStrategy(
+					loadedFlowModelConfigs.configs,
+					cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
+				);
+
+				const getTierOverride = (tier: "lite" | "flash" | "full"): string | undefined => {
+					const flagName =
+						tier === "lite"
+							? "flow-lite-model"
+							: tier === "flash"
+								? "flow-flash-model"
+								: "flow-full-model";
+					const runtimeValue = pi.getFlag(flagName);
+					if (typeof runtimeValue === "string" && runtimeValue.trim()) return runtimeValue.trim();
+					const inheritedValue = inheritedCliArgs.tieredModels?.[tier];
+					return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
 				};
 
-				// Build fork session snapshot and sanitize it to remove
-				// sliding system prompts before passing to child flows.
+				const shouldFailover = (result: SingleResult): boolean => {
+					if (result.stopReason === "aborted") return false;
+					const text = `${result.errorMessage ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
+					if (!text.trim()) return false;
+					if (text.includes("permission") || text.includes("invalid tool") || text.includes("bad settings")) {
+						return false;
+					}
+					return result.exitCode > 0;
+				};
+
+				// Build the full fork session snapshot and sanitize only non-inheritable
+				// artifacts before passing it to child flows.
 				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 				);
@@ -788,31 +891,61 @@ flow [type] accomplished
 						targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
 
 					const shouldInheritContext = targetFlow?.inheritContext !== false;
-					const result = await runFlow({
-						cwd: ctx.cwd,
-						flows,
-						flowName: normalizedType,
-						intent: item.intent,
-						aim: item.aim,
-						taskCwd: item.cwd,
-						forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
-						parentDepth: currentDepth,
-						parentFlowStack: ancestorFlowStack,
-						maxDepth: effectiveMaxDepth,
-						preventCycles,
-						toolOptimize,
-						tieredModels,
-						signal,
-						onUpdate: (partial) => {
-							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0];
-								emitProgress(partial.content?.[0]?.text);
-							}
-						},
-						makeDetails,
+					const tier = getFlowTier(normalizedType);
+					const { candidates } = resolveFlowModelCandidates({
+						tier,
+						flowModel: targetFlow?.model,
+						cliTierOverride: getTierOverride(tier),
+						strategy: selectedFlowModelConfig.strategy,
+						fallbackModel: inheritedCliArgs.fallbackModel,
 					});
-					allResults[index] = result;
-					emitProgress();
+					const attemptModels = candidates.length > 0 ? candidates : [undefined];
+					const attemptedModels: string[] = [];
+					let result = allResults[index];
+
+					for (let attempt = 0; attempt < attemptModels.length; attempt++) {
+						const candidateModel = attemptModels[attempt];
+						if (candidateModel) attemptedModels.push(candidateModel);
+						result = await runFlow({
+							cwd: ctx.cwd,
+							flows,
+							flowName: normalizedType,
+							intent: item.intent,
+							aim: item.aim,
+							taskCwd: item.cwd,
+							forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+							parentDepth: currentDepth,
+							parentFlowStack: ancestorFlowStack,
+							maxDepth: effectiveMaxDepth,
+							preventCycles,
+							toolOptimize,
+							model: candidateModel,
+							signal,
+							onUpdate: (partial) => {
+								if (partial.details?.results[0]) {
+									allResults[index] = partial.details.results[0];
+									emitProgress(partial.content?.[0]?.text);
+								}
+							},
+							makeDetails,
+						});
+						allResults[index] = result;
+						emitProgress();
+						if (isFlowSuccess(result) || signal?.aborted) break;
+						if (attempt < attemptModels.length - 1 && shouldFailover(result)) {
+							continue;
+						}
+						break;
+					}
+
+					if (result && !isFlowSuccess(result) && attemptedModels.length > 1) {
+						const summary = `Model failover attempts: ${attemptedModels.join(" -> ")}`;
+						const baseStderr = result.stderr.trim();
+						result.stderr = baseStderr ? `${baseStderr}\n\n${summary}` : summary;
+						allResults[index] = result;
+						emitProgress();
+					}
+
 					return result;
 				});
 

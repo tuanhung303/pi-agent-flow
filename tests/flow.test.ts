@@ -165,6 +165,19 @@ describe("getOptimizedTools", () => {
 		expect(result.filter((t) => t === "batch")).toHaveLength(1);
 		expect(result).toEqual(["bash", "batch"]);
 	});
+
+	it("preserves batch_read when no legacy tools", () => {
+		const tools = ["batch_read", "bash", "find", "grep", "ls"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["batch_read", "bash", "find", "grep", "ls"]);
+	});
+
+	it("replaces legacy tools with batch and removes batch_read if mixed", () => {
+		const tools = ["read", "batch_read", "bash"];
+		const result = getOptimizedTools(tools, true);
+		expect(result).toEqual(["bash", "batch"]);
+		expect(result).not.toContain("batch_read");
+	});
 });
 
 describe("agent_end grace period behavior", () => {

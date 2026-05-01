@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createBatchTool, suggestSimilarFiles, isWithinDirectory } from "../batch.js";
+import { createBatchTool, createBatchReadTool, suggestSimilarFiles, isWithinDirectory } from "../batch.js";
 
 describe("batch tool", () => {
 	let tmpDir: string;
@@ -723,7 +723,7 @@ describe("batch tool", () => {
 			);
 
 			expect(result.content[0].text).toContain("✓ 1 operations: 1 delete");
-    expect(result.content[0].text).toContain("delete: delete-me.txt");
+			expect(result.content[0].text).toContain("delete: delete-me.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "delete",
 				status: "ok",
@@ -871,12 +871,14 @@ describe("batch tool", () => {
 	});
 
 	describe("path traversal guard", () => {
-		it("blocks path traversal outside cwd", async () => {
+		it("allows writing outside cwd", async () => {
+			const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-write-"));
+
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
 				{
-					o: [{ op: "read", path: "../../../etc/hostname" }],
+					o: [{ op: "write", path: path.join(outsideDir, "new.txt"), content: "test" }],
 				},
 				undefined,
 				undefined,
@@ -884,11 +886,34 @@ describe("batch tool", () => {
 			);
 
 			expect(result.details.results[0]).toMatchObject({
-				op: "read",
-				status: "error",
-				error: expect.stringContaining("Path traversal"),
-				hint: "Use a path within the working directory.",
+				op: "write",
+				status: "ok",
 			});
+			expect(fs.readFileSync(path.join(outsideDir, "new.txt"), "utf-8")).toBe("test");
+
+			fs.rmSync(outsideDir, { recursive: true, force: true });
+		});
+
+		it("allows read outside cwd", async () => {
+			const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-read-"));
+			fs.writeFileSync(path.join(outsideDir, "outside.txt"), "outside content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: path.join(outsideDir, "outside.txt") }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+				content: "outside content\n",
+			});
+
+			fs.rmSync(outsideDir, { recursive: true, force: true });
 		});
 
 		it("allows relative paths within cwd", async () => {
@@ -920,6 +945,58 @@ describe("batch tool", () => {
 			);
 
 			expect(result.details.results[0].status).toBe("ok");
+		});
+
+		it("allows edit outside cwd", async () => {
+			const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-edit-"));
+			fs.writeFileSync(path.join(outsideDir, "target.txt"), "original\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{
+							op: "edit",
+							path: path.join(outsideDir, "target.txt"),
+							edits: [{ oldText: "original", newText: "hacked" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "edit",
+				status: "ok",
+			});
+
+			fs.rmSync(outsideDir, { recursive: true, force: true });
+		});
+
+		it("allows delete outside cwd", async () => {
+			const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-delete-"));
+			fs.writeFileSync(path.join(outsideDir, "target.txt"), "original\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [{ op: "delete", path: path.join(outsideDir, "target.txt") }],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "delete",
+				status: "ok",
+			});
+
+			fs.rmSync(outsideDir, { recursive: true, force: true });
 		});
 	});
 
@@ -1092,6 +1169,7 @@ describe("batch tool", () => {
 			expect(result.details.results[0]).toMatchObject({
 				op: "write",
 				status: "ok",
+				bytes: 8,
 			});
 			expect(fs.readFileSync(path.join(tmpDir, "newwrite.txt"), "utf-8")).toBe("content\n");
 		});
@@ -1235,12 +1313,12 @@ describe("batch tool", () => {
 			});
 		});
 
-		it("provides hint for path traversal on delete", async () => {
+		it("provides hint for missing file on delete", async () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
 				{
-					o: [{ op: "delete", path: "../../../tmp/trap.txt" }],
+					o: [{ op: "delete", path: "nonexistent-dir/trap.txt" }],
 				},
 				undefined,
 				undefined,
@@ -1249,7 +1327,7 @@ describe("batch tool", () => {
 
 			expect(result.details.results[0]).toMatchObject({
 				status: "error",
-				hint: "Use a path within the working directory.",
+				hint: "Verify the path exists.",
 			});
 		});
 
@@ -1344,7 +1422,7 @@ describe("tilde expansion", () => {
 		expect(isExpectedError).toBe(true);
 	});
 
-	it("rejects ~ path that resolves outside cwd for write", async () => {
+	it("allows ~ path that resolves outside cwd for write", async () => {
 		const tool = createTool();
 		const result = await tool.execute(
 			"call-1",
@@ -1354,9 +1432,12 @@ describe("tilde expansion", () => {
 			makeCtx(tmpDir),
 		);
 
-		// ~ expands to os.homedir() which is outside tmpDir cwd
-		expect(result.details.results[0].status).toBe("error");
-		expect(result.details.results[0].error).toContain("Path traversal");
+		// ~ expands to os.homedir() which is outside tmpDir cwd — now allowed
+		expect(result.details.results[0].status).toBe("ok");
+
+		// Clean up the file we created
+		const target = path.join(os.homedir(), "malicious.txt");
+		try { fs.unlinkSync(target); } catch {}
 	});
 });
 
@@ -1379,7 +1460,7 @@ describe("symlink traversal guard", () => {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("blocks reading a symlink that points outside cwd", async () => {
+	it("allows reading a symlink that points outside cwd", async () => {
 		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
 		fs.writeFileSync(path.join(outsideDir, "secret.txt"), "secret content\n", "utf-8");
 
@@ -1397,14 +1478,14 @@ describe("symlink traversal guard", () => {
 
 		expect(result.details.results[0]).toMatchObject({
 			op: "read",
-			status: "error",
-			error: expect.stringContaining("symlink points outside"),
+			status: "ok",
+			content: "secret content\n",
 		});
 
 		fs.rmSync(outsideDir, { recursive: true, force: true });
 	});
 
-	it("blocks writing through a symlink that points outside cwd", async () => {
+	it("allows writing through a symlink that points outside cwd", async () => {
 		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
 		fs.writeFileSync(path.join(outsideDir, "target.txt"), "original\n", "utf-8");
 
@@ -1422,13 +1503,12 @@ describe("symlink traversal guard", () => {
 
 		expect(result.details.results[0]).toMatchObject({
 			op: "write",
-			status: "error",
-			error: expect.stringContaining("symlink points outside"),
+			status: "ok",
 		});
 
-		// Verify the original file was NOT modified
+		// Verify the original file WAS modified via the symlink
 		const content = fs.readFileSync(path.join(outsideDir, "target.txt"), "utf-8");
-		expect(content).toBe("original\n");
+		expect(content).toBe("hacked\n");
 
 		fs.rmSync(outsideDir, { recursive: true, force: true });
 	});
@@ -1455,7 +1535,7 @@ describe("symlink traversal guard", () => {
 		expect(result.details.results[0].content).toBe("real content\n");
 	});
 
-	it("blocks directory symlink traversal", async () => {
+	it("allows directory symlink traversal for read", async () => {
 		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
 		fs.writeFileSync(path.join(outsideDir, "nested-secret.txt"), "secret\n", "utf-8");
 
@@ -1473,9 +1553,36 @@ describe("symlink traversal guard", () => {
 
 		expect(result.details.results[0]).toMatchObject({
 			op: "read",
-			status: "error",
-			error: expect.stringContaining("Path traversal"),
+			status: "ok",
+			content: "secret\n",
 		});
+
+		fs.rmSync(outsideDir, { recursive: true, force: true });
+	});
+
+	it("allows writing through a directory symlink that points outside cwd", async () => {
+		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-outside-"));
+		fs.writeFileSync(path.join(outsideDir, "nested-target.txt"), "original\n", "utf-8");
+
+		const symDir = path.join(tmpDir, "leak-dir-write");
+		fs.symlinkSync(outsideDir, symDir);
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ o: [{ op: "write", p: "leak-dir-write/nested-target.txt", c: "hacked\n" }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0]).toMatchObject({
+			op: "write",
+			status: "ok",
+		});
+
+		const content = fs.readFileSync(path.join(outsideDir, "nested-target.txt"), "utf-8");
+		expect(content).toBe("hacked\n");
 
 		fs.rmSync(outsideDir, { recursive: true, force: true });
 	});
@@ -1697,7 +1804,7 @@ describe("edge cases", () => {
 	});
 
 	describe("path validation edge cases", () => {
-		it("blocks write when ancestor symlink resolves outside cwd", async () => {
+		it("allows write when ancestor symlink resolves outside cwd", async () => {
 			const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-ancestor-out-"));
 			const linkPath = path.join(tmpDir, "link");
 			fs.symlinkSync(outsideDir, linkPath);
@@ -1715,8 +1822,7 @@ describe("edge cases", () => {
 
 			expect(result.details.results[0]).toMatchObject({
 				op: "write",
-				status: "error",
-				error: expect.stringContaining("ancestor directory is outside"),
+				status: "ok",
 			});
 
 			fs.rmSync(outsideDir, { recursive: true, force: true });
@@ -1919,6 +2025,425 @@ describe("edge cases", () => {
 
 			expect(result.content[0].text).toContain("⚠ byte-warn.txt truncated");
 			expect(result.content[0].text).toContain("Use s=");
+		});
+	});
+
+	describe("renderCall", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("renders single operation", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{ o: [{ o: "read", p: "src/index.ts" }] },
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("batch");
+			expect(rendered.toString()).toContain("read");
+			expect(rendered.toString()).toContain("index.ts");
+		});
+
+		it("renders multiple operations", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{ o: "read", p: "src/a.ts" },
+						{ o: "edit", p: "src/b.ts" },
+					],
+				},
+				makeTheme(),
+			);
+			const text = rendered.toString();
+			expect(text).toContain("batch");
+			expect(text).toContain("read");
+			expect(text).toContain("a.ts");
+			expect(text).toContain("edit");
+			expect(text).toContain("b.ts");
+		});
+
+		it("truncates many operations", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{ o: "read", p: "a.ts" },
+						{ o: "read", p: "b.ts" },
+						{ o: "read", p: "c.ts" },
+						{ o: "read", p: "d.ts" },
+					],
+				},
+				makeTheme(),
+			);
+			const text = rendered.toString();
+			expect(text).toContain("+2 more");
+		});
+
+		it("renders empty batch", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!({ o: [] }, makeTheme());
+			expect(rendered.toString()).toContain("batch (empty)");
+		});
+
+		it("shows edit block count for multi-block edits", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{
+							o: "edit",
+							p: "src/foo.ts",
+							e: [
+								{ f: "a", r: "b" },
+								{ f: "c", r: "d" },
+							],
+						},
+					],
+				},
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("2 blocks");
+		});
+
+		it("shortens home directory to ~", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{ o: [{ o: "read", p: `${os.homedir()}/project/file.ts` }] },
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("~/project/file.ts");
+		});
+	});
+
+	describe("renderResult", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("collapsed shows only summary line", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 3 operations");
+			expect(text).not.toContain("--- file.ts ---");
+		});
+
+		it("expanded shows full content", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: true }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 3 operations");
+			expect(text).toContain("--- file.ts ---");
+			expect(text).toContain("content");
+		});
+
+		it("handles empty content gracefully", () => {
+			const tool = createTool();
+			const result = { content: [], details: { results: [] } };
+			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
+			expect(rendered.toString()).toBe("");
+		});
+	});
+});
+
+
+describe("batch_read tool", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-batch-read-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function createTool() {
+		return createBatchReadTool();
+	}
+
+	function makeCtx(cwd: string) {
+		return { cwd };
+	}
+
+	describe("read operations", () => {
+		it("reads a single file", async () => {
+			const filePath = path.join(tmpDir, "test.txt");
+			fs.writeFileSync(filePath, "hello world\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "test.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("✓ 1 operations: 1 read");
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				path: "test.txt",
+				status: "ok",
+			});
+		});
+
+		it("reads multiple files", async () => {
+			fs.writeFileSync(path.join(tmpDir, "a.txt"), "content a\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "b.txt"), "content b\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "a.txt" },
+						{ o: "read", p: "b.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("✓ 2 operations: 2 reads");
+			expect(result.details.results).toHaveLength(2);
+		});
+
+		it("supports offset and limit", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "sl.txt"),
+				"a\nb\nc\nd\ne\n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "read", p: "sl.txt", s: 2, l: 2 }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].content).toContain("b\nc");
+		});
+
+		it("does not truncate large files at the regular batch line cap", async () => {
+			const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+			fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "large.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].truncated).toBeUndefined();
+			expect(result.details.results[0].content).toBe(lines.join("\n"));
+			expect(result.details.results[0].content).toContain("line 2999");
+			expect(result.content[0].text).not.toContain("truncated");
+			expect(result.content[0].text).not.toContain("[Showing lines");
+		});
+
+		it("does not truncate multi-line reads at the regular batch byte cap", async () => {
+			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			fs.writeFileSync(path.join(tmpDir, "large-bytes.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "large-bytes.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].truncated).toBeUndefined();
+			expect(result.details.results[0].content).toBe(lines.join("\n"));
+			expect(result.details.results[0].content).toContain(lines.at(-1));
+			expect(result.content[0].text).not.toContain("truncated");
+			expect(result.content[0].text).not.toContain("[Showing lines");
+		});
+
+		it("still errors when an individual selected line exceeds the byte cap", async () => {
+			const hugeLine = "x".repeat(60 * 1024);
+			fs.writeFileSync(path.join(tmpDir, "huge-line.txt"), `short\n${hugeLine}\n`, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "huge-line.txt", s: 2 }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "error",
+				error: expect.stringContaining("Line 2 exceeds limit"),
+			});
+			expect(result.details.results[0].error).toContain("batch_read");
+		});
+	});
+
+	describe("defensive rejection", () => {
+		it("rejects write operations", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "write", p: "new.txt", c: "content" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("rejects edit operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "edit.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "edit", p: "edit.txt", e: [{ f: "hello", r: "world" }] }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("rejects delete operations", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "delete", p: "file.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("rejects mixed read and write operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "ok.txt"), "ok\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "ok.txt" },
+						{ o: "write", p: "bad.txt", c: "bad" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+	});
+
+	describe("renderCall", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("renders single read operation", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{ o: [{ o: "read", p: "src/index.ts" }] },
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("batch_read");
+			expect(rendered.toString()).toContain("read");
+			expect(rendered.toString()).toContain("index.ts");
+		});
+
+		it("renders multiple read operations", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{ o: "read", p: "src/a.ts" },
+						{ o: "read", p: "src/b.ts" },
+					],
+				},
+				makeTheme(),
+			);
+			const text = rendered.toString();
+			expect(text).toContain("batch_read");
+			expect(text).toContain("a.ts");
+			expect(text).toContain("b.ts");
+		});
+	});
+
+	describe("renderResult", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("collapsed shows only summary line", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 2 operations");
+			expect(text).not.toContain("--- file.ts ---");
+		});
+
+		it("expanded shows full content", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: true }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 2 operations");
+			expect(text).toContain("--- file.ts ---");
 		});
 	});
 });

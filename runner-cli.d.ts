@@ -6,6 +6,7 @@ export function parseFlowCliArgs(argv: string[]): {
 	fallbackThinking?: string;
 	fallbackTools?: string;
 	fallbackNoTools: boolean;
+	flowModelConfig?: string;
 	tieredModels: {
 		lite?: string;
 		flash?: string;

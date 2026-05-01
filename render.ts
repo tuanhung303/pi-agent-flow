@@ -66,9 +66,10 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 			return fg("muted", "find ") + fg("accent", (args.pattern || "*") as string) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "grep":
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
-		case "batch": {
+		case "batch":
+		case "batch_read": {
 			const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
-			if (ops.length === 0) return fg("muted", "batch (empty)");
+			if (ops.length === 0) return fg("muted", `${toolName} (empty)`);
 			const parts: string[] = [];
 			for (const op of ops) {
 				const opObj = op as Record<string, unknown>;
@@ -84,7 +85,7 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 				}
 			}
 			const summary = parts.length <= 3 ? parts.join(", ") : `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
-			return fg("muted", "batch ") + fg("accent", summary);
+			return fg("muted", `${toolName} `) + fg("accent", summary);
 		}
 		default:
 			return fg("accent", toolName) + fg("dim", ` ${JSON.stringify(args)}`);

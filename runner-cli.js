@@ -48,6 +48,7 @@ export function parseFlowCliArgs(argv) {
   let fallbackThinking;
   let fallbackTools;
   let fallbackNoTools = false;
+  let flowModelConfig;
   let tieredLiteModel;
   let tieredFlashModel;
   let tieredFullModel;
@@ -72,6 +73,13 @@ export function parseFlowCliArgs(argv) {
       if (nextIsValue) return [nextToken, 2];
       return [undefined, 1];
     };
+
+    if (flagName === "--flow-model-config") {
+      const [value, skip] = getValue();
+      if (value !== undefined) flowModelConfig = value;
+      i += skip;
+      continue;
+    }
 
     if (
       [
@@ -245,6 +253,7 @@ export function parseFlowCliArgs(argv) {
     fallbackThinking,
     fallbackTools,
     fallbackNoTools,
+    flowModelConfig,
     tieredModels: {
       lite: tieredLiteModel,
       flash: tieredFlashModel,
