@@ -23,11 +23,14 @@ import {
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
-const AGENT_END_GRACE_MS = 250;
+const AGENT_END_GRACE_MS = 2000;
+const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
+const FLOW_TIMEOUT_ENV = "PI_FLOW_TIMEOUT_MS";
+export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 
 type FlowUpdateCallback = (partial: AgentToolResult<FlowDetails>) => void;
@@ -49,7 +52,8 @@ function mergeStreamingUsage(
 		...actual,
 		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
 		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
-		...(smoothedTps > 0 ? { smoothedTps: Math.max(actual.smoothedTps ?? 0, smoothedTps) } : {}),
+		// Preserve the peak smoothedTPS seen during the stream rather than the live EMA value.
+		...(smoothedTps > 0 ? { smoothedTps: Math.max(actual.smoothedTps || 0, smoothedTps) } : {}),
 	};
 }
 
@@ -99,6 +103,27 @@ function cleanupFlowTempDir(dir: string | null): void {
 
 const inheritedCliArgs = parseFlowCliArgs(process.argv);
 
+/**
+ * Transform a flow's tool list when toolOptimize is enabled.
+ * Replaces separate read/write/edit tools with the unified batch tool.
+ */
+export function getOptimizedTools(
+	flowTools: string[] | undefined,
+	toolOptimize: boolean,
+): string[] | undefined {
+	if (!toolOptimize || !flowTools) return flowTools;
+	const hasLegacyTools = flowTools.some(
+		(t) => t === "read" || t === "write" || t === "edit",
+	);
+	if (!hasLegacyTools) return flowTools;
+	const filtered = flowTools.filter(
+		(t) => t !== "read" && t !== "write" && t !== "edit" && t !== "batch",
+	);
+	return filtered.includes("batch")
+		? filtered
+		: [...filtered, "batch"];
+}
+
 function buildFlowArgs(
 	flow: FlowConfig,
 	intent: string,
@@ -106,6 +131,7 @@ function buildFlowArgs(
 	tieredModels?: { lite?: string; flash?: string; full?: string },
 	parentDepth: number = 0,
 	maxDepth: number = 0,
+	toolOptimize: boolean = false,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -127,15 +153,22 @@ function buildFlowArgs(
 	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
 	if (thinking) args.push("--thinking", thinking);
 
-	if (flow.tools && flow.tools.length > 0) {
-		args.push("--tools", flow.tools.join(","));
-	} else if (flow.tools === undefined) {
-		if (inheritedCliArgs.fallbackTools !== undefined) {
-			args.push("--tools", inheritedCliArgs.fallbackTools);
-		} else if (inheritedCliArgs.fallbackNoTools) {
-			args.push("--no-tools");
-		}
+	// Child flows get their configured tools from flow.tools, optimized by
+	// getOptimizedTools, with web explicitly filtered out.
+	// When flow.tools is undefined and toolOptimize=true, default to batch+bash+web
+	// (flow is unnecessary since the child is already inside a flow).
+	// When toolOptimize=false, include batch and web alongside legacy tools.
+	const defaultTools = toolOptimize
+		? ["batch", "bash", "web"]
+		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
+	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
+	let harnessTools = optimizedTools.filter((t) => t !== "web");
+	// If the flow explicitly listed only "web" (or nothing after filtering),
+	// fall back to defaultTools so the child isn't orphaned with zero tools.
+	if (harnessTools.length === 0) {
+		harnessTools = defaultTools.filter((t) => t !== "web");
 	}
+	args.push("--tools", harnessTools.join(","));
 
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.
 	// Flow instructions go in the intent message instead.
@@ -143,7 +176,7 @@ function buildFlowArgs(
 	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
 	const canDelegate = currentDepth < effectiveMaxDepth;
-	const availableTools = flow.tools?.join(", ") ?? "all";
+	const availableTools = harnessTools.join(", ");
 
 	// Phase 1: Context seal — sharp boundary declaring history sealed
 	const contextSeal =
@@ -196,6 +229,8 @@ export interface RunFlowOptions {
 	flowName: string;
 	/** Intent description. */
 	intent: string;
+	/** Short headline for display. */
+	aim: string;
 	/** Optional override working directory. */
 	taskCwd?: string;
 	/** Serialized parent session snapshot for fork mode. Null when the flow starts with a clean slate. */
@@ -208,6 +243,8 @@ export interface RunFlowOptions {
 	maxDepth: number;
 	/** Whether cycle prevention should be enforced in child processes. */
 	preventCycles: boolean;
+	/** Whether to transform tool lists to use batch. */
+	toolOptimize?: boolean;
 	/** Tiered model overrides (lite/flash/full). */
 	tieredModels?: { lite?: string; flash?: string; full?: string };
 	/** Abort signal for cancellation. */
@@ -216,6 +253,8 @@ export interface RunFlowOptions {
 	onUpdate?: FlowUpdateCallback;
 	/** Factory to wrap results into FlowDetails. */
 	makeDetails: (results: SingleResult[]) => FlowDetails;
+	/** Max execution time in ms before child is terminated. Default: 10 minutes. */
+	timeoutMs?: number;
 }
 
 /**
@@ -229,12 +268,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		flows,
 		flowName,
 		intent,
+		aim,
 		taskCwd,
 		forkSessionSnapshotJsonl,
 		parentDepth,
 		parentFlowStack,
 		maxDepth,
 		preventCycles,
+		toolOptimize = false,
 		signal,
 		onUpdate,
 		makeDetails,
@@ -248,6 +289,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			type: normalizedFlowName,
 			agentSource: "unknown",
 			intent,
+			aim,
 			exitCode: 1,
 			messages: [],
 			stderr: `Unknown flow: "${flowName}". Available flows: ${available}.`,
@@ -260,6 +302,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		type: normalizedFlowName,
 		agentSource: flow.source,
 		intent,
+		aim,
 		exitCode: -1,
 		messages: [],
 		stderr: "",
@@ -302,8 +345,17 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			opts.tieredModels,
 			parentDepth,
 			maxDepth,
+			toolOptimize,
 		);
 		let wasAborted = false;
+
+		// Resolve timeout: explicit option > env var > default (10 min)
+		const envTimeoutRaw = process.env[FLOW_TIMEOUT_ENV];
+		const envTimeout = envTimeoutRaw !== undefined ? (() => {
+			const n = Number(envTimeoutRaw);
+			return Number.isSafeInteger(n) && n >= 0 ? n : null;
+		})() : null;
+		const effectiveTimeout = opts.timeoutMs ?? envTimeout ?? DEFAULT_FLOW_TIMEOUT_MS;
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
@@ -314,12 +366,15 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				cwd: taskCwd ?? cwd,
 				shell: false,
 				stdio: ["pipe", "pipe", "pipe"],
+				// Process group on Unix so we can kill all descendants on timeout/abort.
+				detached: !isWindows,
 				env: {
 					...process.env,
 					[FLOW_DEPTH_ENV]: String(nextDepth),
 					[FLOW_MAX_DEPTH_ENV]: String(propagatedMaxDepth),
 					[FLOW_STACK_ENV]: JSON.stringify(propagatedStack),
 					[FLOW_PREVENT_CYCLES_ENV]: preventCycles ? "1" : "0",
+					[FLOW_TOOL_OPTIMIZE_ENV]: toolOptimize ? "1" : "0",
 					[PI_OFFLINE_ENV]: "1",
 				},
 			});
@@ -353,9 +408,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					return;
 				}
 
-				proc.kill("SIGTERM");
+				// Kill the entire process group (negative PID).
+				if (proc.pid === undefined) { proc.kill("SIGTERM"); } else { try { process.kill(-proc.pid, "SIGTERM"); } catch { proc.kill("SIGTERM"); } }
 				const sigkillTimer = setTimeout(() => {
-					if (!didClose) proc.kill("SIGKILL");
+					if (!didClose) {
+						if (proc.pid === undefined) { proc.kill("SIGKILL"); } else { try { process.kill(-proc.pid, "SIGKILL"); } catch { proc.kill("SIGKILL"); } }
+					}
 				}, SIGKILL_TIMEOUT_MS);
 				sigkillTimer.unref();
 			};
@@ -381,19 +439,17 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				}
 			};
 
+			let semanticCompletionTimerArmed = false;
 			const maybeFinishFromAgentEnd = () => {
-				if (!result.sawAgentEnd || didClose || settled) return;
-				clearSemanticCompletionTimer();
+				if (!result.sawAgentEnd || didClose || settled || semanticCompletionTimerArmed) return;
+				semanticCompletionTimerArmed = true;
 				semanticCompletionTimer = setTimeout(() => {
 					if (didClose || settled || !result.sawAgentEnd) return;
 					if (buffer.trim()) {
 						flushBufferedLines(buffer);
 						buffer = "";
 					}
-					proc.stdout.removeListener("data", onStdoutData);
-					proc.stderr.removeListener("data", onStderrData);
 					finish(0);
-					terminateChild();
 				}, AGENT_END_GRACE_MS);
 				semanticCompletionTimer.unref();
 			};
@@ -432,6 +488,16 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				};
 				if (signal.aborted) abortHandler();
 				else signal.addEventListener("abort", abortHandler, { once: true });
+			}
+
+			// Execution timeout — kill child if it runs too long
+			if (effectiveTimeout > 0) {
+				const timeoutTimer = setTimeout(() => {
+					if (didClose || settled) return;
+					result.stderr += `\nFlow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
+					terminateChild();
+				}, effectiveTimeout);
+				timeoutTimer.unref();
 			}
 		});
 

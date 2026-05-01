@@ -317,21 +317,21 @@ describe("formatFixedTokens", () => {
 
 describe("formatFlowTypeName", () => {
 	it("short name → padded with spaces", () => {
-		expect(formatFlowTypeName("debug")).toBe("debug     ");
-		expect(formatFlowTypeName("code")).toBe("code      ");
+		expect(formatFlowTypeName("debug")).toBe("debug");
+		expect(formatFlowTypeName("code")).toBe("code ");
 	});
 
 	it("medium name → partial padding", () => {
-		expect(formatFlowTypeName("architect")).toBe("architect ");
-		expect(formatFlowTypeName("explore")).toBe("explore   ");
+		expect(formatFlowTypeName("craft")).toBe("craft");
+		expect(formatFlowTypeName("scout")).toBe("scout");
 	});
 
 	it("exact length → no padding", () => {
-		expect(formatFlowTypeName("brainstorm")).toBe("brainstorm");
+		expect(formatFlowTypeName("ideas")).toBe("ideas");
 	});
 
 	it("uppercase input → lowercased", () => {
-		expect(formatFlowTypeName("DEBUG")).toBe("debug     ");
+		expect(formatFlowTypeName("DEBUG")).toBe("debug");
 	});
 });
 
@@ -411,9 +411,10 @@ function makeTheme() {
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {
-		type: "explore",
+		type: "scout",
 		agentSource: "user",
 		intent: "test intent",
+		aim: "test aim",
 		exitCode: 0,
 		messages: [],
 		stderr: "",
@@ -448,15 +449,15 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("debug     ");
-		expect(text).toContain("dir:");
+		expect(text).toContain("debug");
+		expect(text).toContain("aim:");
 		expect(text).toContain("├─ act:");
-		expect(text).toContain("log:");
+		expect(text).toContain("msg:");
 	});
 
 	it("renders act line with count prefix [N]", () => {
 		const result = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the codebase",
 			messages: [
 				makeToolCallMessage("read", { file_path: "src/index.ts" }),
@@ -476,12 +477,12 @@ describe("activity panel rendering", () => {
 			{ content: [{ type: "text", text: "Starting..." }], details: undefined },
 			false,
 			makeTheme(),
-			{ flow: [{ type: "code", intent: "Refactor the auth module" }] },
+			{ flow: [{ type: "code", intent: "Refactor the auth module", aim: "Refactor auth module" }] },
 		);
 		const text = extractText(rendered);
-		expect(text).toContain("code      ");
-		expect(text).toContain("dir:");
-		expect(text).toContain("Refactor the auth module");
+		expect(text).toContain("code");
+		expect(text).toContain("aim:");
+		expect(text).toContain("Refactor auth module");
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
 		expect(text).toContain("tps:     -");
@@ -501,7 +502,7 @@ describe("activity panel rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const result2 = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the view rebuild code",
 			messages: [
 				makeToolCallMessage("find", { query: "view_rebuild", dir: "./src" }, "searching"),
@@ -516,22 +517,23 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("├─");
 		expect(text).toContain("└─");
 		expect(text).toContain("│");
-		expect(text).toContain("debug     ");
-		expect(text).toContain("explore   ");
+		expect(text).toContain("debug");
+		expect(text).toContain("scout");
 	});
 
 	it("includes long DIR text in TruncatedText", () => {
-		const longIntent = "A" + "b".repeat(100) + "Z";
+		const longAim = "A" + "b".repeat(100) + "Z";
 		const result = makeResult({
-			intent: longIntent,
+			intent: longAim,
+			aim: longAim,
 			messages: [makeTextMessage("done")],
 		});
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("dir:");
+		expect(text).toContain("aim:");
 		// Content is pre-truncated to contentBudget(10) = 50 chars
-		const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
+		const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
 		expect(dirLine).toContain("...");
 	});
 
@@ -610,19 +612,20 @@ describe("activity panel rendering", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longIntent = "b".repeat(55);
+			const longAim = "b".repeat(55);
 			const result = makeResult({
-				intent: longIntent,
+				intent: longAim,
+				aim: longAim,
 				messages: [makeTextMessage("done")],
 			});
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult()] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const dirLine = text.split("\n").find((l: string) => l.includes("dir:"));
+			const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
 			expect(dirLine).toBeDefined();
 			// Content is pre-truncated to contentBudget(10) = 50 chars
 			expect(dirLine).toContain("...");
-			expect(visibleLength(dirLine.split("dir:")[1].trim())).toBeLessThanOrEqual(50);
+			expect(visibleLength(dirLine.split("aim:")[1].trim())).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -640,10 +643,10 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const logLine = text.split("\n").find((l: string) => l.includes("log:"));
+			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
 			expect(logLine).toBeDefined();
 			// Content is pre-truncated to contentBudget(10) = 50 chars
-			const logContent = logLine.split("log:")[1].trim();
+			const logContent = logLine.split("msg:")[1].trim();
 			expect(logContent).toContain("...");
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
 		} finally {
@@ -664,7 +667,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("debug     ");
+		expect(text).toContain("debug");
 		expect(text).not.toContain("✓");
 		expect(text).not.toContain("✗");
 		expect(text).not.toContain("(user)");
@@ -707,7 +710,7 @@ describe("expanded view rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const result2 = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the view rebuild code",
 			messages: [makeTextMessage("Let me also check scripts.")],
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
@@ -730,7 +733,7 @@ describe("expanded view rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const result2 = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the view rebuild code",
 			messages: [makeTextMessage("Let me also check scripts.")],
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
@@ -739,7 +742,109 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("debug     ");
-		expect(text).toContain("explore   ");
+		expect(text).toContain("debug");
+		expect(text).toContain("scout");
+	});
+});
+
+describe("formatFlowToolCall — batch", () => {
+	it("renders single read operation", () => {
+		const result = makeResult({
+			type: "scout",
+			intent: "Read files",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{ o: "read", p: "src/index.ts" },
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("batch");
+		expect(text).toContain("read");
+		expect(text).toContain("index.ts");
+	});
+
+	it("renders multiple operations", () => {
+		const result = makeResult({
+			type: "code",
+			intent: "Refactor",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{ o: "read", p: "src/a.ts" },
+					{ o: "edit", p: "src/b.ts", e: [{ f: "old", r: "new" }] },
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("batch");
+		expect(text).toContain("a.ts");
+		expect(text).toContain("b.ts");
+	});
+
+	it("renders edit with multiple blocks", () => {
+		const result = makeResult({
+			type: "code",
+			intent: "Multi-edit",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{
+						o: "edit",
+						p: "src/foo.ts",
+						e: [
+							{ f: "a", r: "b" },
+							{ f: "c", r: "d" },
+						],
+					},
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("batch");
+		expect(text).toContain("2 blocks");
+	});
+
+	it("renders many operations with truncation", () => {
+		const result = makeResult({
+			type: "code",
+			intent: "Bulk changes",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{ o: "read", p: "a.ts" },
+					{ o: "read", p: "b.ts" },
+					{ o: "read", p: "c.ts" },
+					{ o: "read", p: "d.ts" },
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("batch");
+		expect(text).toContain("+2 more");
+	});
+
+	it("renders empty operations", () => {
+		const result = makeResult({
+			type: "scout",
+			intent: "Empty",
+			messages: [
+				makeToolCallMessage("batch", { o: [] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("batch (empty)");
 	});
 });

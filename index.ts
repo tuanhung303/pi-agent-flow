@@ -8,7 +8,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type FlowConfig, discoverFlows } from "./agents.js";
-import { loadFlowModels, type FlowModelConfig } from "./config.js";
+import { loadFlowModels, loadFlowSettings, type FlowModelConfig } from "./config.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks } from "./hooks.js";
@@ -20,6 +20,12 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
+import { createBatchTool } from "./batch.js";
+import {
+	createWebTool,
+	looksLikeUrlPrompt,
+	looksLikeWebSearchPrompt,
+} from "./web-tool.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -31,6 +37,7 @@ const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
+export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 
 // ---------------------------------------------------------------------------
 // Tool parameter schema
@@ -38,10 +45,13 @@ const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
 
 const FlowItem = Type.Object({
 	type: Type.String({
-		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as explore, debug, code, architect, review, or brainstorm.",
+		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as scout, debug, build, craft, audit, or ideas.",
 	}),
 	intent: Type.String({
 		description: "Clear, specific mission for this flow.",
+	}),
+	aim: Type.String({
+		description: "Extreme short intent — one sentence, 5-7 words, headline-style summary of what this flow does.",
 	}),
 	cwd: Type.Optional(
 		Type.String({ description: "Working directory override for this flow." }),
@@ -52,7 +62,7 @@ const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			'Example: { flow: [{ type: "explore", "intent": "Find auth code" }, { type: "code", "intent": "Fix bug" }] }',
+			'Example: { flow: [{ type: "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }, { type: "build", "intent": "Fix the bug in user registration", "aim": "Fix registration bug" }] }',
 		minItems: 1,
 	}),
 	confirmProjectFlows: Type.Optional(
@@ -362,6 +372,12 @@ function appendReminder(
 	return copy;
 }
 
+function computeActiveTools(optimize: boolean): string[] {
+	return optimize
+		? ["batch", "bash", "flow", "web"]
+		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
@@ -376,62 +392,133 @@ export default function (pi: ExtensionAPI) {
 		type: "boolean",
 	});
 	pi.registerFlag("flow-lite-model", {
-		description: "Model for lite-tier flows (explore, debug).",
+		description: "Model for lite-tier flows (scout, debug).",
 		type: "string",
 	});
 	pi.registerFlag("flow-flash-model", {
-		description: "Model for flash-tier flows (code, review).",
+		description: "Model for flash-tier flows (build, audit).",
 		type: "string",
 	});
 	pi.registerFlag("flow-full-model", {
-		description: "Model for full-tier flows (brainstorm, architect).",
+		description: "Model for full-tier flows (ideas, craft).",
 		type: "string",
+	});
+	pi.registerFlag("tool-optimize", {
+		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
+		type: "boolean",
 	});
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
+	// toolOptimize: CLI flag > env var > settings.json > default (true)
+	let toolOptimize = true;
+	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
+	if (envToolOptimize !== undefined) {
+		const parsed = parseBoolean(envToolOptimize);
+		if (parsed !== null) toolOptimize = parsed;
+	}
+
 	let discoveredFlows: FlowConfig[] = [];
 	let flowModelConfig: FlowModelConfig = {};
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
-		if (!canDelegate) return;
-
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
 		flowModelConfig = loadFlowModels(ctx.cwd);
+
+		// Resolve toolOptimize: CLI flag > env var > settings.json > default
+		const cliFlag = pi.getFlag("tool-optimize");
+		if (typeof cliFlag === "boolean") {
+			toolOptimize = cliFlag;
+		} else if (typeof cliFlag === "string") {
+			const parsed = parseBoolean(cliFlag);
+			if (parsed !== null) toolOptimize = parsed;
+		} else {
+			const flowSettings = loadFlowSettings(ctx.cwd);
+			if (typeof flowSettings.toolOptimize === "boolean") {
+				toolOptimize = flowSettings.toolOptimize;
+			}
+		}
+
+		// Only restrict tools for the main orchestrator (depth 0).
+		// Child flows (depth > 0) receive their tools via --tools CLI arg;
+		// overriding them here would strip bash/batch from children.
+		if (currentDepth === 0) {
+			pi.setActiveTools(computeActiveTools(toolOptimize));
+		}
+
+		// Register batch so it is available for both main agent and child flows.
+		if (toolOptimize) {
+			pi.registerTool(createBatchTool());
+		}
 	});
 
-	// Inject available flows into the system prompt
+	// Re-apply active tools every turn to survive registry refreshes.
+	// Skip for child flows — they get tools from --tools CLI arg.
+	pi.on("turn_start", () => {
+		if (currentDepth > 0) return;
+		pi.setActiveTools(computeActiveTools(toolOptimize));
+	});
+	// Inject available flows into the system prompt.
+	// Skip entirely for child flows (depth > 0) — they get their instructions
+	// from the 4-part prompt structure in buildFlowArgs and have no web tool.
 	pi.on("before_agent_start", async (event) => {
-		if (!canDelegate) return;
-		if (discoveredFlows.length === 0) return;
+		if (currentDepth > 0) return undefined;
+
+		const prompt = event.prompt;
+		const hasUrl = looksLikeUrlPrompt(prompt);
+		const likelyNeedsWeb = looksLikeWebSearchPrompt(prompt);
+
+
+		const webInstructions: string[] = [];
+		if (hasUrl) {
+			webInstructions.push(
+				"The prompt includes a URL. Use web tool with op: { o: 'fetch', u: '<url>' } before answering about that page.",
+			);
+		}
+		if (likelyNeedsWeb) {
+			webInstructions.push(
+				"The prompt likely needs external or current info. Prefer web tool with op: [{ o: 'search', q: '<query>' }] over memory.",
+			);
+		}
+
+		let systemPrompt = event.systemPrompt;
+		if (webInstructions.length > 0) {
+			systemPrompt +=
+				"\n\n## pi-web steering\n" +
+				webInstructions.map((line) => `- ${line}`).join("\n");
+		}
+
+		if (!canDelegate || discoveredFlows.length === 0) {
+			return webInstructions.length > 0 ? { systemPrompt } : undefined;
+		}
 
 		return {
 			systemPrompt:
-				event.systemPrompt +
+				systemPrompt +
 				`\n\n## Flows
 
 Before acting, reason about whether to dive into a flow:
 
-- [explore] — when you need to understand first. Find files, trace code paths, map architecture.
+- [scout] — when you need to understand first. Find files, trace code paths, map architecture.
 - [debug] — when something is broken. Investigate logs, errors, stack traces to find root cause.
-- [code] — when you are ready to build. Implement features, fix bugs, write tests.
-- [architect] — when you need a plan. Design structure, break down requirements before building.
-- [review] — when you need to verify. Audit security, quality, correctness.
-- [brainstorm] — when you need fresh ideas. Start from a clean slate with only the intent.
+- [build] — when you are ready to build. Implement features, fix bugs, write tests.
+- [craft] — when you need a plan. Design structure, break down requirements before building.
+- [audit] — when you need to verify. Audit security, quality, correctness.
+- [ideas] — when you need fresh ideas. Start from a clean slate with only the intent.
 
 Multiple independent flows? Batch them into one call:
 
-✅ { "flow": [{ "type": "explore", "intent": "..." }, { "type": "review", "intent": "..." }] }
+✅ { "flow": [{ "type": "scout", "intent": "..." }, { "type": "audit", "intent": "..." }] }
 ❌ Two separate calls — wastes time
 
 Each call renders as:
 
-• flow [explore] — Map the full directory structure...
-• flow [review] — Audit security and quality...
+• flow [scout] — Map the full directory structure...
+• flow [audit] — Audit security and quality...
 
 Each flow returns:
 
@@ -448,18 +535,22 @@ flow [type] accomplished
 		};
 	});
 
-	// Sliding reminder: strip from all earlier user messages, append to latest
+	// Sliding reminder: strip from all earlier user messages, append to latest.
+	// Skip for child flows — they have explicit <mission> instructions and
+	// injecting the reminder is noise.
 	pi.on("context", async (event) => {
+		if (currentDepth > 0) return undefined;
+
 		const messages = event.messages;
 		const userIndices = messages
-			.map((m, i) => (m.role === "user" ? i : -1))
-			.filter((i) => i !== -1);
+			.map((m: any, i: number) => (m.role === "user" ? i : -1))
+			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) return undefined;
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
 
-		const modified = messages.map((msg, idx) => {
+		const modified = messages.map((msg: any, idx: number) => {
 			if (msg.role !== "user") return msg;
 
 			const content = stripReminder(msg.content);
@@ -472,6 +563,9 @@ flow [type] accomplished
 		return { messages: modified };
 	});
 
+	// Register the web tool
+	pi.registerTool(createWebTool());
+
 	// Register the flow tool
 	if (canDelegate) {
 		pi.registerTool({
@@ -482,8 +576,8 @@ flow [type] accomplished
 				"You MUST enter to the following flow states, with tool call method.",
 				"",
 				"Flow states are isolated \u03c0 processes with forked session snapshots. They run in parallel.",
-				'Invoke: { "flow": [{ "type": "explore", "intent": "..." }, ...] }',
-				"States: explore (tanken), debug (kensh\u014d), code (shokunin), architect (keikaku), review (kanshi), brainstorm (mushin).",
+				'Invoke: { "flow": [{ "type": "scout", "intent": "..." }, ...] }',
+				"States: scout (tanken), debug (kensh\u014d), build (shokunin), craft (keikaku), audit (kanshi), ideas (mushin).",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,
@@ -506,7 +600,7 @@ flow [type] accomplished
 				);
 
 				// Collect all requested flow names
-				const requested = new Set(params.flow.map((f) => f.type.toLowerCase()));
+				const requested = new Set<string>(params.flow.map((f: any) => f.type.toLowerCase()));
 
 				// Cycle check
 				if (preventCycles) {
@@ -558,6 +652,7 @@ flow [type] accomplished
 						type: params.flow[i].type,
 						agentSource: "unknown",
 						intent: params.flow[i].intent,
+						aim: params.flow[i].aim,
 						exitCode: -1,
 						messages: [],
 						stderr: "",
@@ -581,7 +676,7 @@ flow [type] accomplished
 
 				if (onUpdate) emitProgress();
 
-				const results = await mapFlowConcurrent(params.flow, 4, async (item, index) => {
+				const results = await mapFlowConcurrent(params.flow, 4, async (item: any, index: number) => {
 					const normalizedType = item.type.toLowerCase();
 					const targetFlow = flows.find((f) => f.name === normalizedType);
 					const effectiveMaxDepth =
@@ -593,12 +688,14 @@ flow [type] accomplished
 						flows,
 						flowName: normalizedType,
 						intent: item.intent,
+						aim: item.aim,
 						taskCwd: item.cwd,
 						forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
 						parentDepth: currentDepth,
 						parentFlowStack: ancestorFlowStack,
 						maxDepth: effectiveMaxDepth,
 						preventCycles,
+						toolOptimize,
 						tieredModels,
 						signal,
 						onUpdate: (partial) => {
@@ -642,4 +739,5 @@ flow [type] accomplished
 				renderFlowResult(result, expanded, theme, args),
 		});
 	}
+
 }

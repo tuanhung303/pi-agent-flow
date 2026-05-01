@@ -66,6 +66,26 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 			return fg("muted", "find ") + fg("accent", (args.pattern || "*") as string) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "grep":
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
+		case "batch": {
+			const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
+			if (ops.length === 0) return fg("muted", "batch (empty)");
+			const parts: string[] = [];
+			for (const op of ops) {
+				const opObj = op as Record<string, unknown>;
+				const opName = (opObj.o ?? opObj.op ?? "?") as string;
+				const opPath = (opObj.p ?? opObj.path ?? "?") as string;
+				const shortPath = shortenPath(opPath);
+				if (opName === "edit") {
+					const edits = (opObj.e ?? opObj.edits) as unknown[] | undefined;
+					const blockInfo = edits && edits.length > 1 ? ` (${edits.length} blocks)` : "";
+					parts.push(`edit ${shortPath}${blockInfo}`);
+				} else {
+					parts.push(`${opName} ${shortPath}`);
+				}
+			}
+			const summary = parts.length <= 3 ? parts.join(", ") : `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
+			return fg("muted", "batch ") + fg("accent", summary);
+		}
 		default:
 			return fg("accent", toolName) + fg("dim", ` ${JSON.stringify(args)}`);
 	}
@@ -107,6 +127,16 @@ function flowStatusIcon(r: SingleResult, theme: { fg: ThemeFg }): string {
 	return isFlowError(r) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 }
 
+/** Center a label in a fixed-width header using em-dashes. Total width = 20. */
+function sectionHeader(label: string): string {
+	const total = 20;
+	const innerLen = label.length + 2; // account for spaces around label
+	const side = (total - innerLen) / 2;
+	const left = "─".repeat(Math.floor(side));
+	const right = "─".repeat(Math.ceil(side));
+	return `${left} ${label} ${right}`;
+}
+
 // ---------------------------------------------------------------------------
 // renderFlowCall — shown while the flow is being invoked
 // ---------------------------------------------------------------------------
@@ -139,6 +169,7 @@ export function renderFlowResult(
 				type: flowRequest.type || "unknown",
 				agentSource: "user",
 				intent: flowRequest.intent || "Processing...",
+				aim: flowRequest.aim || flowRequest.intent || "Processing...",
 				exitCode: -1, // In progress
 				messages: [],
 				stderr: "",
@@ -203,12 +234,12 @@ function renderFlowExpanded(
 
 	// Intent
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("muted", "─── intent ───"), 0, 0));
+	container.addChild(new Text(theme.fg("muted", sectionHeader("intent")), 0, 0));
 	container.addChild(new Text(theme.fg("dim", r.intent), 0, 0));
 
 	// Flow report (structured output)
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("muted", "─── report ───"), 0, 0));
+	container.addChild(new Text(theme.fg("muted", sectionHeader("report")), 0, 0));
 	if (flowOutput) {
 		container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));
 	} else {
@@ -220,7 +251,7 @@ function renderFlowExpanded(
 	const toolTraces = renderToolTraces(displayItems, theme);
 	if (toolTraces) {
 		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("muted", "─── tool calls ───"), 0, 0));
+		container.addChild(new Text(theme.fg("muted", sectionHeader("tool calls")), 0, 0));
 		container.addChild(new Text(toolTraces, 0, 0));
 	}
 
@@ -239,14 +270,14 @@ function renderFlowCollapsed(
 	const maxWidth = process.stdout.columns ?? 80;
 	const stats = formatCompactStats(r.usage, r.model, maxWidth);
 	const typeName = formatFlowTypeName(r.type);
-	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
-	// dir: line (intent/objective)
-	if (r.intent) {
-		const dirContent = truncateChars(r.intent, contentBudget(10));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
+	// aim: line (short headline)
+	if (r.aim) {
+		const dirContent = truncateChars(r.aim, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ aim:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
 	// act: line (last tool call with count)
@@ -258,18 +289,18 @@ function renderFlowCollapsed(
 		container.addChild(new TruncatedText(`${theme.fg("dim", "├─ " + actPrefix)}${actContent}`, 0, 0));
 	}
 
-	// log: line (last assistant text or streaming)
+	// msg: line (last assistant text or streaming)
 	if (flowOutput) {
 		const logContent = truncateChars(flowOutput, contentBudget(10));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", logContent)}`, 0, 0));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (streamingText) {
 		const logContent = truncateChars(streamingText, contentBudget(10));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", logContent)}`, 0, 0));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (error && r.errorMessage) {
 		const logContent = truncateChars(r.errorMessage, contentBudget(10));
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("error", logContent)}`, 0, 0));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("error", logContent)}`, 0, 0));
 	} else {
-		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 	}
 
 	return container;
@@ -317,7 +348,7 @@ function renderMultiFlowExpanded(
 
 		container.addChild(new Spacer(1));
 		// Per-flow header: ─── EXPLORER (no icon)
-		container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", typeName)}`, 0, 0));
+		container.addChild(new Text(theme.fg("muted", sectionHeader(typeName)), 0, 0));
 
 		// Stats: dashboard format
 		const flowStats = formatCompactStats(r.usage, r.model);
@@ -335,7 +366,7 @@ function renderMultiFlowExpanded(
 		const toolTraces = renderToolTraces(displayItems, theme);
 		if (toolTraces) {
 			container.addChild(new Spacer(1));
-			container.addChild(new Text(theme.fg("muted", "─── tool calls ───"), 0, 0));
+			container.addChild(new Text(theme.fg("muted", sectionHeader("tool calls")), 0, 0));
 			container.addChild(new Text(toolTraces, 0, 0));
 		}
 	}
@@ -366,7 +397,7 @@ function renderActivityPanel(
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
@@ -375,10 +406,10 @@ function renderActivityPanel(
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";
 
-		// dir: line (intent/objective)
-		if (r.intent) {
-			const dirContent = truncateChars(r.intent, contentBudget(10));
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ dir:")} ${theme.fg("dim", dirContent)}`, 0, 0));
+		// aim: line (short headline)
+		if (r.aim) {
+			const dirContent = truncateChars(r.aim, contentBudget(10));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ aim:")} ${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 
 		// act: line (last tool call with count)
@@ -390,16 +421,16 @@ function renderActivityPanel(
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ " + actPrefix)}${actContent}`, 0, 0));
 		}
 
-		// log: line (last assistant text)
+		// msg: line (last assistant text)
 		const lastText = getLastAssistantText(r.messages);
 		if (lastText) {
 			const logContent = truncateChars(lastText, contentBudget(10));
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", logContent)}`, 0, 0));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 		} else if (error && r.errorMessage) {
 			const logContent = truncateChars(r.errorMessage, contentBudget(10));
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("error", logContent)}`, 0, 0));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("error", logContent)}`, 0, 0));
 		} else {
-			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ log:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
+			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("dim", "[n/a]")}`, 0, 0));
 		}
 
 		// Add blank line separator between flows (with continuation pipe)

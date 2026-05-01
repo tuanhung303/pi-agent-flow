@@ -27,12 +27,12 @@ export function formatFixedTokens(count: number): string {
 }
 
 /**
- * Format flow type name to fixed width (10 chars) in lowercase with space padding.
- * Examples: "debug" → "debug     ", "architect" → "architect ", "brainstorm" → "brainstorm"
+ * Format flow type name to fixed width (5 chars) in lowercase with space padding.
+ * Examples: "debug" → "debug", "scout" → "scout", "build" → "build"
  */
 export function formatFlowTypeName(type: string): string {
 	const lower = type.toLowerCase();
-	const targetWidth = 10;
+	const targetWidth = 5;
 	if (lower.length >= targetWidth) return lower.slice(0, targetWidth);
 	return lower.padEnd(targetWidth, " ");
 }

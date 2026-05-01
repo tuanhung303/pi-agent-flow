@@ -15,6 +15,10 @@ export interface FlowModelConfig {
 	full?: string;
 }
 
+export interface FlowSettings {
+	toolOptimize?: boolean;
+}
+
 function readSettingsJson(filePath: string): Record<string, unknown> | null {
 	try {
 		const content = fs.readFileSync(filePath, "utf-8");
@@ -36,6 +40,20 @@ function extractFlowModels(settings: Record<string, unknown> | null): FlowModelC
 		if (typeof obj[key] === "string") {
 			result[key] = obj[key] as string;
 		}
+	}
+	return result;
+}
+
+function extractFlowSettings(settings: Record<string, unknown> | null): FlowSettings {
+	if (!settings) return {};
+	const flowSettings = settings.flowSettings;
+	if (!flowSettings || typeof flowSettings !== "object" || Array.isArray(flowSettings)) {
+		return {};
+	}
+	const obj = flowSettings as Record<string, unknown>;
+	const result: FlowSettings = {};
+	if (typeof obj.toolOptimize === "boolean") {
+		result.toolOptimize = obj.toolOptimize;
 	}
 	return result;
 }
@@ -63,5 +81,22 @@ export function loadFlowModels(cwd: string): FlowModelConfig {
 	return {
 		...globalModels,
 		...projectModels,
+	};
+}
+
+/**
+ * Load flowSettings from global and project settings.json.
+ * Project overrides global (shallow merge per key).
+ */
+export function loadFlowSettings(cwd: string): FlowSettings {
+	const globalSettings = readSettingsJson(getGlobalSettingsPath());
+	const globalFlowSettings = extractFlowSettings(globalSettings);
+
+	const projectSettings = readSettingsJson(getProjectSettingsPath(cwd));
+	const projectFlowSettings = extractFlowSettings(projectSettings);
+
+	return {
+		...globalFlowSettings,
+		...projectFlowSettings,
 	};
 }
