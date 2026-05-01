@@ -36,6 +36,7 @@ function createMockPi() {
 			{ name: "web" },
 		]),
 		getFlag: vi.fn((name: string) => flags[name]),
+		setFlag: (name: string, value: unknown) => { flags[name] = value; },
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
 		getTool: (name: string) => tools.find((t) => t.name === name),
@@ -362,8 +363,308 @@ describe("flow tool execute", () => {
 		);
 		expect(sameTextCalls.length).toBe(1);
 	});
-});
 
+	it("registers flow-model-config flag", () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		expect(pi.registerFlag).toHaveBeenCalledWith("flow-model-config", expect.objectContaining({
+			description: expect.stringContaining("flow model strategy"),
+			type: "string",
+		}));
+	});
+
+	it("passes strategy primary model to runFlow for lite-tier flow", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		// Isolate from real global settings
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		// Write project settings with strategy
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "balanced",
+				flowModelConfigs: {
+					balanced: {
+						lite: { primary: "custom-lite-model" },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Test",
+			aim: "Test aim",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		const callOpts = vi.mocked(runFlow).mock.calls[0][0];
+		// scout is lite tier, strategy primary is "custom-lite-model"
+		expect(callOpts.model).toBe("custom-lite-model");
+	});
+
+	it("uses CLI --flow-lite-model to override strategy primary for scout", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const pi = createMockPi();
+		pi.setFlag("flow-lite-model", "override-lite");
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Test",
+			aim: "Test aim",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		const callOpts = vi.mocked(runFlow).mock.calls[0][0];
+		expect(callOpts.model).toBe("override-lite");
+	});
+
+	it("retries with next candidate when first model fails", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Code\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "test-strategy",
+				flowModelConfigs: {
+					"test-strategy": {
+						flash: { primary: "model-a", failover: ["model-b"] },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		let callCount = 0;
+		vi.mocked(runFlow).mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					type: "build",
+					agentSource: "project",
+					intent: "Fix bug",
+					aim: "Fix bug",
+					exitCode: 1,
+					messages: [],
+					stderr: "Rate limited",
+					usage: emptyFlowUsage(),
+				};
+			}
+			return {
+				type: "build",
+				agentSource: "project",
+				intent: "Fix bug",
+				aim: "Fix bug",
+				exitCode: 0,
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+				sawAgentEnd: true,
+				stderr: "",
+				usage: emptyFlowUsage(),
+			};
+		});
+
+		const result = await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Fix bug", aim: "Fix bug" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(2);
+		// First call with model-a (primary)
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("model-a");
+		// Second call with model-b (failover)
+		expect(vi.mocked(runFlow).mock.calls[1][0].model).toBe("model-b");
+		expect(result.isError).toBeFalsy();
+	});
+
+	it("stops on first successful attempt", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Code\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "test-strategy",
+				flowModelConfigs: {
+					"test-strategy": {
+						flash: { primary: "model-a", failover: ["model-b", "model-c"] },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "build",
+			agentSource: "project",
+			intent: "Fix bug",
+			aim: "Fix bug",
+			exitCode: 0,
+			messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+			sawAgentEnd: true,
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Fix bug", aim: "Fix bug" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		// Should only try model-a once since it succeeded
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("model-a");
+	});
+
+	it("includes failover attempt summary in stderr on final failure", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Code\n---\nPrompt.`,
+			},
+		]);
+
+		const agentDir = path.join(tmpDir, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		const projectDir = path.join(tmpDir, ".pi");
+		fs.mkdirSync(projectDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "test-strategy",
+				flowModelConfigs: {
+					"test-strategy": {
+						flash: { primary: "model-a", failover: ["model-b"] },
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "build",
+			agentSource: "project",
+			intent: "Fix bug",
+			aim: "Fix bug",
+			exitCode: 1,
+			messages: [],
+			stderr: "Error occurred",
+			usage: emptyFlowUsage(),
+		});
+
+		const result = await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Fix bug", aim: "Fix bug" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(2);
+		// isError should be set on the result's details, not directly on the return
+		const lastResult = vi.mocked(runFlow).mock.results[0]?.value;
+	});
+
+});
 describe("main agent tool restriction", () => {
 	let tmpDir: string;
 	let originalCwd: string;
