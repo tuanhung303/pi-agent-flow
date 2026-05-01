@@ -443,84 +443,6 @@ describe("multiple hooks active", () => {
 	});
 });
 
-describe("built-in audit-to-build hook", () => {
-	beforeEach(() => {
-		clearHooks();
-	});
-
-	it("suggests build after successful audit flow", () => {
-		registerHook({
-			name: "pi-agent-flow/audit-to-build",
-			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
-			action: (ctx) => {
-				const buildWasRequested = ctx.params.some(
-					(p) => p.type.toLowerCase() === "build",
-				);
-				if (buildWasRequested) return null;
-				return {
-					content:
-						"Issues were found. Consider running a [build] flow to fix them autonomously.",
-					priority: 10,
-				};
-			},
-		});
-
-		const results = [makeResult({ type: "audit" })];
-		const advisors = runHooks([{ type: "audit", intent: "audit code" }], results);
-		expect(advisors).toHaveLength(1);
-		expect(advisors[0]).toContain("[build]");
-		expect(advisors[0]).toContain("Issues were found");
-	});
-
-	it("suppresses when build was already in the batch", () => {
-		registerHook({
-			name: "pi-agent-flow/audit-to-build",
-			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
-			action: (ctx) => {
-				const buildWasRequested = ctx.params.some(
-					(p) => p.type.toLowerCase() === "build",
-				);
-				if (buildWasRequested) return null;
-				return {
-					content:
-						"Issues were found. Consider running a [build] flow to fix them autonomously.",
-					priority: 10,
-				};
-			},
-		});
-
-		const results = [makeResult({ type: "audit" })];
-		const params = [
-			{ type: "audit", intent: "audit code" },
-			{ type: "build", intent: "fix issues" },
-		];
-		const advisors = runHooks(params, results);
-		expect(advisors).toEqual([]);
-	});
-
-	it("does not fire on failed audit flow", () => {
-		registerHook({
-			name: "pi-agent-flow/audit-to-build",
-			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
-			action: (ctx) => {
-				const buildWasRequested = ctx.params.some(
-					(p) => p.type.toLowerCase() === "build",
-				);
-				if (buildWasRequested) return null;
-				return {
-					content:
-						"Issues were found. Consider running a [build] flow to fix them autonomously.",
-					priority: 10,
-				};
-			},
-		});
-
-		const results = [makeResult({ type: "audit", exitCode: 1, sawAgentEnd: false })];
-		const advisors = runHooks([{ type: "audit", intent: "audit code" }], results);
-		expect(advisors).toEqual([]);
-	});
-});
-
 describe("built-in audit-to-explore hook", () => {
 	beforeEach(() => {
 		clearHooks();
@@ -604,15 +526,7 @@ describe("audit hooks integration", () => {
 		clearHooks();
 	});
 
-	it("fires both audit-to-build and audit-to-explore when audit succeeds", () => {
-		registerHook({
-			name: "pi-agent-flow/audit-to-build",
-			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
-			action: (ctx) => {
-				if (ctx.params.some((p) => p.type.toLowerCase() === "build")) return null;
-				return { content: "build advice", priority: 10 };
-			},
-		});
+	it("fires audit-to-explore when audit succeeds", () => {
 		registerHook({
 			name: "pi-agent-flow/audit-to-explore",
 			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
@@ -625,19 +539,10 @@ describe("audit hooks integration", () => {
 		const results = [makeResult({ type: "audit" })];
 		const params = [{ type: "audit", intent: "audit" }];
 		const advisors = runHooks(params, results);
-		// explore has higher priority (15) than build (10), so build comes first after sort
-		expect(advisors).toEqual(["build advice", "explore advice"]);
+		expect(advisors).toEqual(["explore advice"]);
 	});
 
-	it("suppresses both audit hooks when targets already in batch", () => {
-		registerHook({
-			name: "pi-agent-flow/audit-to-build",
-			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
-			action: (ctx) => {
-				if (ctx.params.some((p) => p.type.toLowerCase() === "build")) return null;
-				return { content: "build advice", priority: 10 };
-			},
-		});
+	it("suppresses audit-to-explore when explore already in batch", () => {
 		registerHook({
 			name: "pi-agent-flow/audit-to-explore",
 			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
@@ -650,7 +555,6 @@ describe("audit hooks integration", () => {
 		const results = [makeResult({ type: "audit" })];
 		const params = [
 			{ type: "audit", intent: "audit" },
-			{ type: "build", intent: "fix" },
 			{ type: "explore", intent: "review" },
 		];
 		const advisors = runHooks(params, results);
