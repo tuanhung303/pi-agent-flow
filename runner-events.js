@@ -12,6 +12,7 @@ const lastEmitTimeMap = new WeakMap();
 const pendingTokensMap = new WeakMap();
 const ctxBaselineMap = new WeakMap();
 const ctxStreamingCharsMap = new WeakMap();
+const pauseAfterNextEmitMap = new WeakMap();
 
 function getSeenFlowMessageSignatures(result) {
   if (!seenSignaturesMap.has(result)) {
@@ -79,6 +80,7 @@ function getTpsState(result) {
     smoothedTpsMap.set(result, 0);
     lastEmitTimeMap.set(result, 0);
     pendingTokensMap.set(result, 0);
+    pauseAfterNextEmitMap.set(result, false);
   }
   return {
     get smoothedTps() { return smoothedTpsMap.get(result); },
@@ -87,6 +89,8 @@ function getTpsState(result) {
     set lastEmitTime(v) { lastEmitTimeMap.set(result, v); },
     get pendingTokens() { return pendingTokensMap.get(result); },
     set pendingTokens(v) { pendingTokensMap.set(result, v); },
+    get pauseAfterNextEmit() { return pauseAfterNextEmitMap.get(result); },
+    set pauseAfterNextEmit(v) { pauseAfterNextEmitMap.set(result, v); },
   };
 }
 
@@ -97,17 +101,36 @@ function getTpsState(result) {
  * MIN_TPS_SAMPLE_MS has elapsed. Applies MAX_INSTANT_TPS cap before EMA.
  */
 export function updateSmoothedTps(result, estimatedTokens) {
-  if (estimatedTokens <= 0) return;
   const tracker = getTpsState(result);
-  if (tracker.lastEmitTime === 0) {
-    // First emit — seed the value directly
-    tracker.lastEmitTime = Date.now();
+
+  if (estimatedTokens <= 0) {
+    if (tracker.pauseAfterNextEmit) {
+      tracker.lastEmitTime = 0;
+      tracker.pauseAfterNextEmit = false;
+    }
     return;
   }
+
+  if (tracker.lastEmitTime === 0) {
+    // First emit after a gap — seed the value directly
+    tracker.lastEmitTime = Date.now();
+    tracker.pauseAfterNextEmit = false;
+    return;
+  }
+
   tracker.pendingTokens += estimatedTokens;
   const now = Date.now();
   const deltaMs = now - tracker.lastEmitTime;
-  if (deltaMs < MIN_TPS_SAMPLE_MS) return;
+  if (deltaMs < MIN_TPS_SAMPLE_MS) {
+    // If a pause was requested but we can't compute yet, reset the timer
+    // so the upcoming gap (e.g., tool execution) isn't counted.
+    if (tracker.pauseAfterNextEmit) {
+      tracker.lastEmitTime = 0;
+      tracker.pauseAfterNextEmit = false;
+      tracker.pendingTokens = 0;
+    }
+    return;
+  }
   const deltaSec = deltaMs / 1000;
   let instantRate = (tracker.pendingTokens * TPS_CALIBRATION) / deltaSec;
   if (instantRate > MAX_INSTANT_TPS) {
@@ -120,6 +143,11 @@ export function updateSmoothedTps(result, estimatedTokens) {
   }
   tracker.lastEmitTime = now;
   tracker.pendingTokens = 0;
+
+  if (tracker.pauseAfterNextEmit) {
+    tracker.lastEmitTime = 0;
+    tracker.pauseAfterNextEmit = false;
+  }
 }
 
 /**
@@ -267,12 +295,20 @@ function addFlowAssistantMessage(result, message) {
     ctxState.streamingChars = 0;
   }
 
-  // Count tool call parts in the message content
+  // Count tool call parts in the message content and estimate their tokens
   if (Array.isArray(message.content)) {
+    let toolCallChars = 0;
     for (const part of message.content) {
       if (part.type === "toolCall") {
         result.usage.toolCalls++;
+        const tcText = JSON.stringify({ name: part.name, args: part.arguments || part.input || {} });
+        toolCallChars += tcText.length;
       }
+    }
+    if (toolCallChars > 0) {
+      updateStreamingEstimate(result, toolCallChars);
+      const tracker = getTpsState(result);
+      tracker.pauseAfterNextEmit = true;
     }
   }
 

@@ -184,6 +184,20 @@ describe("processFlowJsonLine", () => {
     expect(r.usage.toolCalls).toBe(2);
   });
 
+  it("estimates toolCall tokens and pauses TPS timer", () => {
+    const r = makeResult();
+    const msg = {
+      role: "assistant",
+      content: [
+        { type: "toolCall", toolCallId: "1", toolName: "bash", input: { command: "ls" } },
+      ],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    expect(r.usage.toolCalls).toBe(1);
+    // Tool call JSON should be estimated and available for draining
+    expect(drainStreamingEstimate(r)).toBeGreaterThan(0);
+  });
+
   it("returns false for unknown event types", () => {
     const r = makeResult();
     expect(processFlowJsonLine(JSON.stringify({ type: "unknown_event" }), r)).toBe(false);
@@ -724,6 +738,67 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     const tps = drainSmoothedTps(r);
     expect(tps).toBeGreaterThan(0);
     expect(tps).toBeLessThanOrEqual(300);
+  });
+
+  it("pauses TPS timer when pauseAfterNextEmit is set", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 100); // first compute
+    const tpsBefore = drainSmoothedTps(r);
+    expect(tpsBefore).toBeGreaterThan(0);
+
+    // Simulate a long gap with tool execution by setting pause flag and waiting
+    const tracker = { __proto__: null };
+    // We can't access the WeakMap directly, so use the tool-call path:
+    const msg = {
+      role: "assistant",
+      content: [{ type: "toolCall", toolCallId: "1", toolName: "bash", input: { command: "ls" } }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    // The tool call chars were estimated and the pause flag was set.
+    // Drain those estimated tokens and update TPS — this should compute the rate then reset the timer.
+    const toolTokens = drainStreamingEstimate(r);
+    expect(toolTokens).toBeGreaterThan(0);
+    updateSmoothedTps(r, toolTokens);
+
+    // Wait a long time (simulating tool execution)
+    await new Promise((res) => setTimeout(res, 500));
+
+    const tpsAfterToolCall = drainSmoothedTps(r);
+
+    // Next update should seed the timer instead of counting the gap
+    updateSmoothedTps(r, 100);
+    // Smoothed TPS should stay at the post-tool-call value, not be dragged down by the 500ms gap
+    expect(drainSmoothedTps(r)).toBe(tpsAfterToolCall);
+  });
+
+  it("resumes TPS correctly after a pause", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 100); // first compute
+    const tpsBefore = drainSmoothedTps(r);
+
+    // Trigger pause via tool call message
+    const msg = {
+      role: "assistant",
+      content: [{ type: "toolCall", toolCallId: "1", toolName: "read", input: { path: "x" } }],
+    };
+    processFlowJsonLine(JSON.stringify({ type: "message_end", message: msg }), r);
+    const toolTokens = drainStreamingEstimate(r);
+    updateSmoothedTps(r, toolTokens);
+
+    // After pause, wait then emit — should seed
+    await new Promise((res) => setTimeout(res, 200));
+    updateSmoothedTps(r, 100);
+
+    // Now wait again and emit — should compute a normal rate (not dragged down by 200ms gap)
+    await new Promise((res) => setTimeout(res, 110));
+    updateSmoothedTps(r, 100);
+    const tpsAfter = drainSmoothedTps(r);
+    // Should be back in a reasonable range, not near zero
+    expect(tpsAfter).toBeGreaterThan(tpsBefore * 0.1);
   });
 });
 
