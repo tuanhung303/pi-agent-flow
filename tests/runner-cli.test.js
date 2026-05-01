@@ -76,6 +76,11 @@ describe("parseFlowCliArgs", () => {
     expect(result.alwaysProxy).toContain("openai");
   });
 
+  it("extracts --flow-model-config", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-model-config", "balanced"]);
+    expect(result.flowModelConfig).toBe("balanced");
+  });
+
   it("extracts --flow-lite-model", () => {
     const result = parseFlowCliArgs(["node", "script", "--flow-lite-model", "gemini-flash"]);
     expect(result.tieredModels.lite).toBe("gemini-flash");
@@ -89,6 +94,11 @@ describe("parseFlowCliArgs", () => {
   it("extracts --flow-full-model", () => {
     const result = parseFlowCliArgs(["node", "script", "--flow-full-model", "claude-opus"]);
     expect(result.tieredModels.full).toBe("claude-opus");
+  });
+
+  it("extracts --flow-model-config with equals syntax", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-model-config=balanced"]);
+    expect(result.flowModelConfig).toBe("balanced");
   });
 
   it("extracts tiered models with equals syntax", () => {
