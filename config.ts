@@ -9,15 +9,14 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-export type FlowModelTier = "lite" | "flash" | "full";
+export type FlowTier = "lite" | "flash" | "full";
 
 export interface FlowModelTierConfig {
 	primary?: string;
 	failover?: string[];
 }
 
-export type FlowModelStrategy = Partial<Record<FlowModelTier, FlowModelTierConfig>>;
-
+export type FlowModelStrategy = Partial<Record<FlowTier, FlowModelTierConfig>>;
 export type FlowModelConfigs = Record<string, FlowModelStrategy>;
 
 export interface LoadedFlowModelConfigs {
@@ -26,21 +25,19 @@ export interface LoadedFlowModelConfigs {
 	strategy: FlowModelStrategy;
 }
 
-export interface FlowModelConfig {
-	lite?: string;
-	flash?: string;
-	full?: string;
-}
-
 export interface FlowSettings {
 	toolOptimize?: boolean;
 }
 
-const FLOW_MODEL_TIERS: FlowModelTier[] = ["lite", "flash", "full"];
-const DEFAULT_FLOW_MODEL_CONFIG_NAME = "default";
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
-	[DEFAULT_FLOW_MODEL_CONFIG_NAME]: {},
+	default: {},
 };
+
+const FLOW_TIERS: FlowTier[] = ["lite", "flash", "full"];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 function readSettingsJson(filePath: string): Record<string, unknown> | null {
 	try {
@@ -49,161 +46,6 @@ function readSettingsJson(filePath: string): Record<string, unknown> | null {
 	} catch {
 		return null;
 	}
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function normalizeConfigName(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const normalized = value.trim().toLowerCase();
-	return normalized.length > 0 ? normalized : undefined;
-}
-
-function normalizeModelName(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : undefined;
-}
-
-function extractSelectedFlowModelConfig(settings: Record<string, unknown> | null): string | undefined {
-	if (!settings) return undefined;
-	return normalizeConfigName(settings.flowModelConfig);
-}
-
-function validateFlowModelTierConfig(
-	value: unknown,
-	pathLabel: string,
-): FlowModelTierConfig | undefined {
-	if (value === undefined) return undefined;
-	if (!isPlainObject(value)) {
-		console.warn(
-			`[pi-agent-flow] Ignoring invalid ${pathLabel}. Expected an object with primary/failover fields.`,
-		);
-		return undefined;
-	}
-
-	const result: FlowModelTierConfig = {};
-	if (typeof value.primary === "string") {
-		const primary = value.primary.trim();
-		if (primary.length > 0) {
-			result.primary = primary;
-		}
-	} else if (value.primary !== undefined) {
-		console.warn(
-			`[pi-agent-flow] Ignoring invalid ${pathLabel}.primary. Expected a string.`,
-		);
-	}
-
-	if (value.failover !== undefined) {
-		if (!Array.isArray(value.failover)) {
-			console.warn(
-				`[pi-agent-flow] Ignoring invalid ${pathLabel}.failover. Expected an array of strings.`,
-			);
-		} else {
-			const failover = value.failover
-				.filter((entry): entry is string => typeof entry === "string")
-				.map((entry) => entry.trim())
-				.filter((entry) => entry.length > 0);
-			if (failover.length > 0) {
-				result.failover = failover;
-			}
-			if (failover.length !== value.failover.length) {
-				console.warn(
-					`[pi-agent-flow] Ignoring invalid entries in ${pathLabel}.failover. Expected only non-empty strings.`,
-				);
-			}
-		}
-	}
-
-	return result;
-}
-
-function extractFlowModelConfigs(settings: Record<string, unknown> | null): FlowModelConfigs {
-	if (!settings) return {};
-	const raw = settings.flowModelConfigs;
-	if (raw === undefined) return {};
-	if (!isPlainObject(raw)) {
-		console.warn(
-			"[pi-agent-flow] Ignoring invalid flowModelConfigs. Expected an object keyed by strategy name.",
-		);
-		return {};
-	}
-
-	const result: FlowModelConfigs = {};
-	for (const [rawName, rawStrategy] of Object.entries(raw)) {
-		const name = normalizeConfigName(rawName);
-		if (!name) {
-			console.warn("[pi-agent-flow] Ignoring invalid flow model config name.");
-			continue;
-		}
-		if (!isPlainObject(rawStrategy)) {
-			console.warn(
-				`[pi-agent-flow] Ignoring invalid flowModelConfigs.${rawName}. Expected an object keyed by flow tier.`,
-			);
-			continue;
-		}
-
-		const strategy: FlowModelStrategy = {};
-		for (const tier of FLOW_MODEL_TIERS) {
-			if (rawStrategy[tier] !== undefined) {
-				const tierConfig = validateFlowModelTierConfig(
-					rawStrategy[tier],
-					`flowModelConfigs.${rawName}.${tier}`,
-				);
-				if (tierConfig) strategy[tier] = tierConfig;
-			}
-		}
-
-		for (const key of Object.keys(rawStrategy)) {
-			if (!FLOW_MODEL_TIERS.includes(key as FlowModelTier)) {
-				console.warn(
-					`[pi-agent-flow] Ignoring unknown tier "${key}" in flowModelConfigs.${rawName}.`,
-				);
-			}
-		}
-
-		result[name] = strategy;
-	}
-
-	return result;
-}
-
-function mergeFlowModelStrategies(
-	base: FlowModelStrategy | undefined,
-	override: FlowModelStrategy | undefined,
-): FlowModelStrategy {
-	const merged: FlowModelStrategy = { ...(base ?? {}) };
-	if (!override) return merged;
-
-	for (const tier of FLOW_MODEL_TIERS) {
-		const baseTier = merged[tier];
-		const overrideTier = override[tier];
-		if (!baseTier && !overrideTier) continue;
-		if (!baseTier) {
-			merged[tier] = { ...overrideTier };
-			continue;
-		}
-		if (!overrideTier) continue;
-		merged[tier] = {
-			...baseTier,
-			...overrideTier,
-		};
-	}
-
-	return merged;
-}
-
-function mergeFlowModelConfigs(
-	base: FlowModelConfigs,
-	override: FlowModelConfigs,
-): FlowModelConfigs {
-	const merged: FlowModelConfigs = { ...base };
-	for (const [name, strategy] of Object.entries(override)) {
-		merged[name] = mergeFlowModelStrategies(merged[name], strategy);
-	}
-	return merged;
 }
 
 function getGlobalSettingsPath(): string {
@@ -215,105 +57,153 @@ function getProjectSettingsPath(cwd: string): string {
 	return path.join(cwd, ".pi", "settings.json");
 }
 
-function selectFlowModelStrategy(
-	configs: FlowModelConfigs,
-	requestedName: string | undefined,
-): { selectedName: string; strategy: FlowModelStrategy } {
-	const selectedName = requestedName ?? DEFAULT_FLOW_MODEL_CONFIG_NAME;
-	const strategy = configs[selectedName];
-	if (strategy) {
-		return { selectedName, strategy };
-	}
-	if (selectedName !== DEFAULT_FLOW_MODEL_CONFIG_NAME) {
+function extractSelectedFlowModelConfigName(settings: Record<string, unknown> | null): string | undefined {
+	if (!isPlainObject(settings)) return undefined;
+	const raw = settings.flowModelConfig;
+	if (typeof raw !== "string") return undefined;
+	const normalized = raw.trim();
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeFailoverList(
+	value: unknown,
+	sourceLabel: string,
+	strategyName: string,
+	tier: FlowTier,
+): string[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
 		console.warn(
-			`[pi-agent-flow] Unknown flow model config "${selectedName}". Falling back to "${DEFAULT_FLOW_MODEL_CONFIG_NAME}".`,
+			`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${strategyName}.${tier}.failover. Expected an array of strings.`,
 		);
+		return undefined;
 	}
+
+	const result: string[] = [];
+	for (const item of value) {
+		if (typeof item !== "string") {
+			console.warn(
+				`[pi-agent-flow] Ignoring invalid failover entry in ${sourceLabel}.flowModelConfigs.${strategyName}.${tier}. Expected a string.`,
+			);
+			continue;
+		}
+		const normalized = item.trim();
+		if (!normalized) continue;
+		result.push(normalized);
+	}
+	return result;
+}
+
+function extractFlowModelConfigs(settings: Record<string, unknown> | null, sourceLabel: string): FlowModelConfigs {
+	if (!isPlainObject(settings)) return {};
+	const rawConfigs = settings.flowModelConfigs;
+	if (rawConfigs === undefined) return {};
+	if (!isPlainObject(rawConfigs)) {
+		console.warn(
+			`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs. Expected an object map of strategy names.`,
+		);
+		return {};
+	}
+
+	const result: FlowModelConfigs = {};
+	for (const [rawName, rawStrategy] of Object.entries(rawConfigs)) {
+		const name = rawName.trim();
+		if (!name) {
+			console.warn(
+				`[pi-agent-flow] Ignoring empty strategy name in ${sourceLabel}.flowModelConfigs.`,
+			);
+			continue;
+		}
+		if (!isPlainObject(rawStrategy)) {
+			console.warn(
+				`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${name}. Expected an object with lite/flash/full tiers.`,
+			);
+			continue;
+		}
+
+		const strategy: FlowModelStrategy = {};
+		for (const tier of FLOW_TIERS) {
+			const rawTier = rawStrategy[tier];
+			if (rawTier === undefined) continue;
+			if (!isPlainObject(rawTier)) {
+				console.warn(
+					`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${name}.${tier}. Expected { primary?: string, failover?: string[] }.`,
+				);
+				continue;
+			}
+
+			const tierConfig: FlowModelTierConfig = {};
+			if (typeof rawTier.primary === "string") {
+				const primary = rawTier.primary.trim();
+				if (primary) tierConfig.primary = primary;
+			} else if (rawTier.primary !== undefined) {
+				console.warn(
+					`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${name}.${tier}.primary. Expected a string.`,
+				);
+			}
+
+			const failover = normalizeFailoverList(rawTier.failover, sourceLabel, name, tier);
+			if (failover !== undefined) {
+				tierConfig.failover = failover;
+			}
+
+			if (tierConfig.primary !== undefined || tierConfig.failover !== undefined) {
+				strategy[tier] = tierConfig;
+			}
+		}
+
+		result[name] = strategy;
+	}
+
+	return result;
+}
+
+function extractFlowSettings(settings: Record<string, unknown> | null): FlowSettings {
+	if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+		return {};
+	}
+	const flowSettings = settings.flowSettings;
+	if (!flowSettings || typeof flowSettings !== "object" || Array.isArray(flowSettings)) {
+		return {};
+	}
+	const obj = flowSettings as Record<string, unknown>;
+	const result: FlowSettings = {};
+	if (typeof obj.toolOptimize === "boolean") {
+		result.toolOptimize = obj.toolOptimize;
+	}
+	return result;
+}
+
+function mergeFlowModelTierConfigs(
+	base: FlowModelTierConfig | undefined,
+	override: FlowModelTierConfig | undefined,
+): FlowModelTierConfig | undefined {
+	if (!base && !override) return undefined;
 	return {
-		selectedName: DEFAULT_FLOW_MODEL_CONFIG_NAME,
-		strategy: configs[DEFAULT_FLOW_MODEL_CONFIG_NAME] ?? {},
+		...(base?.primary !== undefined ? { primary: base.primary } : {}),
+		...(base?.failover !== undefined ? { failover: base.failover } : {}),
+		...(override?.primary !== undefined ? { primary: override.primary } : {}),
+		...(override?.failover !== undefined ? { failover: override.failover } : {}),
 	};
 }
 
-/**
- * Load flowModelConfigs from global and project settings.json.
- * Project overrides global (merge per strategy and per tier).
- */
-export function loadFlowModelConfigs(cwd: string): LoadedFlowModelConfigs {
-	const globalSettings = readSettingsJson(getGlobalSettingsPath());
-	const globalSelected = extractSelectedFlowModelConfig(globalSettings);
-	const globalConfigs = extractFlowModelConfigs(globalSettings);
-
-	const projectSettings = readSettingsJson(getProjectSettingsPath(cwd));
-	const projectSelected = extractSelectedFlowModelConfig(projectSettings);
-	const projectConfigs = extractFlowModelConfigs(projectSettings);
-
-	const configs = mergeFlowModelConfigs(BUILTIN_FLOW_MODEL_CONFIGS, globalConfigs);
-	const merged = mergeFlowModelConfigs(configs, projectConfigs);
-	const selectedName = projectSelected ?? globalSelected ?? DEFAULT_FLOW_MODEL_CONFIG_NAME;
-	const selected = selectFlowModelStrategy(merged, selectedName);
-
-	return {
-		selectedName: selected.selectedName,
-		configs: merged,
-		strategy: selected.strategy,
-	};
+function mergeFlowModelStrategies(
+	base: FlowModelStrategy | undefined,
+	override: FlowModelStrategy | undefined,
+): FlowModelStrategy {
+	const result: FlowModelStrategy = {};
+	for (const tier of FLOW_TIERS) {
+		const merged = mergeFlowModelTierConfigs(base?.[tier], override?.[tier]);
+		if (merged) result[tier] = merged;
+	}
+	return result;
 }
 
-/**
- * Resolve ordered model candidates for a flow tier.
- * Explicit flow or CLI overrides are treated as single-model selections.
- */
-export function resolveFlowModelCandidates(opts: {
-	tier: FlowModelTier;
-	flowModel?: string;
-	cliTierOverride?: string;
-	strategy: FlowModelStrategy;
-	fallbackModel?: string;
-}): { primary: string | undefined; candidates: string[] } {
-	const explicitFlowModel = normalizeModelName(opts.flowModel);
-	if (explicitFlowModel) {
-		return { primary: explicitFlowModel, candidates: [explicitFlowModel] };
-	}
-
-	const explicitCliModel = normalizeModelName(opts.cliTierOverride);
-	if (explicitCliModel) {
-		return { primary: explicitCliModel, candidates: [explicitCliModel] };
-	}
-
-	const candidates: string[] = [];
-	const seen = new Set<string>();
-	const pushUnique = (model: string | undefined) => {
-		if (!model || seen.has(model)) return;
-		seen.add(model);
-		candidates.push(model);
-	};
-
-	const tierConfig = opts.strategy[opts.tier];
-	const primary = normalizeModelName(tierConfig?.primary);
-	pushUnique(primary);
-	for (const model of tierConfig?.failover ?? []) {
-		pushUnique(normalizeModelName(model));
-	}
-	pushUnique(normalizeModelName(opts.fallbackModel));
-
-	return {
-		primary: candidates[0],
-		candidates,
-	};
-}
-
-/**
- * Legacy flat model config loader retained for compatibility.
- * Returns the selected strategy flattened to { lite, flash, full }.
- */
-export function loadFlowModels(cwd: string): FlowModelConfig {
-	const loaded = loadFlowModelConfigs(cwd);
-	const result: FlowModelConfig = {};
-	for (const tier of FLOW_MODEL_TIERS) {
-		const primary = loaded.strategy[tier]?.primary;
-		if (typeof primary === "string" && primary.trim()) {
-			result[tier] = primary.trim();
+function mergeFlowModelConfigs(...configs: FlowModelConfigs[]): FlowModelConfigs {
+	const result: FlowModelConfigs = {};
+	for (const configSet of configs) {
+		for (const [name, strategy] of Object.entries(configSet)) {
+			result[name] = mergeFlowModelStrategies(result[name], strategy);
 		}
 	}
 	return result;
@@ -336,16 +226,80 @@ export function loadFlowSettings(cwd: string): FlowSettings {
 	};
 }
 
-function extractFlowSettings(settings: Record<string, unknown> | null): FlowSettings {
-	if (!settings) return {};
-	const flowSettings = settings.flowSettings;
-	if (!flowSettings || typeof flowSettings !== "object" || Array.isArray(flowSettings)) {
-		return {};
+export function selectFlowModelStrategy(
+	configs: FlowModelConfigs,
+	requestedName?: string,
+): LoadedFlowModelConfigs {
+	const normalizedRequested = requestedName?.trim() || "default";
+	const strategy = configs[normalizedRequested];
+	if (strategy) {
+		return { selectedName: normalizedRequested, configs, strategy };
 	}
-	const obj = flowSettings as Record<string, unknown>;
-	const result: FlowSettings = {};
-	if (typeof obj.toolOptimize === "boolean") {
-		result.toolOptimize = obj.toolOptimize;
+
+	if (normalizedRequested !== "default") {
+		console.warn(
+			`[pi-agent-flow] Flow model config "${normalizedRequested}" not found. Falling back to "default".`,
+		);
 	}
-	return result;
+	return {
+		selectedName: "default",
+		configs,
+		strategy: configs.default ?? {},
+	};
+}
+
+/**
+ * Load flow model configs from global and project settings.json.
+ * Project overrides global (shallow merge per strategy/tier).
+ */
+export function loadFlowModelConfigs(cwd: string): LoadedFlowModelConfigs {
+	const globalSettings = readSettingsJson(getGlobalSettingsPath());
+	const globalConfigs = extractFlowModelConfigs(globalSettings, "global");
+
+	const projectSettings = readSettingsJson(getProjectSettingsPath(cwd));
+	const projectConfigs = extractFlowModelConfigs(projectSettings, "project");
+
+	const configs = mergeFlowModelConfigs(BUILTIN_FLOW_MODEL_CONFIGS, globalConfigs, projectConfigs);
+	const requestedName =
+		extractSelectedFlowModelConfigName(projectSettings) ??
+		extractSelectedFlowModelConfigName(globalSettings) ??
+		"default";
+
+	return selectFlowModelStrategy(configs, requestedName);
+}
+
+export function resolveFlowModelCandidates(opts: {
+	tier: FlowTier;
+	flowModel?: string;
+	cliTierOverride?: string;
+	strategy: FlowModelStrategy;
+	fallbackModel?: string;
+}): { primary: string | undefined; candidates: string[] } {
+	const unique = new Set<string>();
+	const candidates: string[] = [];
+
+	const add = (value: string | undefined) => {
+		if (!value) return;
+		const normalized = value.trim();
+		if (!normalized || unique.has(normalized)) return;
+		unique.add(normalized);
+		candidates.push(normalized);
+	};
+
+	if (opts.flowModel) {
+		add(opts.flowModel);
+		return { primary: candidates[0], candidates };
+	}
+
+	if (opts.cliTierOverride) {
+		add(opts.cliTierOverride);
+		return { primary: candidates[0], candidates };
+	}
+
+	const tierConfig = opts.strategy[opts.tier];
+	add(tierConfig?.primary);
+	for (const model of tierConfig?.failover ?? []) add(model);
+	add(opts.fallbackModel);
+
+	return { primary: candidates[0], candidates };
 }

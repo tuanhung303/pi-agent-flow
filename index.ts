@@ -7,8 +7,15 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { type FlowConfig, discoverFlows } from "./agents.js";
-import { loadFlowModels, loadFlowSettings, type FlowModelConfig } from "./config.js";
+import { type FlowConfig, discoverFlows, getFlowTier } from "./agents.js";
+import {
+	loadFlowModelConfigs,
+	loadFlowSettings,
+	resolveFlowModelCandidates,
+	selectFlowModelStrategy,
+	type LoadedFlowModelConfigs,
+} from "./config.js";
+import { parseFlowCliArgs } from "./runner-cli.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks } from "./hooks.js";
@@ -72,6 +79,8 @@ const FlowParams = Type.Object({
 		}),
 	),
 });
+
+const inheritedCliArgs = parseFlowCliArgs(process.argv);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -484,6 +493,10 @@ export default function (pi: ExtensionAPI) {
 		description: "Block delegating to flows already in the current delegation stack (default: true).",
 		type: "boolean",
 	});
+	pi.registerFlag("flow-model-config", {
+		description: "Named flow model strategy from settings.json flowModelConfigs.",
+		type: "string",
+	});
 	pi.registerFlag("flow-lite-model", {
 		description: "Model for lite-tier flows (scout, debug).",
 		type: "string",
@@ -514,13 +527,17 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	let discoveredFlows: FlowConfig[] = [];
-	let flowModelConfig: FlowModelConfig = {};
+	let loadedFlowModelConfigs: LoadedFlowModelConfigs = {
+		selectedName: "default",
+		configs: { default: {} },
+		strategy: {},
+	};
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
-		flowModelConfig = loadFlowModels(ctx.cwd);
+		loadedFlowModelConfigs = loadFlowModelConfigs(ctx.cwd);
 
 		// Resolve toolOptimize: CLI flag > env var > settings.json > default
 		const cliFlag = pi.getFlag("tool-optimize");
@@ -691,11 +708,36 @@ flow [type] accomplished
 				const { flows } = discovery;
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
 
-				// Resolve tiered models: CLI flags override settings.json overrides parent --model
-				const tieredModels = {
-					lite: (pi.getFlag("flow-lite-model") as string | undefined) ?? flowModelConfig.lite,
-					flash: (pi.getFlag("flow-flash-model") as string | undefined) ?? flowModelConfig.flash,
-					full: (pi.getFlag("flow-full-model") as string | undefined) ?? flowModelConfig.full,
+				const cliFlowModelConfig =
+					typeof pi.getFlag("flow-model-config") === "string"
+						? (pi.getFlag("flow-model-config") as string)
+						: inheritedCliArgs.flowModelConfig;
+				const selectedFlowModelConfig = selectFlowModelStrategy(
+					loadedFlowModelConfigs.configs,
+					cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
+				);
+
+				const getTierOverride = (tier: "lite" | "flash" | "full"): string | undefined => {
+					const flagName =
+						tier === "lite"
+							? "flow-lite-model"
+							: tier === "flash"
+								? "flow-flash-model"
+								: "flow-full-model";
+					const runtimeValue = pi.getFlag(flagName);
+					if (typeof runtimeValue === "string" && runtimeValue.trim()) return runtimeValue.trim();
+					const inheritedValue = inheritedCliArgs.tieredModels?.[tier];
+					return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
+				};
+
+				const shouldFailover = (result: SingleResult): boolean => {
+					if (result.stopReason === "aborted") return false;
+					const text = `${result.errorMessage ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
+					if (!text.trim()) return false;
+					if (text.includes("permission") || text.includes("invalid tool") || text.includes("bad settings")) {
+						return false;
+					}
+					return result.exitCode > 0;
 				};
 
 				// Build fork session snapshot and sanitize it to remove
@@ -788,31 +830,60 @@ flow [type] accomplished
 						targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
 
 					const shouldInheritContext = targetFlow?.inheritContext !== false;
-					const result = await runFlow({
-						cwd: ctx.cwd,
-						flows,
-						flowName: normalizedType,
-						intent: item.intent,
-						aim: item.aim,
-						taskCwd: item.cwd,
-						forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
-						parentDepth: currentDepth,
-						parentFlowStack: ancestorFlowStack,
-						maxDepth: effectiveMaxDepth,
-						preventCycles,
-						toolOptimize,
-						model: tieredModels[targetFlow?.tier ?? "flash"],
-						signal,
-						onUpdate: (partial) => {
-							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0];
-								emitProgress(partial.content?.[0]?.text);
-							}
-						},
-						makeDetails,
+					const tier = getFlowTier(normalizedType);
+					const { candidates } = resolveFlowModelCandidates({
+						tier,
+						flowModel: targetFlow?.model,
+						cliTierOverride: getTierOverride(tier),
+						strategy: selectedFlowModelConfig.strategy,
+						fallbackModel: inheritedCliArgs.fallbackModel,
 					});
-					allResults[index] = result;
-					emitProgress();
+					const attemptModels = candidates.length > 0 ? candidates : [undefined];
+					const attemptedModels: string[] = [];
+					let result = allResults[index];
+
+					for (let attempt = 0; attempt < attemptModels.length; attempt++) {
+						const candidateModel = attemptModels[attempt];
+						if (candidateModel) attemptedModels.push(candidateModel);
+						result = await runFlow({
+							cwd: ctx.cwd,
+							flows,
+							flowName: normalizedType,
+							intent: item.intent,
+							aim: item.aim,
+							taskCwd: item.cwd,
+							forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+							parentDepth: currentDepth,
+							parentFlowStack: ancestorFlowStack,
+							maxDepth: effectiveMaxDepth,
+							preventCycles,
+							toolOptimize,
+							model: candidateModel,
+							signal,
+							onUpdate: (partial) => {
+								if (partial.details?.results[0]) {
+									allResults[index] = partial.details.results[0];
+									emitProgress(partial.content?.[0]?.text);
+								}
+							},
+							makeDetails,
+						});
+						allResults[index] = result;
+						emitProgress();
+						if (isFlowSuccess(result) || signal?.aborted) break;
+						if (attempt < attemptModels.length - 1 && shouldFailover(result)) {
+							continue;
+						}
+						break;
+					}
+
+					if (result && !isFlowSuccess(result) && attemptedModels.length > 1) {
+						const summary = `\n\nModel failover attempts: ${attemptedModels.join(" -> ")}`;
+						result.stderr = `${result.stderr.trim()}${result.stderr.trim() ? "\n\n" : ""}${summary.replace(/^\n\n/, "")}`;
+						allResults[index] = result;
+						emitProgress();
+					}
+
 					return result;
 				});
 

@@ -145,6 +145,19 @@ function buildFlowArgs(
 		args.push("--session", forkSessionPath);
 	}
 
+	if (inheritedCliArgs.flowModelConfig) {
+		args.push("--flow-model-config", inheritedCliArgs.flowModelConfig);
+	}
+	if (inheritedCliArgs.tieredModels?.lite) {
+		args.push("--flow-lite-model", inheritedCliArgs.tieredModels.lite);
+	}
+	if (inheritedCliArgs.tieredModels?.flash) {
+		args.push("--flow-flash-model", inheritedCliArgs.tieredModels.flash);
+	}
+	if (inheritedCliArgs.tieredModels?.full) {
+		args.push("--flow-full-model", inheritedCliArgs.tieredModels.full);
+	}
+
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	if (resolvedModel) args.push("--model", resolvedModel);
 
