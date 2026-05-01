@@ -93,7 +93,7 @@ describe("flow tool execute", () => {
 		}
 	}
 
-	it("removes prior flow tool calls and outputs from child snapshots while preserving normal context", async () => {
+	it("inherits full parent context while sanitizing prompts and assistant reasoning", async () => {
 		setupFlowsDir([
 			{
 				fileName: "scout.md",
@@ -116,15 +116,31 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
+		const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
+		const slidingPrompt = "<pi-flow-sliding-system>\nold routing prompt\n</pi-flow-sliding-system>";
 		const sessionBranch = [
-			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
-			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Normal assistant context" }], timestamp: 2 } },
+			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
+			{ type: "message", message: { role: "user", content: `Keep this product requirement${reminder}`, timestamp: 1 } },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					thinking: "SECRET_THINKING_FIELD",
+					reasoning: "SECRET_REASONING_FIELD",
+					content: [
+						{ type: "thinking", text: "SECRET_THINKING_PART" },
+						{ type: "reasoning", text: "SECRET_REASONING_PART" },
+						{ type: "text", text: `Normal assistant context${slidingPrompt}` },
+					],
+					timestamp: 2,
+				},
+			},
 			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash", toolCallId: "bash-call-1", arguments: { command: "echo normal" } }], timestamp: 3 } },
 			{ type: "message", message: { role: "tool", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Prior flow" }] } }], timestamp: 5 } },
-			{ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "HUGE_FLOW_OUTPUT_SHOULD_NOT_LEAK" }], timestamp: 6 } },
+			{ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "prior flow result should be inherited" }], timestamp: 6 } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation" }], timestamp: 7 } },
-			{ type: "message", message: { role: "user", content: "Current request should be trimmed", timestamp: 8 } },
+			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 8 } },
 		];
 
 		const tool = pi.getTool("flow");
@@ -146,15 +162,23 @@ describe("flow tool execute", () => {
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).toContain("Keep this product requirement");
 		expect(snapshot).toContain("Normal assistant context");
+		expect(snapshot).toContain("bash-call-1");
 		expect(snapshot).toContain("normal bash output");
 		expect(snapshot).toContain("Implementation summary after delegation");
-		expect(snapshot).not.toContain("HUGE_FLOW_OUTPUT_SHOULD_NOT_LEAK");
-		expect(snapshot).not.toContain("flow-call-1");
-		expect(snapshot).not.toContain('"name":"flow"');
-		expect(snapshot).not.toContain("Current request should be trimmed");
+		expect(snapshot).toContain("flow-call-1");
+		expect(snapshot).toContain('"name":"flow"');
+		expect(snapshot).toContain("prior flow result should be inherited");
+		expect(snapshot).toContain("Current request should be inherited");
+		expect(snapshot).not.toContain("SECRET_THINKING_FIELD");
+		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
+		expect(snapshot).not.toContain("SECRET_THINKING_PART");
+		expect(snapshot).not.toContain("SECRET_REASONING_PART");
+		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
+		expect(snapshot).not.toContain("[reminder_flow:");
 	});
 
-	it("strips flow calls from mixed assistant messages without dropping surrounding text", async () => {
+	it("preserves flow calls/results in mixed assistant messages", async () => {
 		setupFlowsDir([
 			{
 				fileName: "scout.md",
@@ -192,7 +216,7 @@ describe("flow tool execute", () => {
 				},
 			},
 			{ type: "message", message: { role: "tool", content: [{ type: "toolResult", toolCallId: "flow-call-2", content: "FLOW_RESULT_PAYLOAD" }], timestamp: 3 } },
-			{ type: "message", message: { role: "user", content: "Current request should be trimmed", timestamp: 4 } },
+			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 4 } },
 		];
 
 		const tool = pi.getTool("flow");
@@ -214,9 +238,10 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Original requirement");
 		expect(snapshot).toContain("Text before delegation.");
 		expect(snapshot).toContain("Text after delegation.");
-		expect(snapshot).not.toContain("FLOW_RESULT_PAYLOAD");
-		expect(snapshot).not.toContain("flow-call-2");
-		expect(snapshot).not.toContain('"name":"flow"');
+		expect(snapshot).toContain("FLOW_RESULT_PAYLOAD");
+		expect(snapshot).toContain("flow-call-2");
+		expect(snapshot).toContain('"name":"flow"');
+		expect(snapshot).toContain("Current request should be inherited");
 	});
 
 	it("matches flow types case-insensitively", async () => {
