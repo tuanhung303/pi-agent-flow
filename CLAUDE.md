@@ -19,6 +19,37 @@ Publishing is fully automated via GitHub Actions. Do **not** run `npm publish` l
 | `.github/workflows/bump-version.yml` | `workflow_dispatch` | Bumps version, commits, tags, pushes |
 | `.github/workflows/publish.yml` | Push `v*` tag | Publishes to npm registry |
 
+## Local Development
+
+To test local changes with the `pi` CLI before publishing:
+
+### Link local package
+
+```bash
+# From the pi-agent-flow repo directory
+npm link
+```
+
+This creates a global symlink at `~/.hermes/node/lib/node_modules/pi-agent-flow` pointing to your local checkout. The `pi` CLI loads it via `"npm:pi-agent-flow"` in `~/.pi/agent/settings.json`, so changes are picked up immediately — just restart `pi` after editing.
+
+### Unlink (restore published version)
+
+```bash
+# Remove the global symlink
+npm uninstall -g pi-agent-flow
+
+# Reinstall from npm registry
+npm install -g pi-agent-flow
+```
+
+### Verify link status
+
+```bash
+npm ls -g pi-agent-flow
+# Local:  pi-agent-flow@1.1.0 -> ./../../../Documents/GitHub/pi-agent-flow
+# Remote: pi-agent-flow@1.1.0
+```
+
 ## Bundled Flows
 
 Six flow-state prompts live in `agents/`:

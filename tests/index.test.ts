@@ -201,27 +201,31 @@ describe("flow tool execute", () => {
 	});
 
 	describe("context event handler", () => {
-		it("appends reminder to the latest user message only", async () => {
-			const pi = createMockPi();
-			registerExtension(pi as any);
+			it("inserts sliding system prompt before latest user message when toolOptimize is enabled", async () => {
+				process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+				const pi = createMockPi();
+				registerExtension(pi as any);
 
-			const messages = [
-				{ role: "user" as const, content: "first prompt", timestamp: 1 },
-				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
-				{ role: "user" as const, content: "second prompt", timestamp: 3 },
-			];
+				const messages = [
+					{ role: "user" as const, content: "first prompt", timestamp: 1 },
+					{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
+					{ role: "user" as const, content: "second prompt", timestamp: 3 },
+				];
 
-			const results = await pi.trigger("context", { messages });
-			const modified = results[0]?.messages ?? messages;
+				const results = await pi.trigger("context", { messages });
+				const modified = results[0]?.messages ?? messages;
 
-			expect((modified[0] as any).content).toBe("first prompt");
-			expect((modified[2] as any).content).toBe(
-				"second prompt\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]",
-			);
-		});
+				expect((modified[0] as any).content).toBe("first prompt");
+				expect((modified[1] as any).content[0].text).toBe("ok");
+				expect((modified[2] as any).role).toBe("system");
+				expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+				expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
+				expect((modified[3] as any).content).toBe("second prompt");
+			});
 
-		it("strips reminder from earlier user messages and moves it to latest", async () => {
+		it("strips legacy reminders from all user messages and inserts sliding prompt when enabled", async () => {
 			const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
+			process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -234,11 +238,17 @@ describe("flow tool execute", () => {
 			const results = await pi.trigger("context", { messages });
 			const modified = results[0]?.messages ?? messages;
 
+			// Legacy reminder stripped from first user message
 			expect((modified[0] as any).content).toBe("first prompt");
-			expect((modified[2] as any).content).toBe(`second prompt${reminder}`);
+			expect((modified[1] as any).content[0].text).toBe("ok");
+			// Sliding system prompt inserted at position of last user message
+			expect((modified[2] as any).role).toBe("system");
+			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
 		it("handles array content (text blocks)", async () => {
+			process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -261,14 +271,17 @@ describe("flow tool execute", () => {
 			const results = await pi.trigger("context", { messages });
 			const modified = results[0]?.messages ?? messages;
 
+			// First user message unchanged
 			expect((modified[0] as any).content[0].text).toBe("first prompt");
-			expect((modified[1] as any).content[0].text).toBe(
-				"second prompt\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]",
-			);
-			expect((modified[1] as any).content[1].type).toBe("image");
+			// Sliding system prompt inserted before latest user message
+			expect((modified[1] as any).role).toBe("system");
+			expect((modified[1] as any).content).toContain("<pi-flow-sliding-system>");
+			// Latest user message preserved
+			expect((modified[2] as any).content[0].text).toBe("second prompt");
+			expect((modified[2] as any).content[1].type).toBe("image");
 		});
 
-		it("returns undefined when there are no user messages", async () => {
+		it("returns messages unchanged when there are no user messages", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -277,7 +290,10 @@ describe("flow tool execute", () => {
 			];
 
 			const results = await pi.trigger("context", { messages });
-			expect(results[0]).toBeUndefined();
+			// When no user messages exist, returns { messages } with the original messages
+			const modified = results[0]?.messages ?? messages;
+			expect(modified).toHaveLength(1);
+			expect((modified[0] as any).role).toBe("assistant");
 		});
 	});
 

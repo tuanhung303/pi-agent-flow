@@ -263,17 +263,55 @@ function updateAssistantMetadata(result, message) {
   if (message.errorMessage) result.errorMessage = message.errorMessage;
 }
 
+// Reasoning/thinking part types to strip from flow results
+const REASONING_PART_TYPES = new Set([
+  "thinking",
+  "reasoning",
+  "reasoning_content",
+  "reasoningContent",
+]);
+
+/**
+ * Strip thinking/reasoning content from assistant messages.
+ * Removes top-level thinking/reasoning fields and filters content parts.
+ * Preserves text, toolCall, and other non-reasoning parts.
+ */
+function stripReasoningFromMessage(message) {
+  if (!message || message.role !== "assistant") return message;
+
+  const sanitized = { ...message };
+
+  // Remove top-level reasoning fields
+  delete sanitized.thinking;
+  delete sanitized.thinkingSignature;
+  delete sanitized.reasoning;
+  delete sanitized.reasoning_content;
+  delete sanitized.reasoningContent;
+
+  // Filter out reasoning parts from content array
+  if (Array.isArray(sanitized.content)) {
+    sanitized.content = sanitized.content.filter(
+      (part) => !REASONING_PART_TYPES.has(part?.type),
+    );
+  }
+
+  return sanitized;
+}
+
 function addFlowAssistantMessage(result, message) {
   if (!message || message.role !== "assistant") return false;
 
-  updateAssistantMetadata(result, message);
+  // Strip reasoning/thinking from the message before storing
+  const sanitized = stripReasoningFromMessage(message);
 
-  const signature = getMessageSignature(message);
+  updateAssistantMetadata(result, sanitized);
+
+  const signature = getMessageSignature(sanitized);
   const seen = getSeenFlowMessageSignatures(result);
   if (seen.has(signature)) return false;
   seen.add(signature);
 
-  result.messages.push(message);
+  result.messages.push(sanitized);
 
   // Reset streaming estimate when actual usage arrives
   const est = getStreamingEstimate(result);
@@ -360,8 +398,10 @@ function processFlowEvent(event, result) {
       if (evt.type === "text_delta") {
         return accumulateStreamingDelta(result, evt.delta);
       }
+      // thinking_delta is intentionally NOT accumulated into the streaming buffer.
+      // Reasoning content is stripped from flow results to keep output clean.
       if (evt.type === "thinking_delta") {
-        return accumulateStreamingDelta(result, evt.delta);
+        return false;
       }
       return false;
     }
