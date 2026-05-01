@@ -170,6 +170,59 @@ registerHook({
 
 ## Configuration
 
+### Flow model strategies
+
+Use `flowModelConfigs` in your Pi settings to select different model strategies by name.
+
+```shell
+# ~/.pi/agent/settings.json
+{
+  "flowModelConfig": "balance",
+  "flowModelConfigs": {
+    "performance": {
+      "lite": {
+        "primary": "github-copilot/gpt-5.4-mini",
+        "failover": ["github-copilot/gpt-5.5"]
+      },
+      "flash": {
+        "primary": "github-copilot/gpt-5.5"
+      },
+      "full": {
+        "primary": "github-copilot/gpt-5.5"
+      }
+    },
+    "balance": {
+      "lite": {
+        "primary": "github-copilot/gpt-5.4-mini"
+      },
+      "flash": {
+        "primary": "github-copilot/gpt-5.5",
+        "failover": ["github-copilot/gpt-5.4-mini"]
+      },
+      "full": {
+        "primary": "github-copilot/gpt-5.5"
+      }
+    },
+    "quality": {
+      "lite": {
+        "primary": "github-copilot/gpt-5.5"
+      },
+      "flash": {
+        "primary": "github-copilot/gpt-5.5"
+      },
+      "full": {
+        "primary": "github-copilot/gpt-5.5-large",
+        "failover": ["github-copilot/gpt-5.5"]
+      }
+    }
+  }
+}
+```
+
+- `performance` favors speed and lower-cost models.
+- `balance` aims for the best default mix of quality and cost.
+- `quality` prefers the strongest models first.
+
 ### Flags (passed to parent pi process)
 
 | Flag | Description | Default |
@@ -177,9 +230,10 @@ registerHook({
 | `--flow-max-depth [n]` | Maximum delegation depth | `3` |
 | `--flow-prevent-cycles` | Block cyclic delegation | `true` |
 | `--no-flow-prevent-cycles` | Disable cycle prevention | — |
-| `--flow-lite-model [model]` | Model for lite-tier flows (`explore`, `debug`) | — |
-| `--flow-flash-model [model]` | Model for flash-tier flows (`code`, `review`) | — |
-| `--flow-full-model [model]` | Model for full-tier flows (`brainstorm`, `architect`) | — |
+| `--flow-model-config [name]` | Select a named model strategy from `flowModelConfigs` | `balance` |
+| `--flow-lite-model [model]` | Override the lite-tier model for child flows | — |
+| `--flow-flash-model [model]` | Override the flash-tier model for child flows | — |
+| `--flow-full-model [model]` | Override the full-tier model for child flows | — |
 
 ### Environment variables (propagated to child processes)
 
