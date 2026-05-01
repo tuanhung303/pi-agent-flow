@@ -371,8 +371,8 @@ function appendReminder(
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["flow", "web"]
-		: ["read", "write", "edit", "bash", "flow", "web"];
+		? ["batch", "bash", "flow", "web"]
+		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
 // ---------------------------------------------------------------------------
@@ -447,8 +447,7 @@ export default function (pi: ExtensionAPI) {
 			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
 
-		// Register batch so child flows can use it via getOptimizedTools.
-		// The main agent does NOT have batch in its active tools.
+		// Register batch so it is available for both main agent and child flows.
 		if (toolOptimize) {
 			pi.registerTool(createBatchTool());
 		}

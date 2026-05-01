@@ -386,10 +386,10 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["flow", "web"]);
+		expect(calledWith).toEqual(["batch", "bash", "flow", "web"]);
 	});
 
-	it("restores legacy read+write+edit when toolOptimize is false", async () => {
+	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 
 		const pi = createMockPi();
@@ -402,10 +402,10 @@ describe("main agent tool restriction", () => {
 		expect(calledWith).toContain("read");
 		expect(calledWith).toContain("write");
 		expect(calledWith).toContain("edit");
+		expect(calledWith).toContain("batch");
 		expect(calledWith).toContain("bash");
 		expect(calledWith).toContain("flow");
 		expect(calledWith).toContain("web");
-		expect(calledWith).not.toContain("batch");
 	});
 
 	it("defers setActiveTools to session_start, not extension loading", async () => {
@@ -423,7 +423,7 @@ describe("main agent tool restriction", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies flow+web on turn_start when optimized", async () => {
+	it("re-applies batch+bash+flow+web on turn_start when optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -437,10 +437,10 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["flow", "web"]);
+		expect(lastCall).toEqual(["batch", "bash", "flow", "web"]);
 	});
 
-	it("restores legacy tools on turn_start when toolOptimize is false", async () => {
+	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 
 		const pi = createMockPi();
@@ -456,10 +456,10 @@ describe("main agent tool restriction", () => {
 		expect(lastCall).toContain("read");
 		expect(lastCall).toContain("write");
 		expect(lastCall).toContain("edit");
+		expect(lastCall).toContain("batch");
 		expect(lastCall).toContain("bash");
 		expect(lastCall).toContain("flow");
 		expect(lastCall).toContain("web");
-		expect(lastCall).not.toContain("batch");
 	});
 
 	it("parses env PI_FLOW_TOOL_OPTIMIZE via parseBoolean (yes/on/no/off)", async () => {
@@ -472,10 +472,10 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["flow", "web"]);
+		expect(calledWith).toEqual(["batch", "bash", "flow", "web"]);
 	});
 
-	it("registers batch globally but not in main agent active tools", async () => {
+	it("registers batch globally and includes it in main agent active tools", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -483,12 +483,12 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// batch IS registered so child flows can use it
+		// batch IS registered and active in main agent
 		expect(pi.getTool("batch")).toBeDefined();
 
-		// Main agent active tools are flow+web when optimized
+		// Main agent active tools include batch when optimized
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["flow", "web"]);
+		expect(lastCall).toEqual(["batch", "bash", "flow", "web"]);
 	});
 
 	it("does NOT override active tools for child flows (depth > 0)", async () => {

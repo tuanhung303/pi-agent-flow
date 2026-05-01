@@ -384,7 +384,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("flow");
 	});
 
-	it("defaults to batch+bash+flow when flow.tools is undefined and toolOptimize is true", async () => {
+	it("defaults to batch+bash when flow.tools is undefined and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
 			name: "code",
 			description: "Code flow",
@@ -431,7 +431,7 @@ describe("child flow harness tools", () => {
 		const toolsValue = args[toolsIndex + 1];
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
-		expect(toolsValue).toContain("flow");
+		expect(toolsValue).not.toContain("flow");
 		expect(toolsValue).not.toContain("read");
 		expect(toolsValue).not.toContain("write");
 		expect(toolsValue).not.toContain("edit");
@@ -485,10 +485,10 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).not.toBe("");
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
-		expect(toolsValue).toContain("flow");
+		expect(toolsValue).not.toContain("flow");
 	});
 
-	it("falls back to legacy defaultTools when toolOptimize is false and only web is configured", async () => {
+	it("falls back to defaultTools when toolOptimize is false and only web is configured", async () => {
 		const mockFlow: FlowConfig = {
 			name: "explore",
 			description: "Explore flow",
@@ -537,6 +537,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("read");
 		expect(toolsValue).toContain("write");
 		expect(toolsValue).toContain("edit");
+		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
 	});

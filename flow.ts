@@ -155,11 +155,12 @@ function buildFlowArgs(
 
 	// Child flows get their configured tools from flow.tools, optimized by
 	// getOptimizedTools, with web explicitly filtered out.
-	// When flow.tools is undefined and toolOptimize=true, default to batch+bash+flow
-	// so child agents have file operations without falling back to legacy read/write/edit.
+	// When flow.tools is undefined and toolOptimize=true, default to batch+bash+web
+	// (flow is unnecessary since the child is already inside a flow).
+	// When toolOptimize=false, include batch and web alongside legacy tools.
 	const defaultTools = toolOptimize
-		? ["batch", "bash", "flow"]
-		: ["read", "write", "edit", "bash", "flow"];
+		? ["batch", "bash", "web"]
+		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
 	let harnessTools = optimizedTools.filter((t) => t !== "web");
 	// If the flow explicitly listed only "web" (or nothing after filtering),
