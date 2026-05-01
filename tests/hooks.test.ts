@@ -442,3 +442,218 @@ describe("multiple hooks active", () => {
 		expect(advisors).toEqual([]);
 	});
 });
+
+describe("built-in audit-to-build hook", () => {
+	beforeEach(() => {
+		clearHooks();
+	});
+
+	it("suggests build after successful audit flow", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-build",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				const buildWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "build",
+				);
+				if (buildWasRequested) return null;
+				return {
+					content:
+						"Issues were found. Consider running a [build] flow to fix them autonomously.",
+					priority: 10,
+				};
+			},
+		});
+
+		const results = [makeResult({ type: "audit" })];
+		const advisors = runHooks([{ type: "audit", intent: "audit code" }], results);
+		expect(advisors).toHaveLength(1);
+		expect(advisors[0]).toContain("[build]");
+		expect(advisors[0]).toContain("Issues were found");
+	});
+
+	it("suppresses when build was already in the batch", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-build",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				const buildWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "build",
+				);
+				if (buildWasRequested) return null;
+				return {
+					content:
+						"Issues were found. Consider running a [build] flow to fix them autonomously.",
+					priority: 10,
+				};
+			},
+		});
+
+		const results = [makeResult({ type: "audit" })];
+		const params = [
+			{ type: "audit", intent: "audit code" },
+			{ type: "build", intent: "fix issues" },
+		];
+		const advisors = runHooks(params, results);
+		expect(advisors).toEqual([]);
+	});
+
+	it("does not fire on failed audit flow", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-build",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				const buildWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "build",
+				);
+				if (buildWasRequested) return null;
+				return {
+					content:
+						"Issues were found. Consider running a [build] flow to fix them autonomously.",
+					priority: 10,
+				};
+			},
+		});
+
+		const results = [makeResult({ type: "audit", exitCode: 1, sawAgentEnd: false })];
+		const advisors = runHooks([{ type: "audit", intent: "audit code" }], results);
+		expect(advisors).toEqual([]);
+	});
+});
+
+describe("built-in audit-to-explore hook", () => {
+	beforeEach(() => {
+		clearHooks();
+	});
+
+	it("suggests explore after successful audit flow", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-explore",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				const exploreWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "explore",
+				);
+				if (exploreWasRequested) return null;
+				return {
+					content:
+						"Audit complete. Consider running an [explore] flow to review the audit findings.",
+					priority: 15,
+				};
+			},
+		});
+
+		const results = [makeResult({ type: "audit" })];
+		const advisors = runHooks([{ type: "audit", intent: "audit code" }], results);
+		expect(advisors).toHaveLength(1);
+		expect(advisors[0]).toContain("[explore]");
+		expect(advisors[0]).toContain("Audit complete");
+	});
+
+	it("suppresses when explore was already in the batch", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-explore",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				const exploreWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "explore",
+				);
+				if (exploreWasRequested) return null;
+				return {
+					content:
+						"Audit complete. Consider running an [explore] flow to review the audit findings.",
+					priority: 15,
+				};
+			},
+		});
+
+		const results = [makeResult({ type: "audit" })];
+		const params = [
+			{ type: "audit", intent: "audit code" },
+			{ type: "explore", intent: "review findings" },
+		];
+		const advisors = runHooks(params, results);
+		expect(advisors).toEqual([]);
+	});
+
+	it("does not fire on failed audit flow", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-explore",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				const exploreWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "explore",
+				);
+				if (exploreWasRequested) return null;
+				return {
+					content:
+						"Audit complete. Consider running an [explore] flow to review the audit findings.",
+					priority: 15,
+				};
+			},
+		});
+
+		const results = [makeResult({ type: "audit", exitCode: 1, sawAgentEnd: false })];
+		const advisors = runHooks([{ type: "audit", intent: "audit code" }], results);
+		expect(advisors).toEqual([]);
+	});
+});
+
+describe("audit hooks integration", () => {
+	beforeEach(() => {
+		clearHooks();
+	});
+
+	it("fires both audit-to-build and audit-to-explore when audit succeeds", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-build",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				if (ctx.params.some((p) => p.type.toLowerCase() === "build")) return null;
+				return { content: "build advice", priority: 10 };
+			},
+		});
+		registerHook({
+			name: "pi-agent-flow/audit-to-explore",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				if (ctx.params.some((p) => p.type.toLowerCase() === "explore")) return null;
+				return { content: "explore advice", priority: 15 };
+			},
+		});
+
+		const results = [makeResult({ type: "audit" })];
+		const params = [{ type: "audit", intent: "audit" }];
+		const advisors = runHooks(params, results);
+		// explore has higher priority (15) than build (10), so build comes first after sort
+		expect(advisors).toEqual(["build advice", "explore advice"]);
+	});
+
+	it("suppresses both audit hooks when targets already in batch", () => {
+		registerHook({
+			name: "pi-agent-flow/audit-to-build",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				if (ctx.params.some((p) => p.type.toLowerCase() === "build")) return null;
+				return { content: "build advice", priority: 10 };
+			},
+		});
+		registerHook({
+			name: "pi-agent-flow/audit-to-explore",
+			trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+			action: (ctx) => {
+				if (ctx.params.some((p) => p.type.toLowerCase() === "explore")) return null;
+				return { content: "explore advice", priority: 15 };
+			},
+		});
+
+		const results = [makeResult({ type: "audit" })];
+		const params = [
+			{ type: "audit", intent: "audit" },
+			{ type: "build", intent: "fix" },
+			{ type: "explore", intent: "review" },
+		];
+		const advisors = runHooks(params, results);
+		expect(advisors).toEqual([]);
+	});
+});

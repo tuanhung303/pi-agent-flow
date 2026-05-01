@@ -103,3 +103,39 @@ registerHook({
 		};
 	},
 });
+
+/** Suggest build flow after a successful audit flow. */
+registerHook({
+	name: "pi-agent-flow/audit-to-build",
+	trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+	action: (ctx) => {
+		const buildWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "build",
+		);
+		if (buildWasRequested) return null;
+
+		return {
+			content:
+				"Issues were found. Consider running a [build] flow to fix them autonomously.",
+			priority: 10,
+		};
+	},
+});
+
+/** Suggest explore flow after a successful audit flow. */
+registerHook({
+	name: "pi-agent-flow/audit-to-explore",
+	trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
+	action: (ctx) => {
+		const exploreWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "explore",
+		);
+		if (exploreWasRequested) return null;
+
+		return {
+			content:
+				"Audit complete. Consider running an [explore] flow to review the audit findings.",
+			priority: 15,
+		};
+	},
+});
