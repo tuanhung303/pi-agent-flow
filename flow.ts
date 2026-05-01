@@ -409,10 +409,10 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				}
 
 				// Kill the entire process group (negative PID).
-				try { process.kill(-proc.pid, "SIGTERM"); } catch { proc.kill("SIGTERM"); }
+				if (proc.pid === undefined) { proc.kill("SIGTERM"); } else { try { process.kill(-proc.pid, "SIGTERM"); } catch { proc.kill("SIGTERM"); } }
 				const sigkillTimer = setTimeout(() => {
 					if (!didClose) {
-						try { process.kill(-proc.pid, "SIGKILL"); } catch { proc.kill("SIGKILL"); }
+						if (proc.pid === undefined) { proc.kill("SIGKILL"); } else { try { process.kill(-proc.pid, "SIGKILL"); } catch { proc.kill("SIGKILL"); } }
 					}
 				}, SIGKILL_TIMEOUT_MS);
 				sigkillTimer.unref();

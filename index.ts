@@ -543,14 +543,14 @@ flow [type] accomplished
 
 		const messages = event.messages;
 		const userIndices = messages
-			.map((m, i) => (m.role === "user" ? i : -1))
-			.filter((i) => i !== -1);
+			.map((m: any, i: number) => (m.role === "user" ? i : -1))
+			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) return undefined;
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
 
-		const modified = messages.map((msg, idx) => {
+		const modified = messages.map((msg: any, idx: number) => {
 			if (msg.role !== "user") return msg;
 
 			const content = stripReminder(msg.content);
@@ -600,7 +600,7 @@ flow [type] accomplished
 				);
 
 				// Collect all requested flow names
-				const requested = new Set(params.flow.map((f) => f.type.toLowerCase()));
+				const requested = new Set<string>(params.flow.map((f: any) => f.type.toLowerCase()));
 
 				// Cycle check
 				if (preventCycles) {
@@ -676,7 +676,7 @@ flow [type] accomplished
 
 				if (onUpdate) emitProgress();
 
-				const results = await mapFlowConcurrent(params.flow, 4, async (item, index) => {
+				const results = await mapFlowConcurrent(params.flow, 4, async (item: any, index: number) => {
 					const normalizedType = item.type.toLowerCase();
 					const targetFlow = flows.find((f) => f.name === normalizedType);
 					const effectiveMaxDepth =
