@@ -93,6 +93,132 @@ describe("flow tool execute", () => {
 		}
 	}
 
+	it("removes prior flow tool calls and outputs from child snapshots while preserving normal context", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const sessionBranch = [
+			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Normal assistant context" }], timestamp: 2 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash", toolCallId: "bash-call-1", arguments: { command: "echo normal" } }], timestamp: 3 } },
+			{ type: "message", message: { role: "tool", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Prior flow" }] } }], timestamp: 5 } },
+			{ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "HUGE_FLOW_OUTPUT_SHOULD_NOT_LEAK" }], timestamp: 6 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation" }], timestamp: 7 } },
+			{ type: "message", message: { role: "user", content: "Current request should be trimmed", timestamp: 8 } },
+		];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		expect(snapshot).toContain("Keep this product requirement");
+		expect(snapshot).toContain("Normal assistant context");
+		expect(snapshot).toContain("normal bash output");
+		expect(snapshot).toContain("Implementation summary after delegation");
+		expect(snapshot).not.toContain("HUGE_FLOW_OUTPUT_SHOULD_NOT_LEAK");
+		expect(snapshot).not.toContain("flow-call-1");
+		expect(snapshot).not.toContain('"name":"flow"');
+		expect(snapshot).not.toContain("Current request should be trimmed");
+	});
+
+	it("strips flow calls from mixed assistant messages without dropping surrounding text", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const sessionBranch = [
+			{ type: "message", message: { role: "user", content: "Original requirement", timestamp: 1 } },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: "Text before delegation." },
+						{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: { flow: [{ type: "debug", intent: "Prior debug" }] } },
+						{ type: "text", text: "Text after delegation." },
+					],
+					timestamp: 2,
+				},
+			},
+			{ type: "message", message: { role: "tool", content: [{ type: "toolResult", toolCallId: "flow-call-2", content: "FLOW_RESULT_PAYLOAD" }], timestamp: 3 } },
+			{ type: "message", message: { role: "user", content: "Current request should be trimmed", timestamp: 4 } },
+		];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		expect(snapshot).toContain("Original requirement");
+		expect(snapshot).toContain("Text before delegation.");
+		expect(snapshot).toContain("Text after delegation.");
+		expect(snapshot).not.toContain("FLOW_RESULT_PAYLOAD");
+		expect(snapshot).not.toContain("flow-call-2");
+		expect(snapshot).not.toContain('"name":"flow"');
+	});
+
 	it("matches flow types case-insensitively", async () => {
 		setupFlowsDir([
 			{

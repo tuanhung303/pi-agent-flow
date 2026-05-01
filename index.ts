@@ -431,44 +431,137 @@ function stripLegacyReminder(
 	});
 }
 
+function getContentParts(content: unknown): any[] {
+	return Array.isArray(content) ? content : [];
+}
+
+function getToolName(value: any): string | undefined {
+	const raw = value?.name ?? value?.toolName;
+	return typeof raw === "string" ? raw.toLowerCase() : undefined;
+}
+
+function getToolCallId(value: any): string | undefined {
+	const raw = value?.toolCallId ?? value?.tool_call_id ?? value?.id;
+	return typeof raw === "string" ? raw : undefined;
+}
+
+function isFlowToolCallPart(part: any): boolean {
+	return part?.type === "toolCall" && getToolName(part) === "flow";
+}
+
+function isToolResultPart(part: any): boolean {
+	return part?.type === "toolResult" || part?.type === "tool_result";
+}
+
+function collectFlowToolCallIds(entry: any): string[] {
+	if (entry?.type !== "message") return [];
+	const message = entry.message;
+	const ids: string[] = [];
+	for (const part of getContentParts(message?.content)) {
+		if (!isFlowToolCallPart(part)) continue;
+		const id = getToolCallId(part);
+		if (id) ids.push(id);
+	}
+	return ids;
+}
+
+function stripFlowToolCallParts(entry: any): any | null {
+	if (entry?.type !== "message") return entry;
+	const message = entry.message;
+	const content = message?.content;
+	if (!Array.isArray(content) || !content.some(isFlowToolCallPart)) return entry;
+
+	const filteredContent = content.filter((part) => !isFlowToolCallPart(part));
+	const hasText = filteredContent.some((part) =>
+		part?.type !== "text" || (typeof part.text === "string" && part.text.length > 0),
+	);
+	if (filteredContent.length === 0 || !hasText) return null;
+	return {
+		...entry,
+		message: {
+			...message,
+			content: filteredContent,
+		},
+	};
+}
+
+function isFlowToolResultEntry(entry: any, flowToolCallIds: Set<string>): boolean {
+	const toolName = getToolName(entry);
+	const entryToolCallId = getToolCallId(entry);
+	if (toolName === "flow") return true;
+	if (entryToolCallId && flowToolCallIds.has(entryToolCallId)) return true;
+
+	if (entry?.type !== "message") return false;
+	const message = entry.message;
+	const messageToolName = getToolName(message);
+	const messageToolCallId = getToolCallId(message);
+	if (message?.role === "tool" && messageToolName === "flow") return true;
+	if (messageToolCallId && flowToolCallIds.has(messageToolCallId)) return true;
+
+	return getContentParts(message?.content).some((part) => {
+		if (!isToolResultPart(part)) return false;
+		const partToolName = getToolName(part);
+		const partToolCallId = getToolCallId(part);
+		return partToolName === "flow" || (partToolCallId !== undefined && flowToolCallIds.has(partToolCallId));
+	});
+}
+
 /**
- * Sanitize a fork session snapshot JSONL to remove sliding system prompts
- * and legacy reminders before passing to child flows.
+ * Sanitize a fork session snapshot JSONL to remove sliding system prompts,
+ * legacy reminders, and prior flow tool call/result payloads before passing to
+ * child flows.
  */
 function sanitizeForkSnapshot(snapshot: string | null): string | null {
 	if (!snapshot) return snapshot;
 
 	const lines = snapshot.trimEnd().split("\n");
+	const parsedLines = lines.map((line) => {
+		try {
+			return { line, entry: JSON.parse(line) };
+		} catch {
+			return { line, entry: undefined };
+		}
+	});
+	const flowToolCallIds = new Set<string>();
+	for (const parsed of parsedLines) {
+		for (const id of collectFlowToolCallIds(parsed.entry)) flowToolCallIds.add(id);
+	}
+
 	const sanitizedLines: string[] = [];
 
-	for (const line of lines) {
-		try {
-			const entry = JSON.parse(line);
-
-			// Drop sliding system prompt messages entirely
-			if (
-				entry?.type === "message" &&
-				entry.message?.role === "system" &&
-				typeof entry.message?.content === "string" &&
-				entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
-			) {
-				continue;
-			}
-
-			// Strip sliding prompt tags and legacy reminders from message content
-			if (entry?.type === "message" && entry.message && "content" in entry.message) {
-				entry.message = {
-					...entry.message,
-					content: stripSlidingPromptFromContent(
-						stripLegacyReminder(entry.message.content),
-					),
-				};
-			}
-
-			sanitizedLines.push(JSON.stringify(entry));
-		} catch {
+	for (const parsed of parsedLines) {
+		const { line } = parsed;
+		let { entry } = parsed;
+		if (entry === undefined) {
 			sanitizedLines.push(line);
+			continue;
 		}
+
+		// Drop sliding system prompt messages entirely
+		if (
+			entry?.type === "message" &&
+			entry.message?.role === "system" &&
+			typeof entry.message?.content === "string" &&
+			entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
+		) {
+			continue;
+		}
+
+		if (isFlowToolResultEntry(entry, flowToolCallIds)) continue;
+		entry = stripFlowToolCallParts(entry);
+		if (entry === null) continue;
+
+		// Strip sliding prompt tags and legacy reminders from message content
+		if (entry?.type === "message" && entry.message && "content" in entry.message) {
+			entry.message = {
+				...entry.message,
+				content: stripSlidingPromptFromContent(
+					stripLegacyReminder(entry.message.content),
+				),
+			};
+		}
+
+		sanitizedLines.push(JSON.stringify(entry));
 	}
 
 	return `${sanitizedLines.join("\n")}\n`;
