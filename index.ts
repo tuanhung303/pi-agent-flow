@@ -801,7 +801,7 @@ flow [type] accomplished
 						maxDepth: effectiveMaxDepth,
 						preventCycles,
 						toolOptimize,
-						tieredModels,
+						model: tieredModels[targetFlow?.tier ?? "flash"],
 						signal,
 						onUpdate: (partial) => {
 							if (partial.details?.results[0]) {

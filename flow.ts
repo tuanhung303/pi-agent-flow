@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { type FlowConfig, getFlowTier } from "./agents.js";
+import { type FlowConfig } from "./agents.js";
 import { parseFlowCliArgs } from "./runner-cli.js";
 import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
 import {
@@ -128,7 +128,7 @@ function buildFlowArgs(
 	flow: FlowConfig,
 	intent: string,
 	forkSessionPath: string | null,
-	tieredModels?: { lite?: string; flash?: string; full?: string },
+	model?: string,
 	parentDepth: number = 0,
 	maxDepth: number = 0,
 	toolOptimize: boolean = false,
@@ -145,10 +145,8 @@ function buildFlowArgs(
 		args.push("--session", forkSessionPath);
 	}
 
-	const tier = getFlowTier(flow.name);
-	const tierModel = tieredModels?.[tier] ?? inheritedCliArgs.tieredModels?.[tier];
-	const model = flow.model ?? tierModel ?? inheritedCliArgs.fallbackModel;
-	if (model) args.push("--model", model);
+	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
+	if (resolvedModel) args.push("--model", resolvedModel);
 
 	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
 	if (thinking) args.push("--thinking", thinking);
@@ -245,8 +243,8 @@ export interface RunFlowOptions {
 	preventCycles: boolean;
 	/** Whether to transform tool lists to use batch. */
 	toolOptimize?: boolean;
-	/** Tiered model overrides (lite/flash/full). */
-	tieredModels?: { lite?: string; flash?: string; full?: string };
+	/** Explicit model to use for this flow execution. */
+	model?: string;
 	/** Abort signal for cancellation. */
 	signal?: AbortSignal;
 	/** Streaming update callback. */
@@ -276,6 +274,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		maxDepth,
 		preventCycles,
 		toolOptimize = false,
+		model,
 		signal,
 		onUpdate,
 		makeDetails,
@@ -297,7 +296,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		};
 	}
 
-	const resolvedModel = flow.model ?? inheritedCliArgs.fallbackModel;
+	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	const result: SingleResult = {
 		type: normalizedFlowName,
 		agentSource: flow.source,
@@ -342,7 +341,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			flow,
 			intent,
 			forkSessionTmpPath,
-			opts.tieredModels,
+			model,
 			parentDepth,
 			maxDepth,
 			toolOptimize,
