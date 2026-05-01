@@ -127,6 +127,16 @@ function flowStatusIcon(r: SingleResult, theme: { fg: ThemeFg }): string {
 	return isFlowError(r) ? theme.fg("error", "✗") : theme.fg("success", "✓");
 }
 
+/** Center a label in a fixed-width header using em-dashes. Total width = 20. */
+function sectionHeader(label: string): string {
+	const total = 20;
+	const innerLen = label.length + 2; // account for spaces around label
+	const side = (total - innerLen) / 2;
+	const left = "─".repeat(Math.floor(side));
+	const right = "─".repeat(Math.ceil(side));
+	return `${left} ${label} ${right}`;
+}
+
 // ---------------------------------------------------------------------------
 // renderFlowCall — shown while the flow is being invoked
 // ---------------------------------------------------------------------------
@@ -224,12 +234,12 @@ function renderFlowExpanded(
 
 	// Intent
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("muted", "─── intent ───"), 0, 0));
+	container.addChild(new Text(theme.fg("muted", sectionHeader("intent")), 0, 0));
 	container.addChild(new Text(theme.fg("dim", r.intent), 0, 0));
 
 	// Flow report (structured output)
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("muted", "─── report ───"), 0, 0));
+	container.addChild(new Text(theme.fg("muted", sectionHeader("report")), 0, 0));
 	if (flowOutput) {
 		container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));
 	} else {
@@ -241,7 +251,7 @@ function renderFlowExpanded(
 	const toolTraces = renderToolTraces(displayItems, theme);
 	if (toolTraces) {
 		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("muted", "─── tool calls ───"), 0, 0));
+		container.addChild(new Text(theme.fg("muted", sectionHeader("tool calls")), 0, 0));
 		container.addChild(new Text(toolTraces, 0, 0));
 	}
 
@@ -260,7 +270,7 @@ function renderFlowCollapsed(
 	const maxWidth = process.stdout.columns ?? 80;
 	const stats = formatCompactStats(r.usage, r.model, maxWidth);
 	const typeName = formatFlowTypeName(r.type);
-	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
@@ -338,7 +348,7 @@ function renderMultiFlowExpanded(
 
 		container.addChild(new Spacer(1));
 		// Per-flow header: ─── EXPLORER (no icon)
-		container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", typeName)}`, 0, 0));
+		container.addChild(new Text(theme.fg("muted", sectionHeader(typeName)), 0, 0));
 
 		// Stats: dashboard format
 		const flowStats = formatCompactStats(r.usage, r.model);
@@ -356,7 +366,7 @@ function renderMultiFlowExpanded(
 		const toolTraces = renderToolTraces(displayItems, theme);
 		if (toolTraces) {
 			container.addChild(new Spacer(1));
-			container.addChild(new Text(theme.fg("muted", "─── tool calls ───"), 0, 0));
+			container.addChild(new Text(theme.fg("muted", sectionHeader("tool calls")), 0, 0));
 			container.addChild(new Text(toolTraces, 0, 0));
 		}
 	}
@@ -387,7 +397,7 @@ function renderActivityPanel(
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", "─")} ${theme.fg("dim", stats)}`;
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}

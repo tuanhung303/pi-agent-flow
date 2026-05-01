@@ -42,14 +42,14 @@ export interface FlowDiscoveryResult {
 export function getFlowTier(flowName: string): FlowTier {
 	const normalized = flowName.toLowerCase().trim();
 	switch (normalized) {
-		case "explore":
+		case "scout":
 		case "debug":
 			return "lite";
-		case "code":
-		case "review":
+		case "build":
+		case "audit":
 			return "flash";
-		case "brainstorm":
-		case "architect":
+		case "ideas":
+		case "craft":
 			return "full";
 		default:
 			return "flash";

@@ -45,7 +45,7 @@ export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 
 const FlowItem = Type.Object({
 	type: Type.String({
-		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as explore, debug, code, architect, review, or brainstorm.",
+		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as scout, debug, build, craft, audit, or ideas.",
 	}),
 	intent: Type.String({
 		description: "Clear, specific mission for this flow.",
@@ -62,7 +62,7 @@ const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			'Example: { flow: [{ type: "explore", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }, { type: "code", "intent": "Fix the bug in user registration", "aim": "Fix registration bug" }] }',
+			'Example: { flow: [{ type: "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }, { type: "build", "intent": "Fix the bug in user registration", "aim": "Fix registration bug" }] }',
 		minItems: 1,
 	}),
 	confirmProjectFlows: Type.Optional(
@@ -392,15 +392,15 @@ export default function (pi: ExtensionAPI) {
 		type: "boolean",
 	});
 	pi.registerFlag("flow-lite-model", {
-		description: "Model for lite-tier flows (explore, debug).",
+		description: "Model for lite-tier flows (scout, debug).",
 		type: "string",
 	});
 	pi.registerFlag("flow-flash-model", {
-		description: "Model for flash-tier flows (code, review).",
+		description: "Model for flash-tier flows (build, audit).",
 		type: "string",
 	});
 	pi.registerFlag("flow-full-model", {
-		description: "Model for full-tier flows (brainstorm, architect).",
+		description: "Model for full-tier flows (ideas, craft).",
 		type: "string",
 	});
 	pi.registerFlag("tool-optimize", {
@@ -503,22 +503,22 @@ export default function (pi: ExtensionAPI) {
 
 Before acting, reason about whether to dive into a flow:
 
-- [explore] — when you need to understand first. Find files, trace code paths, map architecture.
+- [scout] — when you need to understand first. Find files, trace code paths, map architecture.
 - [debug] — when something is broken. Investigate logs, errors, stack traces to find root cause.
-- [code] — when you are ready to build. Implement features, fix bugs, write tests.
-- [architect] — when you need a plan. Design structure, break down requirements before building.
-- [review] — when you need to verify. Audit security, quality, correctness.
-- [brainstorm] — when you need fresh ideas. Start from a clean slate with only the intent.
+- [build] — when you are ready to build. Implement features, fix bugs, write tests.
+- [craft] — when you need a plan. Design structure, break down requirements before building.
+- [audit] — when you need to verify. Audit security, quality, correctness.
+- [ideas] — when you need fresh ideas. Start from a clean slate with only the intent.
 
 Multiple independent flows? Batch them into one call:
 
-✅ { "flow": [{ "type": "explore", "intent": "..." }, { "type": "review", "intent": "..." }] }
+✅ { "flow": [{ "type": "scout", "intent": "..." }, { "type": "audit", "intent": "..." }] }
 ❌ Two separate calls — wastes time
 
 Each call renders as:
 
-• flow [explore] — Map the full directory structure...
-• flow [review] — Audit security and quality...
+• flow [scout] — Map the full directory structure...
+• flow [audit] — Audit security and quality...
 
 Each flow returns:
 
@@ -576,8 +576,8 @@ flow [type] accomplished
 				"You MUST enter to the following flow states, with tool call method.",
 				"",
 				"Flow states are isolated \u03c0 processes with forked session snapshots. They run in parallel.",
-				'Invoke: { "flow": [{ "type": "explore", "intent": "..." }, ...] }',
-				"States: explore (tanken), debug (kensh\u014d), code (shokunin), architect (keikaku), review (kanshi), brainstorm (mushin).",
+				'Invoke: { "flow": [{ "type": "scout", "intent": "..." }, ...] }',
+				"States: scout (tanken), debug (kensh\u014d), build (shokunin), craft (keikaku), audit (kanshi), ideas (mushin).",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,

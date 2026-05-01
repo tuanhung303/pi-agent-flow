@@ -309,3 +309,133 @@ describe("htmlToMarkdown", () => {
 		expect(result.markdown).toContain("Main content here");
 	});
 });
+
+describe("validateFetchUrl edge cases", () => {
+	it("rejects 0.0.0.0", () => {
+		expect(() => validateFetchUrl("http://0.0.0.0/admin")).toThrow("private or internal");
+	});
+
+	it("rejects [::1]", () => {
+		expect(() => validateFetchUrl("http://[::1]/admin")).toThrow("private or internal");
+	});
+
+	it("allows public IPs", () => {
+		expect(() => validateFetchUrl("http://8.8.8.8/")).not.toThrow();
+	});
+});
+
+describe("htmlToMarkdown tag stripping", () => {
+	it("strips noscript tags", () => {
+		const html = `<html><head><title>T</title></head><body><noscript>no js</noscript><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("no js");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips iframe tags", () => {
+		const html = `<html><head><title>T</title></head><body><iframe src="x"></iframe><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("iframe");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips svg tags", () => {
+		const html = `<html><head><title>T</title></head><body><svg><circle /></svg><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("circle");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips canvas tags", () => {
+		const html = `<html><head><title>T</title></head><body><canvas>draw</canvas><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("draw");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips form tags", () => {
+		const html = `<html><head><title>T</title></head><body><form><input /></form><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("input");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips nav tags", () => {
+		const html = `<html><head><title>T</title></head><body><nav>Nav</nav><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("Nav");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips aside tags", () => {
+		const html = `<html><head><title>T</title></head><body><aside>Side</aside><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("Side");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips footer tags", () => {
+		const html = `<html><head><title>T</title></head><body><footer>Foot</footer><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("Foot");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("strips header tags", () => {
+		const html = `<html><head><title>T</title></head><body><header>Head</header><p>Content</p></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).not.toContain("Head");
+		expect(result.markdown).toContain("Content");
+	});
+
+	it("prefers article over body", () => {
+		const html = `<html><head><title>T</title></head><body><p>Body</p><article><p>Article</p></article></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).toContain("Article");
+	});
+
+	it("prefers role=main over body", () => {
+		const html = `<html><head><title>T</title></head><body><p>Body</p><div role="main"><p>Main</p></div></body></html>`;
+		const result = htmlToMarkdown(html, "https://example.com");
+		expect(result.markdown).toContain("Main");
+		expect(result.markdown).not.toContain("Body");
+	});
+});
+
+describe("looksLikeWebSearchPrompt additional patterns", () => {
+	it("detects 'up to date'", () => {
+		expect(looksLikeWebSearchPrompt("Is Node.js up to date?")).toBe(true);
+	});
+
+	it("detects 'on the web'", () => {
+		expect(looksLikeWebSearchPrompt("Find it on the web")).toBe(true);
+	});
+
+	it("detects 'what changed in'", () => {
+		expect(looksLikeWebSearchPrompt("what changed in React 19?")).toBe(true);
+	});
+
+	it("detects 'current price'", () => {
+		expect(looksLikeWebSearchPrompt("What is the current price of Bitcoin?")).toBe(true);
+	});
+
+	it("detects 'current status'", () => {
+		expect(looksLikeWebSearchPrompt("current status of the server")).toBe(true);
+	});
+
+	it("detects 'google how'", () => {
+		expect(looksLikeWebSearchPrompt("google how to use useEffect")).toBe(true);
+	});
+
+	it("detects 'google what'", () => {
+		expect(looksLikeWebSearchPrompt("google what is TypeScript")).toBe(true);
+	});
+
+	it("detects 'google why'", () => {
+		expect(looksLikeWebSearchPrompt("google why is the sky blue")).toBe(true);
+	});
+
+	it("detects 'google when'", () => {
+		expect(looksLikeWebSearchPrompt("google when was Node released")).toBe(true);
+	});
+});

@@ -95,8 +95,8 @@ describe("flow tool execute", () => {
 	it("matches flow types case-insensitively", async () => {
 		setupFlowsDir([
 			{
-				fileName: "explore.md",
-				content: `---\nname: explore\ndescription: Discovery\n---\nPrompt.`,
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
 			},
 		]);
 
@@ -110,7 +110,7 @@ describe("flow tool execute", () => {
 		expect(tool).toBeDefined();
 
 		vi.mocked(runFlow).mockResolvedValue({
-			type: "explore",
+			type: "scout",
 			agentSource: "project",
 			intent: "Test",
 			aim: "Test aim",
@@ -122,7 +122,7 @@ describe("flow tool execute", () => {
 
 		const result = await tool.execute(
 			"call-1",
-			{ flow: [{ type: "EXPLORE", intent: "Discover things" }], confirmProjectFlows: false },
+			{ flow: [{ type: "SCOUT", intent: "Discover things" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			undefined,
 			makeMockCtx(tmpDir),
@@ -131,18 +131,18 @@ describe("flow tool execute", () => {
 		expect(result.isError).toBeFalsy();
 		expect(runFlow).toHaveBeenCalledTimes(1);
 		const runFlowArgs = vi.mocked(runFlow).mock.calls[0][0];
-		expect(runFlowArgs.flowName).toBe("explore");
+		expect(runFlowArgs.flowName).toBe("scout");
 	});
 
 	it("detects cycles case-insensitively", async () => {
 		setupFlowsDir([
 			{
-				fileName: "explore.md",
-				content: `---\nname: explore\ndescription: Discovery\n---\nPrompt.`,
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
 			},
 		]);
 
-		process.env.PI_FLOW_STACK = JSON.stringify(["Explore"]);
+		process.env.PI_FLOW_STACK = JSON.stringify(["Scout"]);
 		process.env.PI_FLOW_DEPTH = "1";
 
 		const pi = createMockPi();
@@ -153,7 +153,7 @@ describe("flow tool execute", () => {
 		const tool = pi.getTool("flow");
 		const result = await tool.execute(
 			"call-1",
-			{ flow: [{ type: "explore", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			undefined,
 			makeMockCtx(tmpDir),
@@ -166,8 +166,8 @@ describe("flow tool execute", () => {
 	it("does not emit a heartbeat interval", async () => {
 		setupFlowsDir([
 			{
-				fileName: "explore.md",
-				content: `---\nname: explore\ndescription: Discovery\n---\nPrompt.`,
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
 			},
 		]);
 
@@ -179,7 +179,7 @@ describe("flow tool execute", () => {
 		const setIntervalSpy = vi.spyOn(global, "setInterval");
 
 		vi.mocked(runFlow).mockResolvedValue({
-			type: "explore",
+			type: "scout",
 			agentSource: "project",
 			intent: "Test",
 			aim: "Test aim",
@@ -191,7 +191,7 @@ describe("flow tool execute", () => {
 
 		await tool.execute(
 			"call-1",
-			{ flow: [{ type: "explore", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			vi.fn(),
 			makeMockCtx(tmpDir),
@@ -284,8 +284,8 @@ describe("flow tool execute", () => {
 	it("deduplicates identical streaming text in onUpdate", async () => {
 		setupFlowsDir([
 			{
-				fileName: "explore.md",
-				content: `---\nname: explore\ndescription: Discovery\n---\nPrompt.`,
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
 			},
 		]);
 
@@ -335,7 +335,7 @@ describe("flow tool execute", () => {
 
 		await tool.execute(
 			"call-1",
-			{ flow: [{ type: "explore", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
 			new AbortController().signal,
 			onUpdate,
 			makeMockCtx(tmpDir),

@@ -80,34 +80,34 @@ describe("discoverFlows", () => {
 });
 
 describe("getFlowTier", () => {
-	it("maps explore to lite", () => {
-		expect(getFlowTier("explore")).toBe("lite");
+	it("maps scout to lite", () => {
+		expect(getFlowTier("scout")).toBe("lite");
 	});
 
 	it("maps debug to lite", () => {
 		expect(getFlowTier("debug")).toBe("lite");
 	});
 
-	it("maps code to flash", () => {
-		expect(getFlowTier("code")).toBe("flash");
+	it("maps build to flash", () => {
+		expect(getFlowTier("build")).toBe("flash");
 	});
 
-	it("maps review to flash", () => {
-		expect(getFlowTier("review")).toBe("flash");
+	it("maps audit to flash", () => {
+		expect(getFlowTier("audit")).toBe("flash");
 	});
 
-	it("maps brainstorm to full", () => {
-		expect(getFlowTier("brainstorm")).toBe("full");
+	it("maps ideas to full", () => {
+		expect(getFlowTier("ideas")).toBe("full");
 	});
 
-	it("maps architect to full", () => {
-		expect(getFlowTier("architect")).toBe("full");
+	it("maps craft to full", () => {
+		expect(getFlowTier("craft")).toBe("full");
 	});
 
 	it("is case-insensitive", () => {
-		expect(getFlowTier("EXPLORE")).toBe("lite");
-		expect(getFlowTier("Code")).toBe("flash");
-		expect(getFlowTier("BRAINSTORM")).toBe("full");
+		expect(getFlowTier("SCOUT")).toBe("lite");
+		expect(getFlowTier("Build")).toBe("flash");
+		expect(getFlowTier("IDEAS")).toBe("full");
 	});
 
 	it("defaults unknown flows to flash", () => {

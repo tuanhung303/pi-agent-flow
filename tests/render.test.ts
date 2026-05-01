@@ -317,21 +317,21 @@ describe("formatFixedTokens", () => {
 
 describe("formatFlowTypeName", () => {
 	it("short name → padded with spaces", () => {
-		expect(formatFlowTypeName("debug")).toBe("debug     ");
-		expect(formatFlowTypeName("code")).toBe("code      ");
+		expect(formatFlowTypeName("debug")).toBe("debug");
+		expect(formatFlowTypeName("code")).toBe("code ");
 	});
 
 	it("medium name → partial padding", () => {
-		expect(formatFlowTypeName("architect")).toBe("architect ");
-		expect(formatFlowTypeName("explore")).toBe("explore   ");
+		expect(formatFlowTypeName("craft")).toBe("craft");
+		expect(formatFlowTypeName("scout")).toBe("scout");
 	});
 
 	it("exact length → no padding", () => {
-		expect(formatFlowTypeName("brainstorm")).toBe("brainstorm");
+		expect(formatFlowTypeName("ideas")).toBe("ideas");
 	});
 
 	it("uppercase input → lowercased", () => {
-		expect(formatFlowTypeName("DEBUG")).toBe("debug     ");
+		expect(formatFlowTypeName("DEBUG")).toBe("debug");
 	});
 });
 
@@ -343,43 +343,43 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k · ↓   500 · tps:     - · ctx: 21.0k · K2.6");
+		expect(result).toBe("↑  2.0k ↓   500 tps:     - ctx: 21.0k K2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("↑   100 · ↓     0 · tps:     - · ctx:     0");
+		expect(result).toBe("↑   100 ↓     0 tps:     - ctx:     0");
 	});
 
 	it("no usage → shows placeholders", () => {
-		expect(formatCompactStats({})).toBe("↑     0 · ↓     0 · tps:     - · ctx:     0");
+		expect(formatCompactStats({})).toBe("↑     0 ↓     0 tps:     - ctx:     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 · ↓     0 · tps:     - · ctx:     0 · gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 ↓     0 tps:     - ctx:     0 gpt-4o");
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("↑  5.0k · ↓  1.0k · tps:     - · ctx:     0");
+		expect(formatCompactStats(usage)).toBe("↑  5.0k ↓  1.0k tps:     - ctx:     0");
 	});
 
 	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("↑     0 · ↓     0 · tps:     - · ctx:  6.0k");
+		expect(formatCompactStats(usage)).toBe("↑     0 ↓     0 tps:     - ctx:  6.0k");
 	});
 
 	it("with smoothedTps value", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k · ↓   500 · tps:  42.3 · ctx: 21.0k · K2.6");
+		expect(result).toBe("↑  2.0k ↓   500 tps:  42.3 ctx: 21.0k K2.6");
 	});
 
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("↑  1.0k · ↓   500 · tps:     - · ctx:     0");
+		expect(result).toBe("↑  1.0k ↓   500 tps:     - ctx:     0");
 	});
 
 	it("narrows when maxWidth is tight", () => {
@@ -411,7 +411,7 @@ function makeTheme() {
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {
-		type: "explore",
+		type: "scout",
 		agentSource: "user",
 		intent: "test intent",
 		aim: "test aim",
@@ -449,7 +449,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("debug     ");
+		expect(text).toContain("debug");
 		expect(text).toContain("aim:");
 		expect(text).toContain("├─ act:");
 		expect(text).toContain("msg:");
@@ -457,7 +457,7 @@ describe("activity panel rendering", () => {
 
 	it("renders act line with count prefix [N]", () => {
 		const result = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the codebase",
 			messages: [
 				makeToolCallMessage("read", { file_path: "src/index.ts" }),
@@ -480,7 +480,7 @@ describe("activity panel rendering", () => {
 			{ flow: [{ type: "code", intent: "Refactor the auth module", aim: "Refactor auth module" }] },
 		);
 		const text = extractText(rendered);
-		expect(text).toContain("code      ");
+		expect(text).toContain("code");
 		expect(text).toContain("aim:");
 		expect(text).toContain("Refactor auth module");
 		expect(text).toContain("↑     0");
@@ -502,7 +502,7 @@ describe("activity panel rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const result2 = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the view rebuild code",
 			messages: [
 				makeToolCallMessage("find", { query: "view_rebuild", dir: "./src" }, "searching"),
@@ -517,8 +517,8 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("├─");
 		expect(text).toContain("└─");
 		expect(text).toContain("│");
-		expect(text).toContain("debug     ");
-		expect(text).toContain("explore   ");
+		expect(text).toContain("debug");
+		expect(text).toContain("scout");
 	});
 
 	it("includes long DIR text in TruncatedText", () => {
@@ -667,7 +667,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("debug     ");
+		expect(text).toContain("debug");
 		expect(text).not.toContain("✓");
 		expect(text).not.toContain("✗");
 		expect(text).not.toContain("(user)");
@@ -684,7 +684,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("↑  9.8k · ↓  1.3k · tps:     - · ctx: 10.0k · mimo-v2.5-pro");
+		expect(text).toContain("↑  9.8k ↓  1.3k tps:     - ctx: 10.0k mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {
@@ -710,7 +710,7 @@ describe("expanded view rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const result2 = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the view rebuild code",
 			messages: [makeTextMessage("Let me also check scripts.")],
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
@@ -733,7 +733,7 @@ describe("expanded view rendering", () => {
 			model: "mimo-v2.5-pro",
 		});
 		const result2 = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Map the view rebuild code",
 			messages: [makeTextMessage("Let me also check scripts.")],
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
@@ -742,15 +742,15 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("debug     ");
-		expect(text).toContain("explore   ");
+		expect(text).toContain("debug");
+		expect(text).toContain("scout");
 	});
 });
 
 describe("formatFlowToolCall — batch", () => {
 	it("renders single read operation", () => {
 		const result = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Read files",
 			messages: [
 				makeToolCallMessage("batch", { o: [
@@ -835,7 +835,7 @@ describe("formatFlowToolCall — batch", () => {
 
 	it("renders empty operations", () => {
 		const result = makeResult({
-			type: "explore",
+			type: "scout",
 			intent: "Empty",
 			messages: [
 				makeToolCallMessage("batch", { o: [] }),

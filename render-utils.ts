@@ -27,12 +27,12 @@ export function formatFixedTokens(count: number): string {
 }
 
 /**
- * Format flow type name to fixed width (10 chars) in lowercase with space padding.
- * Examples: "debug" → "debug     ", "architect" → "architect ", "brainstorm" → "brainstorm"
+ * Format flow type name to fixed width (5 chars) in lowercase with space padding.
+ * Examples: "debug" → "debug", "scout" → "scout", "build" → "build"
  */
 export function formatFlowTypeName(type: string): string {
 	const lower = type.toLowerCase();
-	const targetWidth = 10;
+	const targetWidth = 5;
 	if (lower.length >= targetWidth) return lower.slice(0, targetWidth);
 	return lower.padEnd(targetWidth, " ");
 }
@@ -50,20 +50,20 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string, m
 	parts.push(`tps: ${formatTps(usage.smoothedTps)}`);
 	parts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
 
-	let result = parts.join(" · ") + (model ? ` · ${model}` : "");
+	let result = parts.join(" ") + (model ? ` ${model}` : "");
 
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first
-		let narrow = parts.join(" · ");
+		let narrow = parts.join(" ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens
 		const narrowParts = parts.slice(0, 3); // up to tps
-		narrow = narrowParts.join(" · ");
+		narrow = narrowParts.join(" ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Bare minimum (just input/output)
-		narrow = `${parts[0]} · ${parts[1]}`;
+		narrow = `${parts[0]} ${parts[1]}`;
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		return truncateChars(result, maxWidth);

@@ -584,7 +584,8 @@ async function validatePath(inputPath: string, cwd: string): Promise<string> {
 			const lstat = await fs.lstat(resolved);
 			if (lstat.isSymbolicLink()) {
 				const linkTarget = await fs.readlink(resolved);
-				const resolvedTarget = path.resolve(path.dirname(resolved), linkTarget);
+				const realLinkDir = await fs.realpath(path.dirname(resolved));
+				const resolvedTarget = path.resolve(realLinkDir, linkTarget);
 				const normalizedTarget = path.normalize(resolvedTarget);
 				if (
 					normalizedTarget !== normalizedRealCwd &&
@@ -1002,9 +1003,8 @@ function buildContentText(summary: string, results: OpResult[]): string {
 			const lineInfo = r.totalLines !== undefined ? ` (${r.totalLines} lines)` : "";
 			sections.push(`\n--- ${r.path}${lineInfo} ---\n${r.content}`);
 		} else if (r.op === "edit" && r.status === "ok") {
-			const diffInfo = r.diff ? ` — ${r.diff}` : "";
 			const blockInfo = r.blocksChanged !== undefined ? `${r.blocksChanged} block${r.blocksChanged > 1 ? "s" : ""}` : "";
-			sections.push(`\n--- edit: ${r.path} (${blockInfo}${diffInfo}) ---`);
+			sections.push(`\n--- edit: ${r.path} (${blockInfo}) ---`);
 		} else if (r.op === "write" && r.status === "ok") {
 			sections.push(`\n--- write: ${r.path} (${r.bytes ?? 0} bytes) ---`);
 		} else if (r.op === "delete" && r.status === "ok") {

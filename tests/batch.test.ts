@@ -1591,3 +1591,334 @@ describe("isWithinDirectory", () => {
 		expect(isWithinDirectory("D:\\other\\file.ts", "C:\\Project")).toBe(false);
 	});
 });
+
+describe("edge cases", () => {
+	let tmpDir: string;
+
+	function createTool() {
+		return createBatchTool();
+	}
+
+	function makeCtx(cwd: string) {
+		return { cwd };
+	}
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-edge-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	describe("edit edge cases", () => {
+		it("rejects overlapping edits", async () => {
+			fs.writeFileSync(path.join(tmpDir, "overlap.txt"), "abcde\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{
+							op: "edit",
+							path: "overlap.txt",
+							edits: [
+								{ oldText: "abc", newText: "ABC" },
+								{ oldText: "cde", newText: "CDE" },
+							],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "edit",
+				status: "error",
+				error: expect.stringContaining("overlap"),
+				hint: "Merge overlapping edits into one.",
+			});
+		});
+
+		it("rejects empty oldText", async () => {
+			fs.writeFileSync(path.join(tmpDir, "empty-old.txt"), "content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{
+							op: "edit",
+							path: "empty-old.txt",
+							edits: [{ oldText: "", newText: "replaced" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "edit",
+				status: "error",
+				error: expect.stringContaining("must not be empty"),
+			});
+		});
+
+		it("preserves BOM during edit", async () => {
+			fs.writeFileSync(path.join(tmpDir, "bom-edit.txt"), "\uFEFFhello world\n", "utf-8");
+
+			const tool = createTool();
+			await tool.execute(
+				"call-1",
+				{
+					o: [
+						{
+							op: "edit",
+							path: "bom-edit.txt",
+							edits: [{ oldText: "hello world", newText: "hello earth" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			const edited = fs.readFileSync(path.join(tmpDir, "bom-edit.txt"), "utf-8");
+			expect(edited.startsWith("\uFEFF")).toBe(true);
+			expect(edited).toBe("\uFEFFhello earth\n");
+		});
+	});
+
+	describe("path validation edge cases", () => {
+		it("blocks write when ancestor symlink resolves outside cwd", async () => {
+			const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-ancestor-out-"));
+			const linkPath = path.join(tmpDir, "link");
+			fs.symlinkSync(outsideDir, linkPath);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [{ op: "write", path: "link/subdir/new.txt", content: "data\n" }],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "write",
+				status: "error",
+				error: expect.stringContaining("ancestor directory is outside"),
+			});
+
+			fs.rmSync(outsideDir, { recursive: true, force: true });
+		});
+
+		it("allows broken symlink within cwd (read fails with file not found, not traversal)", async () => {
+			fs.symlinkSync("nonexistent.txt", path.join(tmpDir, "broken.txt"));
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: "broken.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "error",
+				error: expect.stringContaining("not found"),
+			});
+			expect(result.details.results[0].error).not.toContain("Path traversal");
+		});
+	});
+
+	describe("read edge cases", () => {
+		it("truncates by bytes across multiple lines", async () => {
+			// Each line is ~1KB, 60 lines = ~60KB total (> 50KB limit)
+			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			fs.writeFileSync(path.join(tmpDir, "multi-byte.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: "multi-byte.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+				truncated: true,
+			});
+			expect(result.details.results[0].content).toContain("[Showing lines");
+			expect(result.details.results[0].content).toContain("Use s=");
+		});
+
+		it("returns error for unreadable file", async () => {
+			if (process.getuid && process.getuid() === 0) {
+				// Root bypasses file permissions; skip on CI/containers running as root
+				return;
+			}
+
+			const filePath = path.join(tmpDir, "secret.txt");
+			fs.writeFileSync(filePath, "secret\n", "utf-8");
+			fs.chmodSync(filePath, 0o000);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: "secret.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "error",
+				error: expect.stringContaining("not readable"),
+				hint: "Check file permissions.",
+			});
+
+			// Restore permissions so afterEach can clean up
+			fs.chmodSync(filePath, 0o644);
+		});
+	});
+
+	describe("prepareArguments legacy branches", () => {
+		it("handles args.op array", async () => {
+			fs.writeFileSync(path.join(tmpDir, "op-arr.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ op: [{ path: "op-arr.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+			});
+		});
+
+		it("handles args.operations array", async () => {
+			fs.writeFileSync(path.join(tmpDir, "ops-arr.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ operations: [{ path: "ops-arr.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+			});
+		});
+
+		it("handles single-operation shorthand with p", async () => {
+			fs.writeFileSync(path.join(tmpDir, "shorthand.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ p: "shorthand.txt" },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "ok",
+			});
+		});
+
+		it("returns error for non-object input", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				null as any,
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("o array is required");
+		});
+	});
+
+	describe("summary pluralization and combinations", () => {
+		it("pluralizes multiple reads, writes, edits, and deletes", async () => {
+			fs.writeFileSync(path.join(tmpDir, "r1.txt"), "a\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "r2.txt"), "b\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "e1.txt"), "old1\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "e2.txt"), "old2\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "d1.txt"), "x\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "d2.txt"), "y\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ op: "read", path: "r1.txt" },
+						{ op: "read", path: "r2.txt" },
+						{ op: "write", path: "w1.txt", content: "c\n" },
+						{ op: "write", path: "w2.txt", content: "d\n" },
+						{ op: "edit", path: "e1.txt", edits: [{ oldText: "old1", newText: "new1" }] },
+						{ op: "edit", path: "e2.txt", edits: [{ oldText: "old2", newText: "new2" }] },
+						{ op: "delete", path: "d1.txt" },
+						{ op: "delete", path: "d2.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			const text = result.content[0].text;
+			expect(text).toContain("2 reads");
+			expect(text).toContain("2 writes");
+			expect(text).toContain("2 edits");
+			expect(text).toContain("2 deletes");
+		});
+
+		it("includes byte truncation warning in summary", async () => {
+			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			fs.writeFileSync(path.join(tmpDir, "byte-warn.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: "byte-warn.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("⚠ byte-warn.txt truncated");
+			expect(result.content[0].text).toContain("Use s=");
+		});
+	});
+});

@@ -15,11 +15,11 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 describe("runFlow case-insensitive lookup", () => {
 	const mockFlow: FlowConfig = {
-		name: "explore",
+		name: "scout",
 		description: "Discovery flow",
-		systemPrompt: "You are explore.",
+		systemPrompt: "You are scout.",
 		source: "bundled",
-		filePath: "/agents/explore.md",
+		filePath: "/agents/scout.md",
 	};
 
 	function makeMockProcess() {
@@ -48,7 +48,7 @@ describe("runFlow case-insensitive lookup", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "EXPLORE",
+			flowName: "SCOUT",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -73,7 +73,7 @@ describe("runFlow case-insensitive lookup", () => {
 		}, 10);
 
 		const result = await promise;
-		expect(result.type).toBe("explore");
+		expect(result.type).toBe("scout");
 		expect(result.exitCode).toBe(0);
 	});
 
@@ -195,8 +195,8 @@ describe("agent_end grace period behavior", () => {
 
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
-			flows: [{ name: "explore", description: "Explore", systemPrompt: "You are explore.", source: "bundled", filePath: "/agents/explore.md" }],
-			flowName: "explore",
+			flows: [{ name: "scout", description: "Explore", systemPrompt: "You are scout.", source: "bundled", filePath: "/agents/scout.md" }],
+			flowName: "scout",
 			intent: "Test",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -236,8 +236,8 @@ describe("agent_end grace period behavior", () => {
 
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
-			flows: [{ name: "explore", description: "Explore", systemPrompt: "You are explore.", source: "bundled", filePath: "/agents/explore.md" }],
-			flowName: "explore",
+			flows: [{ name: "scout", description: "Explore", systemPrompt: "You are scout.", source: "bundled", filePath: "/agents/scout.md" }],
+			flowName: "scout",
 			intent: "Test",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -288,7 +288,7 @@ describe("child flow harness tools", () => {
 
 	it("includes batch when flow.tools has legacy tools and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
-			name: "code",
+			name: "build",
 			description: "Code flow",
 			systemPrompt: "You are code.",
 			source: "bundled",
@@ -302,7 +302,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "code",
+			flowName: "build",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -340,11 +340,11 @@ describe("child flow harness tools", () => {
 
 	it("filters out web from child flow tools", async () => {
 		const mockFlow: FlowConfig = {
-			name: "explore",
+			name: "scout",
 			description: "Explore flow",
-			systemPrompt: "You are explore.",
+			systemPrompt: "You are scout.",
 			source: "bundled",
-			filePath: "/agents/explore.md",
+			filePath: "/agents/scout.md",
 			tools: ["read", "bash", "flow", "web"],
 		};
 
@@ -354,7 +354,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "explore",
+			flowName: "scout",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -392,7 +392,7 @@ describe("child flow harness tools", () => {
 
 	it("defaults to batch+bash when flow.tools is undefined and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
-			name: "code",
+			name: "build",
 			description: "Code flow",
 			systemPrompt: "You are code.",
 			source: "bundled",
@@ -406,7 +406,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "code",
+			flowName: "build",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -446,11 +446,11 @@ describe("child flow harness tools", () => {
 
 	it("falls back to defaultTools when harnessTools becomes empty after web filtering", async () => {
 		const mockFlow: FlowConfig = {
-			name: "explore",
+			name: "scout",
 			description: "Explore flow",
-			systemPrompt: "You are explore.",
+			systemPrompt: "You are scout.",
 			source: "bundled",
-			filePath: "/agents/explore.md",
+			filePath: "/agents/scout.md",
 			tools: ["web"], // only web, which gets filtered out
 		};
 
@@ -460,7 +460,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "explore",
+			flowName: "scout",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -498,11 +498,11 @@ describe("child flow harness tools", () => {
 
 	it("falls back to defaultTools when toolOptimize is false and only web is configured", async () => {
 		const mockFlow: FlowConfig = {
-			name: "explore",
+			name: "scout",
 			description: "Explore flow",
-			systemPrompt: "You are explore.",
+			systemPrompt: "You are scout.",
 			source: "bundled",
-			filePath: "/agents/explore.md",
+			filePath: "/agents/scout.md",
 			tools: ["web"],
 		};
 
@@ -512,7 +512,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "explore",
+			flowName: "scout",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,

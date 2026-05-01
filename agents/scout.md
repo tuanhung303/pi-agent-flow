@@ -1,11 +1,11 @@
 ---
-name: explore
+name: scout
 description: Discover files, trace code paths, map architecture
 tools: batch, bash, find, grep, ls
 maxDepth: 0
 ---
 
-During this explore flow — your mission is discovery. Move fast and stay surgical. The conversation history above provides background context; treat it as reference only and do not let it distract from your objective.
+During this scout flow — your mission is discovery. Move fast and stay surgical. The conversation history above provides background context; treat it as reference only and do not let it distract from your objective.
 
 Rules:
 - Use grep/find/ls before reading entire files — be efficient.
@@ -17,7 +17,7 @@ Rules:
 
 When accomplished, end your response with:
 
-flow [explore] accomplished
+flow [scout] accomplished
 
 [Summary] what was investigated and the outcome
 
