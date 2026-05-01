@@ -117,7 +117,7 @@ export function getOptimizedTools(
 	);
 	if (!hasLegacyTools) return flowTools;
 	const filtered = flowTools.filter(
-		(t) => t !== "read" && t !== "write" && t !== "edit" && t !== "batch",
+		(t) => t !== "read" && t !== "write" && t !== "edit" && t !== "batch" && t !== "batch_read",
 	);
 	return filtered.includes("batch")
 		? filtered

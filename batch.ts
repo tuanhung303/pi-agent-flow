@@ -102,6 +102,21 @@ interface ReadTruncationResult {
 	content: string;
 	truncated: boolean;
 	nextOffset?: number;
+	linesRead: number;
+}
+
+interface ReadOptions {
+	/**
+	 * When false, read operations ignore MAX_LINES and total MAX_BYTES caps.
+	 * A single selected line that exceeds MAX_BYTES still fails with a targeted error.
+	 */
+	truncate?: boolean;
+	toolName?: "batch" | "batch_read";
+}
+
+interface ExecuteOptions {
+	readOptions?: ReadOptions;
+	includeLimitWarnings?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,9 +153,12 @@ function readWithOffsetLimit(
 	offset?: number,
 	limit?: number,
 	filePath?: string,
+	options: ReadOptions = {},
 ): ReadTruncationResult {
 	const allLines = content.split("\n");
 	const totalFileLines = allLines.length;
+	const shouldTruncate = options.truncate !== false;
+	const toolName = options.toolName ?? "batch";
 
 	// Validate offset
 	if (offset !== undefined && offset > totalFileLines) {
@@ -162,25 +180,31 @@ function readWithOffsetLimit(
 	let truncated = false;
 	let nextOffset: number | undefined;
 
-	// Apply max-lines cap
-	if (selectedLines.length > MAX_LINES) {
+	// Apply max-lines cap for regular batch reads. batch_read intentionally
+	// bypasses this cap so each read operation can return the full requested file
+	// or range.
+	if (shouldTruncate && selectedLines.length > MAX_LINES) {
 		selectedLines = selectedLines.slice(0, MAX_LINES);
 		truncated = true;
+	}
+
+	// A single selected line that exceeds the byte cap is not safely splittable by
+	// line-oriented offsets, so keep the existing hard error in both modes.
+	for (let i = 0; i < selectedLines.length; i++) {
+		if (Buffer.byteLength(selectedLines[i], "utf-8") > MAX_BYTES) {
+			const lineDisplay = startLine + i + 1;
+			throw new Error(
+				`Line ${lineDisplay} exceeds limit. Try: ${toolName} with o:"read", s:${lineDisplay}, l:10, or use bash: head -c ... ${filePath ?? "<file>"}`,
+			);
+		}
 	}
 
 	// Join and check byte size
 	let result = selectedLines.join("\n");
 
-	// If first line alone exceeds byte limit, give a specific hint
-	if (selectedLines.length >= 1 && Buffer.byteLength(selectedLines[0], "utf-8") > MAX_BYTES) {
-		const startLineDisplay = startLine + 1;
-		throw new Error(
-			`Line ${startLineDisplay} exceeds limit. Try: batch with o:"read", s:${startLineDisplay}, l:10, or use bash: head -c ... ${filePath ?? "<file>"}`,
-		);
-	}
-
-	// Truncate by bytes if needed
-	if (Buffer.byteLength(result, "utf-8") > MAX_BYTES) {
+	// Truncate by total bytes for regular batch reads only. batch_read keeps the
+	// complete selected multi-line content unless an individual line is too long.
+	if (shouldTruncate && Buffer.byteLength(result, "utf-8") > MAX_BYTES) {
 		let byteAccum = 0;
 		let keepLines = 0;
 		for (let i = 0; i < selectedLines.length; i++) {
@@ -209,7 +233,7 @@ function readWithOffsetLimit(
 		result += `\n\n[${remaining} more lines in file. Use s=${nextOffset} to continue.]`;
 	}
 
-	return { content: result, truncated, nextOffset };
+	return { content: result, truncated, nextOffset, linesRead: selectedLines.length };
 }
 
 function levenshtein(a: string, b: string): number {
@@ -270,6 +294,8 @@ export async function suggestSimilarFiles(
 function getErrorHint(error: string): string {
 	if (error.includes("File not found") || error.includes("file not found"))
 		return "Verify the path exists.";
+	if (error.includes("Path traversal"))
+		return "Use a path within the working directory.";
 	if (error.includes("Could not find"))
 		return "Re-read the file first, then retry with exact f (oldText).";
 	if (error.includes("occurrences"))
@@ -278,8 +304,6 @@ function getErrorHint(error: string): string {
 		return "Merge overlapping edits into one.";
 	if (error.includes("No changes"))
 		return "File already has this content. No edit needed.";
-	if (error.includes("Path traversal"))
-		return "Use a path within the working directory.";
 	if (error.includes("is not readable") || error.includes("not readable"))
 		return "Check file permissions.";
 	if (error.includes("ENOENT") || error.includes("no such file"))
@@ -764,6 +788,7 @@ async function executeOperations(
 	operations: FileOpInput[],
 	cwd: string,
 	signal?: AbortSignal,
+	options: ExecuteOptions = {},
 ): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
 	let failed = false;
@@ -771,6 +796,7 @@ async function executeOperations(
 	const counts = { read: 0, write: 0, edit: 0, delete: 0, error: 0, skipped: 0 };
 	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
+	const includeLimitWarnings = options.includeLimitWarnings ?? true;
 
 	for (const op of operations) {
 		if (signal?.aborted) {
@@ -807,15 +833,11 @@ async function executeOperations(
 					const allLines = text.split("\n");
 					const totalFileLines = allLines.length;
 
-					const { content: readContent, truncated, nextOffset } =
-						readWithOffsetLimit(text, op.s, op.l, op.p);
+					const { content: readContent, truncated, nextOffset, linesRead } =
+						readWithOffsetLimit(text, op.s, op.l, op.p, options.readOptions);
 
-					if (truncated || (op.l !== undefined && (op.s ?? 1) - 1 + op.l < totalFileLines)) {
-						const shownLines = truncated
-							? (op.l !== undefined
-									? Math.min(op.l, MAX_LINES)
-									: MAX_LINES)
-							: op.l!;
+					if (truncated || (includeLimitWarnings && op.l !== undefined && (op.s ?? 1) - 1 + op.l < totalFileLines)) {
+						const shownLines = truncated ? linesRead : op.l!;
 						truncatedFiles.push({
 							path: op.p,
 							shown: shownLines,
@@ -1094,6 +1116,145 @@ function buildContentText(summary: string, results: OpResult[]): string {
 // ---------------------------------------------------------------------------
 // Tool definition factory
 // ---------------------------------------------------------------------------
+
+export const BatchReadParams = Type.Object({
+	o: Type.Array(
+		Type.Object({
+			o: Type.Literal("read"),
+			p: Type.String({ description: "Path to the file (relative or absolute)" }),
+			s: Type.Optional(
+				Type.Number({
+					minimum: 1,
+					description:
+						"1-indexed line number to start reading from (offset). Used with o: 'read'.",
+				}),
+			),
+			l: Type.Optional(
+				Type.Number({
+					minimum: 1,
+					description:
+						"Maximum number of lines to read (limit). Used with o: 'read'.",
+				}),
+			),
+		}),
+		{
+			description:
+				"Ordered list of read operations. Executed sequentially. On failure, remaining operations are skipped.",
+		},
+	),
+});
+
+function prepareBatchReadArguments(input: unknown): { o: FileOpInput[] } | unknown {
+	const prepared = prepareArguments(input);
+	const ops = Array.isArray(prepared) ? prepared : (prepared as { o: unknown[] }).o;
+	if (!Array.isArray(ops)) return { o: [] };
+
+	for (const op of ops) {
+		if (!op || typeof op !== "object") continue;
+		const obj = op as Record<string, unknown>;
+		const opType = String(obj.o ?? obj.op ?? "").toLowerCase();
+		if (opType && opType !== "read") {
+			throw new Error(`batch_read only supports read operations. Received: ${opType}`);
+		}
+	}
+	return prepared;
+}
+
+function renderBatchReadCall(args: Record<string, unknown>, theme: BatchTheme): Text {
+	const summary = formatBatchCall(args);
+	return new Text(theme.fg("muted", "batch_read ") + theme.fg("accent", summary), 0, 0);
+}
+
+export function createBatchReadTool() {
+	return {
+		name: "batch_read",
+		label: "batch_read",
+		description: [
+			"Batch read-only file operations — run multiple read ops in a single call.",
+			"Each operation is independent and executes sequentially in array order; on failure, remaining operations are skipped.",
+			"Reads are not truncated by the batch MAX_LINES or total MAX_BYTES caps; a single line over the byte limit still errors.",
+			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
+			"Best for reading multiple files or sections in one call.",
+		].join("\n"),
+		promptSnippet: "Batch read-only file operations — run multiple read ops in one call",
+		promptGuidelines: [
+			"Use batch_read to perform multiple file reads in a single call rather than separate tool calls.",
+			"Prefer batch_read when reading 2+ files or multiple sections of the same file.",
+			"batch_read returns the full requested content except when an individual line exceeds the byte limit.",
+			"For single-file reads, the read tool is fine; batch_read shines for multi-file reading.",
+		],
+		parameters: BatchReadParams,
+		prepareArguments: prepareBatchReadArguments,
+
+		async execute(
+			_toolCallId: string,
+			input: unknown,
+			signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: { cwd: string },
+		) {
+			let prepared: unknown;
+			try {
+				prepared = prepareBatchReadArguments(input);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				return {
+					content: [{ type: "text", text: `Error: ${message}` }],
+					isError: true,
+				};
+			}
+
+			const ops = Array.isArray(prepared)
+				? (prepared as FileOpInput[])
+				: (prepared as { o: FileOpInput[] }).o;
+
+			if (!Array.isArray(ops) || ops.length === 0) {
+				return {
+					content: [
+						{ type: "text", text: "Error: o array is required and must not be empty." },
+					],
+					isError: true,
+				};
+			}
+
+			// Defensive validation: reject any non-read operations
+			for (const op of ops) {
+				if (op.o !== "read") {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: batch_read only supports read operations. Received ${op.o} for ${op.p}.`,
+							},
+						],
+						isError: true,
+					};
+				}
+			}
+
+			if (signal?.aborted) {
+				return {
+					content: [{ type: "text", text: "Operation aborted." }],
+					isError: true,
+				};
+			}
+
+			const { contentText, results } = await executeOperations(ops, ctx.cwd, signal, {
+				readOptions: { truncate: false, toolName: "batch_read" },
+				includeLimitWarnings: false,
+			});
+
+			return {
+				content: [{ type: "text", text: contentText }],
+				details: { results },
+			};
+		},
+
+		renderCall: (args: Record<string, unknown>, theme: BatchTheme) => renderBatchReadCall(args, theme),
+		renderResult: (result: any, { expanded }: { expanded: boolean }, theme: BatchTheme, args?: Record<string, unknown>) =>
+			renderBatchResult(result, expanded, theme, args),
+	};
+}
 
 export function createBatchTool() {
 	return {

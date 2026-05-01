@@ -27,7 +27,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { createBatchTool } from "./batch.js";
+import { createBatchTool, createBatchReadTool } from "./batch.js";
 import {
 	createWebTool,
 	looksLikeUrlPrompt,
@@ -569,7 +569,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch", "bash", "flow", "web"]
+		? ["batch_read", "bash", "flow", "web"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
@@ -653,8 +653,9 @@ export default function (pi: ExtensionAPI) {
 			pi.setActiveTools(computeActiveTools(toolOptimize));
 		}
 
-		// Register batch so it is available for both main agent and child flows.
+		// Register batch and batch_read so they are available for main agent and child flows.
 		if (toolOptimize) {
+			pi.registerTool(createBatchReadTool());
 			pi.registerTool(createBatchTool());
 		}
 	});

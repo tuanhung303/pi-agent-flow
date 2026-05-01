@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createBatchTool, suggestSimilarFiles, isWithinDirectory } from "../batch.js";
+import { createBatchTool, createBatchReadTool, suggestSimilarFiles, isWithinDirectory } from "../batch.js";
 
 describe("batch tool", () => {
 	let tmpDir: string;
@@ -723,7 +723,7 @@ describe("batch tool", () => {
 			);
 
 			expect(result.content[0].text).toContain("✓ 1 operations: 1 delete");
-    expect(result.content[0].text).toContain("delete: delete-me.txt");
+			expect(result.content[0].text).toContain("delete: delete-me.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "delete",
 				status: "ok",
@@ -1168,6 +1168,7 @@ describe("batch tool", () => {
 			expect(result.details.results[0]).toMatchObject({
 				op: "write",
 				status: "ok",
+				bytes: 8,
 			});
 			expect(fs.readFileSync(path.join(tmpDir, "newwrite.txt"), "utf-8")).toBe("content\n");
 		});
@@ -2157,6 +2158,291 @@ describe("edge cases", () => {
 			const result = { content: [], details: { results: [] } };
 			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
 			expect(rendered.toString()).toBe("");
+		});
+	});
+});
+
+
+describe("batch_read tool", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-batch-read-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function createTool() {
+		return createBatchReadTool();
+	}
+
+	function makeCtx(cwd: string) {
+		return { cwd };
+	}
+
+	describe("read operations", () => {
+		it("reads a single file", async () => {
+			const filePath = path.join(tmpDir, "test.txt");
+			fs.writeFileSync(filePath, "hello world\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "test.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("✓ 1 operations: 1 read");
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				path: "test.txt",
+				status: "ok",
+			});
+		});
+
+		it("reads multiple files", async () => {
+			fs.writeFileSync(path.join(tmpDir, "a.txt"), "content a\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "b.txt"), "content b\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "a.txt" },
+						{ o: "read", p: "b.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("✓ 2 operations: 2 reads");
+			expect(result.details.results).toHaveLength(2);
+		});
+
+		it("supports offset and limit", async () => {
+			fs.writeFileSync(
+				path.join(tmpDir, "sl.txt"),
+				"a\nb\nc\nd\ne\n",
+				"utf-8",
+			);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				[{ o: "read", p: "sl.txt", s: 2, l: 2 }],
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].content).toContain("b\nc");
+		});
+
+		it("does not truncate large files at the regular batch line cap", async () => {
+			const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+			fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "large.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].truncated).toBeUndefined();
+			expect(result.details.results[0].content).toBe(lines.join("\n"));
+			expect(result.details.results[0].content).toContain("line 2999");
+			expect(result.content[0].text).not.toContain("truncated");
+			expect(result.content[0].text).not.toContain("[Showing lines");
+		});
+
+		it("does not truncate multi-line reads at the regular batch byte cap", async () => {
+			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			fs.writeFileSync(path.join(tmpDir, "large-bytes.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "large-bytes.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].truncated).toBeUndefined();
+			expect(result.details.results[0].content).toBe(lines.join("\n"));
+			expect(result.details.results[0].content).toContain(lines.at(-1));
+			expect(result.content[0].text).not.toContain("truncated");
+			expect(result.content[0].text).not.toContain("[Showing lines");
+		});
+
+		it("still errors when an individual selected line exceeds the byte cap", async () => {
+			const hugeLine = "x".repeat(60 * 1024);
+			fs.writeFileSync(path.join(tmpDir, "huge-line.txt"), `short\n${hugeLine}\n`, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "huge-line.txt", s: 2 }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				status: "error",
+				error: expect.stringContaining("Line 2 exceeds limit"),
+			});
+			expect(result.details.results[0].error).toContain("batch_read");
+		});
+	});
+
+	describe("defensive rejection", () => {
+		it("rejects write operations", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "write", p: "new.txt", c: "content" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("rejects edit operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "edit.txt"), "hello\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "edit", p: "edit.txt", e: [{ f: "hello", r: "world" }] }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("rejects delete operations", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "delete", p: "file.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("rejects mixed read and write operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "ok.txt"), "ok\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "ok.txt" },
+						{ o: "write", p: "bad.txt", c: "bad" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+	});
+
+	describe("renderCall", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("renders single read operation", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{ o: [{ o: "read", p: "src/index.ts" }] },
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("batch_read");
+			expect(rendered.toString()).toContain("read");
+			expect(rendered.toString()).toContain("index.ts");
+		});
+
+		it("renders multiple read operations", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{ o: "read", p: "src/a.ts" },
+						{ o: "read", p: "src/b.ts" },
+					],
+				},
+				makeTheme(),
+			);
+			const text = rendered.toString();
+			expect(text).toContain("batch_read");
+			expect(text).toContain("a.ts");
+			expect(text).toContain("b.ts");
+		});
+	});
+
+	describe("renderResult", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("collapsed shows only summary line", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 2 operations");
+			expect(text).not.toContain("--- file.ts ---");
+		});
+
+		it("expanded shows full content", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: true }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 2 operations");
+			expect(text).toContain("--- file.ts ---");
 		});
 	});
 });
