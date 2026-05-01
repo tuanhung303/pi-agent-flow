@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Type } from "@sinclair/typebox";
+import { Text, TruncatedText } from "@mariozechner/pi-tui";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -1000,6 +1001,74 @@ function buildSummary(
 	return parts.join("\n");
 }
 
+function shortenPath(p: string): string {
+	const home = os.homedir();
+	return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+}
+
+type BatchTheme = {
+	fg: (color: string, text: string) => string;
+	bold: (s: string) => string;
+	bg: (color: string, text: string) => string;
+};
+
+function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: string; e?: unknown[] }> {
+	let rawOps: unknown[];
+	if (Array.isArray(args.o)) rawOps = args.o;
+	else if (Array.isArray(args.op)) rawOps = args.op;
+	else if (Array.isArray(args.operations)) rawOps = args.operations;
+	else if (Array.isArray(args)) rawOps = args;
+	else rawOps = [];
+
+	return rawOps
+		.filter((op): op is Record<string, unknown> => !!op && typeof op === "object")
+		.map((op) => {
+			const opName = String(op.o ?? op.op ?? "?");
+			const opPath = String(op.p ?? op.path ?? "?");
+			const edits = Array.isArray(op.e) ? op.e : Array.isArray(op.edits) ? op.edits : undefined;
+			return { o: opName, p: opPath, e: edits };
+		});
+}
+
+function formatBatchCall(args: Record<string, unknown>): string {
+	const ops = extractBatchOps(args);
+	if (ops.length === 0) return "batch (empty)";
+
+	const parts: string[] = [];
+	for (const op of ops) {
+		const shortPath = shortenPath(op.p);
+		if (op.o === "edit" && op.e && op.e.length > 1) {
+			parts.push(`edit ${shortPath} (${op.e.length} blocks)`);
+		} else {
+			parts.push(`${op.o} ${shortPath}`);
+		}
+	}
+
+	if (parts.length <= 3) {
+		return parts.join(", ");
+	}
+	return `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
+}
+
+function renderBatchCall(args: Record<string, unknown>, theme: BatchTheme): Text {
+	const summary = formatBatchCall(args);
+	return new Text(theme.fg("muted", "batch ") + theme.fg("accent", summary), 0, 0);
+}
+
+function renderBatchResult(
+	result: { content?: Array<{ type: string; text?: string }> },
+	expanded: boolean,
+	_theme: BatchTheme,
+	_args?: Record<string, unknown>,
+): Text | TruncatedText {
+	const fullText = result.content?.find((c) => c.type === "text")?.text ?? "";
+	if (!expanded) {
+		const summary = fullText.split("\n")[0] ?? "";
+		return new TruncatedText(summary, 0, 0);
+	}
+	return new Text(fullText, 0, 0);
+}
+
 function buildContentText(summary: string, results: OpResult[]): string {
 	const sections: string[] = [summary];
 
@@ -1084,5 +1153,9 @@ export function createBatchTool() {
 				details: { results },
 			};
 		},
+
+		renderCall: (args: Record<string, unknown>, theme: BatchTheme) => renderBatchCall(args, theme),
+		renderResult: (result: any, { expanded }: { expanded: boolean }, theme: BatchTheme, args?: Record<string, unknown>) =>
+			renderBatchResult(result, expanded, theme, args),
 	};
 }

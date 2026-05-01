@@ -2025,4 +2025,138 @@ describe("edge cases", () => {
 			expect(result.content[0].text).toContain("Use s=");
 		});
 	});
+
+	describe("renderCall", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("renders single operation", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{ o: [{ o: "read", p: "src/index.ts" }] },
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("batch");
+			expect(rendered.toString()).toContain("read");
+			expect(rendered.toString()).toContain("index.ts");
+		});
+
+		it("renders multiple operations", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{ o: "read", p: "src/a.ts" },
+						{ o: "edit", p: "src/b.ts" },
+					],
+				},
+				makeTheme(),
+			);
+			const text = rendered.toString();
+			expect(text).toContain("batch");
+			expect(text).toContain("read");
+			expect(text).toContain("a.ts");
+			expect(text).toContain("edit");
+			expect(text).toContain("b.ts");
+		});
+
+		it("truncates many operations", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{ o: "read", p: "a.ts" },
+						{ o: "read", p: "b.ts" },
+						{ o: "read", p: "c.ts" },
+						{ o: "read", p: "d.ts" },
+					],
+				},
+				makeTheme(),
+			);
+			const text = rendered.toString();
+			expect(text).toContain("+2 more");
+		});
+
+		it("renders empty batch", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!({ o: [] }, makeTheme());
+			expect(rendered.toString()).toContain("batch (empty)");
+		});
+
+		it("shows edit block count for multi-block edits", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{
+					o: [
+						{
+							o: "edit",
+							p: "src/foo.ts",
+							e: [
+								{ f: "a", r: "b" },
+								{ f: "c", r: "d" },
+							],
+						},
+					],
+				},
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("2 blocks");
+		});
+
+		it("shortens home directory to ~", () => {
+			const tool = createTool();
+			const rendered = tool.renderCall!(
+				{ o: [{ o: "read", p: `${os.homedir()}/project/file.ts` }] },
+				makeTheme(),
+			);
+			expect(rendered.toString()).toContain("~/project/file.ts");
+		});
+	});
+
+	describe("renderResult", () => {
+		function makeTheme() {
+			return {
+				fg: (color: string, text: string) => text,
+				bg: (color: string, text: string) => text,
+				bold: (s: string) => s,
+			};
+		}
+
+		it("collapsed shows only summary line", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 3 operations");
+			expect(text).not.toContain("--- file.ts ---");
+		});
+
+		it("expanded shows full content", () => {
+			const tool = createTool();
+			const result = {
+				content: [{ type: "text", text: "✓ 3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
+				details: { results: [] },
+			};
+			const rendered = tool.renderResult!(result, { expanded: true }, makeTheme(), undefined);
+			const text = rendered.toString();
+			expect(text).toContain("✓ 3 operations");
+			expect(text).toContain("--- file.ts ---");
+			expect(text).toContain("content");
+		});
+
+		it("handles empty content gracefully", () => {
+			const tool = createTool();
+			const result = { content: [], details: { results: [] } };
+			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
+			expect(rendered.toString()).toBe("");
+		});
+	});
 });
