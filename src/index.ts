@@ -659,7 +659,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		let systemPrompt = event.systemPrompt;
-		if (webInstructions.length > 0) {
+		if (!toolOptimize && webInstructions.length > 0) {
 			systemPrompt +=
 				"\n\n## pi-web steering\n" +
 				webInstructions.map((line) => `- ${line}`).join("\n");

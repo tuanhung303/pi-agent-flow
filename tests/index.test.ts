@@ -1229,7 +1229,8 @@ describe("web tool integration", () => {
 		expect(lastCall).toContain("web");
 	});
 
-	it("adds URL steering when prompt contains a URL", async () => {
+	it("adds URL steering when prompt contains a URL and toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1247,7 +1248,8 @@ describe("web tool integration", () => {
 		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
-	it("adds search steering when prompt looks like a web search", async () => {
+	it("adds search steering when prompt looks like a web search and toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1261,6 +1263,23 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("search");
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
+	});
+
+	it("does not add web steering when toolOptimize is true", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const result = await pi.trigger("before_agent_start", {
+			prompt: "Check https://example.com for details",
+			systemPrompt: "You are a helpful assistant.",
+		});
+
+		const modified = result[0];
+		expect(modified.systemPrompt).not.toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
 		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
