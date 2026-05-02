@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import registerExtension from "../index.js";
-import { runFlow, mapFlowConcurrent } from "../flow.js";
-import { emptyFlowUsage, type SingleResult } from "../types.js";
+import registerExtension from "../src/index.js";
+import { runFlow, mapFlowConcurrent } from "../src/flow.js";
+import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
-vi.mock("../flow.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../flow.js")>();
+vi.mock("../src/flow.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../src/flow.js")>();
 	return {
 		...actual,
 		runFlow: vi.fn(),
@@ -116,11 +116,10 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
-		const slidingPrompt = "<pi-flow-sliding-system>\nold routing prompt\n</pi-flow-sliding-system>";
+		const slidingPrompt = "<pi-flow-sliding-system>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n</pi-flow-sliding-system>";
 		const sessionBranch = [
 			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
-			{ type: "message", message: { role: "user", content: `Keep this product requirement${reminder}`, timestamp: 1 } },
+			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
 			{
 				type: "message",
 				message: {
@@ -175,7 +174,6 @@ describe("flow tool execute", () => {
 		expect(snapshot).not.toContain("SECRET_REASONING_PART");
 		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
 		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
-		expect(snapshot).not.toContain("[reminder_flow:");
 	});
 
 	it("preserves unmodified fork snapshot lines exactly", async () => {
@@ -236,6 +234,53 @@ describe("flow tool execute", () => {
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");
 		expect(snapshot).not.toContain("SECRET_REASONING");
+		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+	});
+
+	it("drops sliding system messages with array content in fork snapshot", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const slidingPrompt = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
+		const droppedSystemArray = { type: "message", message: { role: "system", content: [{ type: "text", text: slidingPrompt }], timestamp: 4 } };
+		const sessionBranch = [droppedSystemArray];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		expect(snapshot).not.toContain(JSON.stringify(droppedSystemArray));
 		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
 	});
 
@@ -414,36 +459,12 @@ describe("flow tool execute", () => {
 	});
 
 	describe("context event handler", () => {
-			it("inserts sliding system prompt before latest user message when toolOptimize is enabled", async () => {
-				process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
-				const pi = createMockPi();
-				registerExtension(pi as any);
-
-				const messages = [
-					{ role: "user" as const, content: "first prompt", timestamp: 1 },
-					{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
-					{ role: "user" as const, content: "second prompt", timestamp: 3 },
-				];
-
-				const results = await pi.trigger("context", { messages });
-				const modified = results[0]?.messages ?? messages;
-
-				expect((modified[0] as any).content).toBe("first prompt");
-				expect((modified[1] as any).content[0].text).toBe("ok");
-				expect((modified[2] as any).role).toBe("system");
-				expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
-				expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
-				expect((modified[3] as any).content).toBe("second prompt");
-			});
-
-		it("strips legacy reminders from all user messages and inserts sliding prompt when enabled", async () => {
-			const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
-			process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+		it("inserts sliding system prompt before latest user message unconditionally", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
 			const messages = [
-				{ role: "user" as const, content: `first prompt${reminder}`, timestamp: 1 },
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
 				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
 				{ role: "user" as const, content: "second prompt", timestamp: 3 },
 			];
@@ -451,17 +472,35 @@ describe("flow tool execute", () => {
 			const results = await pi.trigger("context", { messages });
 			const modified = results[0]?.messages ?? messages;
 
-			// Legacy reminder stripped from first user message
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).content[0].text).toBe("ok");
-			// Sliding system prompt inserted at position of last user message
 			expect((modified[2] as any).role).toBe("system");
 			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
+			expect((modified[3] as any).content).toBe("second prompt");
+		});
+
+		it("inserts sliding system prompt even when toolOptimize is disabled", async () => {
+			process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
+				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
+				{ role: "user" as const, content: "second prompt", timestamp: 3 },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect((modified[2] as any).role).toBe("system");
+			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
 		it("handles array content (text blocks)", async () => {
-			process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -507,6 +546,26 @@ describe("flow tool execute", () => {
 			const modified = results[0]?.messages ?? messages;
 			expect(modified).toHaveLength(1);
 			expect((modified[0] as any).role).toBe("assistant");
+		});
+
+		it("drops previous sliding system messages with array content", async () => {
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
+				{ role: "system" as const, content: [{ type: "text" as const, text: "<pi-flow-sliding-system>\nold prompt\n</pi-flow-sliding-system>" }], timestamp: 2 },
+				{ role: "user" as const, content: "second prompt", timestamp: 3 },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect(modified).toHaveLength(3);
+			expect((modified[0] as any).content).toBe("first prompt");
+			expect((modified[1] as any).role).toBe("system");
+			expect((modified[1] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toBe("second prompt");
 		});
 	});
 
@@ -574,6 +633,67 @@ describe("flow tool execute", () => {
 			(c) => c.content?.[0]?.text === "same text",
 		);
 		expect(sameTextCalls.length).toBe(1);
+	});
+
+	it("emits progress when usage changes with the same streaming text", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockImplementation(async (opts) => {
+			if (opts.onUpdate) {
+				const partialResult: SingleResult = {
+					type: opts.flowName,
+					agentSource: "project",
+					intent: opts.intent,
+					aim: opts.aim,
+					exitCode: -1,
+					messages: [],
+					stderr: "",
+					usage: { ...emptyFlowUsage(), output: 1, smoothedTps: 10 },
+				};
+				opts.onUpdate({
+					content: [{ type: "text", text: "same text" }],
+					details: opts.makeDetails([partialResult]),
+				});
+				opts.onUpdate({
+					content: [{ type: "text", text: "same text" }],
+					details: opts.makeDetails([{ ...partialResult, usage: { ...partialResult.usage, output: 2, smoothedTps: 20 } }]),
+				});
+			}
+			return {
+				type: opts.flowName,
+				agentSource: "project",
+				intent: opts.intent,
+				aim: opts.aim,
+				exitCode: 0,
+				messages: [],
+				stderr: "",
+				usage: { ...emptyFlowUsage(), output: 2, smoothedTps: 20 },
+			};
+		});
+
+		const onUpdateCalls: any[] = [];
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			(update: any) => onUpdateCalls.push(update),
+			makeMockCtx(tmpDir),
+		);
+
+		const sameTextCalls = onUpdateCalls.filter(
+			(c) => c.content?.[0]?.text === "same text",
+		);
+		expect(sameTextCalls.length).toBe(2);
 	});
 
 	it("registers flow-model-config flag", () => {
@@ -908,7 +1028,7 @@ describe("main agent tool restriction", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("restricts main agent to flow+web when toolOptimize is true", async () => {
+	it("restricts main agent to batch_read+bash+flow when toolOptimize is true", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -918,7 +1038,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "bash", "flow", "web"]);
+		expect(calledWith).toEqual(["batch_read", "bash", "flow"]);
 	});
 
 	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
@@ -955,7 +1075,7 @@ describe("main agent tool restriction", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies batch_read+bash+flow+web on turn_start when optimized", async () => {
+	it("re-applies batch_read+bash+flow on turn_start when optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -969,7 +1089,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch_read", "bash", "flow", "web"]);
+		expect(lastCall).toEqual(["batch_read", "bash", "flow"]);
 	});
 
 	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
@@ -1004,7 +1124,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "bash", "flow", "web"]);
+		expect(calledWith).toEqual(["batch_read", "bash", "flow"]);
 	});
 
 	it("registers batch_read and batch globally; batch_read is active in main agent", async () => {
@@ -1021,8 +1141,9 @@ describe("main agent tool restriction", () => {
 
 		// Main agent active tools use batch_read, not batch
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch_read", "bash", "flow", "web"]);
+		expect(lastCall).toEqual(["batch_read", "bash", "flow"]);
 		expect(lastCall).not.toContain("batch");
+		expect(lastCall).not.toContain("web");
 	});
 
 	it("does NOT override active tools for child flows (depth > 0)", async () => {
@@ -1108,7 +1229,8 @@ describe("web tool integration", () => {
 		expect(lastCall).toContain("web");
 	});
 
-	it("adds URL steering when prompt contains a URL", async () => {
+	it("adds URL steering when prompt contains a URL and toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1122,9 +1244,12 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("fetch");
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
-	it("adds search steering when prompt looks like a web search", async () => {
+	it("adds search steering when prompt looks like a web search and toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1138,9 +1263,28 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("search");
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
-	it("does not modify systemPrompt when web is not needed", async () => {
+	it("does not add web steering when toolOptimize is true", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const result = await pi.trigger("before_agent_start", {
+			prompt: "Check https://example.com for details",
+			systemPrompt: "You are a helpful assistant.",
+		});
+
+		const modified = result[0];
+		expect(modified.systemPrompt).not.toContain("pi-web steering");
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
+	});
+
+	it("appends sliding prompt and flows to systemPrompt unconditionally", async () => {
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1152,6 +1296,9 @@ describe("web tool integration", () => {
 		});
 
 		const modified = result[0];
+		// Sliding prompt is always appended
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("You are operating with pi-agent-flow routing.");
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");
 		expect(modified.systemPrompt).toContain("Use inherited context as background while exploring alternatives.");

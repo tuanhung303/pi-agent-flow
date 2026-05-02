@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { type FlowConfig } from "./agents.js";
-import { parseFlowCliArgs } from "./runner-cli.js";
+import { parseFlowCliArgs } from "./cli-args.js";
 import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
 import {
 	type SingleResult,
@@ -52,8 +52,8 @@ function mergeStreamingUsage(
 		...actual,
 		...(estimatedOutputTokens > 0 ? { output: Math.max(actual.output, estimatedOutputTokens) } : {}),
 		...(ctxEstimate > 0 ? { contextTokens: Math.max(actual.contextTokens, ctxEstimate) } : {}),
-		// Preserve the peak smoothedTPS seen during the stream rather than the live EMA value.
-		...(smoothedTps > 0 ? { smoothedTps: Math.max(actual.smoothedTps || 0, smoothedTps) } : {}),
+		// Show the live EMA value so the dashboard can rise and fall smoothly.
+		...(smoothedTps > 0 ? { smoothedTps } : {}),
 	};
 }
 
@@ -322,21 +322,30 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		model: resolvedModel,
 	};
 
+	let liveStreamingText = "";
+	let liveEstimatedOutputTokens = 0;
+	let lastActualOutputTokens = result.usage.output;
 	const emitUpdate = () => {
-		const streaming = drainStreamingText(result);
+		const streamingDelta = drainStreamingText(result);
+		if (streamingDelta) liveStreamingText += streamingDelta;
 		const estimatedTokens = drainStreamingEstimate(result);
+		if (result.usage.output !== lastActualOutputTokens) {
+			lastActualOutputTokens = result.usage.output;
+			liveEstimatedOutputTokens = result.usage.output;
+		}
+		liveEstimatedOutputTokens += estimatedTokens;
 		const ctxEst = drainCtxEstimate(result);
 		updateSmoothedTps(result, estimatedTokens);
 		const smoothedTps = drainSmoothedTps(result);
-		const mergedUsage = mergeStreamingUsage(result.usage, estimatedTokens, ctxEst, smoothedTps);
+		const mergedUsage = mergeStreamingUsage(result.usage, liveEstimatedOutputTokens, ctxEst, smoothedTps);
 		onUpdate?.({
 			content: [
 				{
 					type: "text",
-					text: streaming || getFlowOutput(result.messages) || "(running...)",
+					text: liveStreamingText || getFlowOutput(result.messages) || "(running...)",
 				},
 			],
-			details: makeDetails([{ ...result, usage: mergedUsage }]),
+			details: makeDetails([{ ...result, usage: mergedUsage, streamingText: liveStreamingText || undefined }]),
 		});
 	};
 

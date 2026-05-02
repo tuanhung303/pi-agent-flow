@@ -12,7 +12,7 @@ import {
 	getLastToolCall,
 	getLastAssistantText,
 	type SingleResult,
-} from "../types.js";
+} from "../src/types.js";
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {

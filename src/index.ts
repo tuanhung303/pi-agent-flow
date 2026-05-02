@@ -15,7 +15,7 @@ import {
 	selectFlowModelStrategy,
 	type LoadedFlowModelConfigs,
 } from "./config.js";
-import { parseFlowCliArgs } from "./runner-cli.js";
+import { parseFlowCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks } from "./hooks.js";
@@ -330,24 +330,24 @@ async function confirmProjectFlowsIfNeeded(
 
 // ---------------------------------------------------------------------------
 // Sliding system prompt (short, inserted before latest user message)
-// Only active when toolOptimize is true (user opt-out via PI_FLOW_TOOL_OPTIMIZE=0).
-// Replaced from older REMINDER_TEXT system to reduce context noise and avoid
-// leaking into child flow directives.
+// Always active for root flows. Appended to the static system prompt in
+// before_agent_start, and inserted as a separate system message immediately
+// before the latest user message by the context handler.
 // ---------------------------------------------------------------------------
 
-const SLIDING_SYSTEM_PROMPT_START = "<pi-flow-sliding-system>";
-const SLIDING_SYSTEM_PROMPT_END = "</pi-flow-sliding-system>";
+const SLIDING_PROMPT_OPEN_TAG = "<pi-flow-sliding-system>";
+const SLIDING_PROMPT_CLOSE_TAG = "</pi-flow-sliding-system>";
 
-const SLIDING_SYSTEM_PROMPT =
-	`${SLIDING_SYSTEM_PROMPT_START}\n` +
+const SLIDING_PROMPT =
+	`${SLIDING_PROMPT_OPEN_TAG}\n` +
 	`You are operating with pi-agent-flow routing.\n` +
 	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
-	`${SLIDING_SYSTEM_PROMPT_END}`;
+	`${SLIDING_PROMPT_CLOSE_TAG}`;
 
 const SLIDING_PROMPT_RE = new RegExp(
-	SLIDING_SYSTEM_PROMPT_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+	SLIDING_PROMPT_OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
 	"[\\s\\S]*?" +
-	SLIDING_SYSTEM_PROMPT_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+	SLIDING_PROMPT_CLOSE_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
 	"g",
 );
 
@@ -371,49 +371,54 @@ function stripSlidingPromptFromContent(
 	});
 }
 
-/** Remove any existing sliding-system-prompt system messages and strip tags from user messages. */
-function stripSlidingPromptsFromMessages(messages: any[]): any[] {
-	return messages
+/** Check whether content (string or text-part array) contains the sliding tag. */
+function contentContainsSlidingTag(content: any): boolean {
+	if (typeof content === "string") {
+		return content.includes(SLIDING_PROMPT_OPEN_TAG);
+	}
+	if (Array.isArray(content)) {
+		return content.some(
+			(part: any) =>
+				part.type === "text" &&
+				typeof part.text === "string" &&
+				part.text.includes(SLIDING_PROMPT_OPEN_TAG),
+		);
+	}
+	return false;
+}
+
+/** Remove any existing sliding-system-prompt system messages and strip tags from user messages.
+ *  Returns the sanitized messages and a flag indicating whether anything changed.
+ */
+function stripSlidingPromptsFromMessages(messages: any[]): { messages: any[]; changed: boolean } {
+	let changed = false;
+	const result = messages
 		.filter((msg) => {
 			// Remove dedicated sliding system prompt messages
-			if (msg.role === "system") {
-				const content = typeof msg.content === "string" ? msg.content : "";
-				if (content.includes(SLIDING_SYSTEM_PROMPT_START)) return false;
+			if (msg.role === "system" && contentContainsSlidingTag(msg.content)) {
+				changed = true;
+				return false;
 			}
 			return true;
 		})
 		.map((msg) => {
 			// Also strip stray tags embedded in user/assistant messages
 			if (!("content" in msg)) return msg;
-			return { ...msg, content: stripSlidingPromptFromContent(msg.content) };
+			const stripped = stripSlidingPromptFromContent(msg.content);
+			if (isJsonEqual(stripped, msg.content)) return msg;
+			changed = true;
+			return { ...msg, content: stripped };
 		});
+	return { messages: result, changed };
 }
 
 /** Build a system message containing the sliding prompt. */
-function makeSlidingSystemPromptMessage(referenceMessage?: any): any {
+function makeSlidingPromptMessage(referenceMessage?: any): any {
 	return {
 		role: "system",
-		content: SLIDING_SYSTEM_PROMPT,
+		content: SLIDING_PROMPT,
 		timestamp: referenceMessage?.timestamp,
 	};
-}
-
-// Legacy reminder constants kept for backward compat stripping only
-const REMINDER_TEXT =
-	"\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
-
-function stripLegacyReminder(
-	content: string | { type: string; text?: string }[],
-): string | { type: string; text?: string }[] {
-	if (typeof content === "string") {
-		return content.replace(REMINDER_TEXT, "");
-	}
-	return content.map((c) => {
-		if (c.type === "text" && typeof c.text === "string") {
-			return { ...c, text: c.text.replace(REMINDER_TEXT, "") };
-		}
-		return c;
-	});
 }
 
 const REASONING_PART_TYPES = new Set([
@@ -493,8 +498,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 		if (
 			entry?.type === "message" &&
 			entry.message?.role === "system" &&
-			typeof entry.message?.content === "string" &&
-			entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
+			contentContainsSlidingTag(entry.message?.content)
 		) {
 			continue;
 		}
@@ -510,9 +514,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 
 			if ("content" in message) {
 				const originalContent = message.content;
-				const strippedContent = stripSlidingPromptFromContent(
-					stripLegacyReminder(originalContent),
-				);
+				const strippedContent = stripSlidingPromptFromContent(originalContent);
 
 				if (!isJsonEqual(strippedContent, originalContent)) {
 					message = {
@@ -536,7 +538,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch_read", "bash", "flow", "web"]
+		? ["batch_read", "bash", "flow"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
@@ -657,14 +659,17 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		let systemPrompt = event.systemPrompt;
-		if (webInstructions.length > 0) {
+		if (!toolOptimize && webInstructions.length > 0) {
 			systemPrompt +=
 				"\n\n## pi-web steering\n" +
 				webInstructions.map((line) => `- ${line}`).join("\n");
 		}
 
+		// Append sliding prompt to static system prompt unconditionally.
+		systemPrompt += "\n\n" + SLIDING_PROMPT;
+
 		if (!canDelegate || discoveredFlows.length === 0) {
-			return webInstructions.length > 0 ? { systemPrompt } : undefined;
+			return { systemPrompt };
 		}
 
 		return {
@@ -678,7 +683,7 @@ Before acting, reason about whether to dive into a flow:
 - [debug] — when something is broken. Investigate logs, errors, stack traces to find root cause.
 - [build] — when you are ready to build. Implement features, fix bugs, write tests.
 - [craft] — when you need a plan. Design structure, break down requirements before building.
-- [audit] — when you need to verify. Audit security, quality, correctness.
+- [audit] — when you need to verify and remediate. Audit security, quality, and correctness; fix safe issues directly.
 - [ideas] — when you need fresh ideas. Use inherited context as background while exploring alternatives.
 
 Multiple independent flows? Batch them into one call:
@@ -689,16 +694,16 @@ Multiple independent flows? Batch them into one call:
 Each call renders as:
 
 • flow [scout] — Map the full directory structure...
-• flow [audit] — Audit security and quality...
+• flow [audit] — Audit security and quality, then fix safe issues...
 
 Each flow returns:
 
 flow [type] accomplished
 
-[Summary] — what happened
-[Done] — completed with file:line references
-[Not Done] — incomplete items and reasons
-[Next Steps] — recommended follow-up
+[Summary] — what happened and current status
+[Done] — completed work with file:line references and verification results
+[Not Done] — incomplete items, skipped checks, blockers, and reasons
+[Next Steps] — specific recommended follow-up or next flow
 
 ### Guards
 - Depth: ${currentDepth}/${maxDepth} | Cycles: ${preventCycles ? "blocked" : "off"} | Stack: ${ancestorFlowStack.length > 0 ? ancestorFlowStack.join(" -> ") : "(root)"}
@@ -706,20 +711,15 @@ flow [type] accomplished
 		};
 	});
 
-	// Sliding system prompt: insert a short tagged system prompt immediately
-	// before the latest user message each turn. Gated behind toolOptimize.
-	// Always strips stale sliding prompts to prevent accumulation.
+	// Sliding system prompt: insert as a separate system message immediately
+	// before the latest user message each turn. Strips from the static
+	// systemPrompt to avoid duplication, then inserts separately.
 	// Skipped for child flows (depth > 0) — they have explicit <mission> directives.
 	pi.on("context", async (event) => {
 		if (currentDepth > 0) return undefined;
 
-		// Always strip old sliding prompts + legacy reminders to prevent accumulation
-		let messages = stripSlidingPromptsFromMessages(event.messages);
-		// Also strip legacy reminder text from user messages
-		messages = messages.map((msg: any) => {
-			if (msg.role !== "user" || !("content" in msg)) return msg;
-			return { ...msg, content: stripLegacyReminder(msg.content) };
-		});
+		// Always strip old sliding prompt messages to prevent accumulation
+		const { messages, changed: messagesChanged } = stripSlidingPromptsFromMessages(event.messages);
 
 		// Find latest user message
 		const userIndices = messages
@@ -727,22 +727,34 @@ flow [type] accomplished
 			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) {
-			return messages === event.messages ? undefined : { messages };
+			// No user message yet: keep sliding prompt in the static system prompt only.
+			return messagesChanged ? { messages } : undefined;
 		}
 
-		// Only inject sliding prompt when toolOptimize is enabled
-		if (!toolOptimize) {
-			return { messages };
+		// Strip sliding from the static systemPrompt so it only appears once,
+		// as a separate message right before the latest user message.
+		let systemPrompt = event.systemPrompt;
+		let systemPromptChanged = false;
+		if (typeof systemPrompt === "string") {
+			const stripped = stripSlidingPromptText(systemPrompt);
+			if (stripped !== systemPrompt) {
+				systemPrompt = stripped;
+				systemPromptChanged = true;
+			}
 		}
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
 		const modified = [
 			...messages.slice(0, lastUserIndex),
-			makeSlidingSystemPromptMessage(messages[lastUserIndex]),
+			makeSlidingPromptMessage(messages[lastUserIndex]),
 			...messages.slice(lastUserIndex),
 		];
 
-		return { messages: modified };
+		const result: any = { messages: modified };
+		if (systemPromptChanged) {
+			result.systemPrompt = systemPrompt;
+		}
+		return result;
 	});
 
 	// Register the web tool
@@ -759,7 +771,7 @@ flow [type] accomplished
 				"",
 				"Flow states are isolated \u03c0 processes with forked session snapshots. They run in parallel.",
 				'Invoke: { "flow": [{ "type": "scout", "intent": "..." }, ...] }',
-				"States: scout (tanken), debug (kensh\u014d), build (shokunin), craft (keikaku), audit (kanshi), ideas (mushin).",
+				"States: scout, debug, build, craft, audit, ideas.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,
@@ -869,13 +881,22 @@ flow [type] accomplished
 				}
 
 				let lastStreamingText = "";
-				let lastEmittedText: string | undefined;
+				let lastEmittedSignature: string | undefined;
 				const emitProgress = (streamingText?: string) => {
 					if (!onUpdate) return;
 					if (streamingText !== undefined) lastStreamingText = streamingText;
 					const text = lastStreamingText || "";
-					if (text === lastEmittedText) return;
-					lastEmittedText = text;
+					const signature =
+						text +
+						"|" +
+						allResults
+							.map(
+								(r) =>
+									`${r.messages.length}:${r.usage.toolCalls}:${r.usage.input}:${r.usage.output}:${r.usage.contextTokens}:${r.usage.smoothedTps ?? 0}:${r.errorMessage ?? ""}`,
+							)
+							.join(";");
+					if (signature === lastEmittedSignature) return;
+					lastEmittedSignature = signature;
 					onUpdate({
 						content: [{ type: "text", text }],
 						details: makeDetails([...allResults]),

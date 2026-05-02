@@ -32,6 +32,8 @@ export interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	sawAgentEnd?: boolean;
+	/** Live in-progress text for status rendering; not part of the final flow report. */
+	streamingText?: string;
 }
 
 /** Metadata attached to every tool result for rendering. */

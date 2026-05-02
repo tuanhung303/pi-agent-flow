@@ -42,21 +42,27 @@ pi install .
 
 ## Features
 
-- **Isolated context** — flows always receive your current session snapshot (or start clean when configured)
-- **Parallel execution** — batch independent flows into one call
+- **Flow-state delegation** — six bundled specialist flows (`scout`, `debug`, `build`, `craft`, `audit`, `ideas`) plus custom flows via Markdown front-matter
+- **Isolated forked context** — each flow runs as an isolated `pi` child process with a session snapshot (or clean slate when configured)
+- **Parallel execution** — batch independent flows into one call with bounded concurrency
 - **Structured reports** — every flow returns `[Summary]`, `[Done]`, `[Not Done]`, `[Next Steps]`
 - **Depth guards** — configurable max delegation depth (default: `3`)
-- **Cycle prevention** — blocks recursive delegation chains
-- **Flow discovery** — reads definitions from `~/.pi/agent/agents/` and `.pi/agents/`
-- **TUI rendering** — rich collapsed/expanded display in interactive mode
-- **Post-flow hooks** — automatic advisory messages after successful flows (e.g., code → review)
-- **Smooth streaming metrics** — context token counters increment tick-by-tick during active streaming instead of jumping at boundaries
+- **Cycle prevention** — blocks re-entering flows already in the ancestor stack
+- **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
+- **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
+- **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
+- **Sliding system prompt** — lightweight routing reminder injected before each user message, stripped from child snapshots to avoid duplication
+- **Session snapshot sanitization** — removes sliding prompts, reasoning/thinking artifacts, and non-inheritable content before forking
+- **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
+- **Post-flow hooks** — automatic advisory messages suggesting follow-up flows (e.g., `build → audit`)
+- **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, plus expanded view with full reports and tool traces
+- **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
 
 ---
 
 ## Why Flow Style?
 
-Flow-style delegation is designed for **context efficiency**. Instead of launching every sub-agent with the full, ever-growing conversation history, each flow receives only what it needs: your intent and (when appropriate) a session snapshot.
+Flow-style delegation is designed for **context efficiency**. Instead of launching every sub-agent with the full, ever-growing conversation history, each flow receives only what it needs: your intent and (when appropriate) a sanitized session snapshot.
 
 This approach delivers four concrete benefits:
 
@@ -69,22 +75,42 @@ The result is faster, cheaper, and cleaner delegation: the main agent remains un
 
 ---
 
+## Bundled Flows
+
+| Flow | Purpose | Tools | Tier |
+|------|---------|-------|------|
+| `[scout]` | Discover files, trace code paths, map architecture | `batch_read`, `bash`, `find`, `grep`, `ls` | `lite` |
+| `[debug]` | Investigate logs, errors, stack traces, root causes | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
+| `[build]` | Implement features, fix bugs, write tests, ship | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
+| `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls` | `full` |
+| `[audit]` | Audit security, quality, correctness; fix issues autonomously | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
+| `[ideas]` | Generate ideas and explore possibilities with inherited context | `batch`, `bash` | `full` |
+
+> **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
+
+> **Clean slate:** Set `inheritContext: false` in a custom flow's front-matter so it receives only the intent, ideal for unbiased creative work.
+
+---
+
 ## Flow Definitions
 
-Create `.md` files in `~/.pi/agent/agents/` or `.pi/agents/`:
+Create `.md` files in `~/.pi/agent/agents/` (user-level) or `.pi/agents/` (project-level):
 
 ```markdown
 ---
-name: explore
-description: Discover files, trace code paths, map architecture
+name: myflow
+description: Short description of what this flow does
 tools: batch, bash
+model: github-copilot/gpt-5.5
+maxDepth: 1
+inheritContext: true
 ---
 
-During this explore flow — your mission is discovery. Stay focused on your intent at all times.
+During this myflow flow — your mission is ...
 
 When accomplished, end your response with:
 
-flow [explore] accomplished
+flow [myflow] accomplished
 
 [Summary] what was investigated
 
@@ -92,54 +118,52 @@ flow [explore] accomplished
 - completed items
 
 [Not Done]
-- incomplete items
+- incomplete items and reasons
 
 [Next Steps]
 - recommended follow-up
 ```
 
----
+### Front-matter options
 
-## Bundled Flows
-
-| Flow | Purpose |
-|------|---------|
-| `[explore]` | Discover files, trace code paths, map architecture |
-| `[debug]` | Investigate logs, errors, stack traces, root causes |
-| `[code]` | Implement features, fix bugs, write tests |
-| `[architect]` | Plan structure, break down requirements, design solutions |
-| `[review]` | Audit security, quality, correctness |
-| `[brainstorm]` | Generate ideas and explore possibilities with a clean slate |
-
-> **Note:** Some flows — like `[brainstorm]` — start with a **clean slate** and do not inherit the current session context. They receive only the intent, making them ideal for unbiased, creative thinking.
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Flow identifier (lowercase, required) |
+| `description` | `string` | Short summary (required) |
+| `tools` | `string[]` | Tools available to this flow |
+| `model` | `string` | Override the model for this flow |
+| `thinking` | `string` | Thinking budget (e.g., `"low"`, `"medium"`, `"high"`) |
+| `maxDepth` | `number` | How many more delegation levels this flow may spawn |
+| `inheritContext` | `boolean` | Whether to fork parent session snapshot (`true`) or start clean (`false`) |
 
 ---
 
 ## Post-Flow Hooks
 
-When certain flows complete successfully, the system can inject advisory messages suggesting follow-up flows. This keeps the agent on the optimal path without requiring the user to manually chain flows.
+When certain flows complete successfully, the system injects advisory messages suggesting follow-up flows. This keeps the agent on the optimal path without requiring the user to manually chain flows.
 
 ### Built-in Hooks
 
 | Hook | Trigger | Advice |
 |------|---------|--------|
-| `code → review` | A `[code]` flow succeeds | *"Consider running a [review] flow to audit the changes…"* |
-| `debug → code` | A `[debug]` flow succeeds | *"The root cause has been identified. Consider running a [code] flow to implement the fix."* |
+| `build → audit` | A `[build]` flow succeeds | *"Consider running an [audit] flow to audit the changes…"* |
+| `debug → build` | A `[debug]` flow succeeds | *"The root cause has been identified. Consider running a [build] flow to implement the fix."* |
+| `audit → scout` | An `[audit]` flow succeeds | *"Audit complete. Consider running a [scout] flow to trace the audit findings across the codebase."* |
 
 Hooks are smart: if the agent already included the suggested flow in the same batch, the advisory is suppressed to avoid redundancy.
 
 ### Extending
 
-Hooks are registered via `registerHook()` in `hooks.ts`. Each hook defines a trigger (flow type + success requirement) and an action that returns advisory text. The hook system mirrors the flow discovery pattern, making it easy to add domain-specific hints.
+Hooks are registered via `registerHook()` in `hooks.ts`. Each hook defines a trigger (flow type + success requirement) and an action that returns advisory text.
 
-Example — a custom `explore → architect` hook:
+Example — a custom `scout → craft` hook:
 
 ```ts
 registerHook({
-  name: "my/explore-to-architect",
-  trigger: { flowTypes: ["explore"], onlyOnSuccess: true },
+  name: "my/scout-to-craft",
+  trigger: { flowTypes: ["scout"], onlyOnSuccess: true },
   action: (ctx) => ({
-    content: "Consider running an [architect] flow to design a solution.",
+    content: "Consider running a [craft] flow to design a solution.",
     priority: 10,
   }),
 });
@@ -152,7 +176,7 @@ registerHook({
 ### Single flow
 
 ```json
-{ "flow": [{ "type": "explore", "intent": "Find all authentication-related code", "aim": "Find auth code" }] }
+{ "flow": [{ "type": "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }] }
 ```
 
 ### Batch multiple flows
@@ -160,11 +184,43 @@ registerHook({
 ```json
 {
   "flow": [
-    { "type": "explore", "intent": "Find auth code" },
-    { "type": "review", "intent": "Audit auth module" }
+    { "type": "scout", "intent": "Find auth code", "aim": "Find auth code" },
+    { "type": "audit", "intent": "Audit auth module", "aim": "Audit auth module" }
   ]
 }
 ```
+
+### Override working directory for a flow
+
+```json
+{
+  "flow": [
+    { "type": "scout", "intent": "Map packages/ui", "aim": "Map UI package", "cwd": "packages/ui" }
+  ]
+}
+```
+
+---
+
+## Tools
+
+### `flow` — delegate to flow states
+
+The core delegation tool. Accepts an array of flow tasks and runs them in parallel.
+
+### `batch` / `batch_read` — unified file operations
+
+When **tool optimization** is enabled (default), the separate `read` / `write` / `edit` tools are replaced by:
+
+- **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings.
+- **`batch_read`** — read-only variant without truncation caps, ideal for reading multiple files or large sections.
+
+### `web` — search and fetch
+
+Built-in web operations (no API keys required):
+
+- **Search** — queries Brave and DuckDuckGo HTML endpoints, returns top results with titles, URLs, and snippets.
+- **Fetch** — downloads a page, converts HTML to Markdown via JSDOM + Turndown, saves to a temp file in the session directory, and returns a preview. Falls back through direct fetch → `r.jina.ai` → `curl`.
 
 ---
 
@@ -172,77 +228,81 @@ registerHook({
 
 ### Flow model strategies
 
-Use `flowModelConfigs` in your Pi settings to select different model strategies by name.
+Use `flowModelConfigs` in your Pi settings to define tiered model strategies. Each tier (`lite`, `flash`, `full`) can specify a `primary` model and an optional `failover` array.
 
-```shell
-# ~/.pi/agent/settings.json
+```json
 {
   "flowModelConfig": "balance",
   "flowModelConfigs": {
     "performance": {
-      "lite": {
-        "primary": "github-copilot/gpt-5.4-mini",
-        "failover": ["github-copilot/gpt-5.5"]
-      },
-      "flash": {
-        "primary": "github-copilot/gpt-5.5"
-      },
-      "full": {
-        "primary": "github-copilot/gpt-5.5"
-      }
+      "lite": { "primary": "github-copilot/gpt-5.4-mini", "failover": ["github-copilot/gpt-5.5"] },
+      "flash": { "primary": "github-copilot/gpt-5.5" },
+      "full": { "primary": "github-copilot/gpt-5.5" }
     },
     "balance": {
-      "lite": {
-        "primary": "github-copilot/gpt-5.4-mini"
-      },
-      "flash": {
-        "primary": "github-copilot/gpt-5.5",
-        "failover": ["github-copilot/gpt-5.4-mini"]
-      },
-      "full": {
-        "primary": "github-copilot/gpt-5.5"
-      }
+      "lite": { "primary": "github-copilot/gpt-5.4-mini" },
+      "flash": { "primary": "github-copilot/gpt-5.5", "failover": ["github-copilot/gpt-5.4-mini"] },
+      "full": { "primary": "github-copilot/gpt-5.5" }
     },
     "quality": {
-      "lite": {
-        "primary": "github-copilot/gpt-5.5"
-      },
-      "flash": {
-        "primary": "github-copilot/gpt-5.5"
-      },
-      "full": {
-        "primary": "github-copilot/gpt-5.5-large",
-        "failover": ["github-copilot/gpt-5.5"]
-      }
+      "lite": { "primary": "github-copilot/gpt-5.5" },
+      "flash": { "primary": "github-copilot/gpt-5.5" },
+      "full": { "primary": "github-copilot/gpt-5.5-large", "failover": ["github-copilot/gpt-5.5"] }
     }
   }
 }
 ```
 
-- `performance` favors speed and lower-cost models.
-- `balance` aims for the best default mix of quality and cost.
-- `quality` prefers the strongest models first.
+- `performance` — favors speed and lower-cost models.
+- `balance` — best default mix of quality and cost.
+- `quality` — prefers the strongest models first.
 
-### Flags (passed to parent pi process)
+Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`.
+
+### Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--flow-max-depth [n]` | Maximum delegation depth | `3` |
 | `--flow-prevent-cycles` | Block cyclic delegation | `true` |
 | `--no-flow-prevent-cycles` | Disable cycle prevention | — |
-| `--flow-model-config [name]` | Select a named model strategy from `flowModelConfigs` | `balance` |
-| `--flow-lite-model [model]` | Override the lite-tier model for child flows | — |
-| `--flow-flash-model [model]` | Override the flash-tier model for child flows | — |
-| `--flow-full-model [model]` | Override the full-tier model for child flows | — |
+| `--flow-model-config [name]` | Select a named model strategy | `balance` |
+| `--flow-lite-model [model]` | Override the lite-tier model | — |
+| `--flow-flash-model [model]` | Override the flash-tier model | — |
+| `--flow-full-model [model]` | Override the full-tier model | — |
+| `--tool-optimize` | Use unified `batch`/`batch_read` instead of separate read/write/edit | `true` |
+| `--no-tool-optimize` | Disable tool optimization; use legacy read/write/edit tools | — |
 
-### Environment variables (propagated to child processes)
+### Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `PI_FLOW_DEPTH` | Current depth |
+| `PI_FLOW_DEPTH` | Current delegation depth |
 | `PI_FLOW_MAX_DEPTH` | Max allowed depth |
 | `PI_FLOW_STACK` | JSON array of ancestor flow names |
 | `PI_FLOW_PREVENT_CYCLES` | `"1"` or `"0"` |
+| `PI_FLOW_TOOL_OPTIMIZE` | `"1"` or `"0"` (overrides default tool optimization) |
+| `PI_FLOW_TIMEOUT_MS` | Per-flow timeout in milliseconds (default: 10 minutes) |
+
+---
+
+## Local Development
+
+To test local changes with the `pi` CLI before publishing:
+
+```shell
+# From the pi-agent-flow repo directory
+npm link
+```
+
+This creates a global symlink. The `pi` CLI loads the package via `"npm:pi-agent-flow"` in `~/.pi/agent/settings.json`, so changes are picked up immediately — restart `pi` after editing.
+
+To restore the published version:
+
+```shell
+npm uninstall -g pi-agent-flow
+npm install -g pi-agent-flow
+```
 
 ---
 
