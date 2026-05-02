@@ -33,6 +33,7 @@ import {
 	looksLikeUrlPrompt,
 	looksLikeWebSearchPrompt,
 } from "./web-tool.js";
+import { initI18n, t } from "./i18n.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -323,8 +324,8 @@ async function confirmProjectFlowsIfNeeded(
 	const names = projectFlows.map((f) => f.name).join(", ");
 	const dir = projectFlowsDir ?? "(unknown)";
 	return ctx.ui.confirm(
-		"Run project-local flows?",
-		`Flows: ${names}\nSource: ${dir}\n\nProject flows are repo-controlled. Only continue for trusted repositories.`,
+		t("flow.confirmProject.title", "Run project-local flows?"),
+		t("flow.confirmProject.body", "Flows: {names}\nSource: {dir}\n\nProject flows are repo-controlled. Only continue for trusted repositories.", { names, dir }),
 	);
 }
 
@@ -545,6 +546,8 @@ function computeActiveTools(optimize: boolean): string[] {
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
+	initI18n(pi);
+
 	pi.registerFlag("flow-max-depth", {
 		description: "Maximum allowed flow delegation depth (default: 3).",
 		type: "string",
@@ -835,7 +838,7 @@ flow [type] accomplished
 							const ok = await confirmProjectFlowsIfNeeded(projectFlows, discovery.projectFlowsDir, ctx);
 							if (!ok) {
 								return {
-									content: [{ type: "text", text: "Canceled: project-local flows not approved." }],
+									content: [{ type: "text", text: t("flow.canceledProject", "Canceled: project-local flows not approved.") }],
 									details: makeDetails([]),
 								};
 							}
@@ -844,7 +847,7 @@ flow [type] accomplished
 							return {
 								content: [{
 									type: "text",
-									text: `Blocked: project-local flow confirmation required in non-UI mode.\nFlows: ${names}\nRe-run with confirmProjectFlows: false if trusted.`,
+									text: t("flow.blockedProjectNonUi", "Blocked: project-local flow confirmation required in non-UI mode.\nFlows: {names}\nRe-run with confirmProjectFlows: false if trusted.", { names }),
 								}],
 								details: makeDetails([]),
 								isError: true,
