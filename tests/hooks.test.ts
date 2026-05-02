@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { registerHook, runHooks, clearHooks } from "../hooks.js";
-import { emptyFlowUsage, type SingleResult } from "../types.js";
+import { registerHook, runHooks, clearHooks } from "../src/hooks.js";
+import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {

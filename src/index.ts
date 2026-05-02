@@ -15,7 +15,7 @@ import {
 	selectFlowModelStrategy,
 	type LoadedFlowModelConfigs,
 } from "./config.js";
-import { parseFlowCliArgs } from "./runner-cli.js";
+import { parseFlowCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks } from "./hooks.js";
@@ -538,7 +538,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch_read", "bash", "flow", "web"]
+		? ["batch_read", "bash", "flow"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
@@ -683,7 +683,7 @@ Before acting, reason about whether to dive into a flow:
 - [debug] — when something is broken. Investigate logs, errors, stack traces to find root cause.
 - [build] — when you are ready to build. Implement features, fix bugs, write tests.
 - [craft] — when you need a plan. Design structure, break down requirements before building.
-- [audit] — when you need to verify. Audit security, quality, correctness.
+- [audit] — when you need to verify and remediate. Audit security, quality, and correctness; fix safe issues directly.
 - [ideas] — when you need fresh ideas. Use inherited context as background while exploring alternatives.
 
 Multiple independent flows? Batch them into one call:
@@ -694,16 +694,16 @@ Multiple independent flows? Batch them into one call:
 Each call renders as:
 
 • flow [scout] — Map the full directory structure...
-• flow [audit] — Audit security and quality...
+• flow [audit] — Audit security and quality, then fix safe issues...
 
 Each flow returns:
 
 flow [type] accomplished
 
-[Summary] — what happened
-[Done] — completed with file:line references
-[Not Done] — incomplete items and reasons
-[Next Steps] — recommended follow-up
+[Summary] — what happened and current status
+[Done] — completed work with file:line references and verification results
+[Not Done] — incomplete items, skipped checks, blockers, and reasons
+[Next Steps] — specific recommended follow-up or next flow
 
 ### Guards
 - Depth: ${currentDepth}/${maxDepth} | Cycles: ${preventCycles ? "blocked" : "off"} | Stack: ${ancestorFlowStack.length > 0 ? ancestorFlowStack.join(" -> ") : "(root)"}
@@ -771,7 +771,7 @@ flow [type] accomplished
 				"",
 				"Flow states are isolated \u03c0 processes with forked session snapshots. They run in parallel.",
 				'Invoke: { "flow": [{ "type": "scout", "intent": "..." }, ...] }',
-				"States: scout (tanken), debug (kensh\u014d), build (shokunin), craft (keikaku), audit (kanshi), ideas (mushin).",
+				"States: scout, debug, build, craft, audit, ideas.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,

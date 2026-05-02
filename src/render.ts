@@ -291,7 +291,10 @@ function renderFlowCollapsed(
 	}
 
 	// msg: line (last assistant text or streaming)
-	if (flowOutput) {
+	if (r.exitCode === -1 && streamingText) {
+		const logContent = tailText(streamingText, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
+	} else if (flowOutput) {
 		const logContent = tailText(flowOutput, contentBudget(10));
 		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (streamingText) {
@@ -422,8 +425,9 @@ function renderActivityPanel(
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "├─ " + actPrefix)}${actContent}`, 0, 0));
 		}
 
-		// msg: line (last assistant text)
-		const lastText = getLastAssistantText(r.messages);
+		// msg: line (live streaming text or last assistant text)
+		const liveText = r.exitCode === -1 ? r.streamingText : undefined;
+		const lastText = liveText || getLastAssistantText(r.messages);
 		if (lastText) {
 			const logContent = tailText(lastText, contentBudget(10));
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
