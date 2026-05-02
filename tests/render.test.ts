@@ -360,6 +360,12 @@ describe("formatCompactStats", () => {
 		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 · ↓     0 · tps:     - · ctx:     0 · gpt-4o");
 	});
 
+	it("strips provider prefix from model", () => {
+		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
+			"↑     0 · ↓     0 · tps:     - · ctx:     0 · gpt-5.5",
+		);
+	});
+
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
 		expect(formatCompactStats(usage)).toBe("↑  5.0k · ↓  1.0k · tps:     - · ctx:     0");
