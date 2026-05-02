@@ -637,11 +637,11 @@ describe("activity panel rendering", () => {
 		}
 	});
 
-	it("passes full streaming LOG text to TruncatedText in single flow collapsed", () => {
+	it("shows the live tail of streaming msg text in single flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longStreaming = "c".repeat(55);
+			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
 			const result = makeResult({
 				intent: "test",
 				messages: [],
@@ -651,9 +651,9 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
 			expect(logLine).toBeDefined();
-			// Content is pre-truncated to contentBudget(10) = 50 chars
+			// Content is a moving tail window so new characters visibly shift into view.
 			const logContent = logLine.split("msg:")[1].trim();
-			expect(logContent).toContain("...");
+			expect(logContent).toBe(tailText(longStreaming, 50));
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;

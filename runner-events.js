@@ -55,13 +55,15 @@ export function drainStreamingText(result) {
 const CHARS_PER_TOKEN = 4;
 
 /** Minimum elapsed ms between TPS samples. */
-const MIN_TPS_SAMPLE_MS = 100;
+const MIN_TPS_SAMPLE_MS = 50;
 /** Cap on instantaneous TPS to suppress burst artifacts. */
 const MAX_INSTANT_TPS = 300;
 /** Calibration scale to align heuristic tokens with empirical display range. */
-const TPS_CALIBRATION = 0.1;
+const TPS_CALIBRATION = 1.0;
 /** EMA smoothing factor for tokens-per-second (higher = more responsive). */
-const EMA_ALPHA = 0.1;
+const EMA_ALPHA = 0.35;
+/** Emit streaming text as soon as any non-empty delta arrives. */
+const STREAMING_EMIT_CHARS = 1;
 
 function getStreamingEstimate(result) {
   if (!streamingEstimateMap.has(result)) {
@@ -196,7 +198,7 @@ function updateStreamingEstimate(result, deltaLength) {
 export function drainStreamingEstimate(result) {
   const est = getStreamingEstimate(result);
   const tokens = Math.floor(est.chars / CHARS_PER_TOKEN);
-  est.chars = 0;
+  est.chars = est.chars % CHARS_PER_TOKEN;
   return tokens;
 }
 
@@ -221,7 +223,7 @@ function accumulateStreamingDelta(result, delta) {
   const state = getStreamingTextState(result);
   state.buffer = state.buffer + delta;
   updateStreamingEstimate(result, delta.length);
-  if (state.buffer.length - state.lastEmittedWordCount >= 40) {
+  if (state.buffer.length - state.lastEmittedWordCount >= STREAMING_EMIT_CHARS) {
     state.lastEmittedWordCount = state.buffer.length;
     return true;
   }
