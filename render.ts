@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatCompactStats, formatFlowTypeName, truncateChars, contentBudget } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, truncateChars, tailText, contentBudget } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -292,10 +292,10 @@ function renderFlowCollapsed(
 
 	// msg: line (last assistant text or streaming)
 	if (flowOutput) {
-		const logContent = truncateChars(flowOutput, contentBudget(10));
+		const logContent = tailText(flowOutput, contentBudget(10));
 		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (streamingText) {
-		const logContent = truncateChars(streamingText, contentBudget(10));
+		const logContent = tailText(streamingText, contentBudget(10));
 		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (error && r.errorMessage) {
 		const logContent = truncateChars(r.errorMessage, contentBudget(10));
@@ -425,7 +425,7 @@ function renderActivityPanel(
 		// msg: line (last assistant text)
 		const lastText = getLastAssistantText(r.messages);
 		if (lastText) {
-			const logContent = truncateChars(lastText, contentBudget(10));
+			const logContent = tailText(lastText, contentBudget(10));
 			container.addChild(new TruncatedText(`${theme.fg("dim", indent + "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 		} else if (error && r.errorMessage) {
 			const logContent = truncateChars(r.errorMessage, contentBudget(10));

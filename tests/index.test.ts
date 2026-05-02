@@ -635,6 +635,67 @@ describe("flow tool execute", () => {
 		expect(sameTextCalls.length).toBe(1);
 	});
 
+	it("emits progress when usage changes with the same streaming text", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockImplementation(async (opts) => {
+			if (opts.onUpdate) {
+				const partialResult: SingleResult = {
+					type: opts.flowName,
+					agentSource: "project",
+					intent: opts.intent,
+					aim: opts.aim,
+					exitCode: -1,
+					messages: [],
+					stderr: "",
+					usage: { ...emptyFlowUsage(), output: 1, smoothedTps: 10 },
+				};
+				opts.onUpdate({
+					content: [{ type: "text", text: "same text" }],
+					details: opts.makeDetails([partialResult]),
+				});
+				opts.onUpdate({
+					content: [{ type: "text", text: "same text" }],
+					details: opts.makeDetails([{ ...partialResult, usage: { ...partialResult.usage, output: 2, smoothedTps: 20 } }]),
+				});
+			}
+			return {
+				type: opts.flowName,
+				agentSource: "project",
+				intent: opts.intent,
+				aim: opts.aim,
+				exitCode: 0,
+				messages: [],
+				stderr: "",
+				usage: { ...emptyFlowUsage(), output: 2, smoothedTps: 20 },
+			};
+		});
+
+		const onUpdateCalls: any[] = [];
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			(update: any) => onUpdateCalls.push(update),
+			makeMockCtx(tmpDir),
+		);
+
+		const sameTextCalls = onUpdateCalls.filter(
+			(c) => c.content?.[0]?.text === "same text",
+		);
+		expect(sameTextCalls.length).toBe(2);
+	});
+
 	it("registers flow-model-config flag", () => {
 		const pi = createMockPi();
 		registerExtension(pi as any);

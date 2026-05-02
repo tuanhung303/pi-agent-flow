@@ -77,6 +77,42 @@ describe("runFlow case-insensitive lookup", () => {
 		expect(result.exitCode).toBe(0);
 	});
 
+	it("streams cumulative text to onUpdate", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+		const updates: string[] = [];
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			onUpdate: (partial) => updates.push(partial.content[0]?.text || ""),
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hel"}}\n'));
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"lo"}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+		expect(updates).toEqual(["Hel", "Hello"]);
+	});
+
 	it("returns error for unknown flow regardless of casing", async () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",

@@ -892,7 +892,7 @@ flow [type] accomplished
 						allResults
 							.map(
 								(r) =>
-									`${r.messages.length}:${r.usage.toolCalls}:${r.usage.inputTokens}:${r.usage.outputTokens}:${r.errorMessage ?? ""}`,
+									`${r.messages.length}:${r.usage.toolCalls}:${r.usage.input}:${r.usage.output}:${r.usage.contextTokens}:${r.usage.smoothedTps ?? 0}:${r.errorMessage ?? ""}`,
 							)
 							.join(";");
 					if (signature === lastEmittedSignature) return;

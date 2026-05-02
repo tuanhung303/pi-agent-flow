@@ -119,8 +119,8 @@ describe("processFlowJsonLine", () => {
       assistantMessageEvent: { type: "text_delta", delta: "some text" },
     };
     const result = processFlowJsonLine(JSON.stringify(event), r);
-    // Under 40 chars threshold — returns false
-    expect(result).toBe(false);
+    // Non-empty text deltas emit immediately for real-time status streaming.
+    expect(result).toBe(true);
     // Buffer should have the text
     expect(drainStreamingText(r)).toBe("some text");
   });
@@ -137,9 +137,9 @@ describe("processFlowJsonLine", () => {
     expect(drainStreamingText(r)).toBe("");
   });
 
-  it("text_delta triggers emit at 40 chars", () => {
+  it("text_delta triggers emit immediately", () => {
     const r = makeResult();
-    const longText = "a".repeat(45);
+    const longText = "a";
     const event = {
       type: "message_update",
       assistantMessageEvent: { type: "text_delta", delta: longText },
@@ -249,38 +249,27 @@ describe("drainStreamingText", () => {
 // ---------------------------------------------------------------------------
 
 describe("accumulateStreamingDelta (via processFlowJsonLine)", () => {
-  it("returns false under 40 chars", () => {
+  it("returns true for any non-empty text delta", () => {
     const r = makeResult();
     const result = processFlowJsonLine(
-      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "short" } }),
-      r,
-    );
-    expect(result).toBe(false);
-  });
-
-  it("returns true at exactly 40 chars", () => {
-    const r = makeResult();
-    const result = processFlowJsonLine(
-      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(40) } }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "s" } }),
       r,
     );
     expect(result).toBe(true);
   });
 
-  it("accumulates across multiple deltas", () => {
+  it("accumulates across multiple deltas until drained", () => {
     const r = makeResult();
-    // Send 30 chars — under threshold
     processFlowJsonLine(
-      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(30) } }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "aaa" } }),
       r,
     );
-    // Send 20 more — now at 50, should trigger
     const result = processFlowJsonLine(
-      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "b".repeat(20) } }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "bb" } }),
       r,
     );
     expect(result).toBe(true);
-    expect(drainStreamingText(r)).toBe("a".repeat(30) + "b".repeat(20));
+    expect(drainStreamingText(r)).toBe("aaabb");
   });
 
   it("ignores empty deltas", () => {
@@ -473,14 +462,18 @@ describe("drainStreamingEstimate", () => {
     expect(drainStreamingEstimate(r)).toBe(100);
   });
 
-  it("resets estimate on drain", () => {
+  it("keeps sub-token remainder on drain", () => {
     const r = makeResult();
     processFlowJsonLine(
-      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(400) } }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "a".repeat(402) } }),
       r,
     );
-    drainStreamingEstimate(r);
-    expect(drainStreamingEstimate(r)).toBe(0);
+    expect(drainStreamingEstimate(r)).toBe(100);
+    processFlowJsonLine(
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "bb" } }),
+      r,
+    );
+    expect(drainStreamingEstimate(r)).toBe(1);
   });
 
   it("resets estimate when message completes", () => {
@@ -659,26 +652,24 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     expect(tps).toBeGreaterThan(0);
   });
 
-  it("uses EMA_ALPHA = 0.1 for smoother averaging", async () => {
+  it("uses responsive EMA smoothing for averaging", async () => {
     const r = makeResult();
     // Seed — first call with non-zero tokens sets __lastEmitTime but doesn't compute rate
     updateSmoothedTps(r, 100);
     const seeded = drainSmoothedTps(r);
     expect(seeded).toBe(0); // seeded, no rate yet
 
-    await new Promise((res) => setTimeout(res, 110));
-    // First real sample: ~100 tokens in ~110ms → ~909 raw tps → ~90.9 calibrated
+    await new Promise((res) => setTimeout(res, 60));
+    // First real sample is capped after calibration.
     updateSmoothedTps(r, 100);
     const first = drainSmoothedTps(r);
     expect(first).toBeGreaterThan(0);
 
-    await new Promise((res) => setTimeout(res, 110));
-    // Second sample: 10 tokens in ~110ms → ~90.9 raw tps → ~9.1 calibrated
-    // With EMA_ALPHA=0.1, the smoothed value should be pulled less toward the new sample
+    await new Promise((res) => setTimeout(res, 60));
+    // A lower second sample should pull the displayed value down smoothly, not freeze.
     updateSmoothedTps(r, 10);
     const second = drainSmoothedTps(r);
-    // With alpha=0.1, the smoothed value should still be close to the first sample
-    // because only 10% weight goes to the new (lower) sample
+    expect(second).toBeLessThan(first);
     expect(second).toBeGreaterThan(first * 0.5);
   });
 
@@ -701,41 +692,41 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
   it("accumulates tokens and gates samples to MIN_TPS_SAMPLE_MS", async () => {
     const r = makeResult();
     updateSmoothedTps(r, 100); // seed
-    await new Promise((res) => setTimeout(res, 110));
-    updateSmoothedTps(r, 50); // first compute
+    await new Promise((res) => setTimeout(res, 60));
+    updateSmoothedTps(r, 5); // first compute
     const tps1 = drainSmoothedTps(r);
     expect(tps1).toBeGreaterThan(0);
 
-    // Call again after only 50ms — should buffer, not compute
-    await new Promise((res) => setTimeout(res, 50));
-    updateSmoothedTps(r, 1000);
+    // Call again before the 50ms sample window — should buffer, not compute
+    await new Promise((res) => setTimeout(res, 25));
+    updateSmoothedTps(r, 10);
     const tps2 = drainSmoothedTps(r);
     expect(tps2).toBe(tps1);
 
-    // Wait another 70ms (total ~120ms from last compute)
-    await new Promise((res) => setTimeout(res, 70));
+    // Wait another 35ms (total ~60ms from last compute)
+    await new Promise((res) => setTimeout(res, 35));
     updateSmoothedTps(r, 1);
     const tps3 = drainSmoothedTps(r);
     // Should now reflect the accumulated burst
     expect(tps3).not.toBe(tps1);
   });
 
-  it("applies TPS_CALIBRATION to scale the rate", async () => {
+  it("reports unscaled heuristic TPS before burst capping", async () => {
     const r = makeResult();
-    updateSmoothedTps(r, 100); // seed
-    await new Promise((res) => setTimeout(res, 110));
-    // 100 tokens in ~110ms → raw ~909 tps → calibrated ~90.9 tps
-    updateSmoothedTps(r, 100);
+    updateSmoothedTps(r, 10); // seed
+    await new Promise((res) => setTimeout(res, 60));
+    // 10 tokens in ~60ms is ~166 TPS; this should no longer be suppressed by 0.1x calibration.
+    updateSmoothedTps(r, 10);
     const tps = drainSmoothedTps(r);
-    expect(tps).toBeGreaterThan(0);
-    expect(tps).toBeLessThan(200); // well below uncalibrated ~909
+    expect(tps).toBeGreaterThan(100);
+    expect(tps).toBeLessThanOrEqual(300);
   });
 
   it("caps instant rate at MAX_INSTANT_TPS", async () => {
     const r = makeResult();
     updateSmoothedTps(r, 100); // seed
-    await new Promise((res) => setTimeout(res, 110));
-    // 5000 tokens in ~110ms → raw ~45454 tps → calibrated ~4545 tps, capped to 300
+    await new Promise((res) => setTimeout(res, 60));
+    // 5000 tokens in ~60ms is capped to 300
     updateSmoothedTps(r, 5000);
     const tps = drainSmoothedTps(r);
     expect(tps).toBeGreaterThan(0);
