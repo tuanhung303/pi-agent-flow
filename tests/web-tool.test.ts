@@ -8,7 +8,7 @@ import {
 	looksLikeUrlPrompt,
 	looksLikeWebSearchPrompt,
 	htmlToMarkdown,
-} from "../web-tool.js";
+} from "../src/web-tool.js";
 
 describe("extractSnippet", () => {
 	it("returns trimmed text up to max length", () => {

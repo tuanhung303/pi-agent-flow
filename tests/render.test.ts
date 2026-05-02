@@ -8,9 +8,9 @@ import {
 	visibleLength,
 	getTruncationBudget,
 	contentBudget,
-} from "../render-utils.js";
-import { renderFlowResult } from "../render.js";
-import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types.js";
+} from "../src/render-utils.js";
+import { renderFlowResult } from "../src/render.js";
+import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
 
 // Helper to extract text from Text, TruncatedText, or Container objects
@@ -360,6 +360,12 @@ describe("formatCompactStats", () => {
 		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 · ↓     0 · tps:     - · ctx:     0 · gpt-4o");
 	});
 
+	it("strips provider prefix from model", () => {
+		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
+			"↑     0 · ↓     0 · tps:     - · ctx:     0 · gpt-5.5",
+		);
+	});
+
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
 		expect(formatCompactStats(usage)).toBe("↑  5.0k · ↓  1.0k · tps:     - · ctx:     0");
@@ -521,6 +527,23 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("scout");
 	});
 
+	it("shows live streaming text in multi-flow collapsed rows", () => {
+		const streaming = "streaming message currently arriving character by character";
+		const result = makeResult({
+			type: "scout",
+			intent: "Map the view rebuild code",
+			messages: [makeTextMessage("stale completed text")],
+			exitCode: -1,
+			streamingText: streaming,
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		const scoutBlock = text.split("debug")[0];
+		expect(scoutBlock).toContain(tailText(streaming, 50));
+		expect(scoutBlock).not.toContain("stale completed text");
+	});
+
 	it("includes long DIR text in TruncatedText", () => {
 		const longAim = "A" + "b".repeat(100) + "Z";
 		const result = makeResult({
@@ -631,11 +654,11 @@ describe("activity panel rendering", () => {
 		}
 	});
 
-	it("passes full streaming LOG text to TruncatedText in single flow collapsed", () => {
+	it("shows the live tail of streaming msg text in single flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 40; // narrow terminal
-			const longStreaming = "c".repeat(55);
+			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
 			const result = makeResult({
 				intent: "test",
 				messages: [],
@@ -645,9 +668,9 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
 			expect(logLine).toBeDefined();
-			// Content is pre-truncated to contentBudget(10) = 50 chars
+			// Content is a moving tail window so new characters visibly shift into view.
 			const logContent = logLine.split("msg:")[1].trim();
-			expect(logContent).toContain("...");
+			expect(logContent).toBe(tailText(longStreaming, 50));
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
 		} finally {
 			(process.stdout as any).columns = originalColumns;

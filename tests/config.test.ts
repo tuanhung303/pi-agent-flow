@@ -6,7 +6,7 @@ import {
 	loadFlowModelConfigs,
 	loadFlowSettings,
 	resolveFlowModelCandidates,
-} from "../config.js";
+} from "../src/config.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;

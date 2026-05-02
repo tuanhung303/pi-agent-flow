@@ -50,8 +50,8 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string, m
 	parts.push(`tps: ${formatTps(usage.smoothedTps)}`);
 	parts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
 
-	let result = parts.join(" · ") + (model ? ` · ${model}` : "");
-
+	const displayModel = model ? model.replace(/^[^/]+\//, "") : undefined;
+	let result = parts.join(" · ") + (displayModel ? ` · ${displayModel}` : "");
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first
 		let narrow = parts.join(" · ");

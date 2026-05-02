@@ -104,19 +104,19 @@ registerHook({
 	},
 });
 
-/** Suggest explore flow after a successful audit flow. */
+/** Suggest scout flow after a successful audit flow. */
 registerHook({
-	name: "pi-agent-flow/audit-to-explore",
+	name: "pi-agent-flow/audit-to-scout",
 	trigger: { flowTypes: ["audit"], onlyOnSuccess: true },
 	action: (ctx) => {
-		const exploreWasRequested = ctx.params.some(
-			(p) => p.type.toLowerCase() === "explore",
+		const scoutWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "scout",
 		);
-		if (exploreWasRequested) return null;
+		if (scoutWasRequested) return null;
 
 		return {
 			content:
-				"Audit complete. Consider running an [explore] flow to review the audit findings.",
+				"Audit complete. Consider running a [scout] flow to trace the audit findings across the codebase.",
 			priority: 15,
 		};
 	},
