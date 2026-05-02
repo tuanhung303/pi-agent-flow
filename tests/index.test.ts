@@ -116,11 +116,10 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
 		const slidingPrompt = "<pi-flow-sliding-system>\nold routing prompt\n</pi-flow-sliding-system>";
 		const sessionBranch = [
 			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
-			{ type: "message", message: { role: "user", content: `Keep this product requirement${reminder}`, timestamp: 1 } },
+			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
 			{
 				type: "message",
 				message: {
@@ -175,7 +174,6 @@ describe("flow tool execute", () => {
 		expect(snapshot).not.toContain("SECRET_REASONING_PART");
 		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
 		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
-		expect(snapshot).not.toContain("[reminder_flow:");
 	});
 
 	it("preserves unmodified fork snapshot lines exactly", async () => {
@@ -414,36 +412,12 @@ describe("flow tool execute", () => {
 	});
 
 	describe("context event handler", () => {
-			it("inserts sliding system prompt before latest user message when toolOptimize is enabled", async () => {
-				process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
-				const pi = createMockPi();
-				registerExtension(pi as any);
-
-				const messages = [
-					{ role: "user" as const, content: "first prompt", timestamp: 1 },
-					{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
-					{ role: "user" as const, content: "second prompt", timestamp: 3 },
-				];
-
-				const results = await pi.trigger("context", { messages });
-				const modified = results[0]?.messages ?? messages;
-
-				expect((modified[0] as any).content).toBe("first prompt");
-				expect((modified[1] as any).content[0].text).toBe("ok");
-				expect((modified[2] as any).role).toBe("system");
-				expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
-				expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
-				expect((modified[3] as any).content).toBe("second prompt");
-			});
-
-		it("strips legacy reminders from all user messages and inserts sliding prompt when enabled", async () => {
-			const reminder = "\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
-			process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+		it("inserts sliding system prompt before latest user message unconditionally", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
 			const messages = [
-				{ role: "user" as const, content: `first prompt${reminder}`, timestamp: 1 },
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
 				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
 				{ role: "user" as const, content: "second prompt", timestamp: 3 },
 			];
@@ -451,17 +425,35 @@ describe("flow tool execute", () => {
 			const results = await pi.trigger("context", { messages });
 			const modified = results[0]?.messages ?? messages;
 
-			// Legacy reminder stripped from first user message
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).content[0].text).toBe("ok");
-			// Sliding system prompt inserted at position of last user message
 			expect((modified[2] as any).role).toBe("system");
 			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
+			expect((modified[3] as any).content).toBe("second prompt");
+		});
+
+		it("inserts sliding system prompt even when toolOptimize is disabled", async () => {
+			process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
+				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
+				{ role: "user" as const, content: "second prompt", timestamp: 3 },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect((modified[2] as any).role).toBe("system");
+			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
 		it("handles array content (text blocks)", async () => {
-			process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -1140,7 +1132,7 @@ describe("web tool integration", () => {
 		expect(modified.systemPrompt).toContain("search");
 	});
 
-	it("does not modify systemPrompt when web is not needed", async () => {
+	it("appends sliding prompt and flows to systemPrompt unconditionally", async () => {
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1152,6 +1144,9 @@ describe("web tool integration", () => {
 		});
 
 		const modified = result[0];
+		// Sliding prompt is always appended
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("You are operating with pi-agent-flow routing.");
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");
 		expect(modified.systemPrompt).toContain("Use inherited context as background while exploring alternatives.");

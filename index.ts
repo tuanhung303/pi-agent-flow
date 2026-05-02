@@ -330,9 +330,9 @@ async function confirmProjectFlowsIfNeeded(
 
 // ---------------------------------------------------------------------------
 // Sliding system prompt (short, inserted before latest user message)
-// Only active when toolOptimize is true (user opt-out via PI_FLOW_TOOL_OPTIMIZE=0).
-// Replaced from older REMINDER_TEXT system to reduce context noise and avoid
-// leaking into child flow directives.
+// Always active for root flows. Appended to the static system prompt in
+// before_agent_start, and inserted as a separate system message immediately
+// before the latest user message by the context handler.
 // ---------------------------------------------------------------------------
 
 const SLIDING_SYSTEM_PROMPT_START = "<pi-flow-sliding-system>";
@@ -396,24 +396,6 @@ function makeSlidingSystemPromptMessage(referenceMessage?: any): any {
 		content: SLIDING_SYSTEM_PROMPT,
 		timestamp: referenceMessage?.timestamp,
 	};
-}
-
-// Legacy reminder constants kept for backward compat stripping only
-const REMINDER_TEXT =
-	"\n\n[reminder_flow: If the answer is in context, reply; otherwise, delegate to the appropriate flow.]";
-
-function stripLegacyReminder(
-	content: string | { type: string; text?: string }[],
-): string | { type: string; text?: string }[] {
-	if (typeof content === "string") {
-		return content.replace(REMINDER_TEXT, "");
-	}
-	return content.map((c) => {
-		if (c.type === "text" && typeof c.text === "string") {
-			return { ...c, text: c.text.replace(REMINDER_TEXT, "") };
-		}
-		return c;
-	});
 }
 
 const REASONING_PART_TYPES = new Set([
@@ -510,9 +492,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 
 			if ("content" in message) {
 				const originalContent = message.content;
-				const strippedContent = stripSlidingPromptFromContent(
-					stripLegacyReminder(originalContent),
-				);
+				const strippedContent = stripSlidingPromptFromContent(originalContent);
 
 				if (!isJsonEqual(strippedContent, originalContent)) {
 					message = {
@@ -663,8 +643,11 @@ export default function (pi: ExtensionAPI) {
 				webInstructions.map((line) => `- ${line}`).join("\n");
 		}
 
+		// Append sliding prompt to static system prompt unconditionally.
+		systemPrompt += "\n\n" + SLIDING_SYSTEM_PROMPT;
+
 		if (!canDelegate || discoveredFlows.length === 0) {
-			return webInstructions.length > 0 ? { systemPrompt } : undefined;
+			return { systemPrompt };
 		}
 
 		return {
@@ -706,20 +689,15 @@ flow [type] accomplished
 		};
 	});
 
-	// Sliding system prompt: insert a short tagged system prompt immediately
-	// before the latest user message each turn. Gated behind toolOptimize.
-	// Always strips stale sliding prompts to prevent accumulation.
+	// Sliding system prompt: insert as a separate system message immediately
+	// before the latest user message each turn. Strips from the static
+	// systemPrompt to avoid duplication, then inserts separately.
 	// Skipped for child flows (depth > 0) — they have explicit <mission> directives.
 	pi.on("context", async (event) => {
 		if (currentDepth > 0) return undefined;
 
-		// Always strip old sliding prompts + legacy reminders to prevent accumulation
+		// Always strip old sliding prompt messages to prevent accumulation
 		let messages = stripSlidingPromptsFromMessages(event.messages);
-		// Also strip legacy reminder text from user messages
-		messages = messages.map((msg: any) => {
-			if (msg.role !== "user" || !("content" in msg)) return msg;
-			return { ...msg, content: stripLegacyReminder(msg.content) };
-		});
 
 		// Find latest user message
 		const userIndices = messages
@@ -727,12 +705,20 @@ flow [type] accomplished
 			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) {
+			// First turn: sliding stays in the static system prompt only.
 			return messages === event.messages ? undefined : { messages };
 		}
 
-		// Only inject sliding prompt when toolOptimize is enabled
-		if (!toolOptimize) {
-			return { messages };
+		// Strip sliding from the static systemPrompt so it only appears once,
+		// as a separate message right before the latest user message.
+		let systemPrompt = event.systemPrompt;
+		let systemPromptChanged = false;
+		if (typeof systemPrompt === "string") {
+			const stripped = stripSlidingPromptText(systemPrompt);
+			if (stripped !== systemPrompt) {
+				systemPrompt = stripped;
+				systemPromptChanged = true;
+			}
 		}
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
