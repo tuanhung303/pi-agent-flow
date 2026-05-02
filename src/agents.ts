@@ -72,19 +72,25 @@ function getUserFlowsDir(): string {
 /** Get the bundled flows directory from the plugin's location. */
 function getBundledFlowsDir(): string {
 	// Method 1: import.meta.url (ESM)
+	// When source lives in src/, agents/ is one level up at the package root.
 	try {
 		if (import.meta.url) {
 			const pluginDir = path.dirname(new URL(import.meta.url).pathname);
-			const dir = path.join(pluginDir, "agents");
-			if (fs.existsSync(dir)) return dir;
+			// Check same directory first, then parent (for src/ layout)
+			for (const base of [pluginDir, path.dirname(pluginDir)]) {
+				const dir = path.join(base, "agents");
+				if (fs.existsSync(dir)) return dir;
+			}
 		}
 	} catch {}
 
 	// Method 2: __dirname (CommonJS / jiti)
 	try {
 		if (typeof __dirname !== "undefined") {
-			const dir = path.join(__dirname, "agents");
-			if (fs.existsSync(dir)) return dir;
+			for (const base of [__dirname, path.dirname(__dirname)]) {
+				const dir = path.join(base, "agents");
+				if (fs.existsSync(dir)) return dir;
+			}
 		}
 	} catch {}
 

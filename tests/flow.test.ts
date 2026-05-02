@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runFlow, getOptimizedTools, type RunFlowOptions } from "../flow.js";
-import type { FlowConfig } from "../agents.js";
+import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/flow.js";
+import type { FlowConfig } from "../src/agents.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 
@@ -81,6 +81,8 @@ describe("runFlow case-insensitive lookup", () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 		const updates: string[] = [];
+		const outputUpdates: number[] = [];
+		const detailStreamingText: Array<string | undefined> = [];
 
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
@@ -93,7 +95,11 @@ describe("runFlow case-insensitive lookup", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			onUpdate: (partial) => updates.push(partial.content[0]?.text || ""),
+			onUpdate: (partial) => {
+				updates.push(partial.content[0]?.text || "");
+				outputUpdates.push(partial.details?.results[0]?.usage.output ?? 0);
+				detailStreamingText.push(partial.details?.results[0]?.streamingText);
+			},
 			makeDetails: (results) => ({
 				mode: "flow",
 				delegationMode: "fork",
@@ -111,6 +117,44 @@ describe("runFlow case-insensitive lookup", () => {
 
 		await promise;
 		expect(updates).toEqual(["Hel", "Hello"]);
+		expect(outputUpdates).toEqual([0, 1]);
+		expect(detailStreamingText).toEqual(["Hel", "Hello"]);
+	});
+
+	it("accumulates estimated output tokens across streaming updates", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+		const outputUpdates: number[] = [];
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			onUpdate: (partial) => outputUpdates.push(partial.details?.results[0]?.usage.output ?? 0),
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"aaaaaaaa"}}\n'));
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"bbbbbbbb"}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+		expect(outputUpdates).toEqual([2, 4]);
 	});
 
 	it("returns error for unknown flow regardless of casing", async () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createBatchTool, createBatchReadTool, suggestSimilarFiles, isWithinDirectory } from "../batch.js";
+import { createBatchTool, createBatchReadTool, suggestSimilarFiles, isWithinDirectory } from "../src/batch.js";
 
 describe("batch tool", () => {
 	let tmpDir: string;

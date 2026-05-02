@@ -8,9 +8,9 @@ import {
 	visibleLength,
 	getTruncationBudget,
 	contentBudget,
-} from "../render-utils.js";
-import { renderFlowResult } from "../render.js";
-import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types.js";
+} from "../src/render-utils.js";
+import { renderFlowResult } from "../src/render.js";
+import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
 
 // Helper to extract text from Text, TruncatedText, or Container objects
@@ -525,6 +525,23 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("│");
 		expect(text).toContain("debug");
 		expect(text).toContain("scout");
+	});
+
+	it("shows live streaming text in multi-flow collapsed rows", () => {
+		const streaming = "streaming message currently arriving character by character";
+		const result = makeResult({
+			type: "scout",
+			intent: "Map the view rebuild code",
+			messages: [makeTextMessage("stale completed text")],
+			exitCode: -1,
+			streamingText: streaming,
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		const scoutBlock = text.split("debug")[0];
+		expect(scoutBlock).toContain(tailText(streaming, 50));
+		expect(scoutBlock).not.toContain("stale completed text");
 	});
 
 	it("includes long DIR text in TruncatedText", () => {
