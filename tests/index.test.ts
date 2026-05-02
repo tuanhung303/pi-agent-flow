@@ -116,7 +116,7 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const slidingPrompt = "<pi-flow-sliding-system>\nold routing prompt\n</pi-flow-sliding-system>";
+		const slidingPrompt = "<pi-flow-sliding-system>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n</pi-flow-sliding-system>";
 		const sessionBranch = [
 			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
 			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
@@ -234,6 +234,53 @@ describe("flow tool execute", () => {
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");
 		expect(snapshot).not.toContain("SECRET_REASONING");
+		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+	});
+
+	it("drops sliding system messages with array content in fork snapshot", async () => {
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const slidingPrompt = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
+		const droppedSystemArray = { type: "message", message: { role: "system", content: [{ type: "text", text: slidingPrompt }], timestamp: 4 } };
+		const sessionBranch = [droppedSystemArray];
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => sessionBranch,
+				},
+			},
+		);
+
+		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		expect(snapshot).not.toContain(JSON.stringify(droppedSystemArray));
 		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
 	});
 
@@ -499,6 +546,26 @@ describe("flow tool execute", () => {
 			const modified = results[0]?.messages ?? messages;
 			expect(modified).toHaveLength(1);
 			expect((modified[0] as any).role).toBe("assistant");
+		});
+
+		it("drops previous sliding system messages with array content", async () => {
+			const pi = createMockPi();
+			registerExtension(pi as any);
+
+			const messages = [
+				{ role: "user" as const, content: "first prompt", timestamp: 1 },
+				{ role: "system" as const, content: [{ type: "text" as const, text: "<pi-flow-sliding-system>\nold prompt\n</pi-flow-sliding-system>" }], timestamp: 2 },
+				{ role: "user" as const, content: "second prompt", timestamp: 3 },
+			];
+
+			const results = await pi.trigger("context", { messages });
+			const modified = results[0]?.messages ?? messages;
+
+			expect(modified).toHaveLength(3);
+			expect((modified[0] as any).content).toBe("first prompt");
+			expect((modified[1] as any).role).toBe("system");
+			expect((modified[1] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toBe("second prompt");
 		});
 	});
 
@@ -1114,6 +1181,8 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("fetch");
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
 	it("adds search steering when prompt looks like a web search", async () => {
@@ -1130,6 +1199,8 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("search");
+		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
 	it("appends sliding prompt and flows to systemPrompt unconditionally", async () => {

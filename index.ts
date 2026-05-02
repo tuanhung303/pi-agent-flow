@@ -335,19 +335,19 @@ async function confirmProjectFlowsIfNeeded(
 // before the latest user message by the context handler.
 // ---------------------------------------------------------------------------
 
-const SLIDING_SYSTEM_PROMPT_START = "<pi-flow-sliding-system>";
-const SLIDING_SYSTEM_PROMPT_END = "</pi-flow-sliding-system>";
+const SLIDING_PROMPT_OPEN_TAG = "<pi-flow-sliding-system>";
+const SLIDING_PROMPT_CLOSE_TAG = "</pi-flow-sliding-system>";
 
-const SLIDING_SYSTEM_PROMPT =
-	`${SLIDING_SYSTEM_PROMPT_START}\n` +
+const SLIDING_PROMPT =
+	`${SLIDING_PROMPT_OPEN_TAG}\n` +
 	`You are operating with pi-agent-flow routing.\n` +
 	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
-	`${SLIDING_SYSTEM_PROMPT_END}`;
+	`${SLIDING_PROMPT_CLOSE_TAG}`;
 
 const SLIDING_PROMPT_RE = new RegExp(
-	SLIDING_SYSTEM_PROMPT_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+	SLIDING_PROMPT_OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
 	"[\\s\\S]*?" +
-	SLIDING_SYSTEM_PROMPT_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+	SLIDING_PROMPT_CLOSE_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
 	"g",
 );
 
@@ -371,29 +371,52 @@ function stripSlidingPromptFromContent(
 	});
 }
 
-/** Remove any existing sliding-system-prompt system messages and strip tags from user messages. */
-function stripSlidingPromptsFromMessages(messages: any[]): any[] {
-	return messages
+/** Check whether content (string or text-part array) contains the sliding tag. */
+function contentContainsSlidingTag(content: any): boolean {
+	if (typeof content === "string") {
+		return content.includes(SLIDING_PROMPT_OPEN_TAG);
+	}
+	if (Array.isArray(content)) {
+		return content.some(
+			(part: any) =>
+				part.type === "text" &&
+				typeof part.text === "string" &&
+				part.text.includes(SLIDING_PROMPT_OPEN_TAG),
+		);
+	}
+	return false;
+}
+
+/** Remove any existing sliding-system-prompt system messages and strip tags from user messages.
+ *  Returns the sanitized messages and a flag indicating whether anything changed.
+ */
+function stripSlidingPromptsFromMessages(messages: any[]): { messages: any[]; changed: boolean } {
+	let changed = false;
+	const result = messages
 		.filter((msg) => {
 			// Remove dedicated sliding system prompt messages
-			if (msg.role === "system") {
-				const content = typeof msg.content === "string" ? msg.content : "";
-				if (content.includes(SLIDING_SYSTEM_PROMPT_START)) return false;
+			if (msg.role === "system" && contentContainsSlidingTag(msg.content)) {
+				changed = true;
+				return false;
 			}
 			return true;
 		})
 		.map((msg) => {
 			// Also strip stray tags embedded in user/assistant messages
 			if (!("content" in msg)) return msg;
-			return { ...msg, content: stripSlidingPromptFromContent(msg.content) };
+			const stripped = stripSlidingPromptFromContent(msg.content);
+			if (isJsonEqual(stripped, msg.content)) return msg;
+			changed = true;
+			return { ...msg, content: stripped };
 		});
+	return { messages: result, changed };
 }
 
 /** Build a system message containing the sliding prompt. */
-function makeSlidingSystemPromptMessage(referenceMessage?: any): any {
+function makeSlidingPromptMessage(referenceMessage?: any): any {
 	return {
 		role: "system",
-		content: SLIDING_SYSTEM_PROMPT,
+		content: SLIDING_PROMPT,
 		timestamp: referenceMessage?.timestamp,
 	};
 }
@@ -475,8 +498,7 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 		if (
 			entry?.type === "message" &&
 			entry.message?.role === "system" &&
-			typeof entry.message?.content === "string" &&
-			entry.message.content.includes(SLIDING_SYSTEM_PROMPT_START)
+			contentContainsSlidingTag(entry.message?.content)
 		) {
 			continue;
 		}
@@ -644,7 +666,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Append sliding prompt to static system prompt unconditionally.
-		systemPrompt += "\n\n" + SLIDING_SYSTEM_PROMPT;
+		systemPrompt += "\n\n" + SLIDING_PROMPT;
 
 		if (!canDelegate || discoveredFlows.length === 0) {
 			return { systemPrompt };
@@ -697,7 +719,7 @@ flow [type] accomplished
 		if (currentDepth > 0) return undefined;
 
 		// Always strip old sliding prompt messages to prevent accumulation
-		let messages = stripSlidingPromptsFromMessages(event.messages);
+		const { messages, changed: messagesChanged } = stripSlidingPromptsFromMessages(event.messages);
 
 		// Find latest user message
 		const userIndices = messages
@@ -705,8 +727,8 @@ flow [type] accomplished
 			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) {
-			// First turn: sliding stays in the static system prompt only.
-			return messages === event.messages ? undefined : { messages };
+			// No user message yet: keep sliding prompt in the static system prompt only.
+			return messagesChanged ? { messages } : undefined;
 		}
 
 		// Strip sliding from the static systemPrompt so it only appears once,
@@ -724,11 +746,15 @@ flow [type] accomplished
 		const lastUserIndex = userIndices[userIndices.length - 1];
 		const modified = [
 			...messages.slice(0, lastUserIndex),
-			makeSlidingSystemPromptMessage(messages[lastUserIndex]),
+			makeSlidingPromptMessage(messages[lastUserIndex]),
 			...messages.slice(lastUserIndex),
 		];
 
-		return { messages: modified };
+		const result: any = { messages: modified };
+		if (systemPromptChanged) {
+			result.systemPrompt = systemPrompt;
+		}
+		return result;
 	});
 
 	// Register the web tool
@@ -855,13 +881,22 @@ flow [type] accomplished
 				}
 
 				let lastStreamingText = "";
-				let lastEmittedText: string | undefined;
+				let lastEmittedSignature: string | undefined;
 				const emitProgress = (streamingText?: string) => {
 					if (!onUpdate) return;
 					if (streamingText !== undefined) lastStreamingText = streamingText;
 					const text = lastStreamingText || "";
-					if (text === lastEmittedText) return;
-					lastEmittedText = text;
+					const signature =
+						text +
+						"|" +
+						allResults
+							.map(
+								(r) =>
+									`${r.messages.length}:${r.usage.toolCalls}:${r.usage.inputTokens}:${r.usage.outputTokens}:${r.errorMessage ?? ""}`,
+							)
+							.join(";");
+					if (signature === lastEmittedSignature) return;
+					lastEmittedSignature = signature;
 					onUpdate({
 						content: [{ type: "text", text }],
 						details: makeDetails([...allResults]),
