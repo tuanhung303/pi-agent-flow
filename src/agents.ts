@@ -185,6 +185,17 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		);
 	}
 
+	// Tier: prefer explicit frontmatter, fall back to name-based inference
+	let tier: FlowTier | undefined;
+	if (typeof frontmatter.tier === "string") {
+		const normalized = frontmatter.tier.trim().toLowerCase();
+		if (normalized === "lite" || normalized === "flash" || normalized === "full") {
+			tier = normalized;
+		} else {
+			console.warn(`[pi-agent-flow] Ignoring invalid tier "${frontmatter.tier}" in "${filePath}". Expected lite, flash, or full.`);
+		}
+	}
+
 	return {
 		name,
 		description,
@@ -193,7 +204,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		thinking: typeof frontmatter.thinking === "string" ? frontmatter.thinking : undefined,
 		maxDepth,
 		inheritContext,
-		tier: getFlowTier(name),
+		tier: tier ?? getFlowTier(name),
 		systemPrompt: body,
 		source,
 		filePath,

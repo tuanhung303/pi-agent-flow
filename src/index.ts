@@ -5,6 +5,8 @@
  * Each flow receives a forked snapshot of the current session context.
  */
 
+import { randomUUID } from "node:crypto";
+import * as os from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type FlowConfig, discoverFlows, getFlowTier } from "./agents.js";
@@ -15,17 +17,20 @@ import {
 	selectFlowModelStrategy,
 	type LoadedFlowModelConfigs,
 } from "./config.js";
-import { parseFlowCliArgs } from "./cli-args.js";
+import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
-import { runHooks } from "./hooks.js";
+import { runHooks, runHooksDetailed, getRegisteredHooks, registerHook } from "./hooks.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
+import { executeFlows } from "./executor.js";
 import {
 	type SingleResult,
 	type FlowDetails,
 	type CompressedFlowResult,
+	type FlowMetrics,
 	type FileEntry,
 	type CommandEntry,
+	type AutoTransition,
 	emptyFlowUsage,
 	isFlowError,
 	isFlowSuccess,
@@ -86,7 +91,7 @@ const FlowParams = Type.Object({
 	),
 });
 
-const inheritedCliArgs = parseFlowCliArgs(process.argv);
+const inheritedCliArgs = getInheritedCliArgs();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -341,13 +346,15 @@ async function confirmProjectFlowsIfNeeded(
 // before the latest user message by the context handler.
 // ---------------------------------------------------------------------------
 
-const SLIDING_PROMPT_OPEN_TAG = "<pi-flow-sliding-system>";
-const SLIDING_PROMPT_CLOSE_TAG = "</pi-flow-sliding-system>";
+const SLIDING_PROMPT_UUID = randomUUID();
+const SLIDING_PROMPT_OPEN_TAG = `<pi-flow-sliding-system id="${SLIDING_PROMPT_UUID}">`;
+const SLIDING_PROMPT_CLOSE_TAG = `</pi-flow-sliding-system id="${SLIDING_PROMPT_UUID}">`;
 
 const SLIDING_PROMPT =
 	`${SLIDING_PROMPT_OPEN_TAG}\n` +
 	`You are operating with pi-agent-flow routing.\n` +
 	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
+	`For git, bash, CLI, or terminal tasks, delegate to [build].\n` +
 	`${SLIDING_PROMPT_CLOSE_TAG}`;
 
 const SLIDING_PROMPT_RE = new RegExp(
@@ -357,9 +364,12 @@ const SLIDING_PROMPT_RE = new RegExp(
 	"g",
 );
 
+/** Legacy regex to strip old bare sliding system prompt tags (no id attribute). */
+const LEGACY_SLIDING_PROMPT_RE = /<pi-flow-sliding-system(?:\s[^>]*)?>[\s\S]*?<\/pi-flow-sliding-system(?:\s[^>]*)?>/g;
+
 /** Strip any old sliding system prompt tags from a string. */
 function stripSlidingPromptText(text: string): string {
-	return text.replace(SLIDING_PROMPT_RE, "");
+	return text.replace(SLIDING_PROMPT_RE, "").replace(LEGACY_SLIDING_PROMPT_RE, "");
 }
 
 /** Strip sliding prompt tags from content (string or text-part array). */
@@ -378,17 +388,31 @@ function stripSlidingPromptFromContent(
 }
 
 /** Check whether content (string or text-part array) contains the sliding tag. */
-function contentContainsSlidingTag(content: any): boolean {
+/** Input-message content types (string or multipart text-part array). */
+type MessageContent = string | Array<{ type: string; text?: string }>;
+
+/** Type guard: is this a text-part with a string .text? */
+function isTextPart(part: unknown): part is { type: "text"; text: string } {
+	return (
+		part != null &&
+		typeof part === "object" &&
+		"type" in part &&
+		part.type === "text" &&
+		"text" in part &&
+		typeof (part as { text?: unknown }).text === "string"
+	);
+}
+
+/** Check whether content (string or text-part array) contains the sliding tag. */
+function contentContainsSlidingTag(content: MessageContent): boolean {
+	const hasCurrent = (text: string) => text.includes(SLIDING_PROMPT_OPEN_TAG);
+	const hasLegacy = (text: string) => text.includes("<pi-flow-sliding-system>");
+	const check = (text: string) => hasCurrent(text) || hasLegacy(text);
 	if (typeof content === "string") {
-		return content.includes(SLIDING_PROMPT_OPEN_TAG);
+		return check(content);
 	}
 	if (Array.isArray(content)) {
-		return content.some(
-			(part: any) =>
-				part.type === "text" &&
-				typeof part.text === "string" &&
-				part.text.includes(SLIDING_PROMPT_OPEN_TAG),
-		);
+		return content.some((part) => isTextPart(part) && check(part.text));
 	}
 	return false;
 }
@@ -474,24 +498,34 @@ function stripReasoningFromAssistantMessage(message: any): {
 	return { message: next, changed };
 }
 
-function isJsonEqual(a: any, b: any): boolean {
-	return JSON.stringify(a) === JSON.stringify(b);
+/** Deep-equality check that handles unordered object keys (unlike JSON.stringify). */
+function isJsonEqual(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true;
+	if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+	if (Array.isArray(a) !== Array.isArray(b)) return false;
+
+	const keysA = Object.keys(a as Record<string, unknown>);
+	const keysB = Object.keys(b as Record<string, unknown>);
+	if (keysA.length !== keysB.length) return false;
+
+	for (const key of keysA) {
+		if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+		if (!isJsonEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+	}
+	return true;
 }
 // ---------------------------------------------------------------------------
 // Flow result compression
 // ---------------------------------------------------------------------------
 
 /**
- * Module-level cache populated after each flow tool execution.
- * Maps toolCallId → compressed flow result.
- * Consumed by compressFlowToolResults at fork time.
- */
-const flowResultCache = new Map<string, CompressedFlowResult[]>();
-
-/**
  * Build compressed representations of flow results and cache them by toolCallId.
  */
-function cacheFlowResults(toolCallId: string, results: SingleResult[]): void {
+function cacheFlowResults(
+	cache: Map<string, CompressedFlowResult[]>,
+	toolCallId: string,
+	results: SingleResult[],
+): void {
 	for (const result of results) {
 		const so = result.structuredOutput;
 		if (!so) continue;
@@ -502,9 +536,9 @@ function cacheFlowResults(toolCallId: string, results: SingleResult[]): void {
 		if (so.files.length > 0) compressed.files = so.files;
 		if (so.commands.length > 0) compressed.commands = so.commands;
 		if (result.errorMessage) compressed.error = result.errorMessage;
-		const existing = flowResultCache.get(toolCallId) ?? [];
+		const existing = cache.get(toolCallId) ?? [];
 		existing.push(compressed);
-		flowResultCache.set(toolCallId, existing);
+		cache.set(toolCallId, existing);
 	}
 }
 
@@ -629,7 +663,7 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
  * artifacts before passing full parent context to child flows: sliding system
  * prompts, legacy reminders, and assistant reasoning/thinking.
  */
-function sanitizeForkSnapshot(snapshot: string | null): string | null {
+function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, CompressedFlowResult[]> = new Map()): string | null {
 	if (!snapshot) return snapshot;
 
 	const lines = snapshot.trimEnd().split("\n");
@@ -686,12 +720,12 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 	}
 
 	const sanitized = `${sanitizedLines.join("\n")}\n`;
-	return compressFlowToolResults(sanitized, flowResultCache);
+	return compressFlowToolResults(sanitized, cache);
 }
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch_read", "bash", "flow"]
+		? ["batch_read", "flow"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
@@ -724,6 +758,14 @@ export default function (pi: ExtensionAPI) {
 		description: "Model for full-tier flows (ideas, craft).",
 		type: "string",
 	});
+	pi.registerFlag("flow-max-concurrency", {
+		description: "Maximum number of flows to execute in parallel (default: 4).",
+		type: "string",
+	});
+	pi.registerFlag("auto-transition", {
+		description: "Automatically queue follow-up flows based on hook transitions (default: false).",
+		type: "boolean",
+	});
 	pi.registerFlag("tool-optimize", {
 		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
 		type: "boolean",
@@ -737,6 +779,8 @@ export default function (pi: ExtensionAPI) {
 	let toolOptimize = true;
 	// structuredOutput: settings.json > default (true)
 	let structuredOutput = true;
+	let maxConcurrency = 4;
+	let autoTransition = false;
 	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
 	if (envToolOptimize !== undefined) {
 		const parsed = parseBoolean(envToolOptimize);
@@ -771,6 +815,41 @@ export default function (pi: ExtensionAPI) {
 			if (typeof flowSettings.structuredOutput === "boolean") {
 				structuredOutput = flowSettings.structuredOutput;
 			}
+			if (typeof flowSettings.maxConcurrency === "number") {
+				maxConcurrency = flowSettings.maxConcurrency;
+			}
+			if (typeof flowSettings.autoTransition === "boolean") {
+				autoTransition = flowSettings.autoTransition;
+			}
+		}
+
+		// Resolve maxConcurrency: CLI flag > env var > settings.json > default
+		const cliConcurrency = pi.getFlag("flow-max-concurrency");
+		if (typeof cliConcurrency === "string") {
+			const parsed = Number(cliConcurrency);
+			if (Number.isSafeInteger(parsed) && parsed >= 1) maxConcurrency = parsed;
+		} else if (typeof cliConcurrency === "number" && Number.isSafeInteger(cliConcurrency) && cliConcurrency >= 1) {
+			maxConcurrency = cliConcurrency;
+		}
+		const envConcurrency = process.env["PI_FLOW_MAX_CONCURRENCY"];
+		if (envConcurrency !== undefined && typeof cliConcurrency === "undefined") {
+			const parsed = Number(envConcurrency);
+			if (Number.isSafeInteger(parsed) && parsed >= 1) maxConcurrency = parsed;
+		}
+		// Cap concurrency to the number of available CPUs
+		if (typeof os.availableParallelism === "function") {
+			const hwConcurrency = os.availableParallelism();
+			if (hwConcurrency > 0) maxConcurrency = Math.min(maxConcurrency, hwConcurrency);
+		}
+
+		// Resolve autoTransition: CLI flag > settings.json > default
+		const cliAutoTransition = pi.getFlag("auto-transition");
+		if (typeof cliAutoTransition === "boolean") {
+			autoTransition = cliAutoTransition;
+		} else if (typeof cliAutoTransition === "string") {
+			const parsed = parseBoolean(cliAutoTransition);
+			if (parsed !== null) autoTransition = parsed;
+		
 		}
 
 		// Only restrict tools for the main orchestrator (depth 0).
@@ -836,6 +915,13 @@ export default function (pi: ExtensionAPI) {
 			return { systemPrompt };
 		}
 
+		const flowList = discoveredFlows
+			.map((f) => {
+				const badge = f.source === "project" ? " 🔒" : f.source === "user" ? " ⚙" : "";
+				return `- [${f.name}]${badge} — ${f.description}`;
+			})
+			.join("\n");
+
 		return {
 			systemPrompt:
 				systemPrompt +
@@ -843,12 +929,7 @@ export default function (pi: ExtensionAPI) {
 
 Before acting, reason about whether to dive into a flow:
 
-- [scout] — when you need to understand first. Find files, trace code paths, map architecture.
-- [debug] — when something is broken. Investigate logs, errors, stack traces to find root cause.
-- [build] — when you are ready to build. Implement features, fix bugs, write tests.
-- [craft] — when you need a plan. Design structure, break down requirements before building.
-- [audit] — when you need to verify and remediate. Audit security, quality, and correctness; fix safe issues directly.
-- [ideas] — when you need fresh ideas. Use inherited context as background while exploring alternatives.
+${flowList}
 
 Multiple independent flows? Batch them into one call:
 
@@ -942,17 +1023,15 @@ flow [type] accomplished
 
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
 				const discovery = discoverFlows(ctx.cwd, "all");
-				flowResultCache.clear();
 				const { flows } = discovery;
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
 
-				const cliFlowModelConfig =
-					typeof pi.getFlag("flow-model-config") === "string"
-						? (pi.getFlag("flow-model-config") as string)
-						: inheritedCliArgs.flowModelConfig;
-				const selectedFlowModelConfig = selectFlowModelStrategy(
-					loadedFlowModelConfigs.configs,
-					cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
+				// Build the full fork session snapshot and sanitize only non-inheritable
+				// artifacts before passing it to child flows.
+				const flowResultCache = new Map<string, CompressedFlowResult[]>();
+				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
+					buildForkSessionSnapshotJsonl(ctx.sessionManager),
+					flowResultCache,
 				);
 
 				const getTierOverride = (tier: "lite" | "flash" | "full"): string | undefined => {
@@ -968,201 +1047,63 @@ flow [type] accomplished
 					return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
 				};
 
-				const shouldFailover = (result: SingleResult): boolean => {
-					if (result.stopReason === "aborted") return false;
-					const text = `${result.errorMessage ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
-					if (!text.trim()) return false;
-					if (text.includes("permission") || text.includes("invalid tool") || text.includes("bad settings")) {
-						return false;
-					}
-					return result.exitCode > 0;
-				};
-
-				// Build the full fork session snapshot and sanitize only non-inheritable
-				// artifacts before passing it to child flows.
-				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
-					buildForkSessionSnapshotJsonl(ctx.sessionManager),
+				const result = await executeFlows(
+					{
+						flows,
+						currentDepth,
+						maxDepth,
+						ancestorFlowStack,
+						preventCycles,
+						toolOptimize,
+						structuredOutput,
+						cwd: ctx.cwd,
+						loadedFlowModelConfigs,
+						maxConcurrency,
+						autoTransition,
+						signal,
+						onUpdate,
+						makeDetails,
+						getFlag: (name: string) => pi.getFlag(name),
+						tierOverrideResolver: getTierOverride,
+						fallbackModel: inheritedCliArgs.fallbackModel,
+						forkSessionSnapshotJsonl,
+						flowResultCache,
+						projectFlowsDir: discovery.projectFlowsDir,
+						sessionManager: ctx.sessionManager,
+						hasUI: ctx.hasUI,
+						uiConfirm: (title, body) => ctx.ui.confirm(title, body),
+						onFlowMetrics: (metrics) => pi.emit("pi-agent-flow:complete", metrics),
+						confirmProjectFlows: params.confirmProjectFlows,
+					},
+					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, cwd: f.cwd })),
+					toolCallId,
 				);
 
-				// Collect all requested flow names
-				const requested = new Set<string>(params.flow.map((f: any) => f.type.toLowerCase()));
-
-				// Cycle check
-				if (preventCycles) {
-					const violations = getFlowCycleViolations(requested, ancestorFlowStack);
-					if (violations.length > 0) {
-						const stack = ancestorFlowStack.join(" -> ") || "(root)";
-						return {
-							content: [{
-								type: "text",
-								text: `Blocked: cycle detected. Flow(s) in stack: ${violations.join(", ")}\nStack: ${stack}`,
-							}],
-							details: makeDetails([]),
-							isError: true,
-						};
-					}
-				}
-
-				// Project flow confirmation
-				const shouldConfirm = params.confirmProjectFlows ?? true;
-				if (shouldConfirm) {
-					const projectFlows = getRequestedProjectFlows(flows, requested);
-					if (projectFlows.length > 0) {
-						if (ctx.hasUI) {
-							const ok = await confirmProjectFlowsIfNeeded(projectFlows, discovery.projectFlowsDir, ctx);
-							if (!ok) {
-								return {
-									content: [{ type: "text", text: "Canceled: project-local flows not approved." }],
-									details: makeDetails([]),
-								};
-							}
-						} else {
-							const names = projectFlows.map((f) => f.name).join(", ");
-							return {
-								content: [{
-									type: "text",
-									text: `Blocked: project-local flow confirmation required in non-UI mode.\nFlows: ${names}\nRe-run with confirmProjectFlows: false if trusted.`,
-								}],
-								details: makeDetails([]),
-								isError: true,
-							};
-						}
-					}
-				}
-
-				// Run all flows in parallel
-				const allResults: SingleResult[] = new Array(params.flow.length);
-				for (let i = 0; i < params.flow.length; i++) {
-					allResults[i] = {
-						type: params.flow[i].type,
-						agentSource: "unknown",
-						intent: params.flow[i].intent,
-						aim: params.flow[i].aim,
-						exitCode: -1,
-						messages: [],
-						stderr: "",
-						usage: emptyFlowUsage(),
-					};
-				}
-
-				let lastStreamingText = "";
-				let lastEmittedSignature: string | undefined;
-				const emitProgress = (streamingText?: string) => {
-					if (!onUpdate) return;
-					if (streamingText !== undefined) lastStreamingText = streamingText;
-					const text = lastStreamingText || "";
-					const signature =
-						text +
-						"|" +
-						allResults
-							.map(
-								(r) =>
-									`${r.messages.length}:${r.usage.toolCalls}:${r.usage.input}:${r.usage.output}:${r.usage.contextTokens}:${r.usage.smoothedTps ?? 0}:${r.errorMessage ?? ""}`,
-							)
-							.join(";");
-					if (signature === lastEmittedSignature) return;
-					lastEmittedSignature = signature;
-					onUpdate({
-						content: [{ type: "text", text }],
-						details: makeDetails([...allResults]),
-					});
-				};
-
-				if (onUpdate) emitProgress();
-
-				const results = await mapFlowConcurrent(params.flow, 4, async (item: any, index: number) => {
-					const normalizedType = item.type.toLowerCase();
-					const targetFlow = flows.find((f) => f.name === normalizedType);
-					const effectiveMaxDepth =
-						targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
-
-					const shouldInheritContext = targetFlow?.inheritContext !== false;
-					const tier = getFlowTier(normalizedType);
-					const { candidates } = resolveFlowModelCandidates({
-						tier,
-						flowModel: targetFlow?.model,
-						cliTierOverride: getTierOverride(tier),
-						strategy: selectedFlowModelConfig.strategy,
-						fallbackModel: inheritedCliArgs.fallbackModel,
-					});
-					const attemptModels = candidates.length > 0 ? candidates : [undefined];
-					const attemptedModels: string[] = [];
-					let result = allResults[index];
-
-					for (let attempt = 0; attempt < attemptModels.length; attempt++) {
-						const candidateModel = attemptModels[attempt];
-						if (candidateModel) attemptedModels.push(candidateModel);
-						result = await runFlow({
-							cwd: ctx.cwd,
-							flows,
-							flowName: normalizedType,
-							intent: item.intent,
-							aim: item.aim,
-							taskCwd: item.cwd,
-							forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
-							parentDepth: currentDepth,
-							parentFlowStack: ancestorFlowStack,
-							maxDepth: effectiveMaxDepth,
-							preventCycles,
-							toolOptimize,
-							structuredOutput,
-							model: candidateModel,
-							signal,
-							onUpdate: (partial) => {
-								if (partial.details?.results[0]) {
-									allResults[index] = partial.details.results[0];
-									emitProgress(partial.content?.[0]?.text);
-								}
-							},
-							makeDetails,
-						});
-						allResults[index] = result;
-						emitProgress();
-						if (isFlowSuccess(result) || signal?.aborted) break;
-						if (attempt < attemptModels.length - 1 && shouldFailover(result)) {
-							continue;
-						}
-						break;
-					}
-
-					if (result && !isFlowSuccess(result) && attemptedModels.length > 1) {
-						const summary = `Model failover attempts: ${attemptedModels.join(" -> ")}`;
-						const baseStderr = result.stderr.trim();
-						result.stderr = baseStderr ? `${baseStderr}\n\n${summary}` : summary;
-						allResults[index] = result;
-						emitProgress();
-					}
-
-					return result;
-				});
-
-				cacheFlowResults(toolCallId, results);
-				// Build tool result with FULL flow output — no truncation
-				const successCount = results.filter((r) => isFlowSuccess(r)).length;
-				const flowReports = results.map((r) => {
-					const output = getFlowSummaryText(r);
-					const status = isFlowError(r) ? "failed" : "accomplished";
-					return `flow [${r.type}] ${status}\n\n${output}`;
-				});
-
-				// Post-flow hooks — inject advisory messages
-				const advisors = runHooks(params.flow, results);
-				const advisorBlock = advisors.length > 0
-					? "\n\n---\n\n💡 " + advisors.join("\n💡 ")
-					: "";
-
 				return {
-					content: [{
-						type: "text" as const,
-						text: `Flow: ${successCount}/${results.length} completed\n\n${flowReports.join("\n\n---\n\n")}${advisorBlock}`,
-					}],
-					details: makeDetails(results),
+					content: result.content,
+					details: result.details,
+					isError: result.isError,
 				};
 			},
 
 			renderCall: (args, theme) => renderFlowCall(args, theme),
 			renderResult: (result, { expanded }, theme, args) =>
 				renderFlowResult(result, expanded, theme, args),
+		});
+	}
+
+	// -------------------------------------------------------------------------
+	// Public plugin API — expose for third-party extensions
+	// -------------------------------------------------------------------------
+
+	// Emit a ready event with the API surface so external plugins can extend.
+	if (typeof pi.emit === "function") {
+		pi.emit("pi-agent-flow:ready", {
+			registerHook,
+			getRegisteredHooks,
+			discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
+			getFlowTier: (name: string) => getFlowTier(name),
+			getSettings: () => ({ toolOptimize, structuredOutput, maxConcurrency, autoTransition }),
 		});
 	}
 

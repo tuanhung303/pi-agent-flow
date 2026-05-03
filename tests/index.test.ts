@@ -37,6 +37,7 @@ function createMockPi() {
 		]),
 		getFlag: vi.fn((name: string) => flags[name]),
 		setFlag: (name: string, value: unknown) => { flags[name] = value; },
+		emit: vi.fn(),
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
 		getTool: (name: string) => tools.find((t) => t.name === name),
@@ -116,7 +117,7 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const slidingPrompt = "<pi-flow-sliding-system>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n</pi-flow-sliding-system>";
+		const slidingPrompt = "<pi-flow-sliding-system>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, delegate to [build].\n</pi-flow-sliding-system>";
 		const sessionBranch = [
 			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
 			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
@@ -172,7 +173,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
 		expect(snapshot).not.toContain("SECRET_THINKING_PART");
 		expect(snapshot).not.toContain("SECRET_REASONING_PART");
-		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
 		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
 	});
 
@@ -234,7 +235,7 @@ describe("flow tool execute", () => {
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");
 		expect(snapshot).not.toContain("SECRET_REASONING");
-		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
 	});
 
 	it("drops sliding system messages with array content in fork snapshot", async () => {
@@ -281,7 +282,7 @@ describe("flow tool execute", () => {
 
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).not.toContain(JSON.stringify(droppedSystemArray));
-		expect(snapshot).not.toContain("<pi-flow-sliding-system>");
+		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
 	});
 
 	it("preserves flow calls/results in mixed assistant messages", async () => {
@@ -475,7 +476,7 @@ describe("flow tool execute", () => {
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).content[0].text).toBe("ok");
 			expect((modified[2] as any).role).toBe("system");
-			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toMatch(/<pi-flow-sliding-system\b/);
 			expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
@@ -495,7 +496,7 @@ describe("flow tool execute", () => {
 			const modified = results[0]?.messages ?? messages;
 
 			expect((modified[2] as any).role).toBe("system");
-			expect((modified[2] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[2] as any).content).toMatch(/<pi-flow-sliding-system\b/);
 			expect((modified[2] as any).content).toContain("You are operating with pi-agent-flow routing.");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
@@ -527,7 +528,7 @@ describe("flow tool execute", () => {
 			expect((modified[0] as any).content[0].text).toBe("first prompt");
 			// Sliding system prompt inserted before latest user message
 			expect((modified[1] as any).role).toBe("system");
-			expect((modified[1] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[1] as any).content).toMatch(/<pi-flow-sliding-system\b/);
 			// Latest user message preserved
 			expect((modified[2] as any).content[0].text).toBe("second prompt");
 			expect((modified[2] as any).content[1].type).toBe("image");
@@ -564,7 +565,7 @@ describe("flow tool execute", () => {
 			expect(modified).toHaveLength(3);
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).role).toBe("system");
-			expect((modified[1] as any).content).toContain("<pi-flow-sliding-system>");
+			expect((modified[1] as any).content).toMatch(/<pi-flow-sliding-system\b/);
 			expect((modified[2] as any).content).toBe("second prompt");
 		});
 	});
@@ -1028,7 +1029,7 @@ describe("main agent tool restriction", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("restricts main agent to batch_read+bash+flow when toolOptimize is true", async () => {
+	it("restricts main agent to batch_read+flow when toolOptimize is true", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -1038,7 +1039,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "bash", "flow"]);
+		expect(calledWith).toEqual(["batch_read", "flow"]);
 	});
 
 	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
@@ -1075,7 +1076,7 @@ describe("main agent tool restriction", () => {
 		expect(pi.setActiveTools).toHaveBeenCalled();
 	});
 
-	it("re-applies batch_read+bash+flow on turn_start when optimized", async () => {
+	it("re-applies batch_read+flow on turn_start when optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -1089,7 +1090,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch_read", "bash", "flow"]);
+		expect(lastCall).toEqual(["batch_read", "flow"]);
 	});
 
 	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
@@ -1124,7 +1125,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "bash", "flow"]);
+		expect(calledWith).toEqual(["batch_read", "flow"]);
 	});
 
 	it("registers batch_read and batch globally; batch_read is active in main agent", async () => {
@@ -1141,7 +1142,7 @@ describe("main agent tool restriction", () => {
 
 		// Main agent active tools use batch_read, not batch
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch_read", "bash", "flow"]);
+		expect(lastCall).toEqual(["batch_read", "flow"]);
 		expect(lastCall).not.toContain("batch");
 		expect(lastCall).not.toContain("web");
 	});
@@ -1244,7 +1245,7 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("fetch");
-		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
 		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
@@ -1263,7 +1264,7 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("search");
-		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
 		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
@@ -1280,7 +1281,7 @@ describe("web tool integration", () => {
 
 		const modified = result[0];
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
-		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
 		expect(modified.systemPrompt).toContain("pi-agent-flow routing");
 	});
 
@@ -1297,11 +1298,11 @@ describe("web tool integration", () => {
 
 		const modified = result[0];
 		// Sliding prompt is always appended
-		expect(modified.systemPrompt).toContain("<pi-flow-sliding-system>");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
 		expect(modified.systemPrompt).toContain("You are operating with pi-agent-flow routing.");
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");
-		expect(modified.systemPrompt).toContain("Use inherited context as background while exploring alternatives.");
+		expect(modified.systemPrompt).toContain("inherited context as background");
 		expect(modified.systemPrompt).not.toContain("Start from a clean slate with only the intent.");
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
 	});

@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { type FlowConfig } from "./agents.js";
-import { parseFlowCliArgs } from "./cli-args.js";
+import { getInheritedCliArgs } from "./cli-args.js";
 import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
 import {
 	type SingleResult,
@@ -102,7 +102,7 @@ function cleanupFlowTempDir(dir: string | null): void {
 // Build pi CLI arguments (fork-only)
 // ---------------------------------------------------------------------------
 
-const inheritedCliArgs = parseFlowCliArgs(process.argv);
+const inheritedCliArgs = getInheritedCliArgs();
 
 /**
  * Transform a flow's tool list when toolOptimize is enabled.
@@ -167,19 +167,20 @@ function buildFlowArgs(
 	if (thinking) args.push("--thinking", thinking);
 
 	// Child flows get their configured tools from flow.tools, optimized by
-	// getOptimizedTools, with web explicitly filtered out.
-	// When flow.tools is undefined and toolOptimize=true, default to batch+bash+web
-	// (flow is unnecessary since the child is already inside a flow).
-	// When toolOptimize=false, include batch and web alongside legacy tools.
+	// Child flows cannot browse or search the web — they work with whatever
+	// context the parent provides in the intent. `web` is always stripped.
 	const defaultTools = toolOptimize
-		? ["batch", "bash", "web"]
-		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
+		? ["batch", "bash"]
+		: ["read", "write", "edit", "batch", "bash", "flow"];
+	// getOptimizedTools replaces legacy read/write/edit with batch when
+	// toolOptimize is on. The result may still include `web` if the flow's
+	// frontmatter explicitly lists it, so we filter here.
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
 	let harnessTools = optimizedTools.filter((t) => t !== "web");
-	// If the flow explicitly listed only "web" (or nothing after filtering),
-	// fall back to defaultTools so the child isn't orphaned with zero tools.
+	// If the flow explicitly listed only tools that got filtered (e.g. just
+	// "web"), fall back to defaultTools so the child isn't orphaned.
 	if (harnessTools.length === 0) {
-		harnessTools = defaultTools.filter((t) => t !== "web");
+		harnessTools = [...defaultTools];
 	}
 	args.push("--tools", harnessTools.join(","));
 
