@@ -53,6 +53,20 @@ export interface CommandEntry {
 	purpose?: string;
 }
 
+/** Compressed representation of a flow result for child context inheritance. */
+export interface CompressedFlowResult {
+	/** Flow type (scout, build, debug, etc.). */
+	type: string;
+	/** Execution outcome. */
+	status: "accomplished" | "failed" | "aborted";
+	/** Files touched, read, or referenced. */
+	files?: FileEntry[];
+	/** Commands or tool calls executed. */
+	commands?: CommandEntry[];
+	/** Error message for failed/aborted flows. */
+	error?: string;
+}
+
 /** Action performed or attempted by a flow. */
 export interface Action {
 	type: string;
