@@ -1,73 +1,60 @@
-# pi-agent-flow — Project Notes for Claude
+# pi-agent-flow — Project Notes
 
 ## CI/CD
 
-Publishing is fully automated via GitHub Actions. Do **not** run `npm publish` locally.
+Publishing is **fully automated** via GitHub Actions.
 
-### How to publish
+### Strict Rules
 
-1. Commit and push changes to `main`.
-2. Go to **Actions → Bump Version → Run workflow** (or manually create a `v*` tag).
-3. The `bump-version.yml` workflow will bump `package.json`, commit, tag, and push.
-4. The `publish.yml` workflow triggers automatically on `v*` tags and publishes to npm with provenance using `secrets.NPM_TOKEN`.
+- **Never edit `package.json` version manually.** The Release workflow handles bumping.
+- **Never run `npm publish` locally.** Always use CI.
+- **Never run `npm version` locally.** The Release workflow handles tagging.
+
+### Publish Flow
+
+When the user asks to publish:
+
+1. Merge feature branch to `main` and push.
+2. Trigger the Release workflow:
+   ```bash
+   gh workflow run bump-version.yml -f bump_type=patch
+   ```
+3. The workflow bumps `package.json`, commits, tags `v*`, and pushes — which auto-triggers `publish.yml` to npm.
 
 ### Workflows
 
 | File | Trigger | Purpose |
-|------|---------|---------|
-| `.github/workflows/ci.yml` | PR / push to `main` | Runs tests (`npm test`) |
-| `.github/workflows/bump-version.yml` | `workflow_dispatch` | Bumps version, commits, tags, pushes |
-| `.github/workflows/publish.yml` | Push `v*` tag | Publishes to npm registry |
+|------|---------|--------|
+| `ci.yml` | PR / push to `main` | Runs `lint` + `test` |
+| `bump-version.yml` | `workflow_dispatch` (patch/minor/major) | Bumps version → commits → tags → pushes → triggers npm publish |
+| `publish.yml` | Push `v*` tag | Publishes to npm with provenance |
 
 ## Local Development
 
-To test local changes with the `pi` CLI before publishing:
-
-### Link local package
-
 ```bash
-# From the pi-agent-flow repo directory
-npm link
-```
-
-This creates a global symlink at `~/.hermes/node/lib/node_modules/pi-agent-flow` pointing to your local checkout. The `pi` CLI loads it via `"npm:pi-agent-flow"` in `~/.pi/agent/settings.json`, so changes are picked up immediately — just restart `pi` after editing.
-
-### Unlink (restore published version)
-
-```bash
-# Remove the global symlink
-npm uninstall -g pi-agent-flow
-
-# Reinstall from npm registry
-npm install -g pi-agent-flow
-```
-
-### Verify link status
-
-```bash
-npm ls -g pi-agent-flow
-# Local:  pi-agent-flow@1.1.0 -> ./../../../Documents/GitHub/pi-agent-flow
-# Remote: pi-agent-flow@1.1.0
+npm link                     # Symlink local checkout — restart `pi` after editing
+npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow  # Restore published version
+npm ls -g pi-agent-flow     # Verify link status
 ```
 
 ## Bundled Flows
 
-Six flow-state prompts live in `agents/`:
+Six flow-state prompts in `agents/`:
 
 | Flow | Tools | maxDepth | Notes |
 |------|-------|----------|-------|
-| `explore` | batch, bash, find, grep, ls | 0 | Discovery, surgical efficiency |
-| `architect` | batch, bash, find, grep, ls | 0 | Conservative design, may delegate to `[explore]` |
+| `scout` | batch, bash, find, grep, ls | 0 | Discovery, surgical efficiency |
+| `architect` | batch, bash, find, grep, ls | 0 | Conservative design, may delegate to `[scout]` |
 | `code` | batch, bash, find, grep, ls | 0 | TDD workflow (red → green → refactor → verify) |
 | `debug` | batch, bash, find, grep, ls | 0 | Forensic investigation, evidence-only |
 | `review` | batch, bash, find, grep, ls | 0 | **Read-only audit** — reports only, no edits |
 | `brainstorm` | batch, bash | 0 | Clean slate, diverge → evaluate → recommend |
 
-Note: Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3, but each flow's `maxDepth` overrides it.
+Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 
 ## Key Implementation Details
 
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
-- **Directive delimiters**: `buildFlowArgs` uses a 4-part XML-style prompt structure: `<context-seal>` (sharp boundary sealing conversation history), `<activation>` (dynamic role/tools/delegation rules from flow config), `<directive>` (the flow's system prompt body), and `<mission>` (intent with execution contract). Tags avoid CLI parsing conflicts (none start with `-`).
+- **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`. Tags avoid CLI parsing conflicts (none start with `-`).
 - **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.
 - **Cycle prevention**: Blocks re-entering flows already in the ancestor stack.

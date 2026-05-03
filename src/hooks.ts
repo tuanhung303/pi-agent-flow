@@ -28,10 +28,21 @@ export function registerHook(hook: PostFlowHook): void {
 	else hooks.push(hook);
 }
 
+/**
+ * Unregister a hook by name.
+ * Returns true if a hook was removed, false if no hook with that name existed.
+ */
+export function unregisterHook(name: string): boolean {
+	const idx = hooks.findIndex((h) => h.name === name);
+	if (idx < 0) return false;
+	hooks.splice(idx, 1);
+	return true;
+}
+
 export interface RunHooksResult {
 	/** Advisory messages sorted by priority. */
 	advisors: string[];
-	/** Auto-transitions collected from hooks, sorted by confidence descending. */
+	/** Auto-transitions collected from hooks. */
 	autoTransitions: AutoTransition[];
 }
 
@@ -49,6 +60,9 @@ export function runHooks(
 
 /**
  * Run all hooks and return both advisors and auto-transitions.
+ *
+ * Each hook action is wrapped in try/catch so one bad hook cannot crash
+ * the pipeline. Failures are reported as advisory warnings.
  */
 export function runHooksDetailed(
 	params: Array<{ type: string; intent: string }>,
@@ -67,17 +81,24 @@ export function runHooksDetailed(
 		if (matching.length === 0) continue;
 		if (onlyOnSuccess && !matching.every((r) => isFlowSuccess(r))) continue;
 
-		const result = hook.action({ results: matching, params });
-		if (result) {
-			messages.push({ priority: result.priority ?? 0, content: result.content });
-			if (result.autoTransition) {
-				transitions.push(result.autoTransition);
+		try {
+			const result = hook.action({ results: matching, params });
+			if (result) {
+				messages.push({ priority: result.priority ?? 0, content: result.content });
+				if (result.autoTransition) {
+					transitions.push(result.autoTransition);
+				}
 			}
+		} catch (err) {
+			const errorMessage = err instanceof Error ? err.message : String(err);
+			messages.push({
+				priority: 999,
+				content: `Hook "${hook.name}" failed: ${errorMessage}`,
+			});
 		}
 	}
 
 	messages.sort((a, b) => a.priority - b.priority);
-	transitions.sort((a, b) => b.confidence - a.confidence);
 	return {
 		advisors: messages.map((m) => m.content),
 		autoTransitions: transitions,
@@ -99,7 +120,7 @@ export function clearHooks(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in hooks
+// Built-in hooks — success transitions
 // ---------------------------------------------------------------------------
 
 /** Suggest audit flow after a successful build flow. */
@@ -155,10 +176,6 @@ registerHook({
 		};
 	},
 });
-
-// ---------------------------------------------------------------------------
-// Extended transition hooks
-// ---------------------------------------------------------------------------
 
 /** Suggest build or debug flow after a successful scout flow. */
 registerHook({
@@ -228,6 +245,50 @@ registerHook({
 			content:
 				"Root cause identified. Consider running an [audit] flow to verify the fix area for related issues.",
 			priority: 20,
+		};
+	},
+});
+
+// ---------------------------------------------------------------------------
+// Built-in hooks — failure transitions
+// ---------------------------------------------------------------------------
+
+/** Suggest debug flow after a failed build flow. */
+registerHook({
+	name: "pi-agent-flow/build-to-debug-on-failure",
+	trigger: { flowTypes: ["build"], onlyOnSuccess: false },
+	action: (ctx) => {
+		const allSucceeded = ctx.results.every((r) => isFlowSuccess(r));
+		if (allSucceeded) return null;
+		const debugWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "debug",
+		);
+		if (debugWasRequested) return null;
+
+		return {
+			content:
+				"Build failed. Consider running a [debug] flow to investigate the root cause.",
+			priority: 10,
+		};
+	},
+});
+
+/** Suggest build flow after a failed audit flow (found issues). */
+registerHook({
+	name: "pi-agent-flow/audit-to-build-on-failure",
+	trigger: { flowTypes: ["audit"], onlyOnSuccess: false },
+	action: (ctx) => {
+		const allSucceeded = ctx.results.every((r) => isFlowSuccess(r));
+		if (allSucceeded) return null;
+		const buildWasRequested = ctx.params.some(
+			(p) => p.type.toLowerCase() === "build",
+		);
+		if (buildWasRequested) return null;
+
+		return {
+			content:
+				"Audit found issues. Consider running a [build] flow to fix them.",
+			priority: 10,
 		};
 	},
 });

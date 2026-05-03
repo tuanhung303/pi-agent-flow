@@ -67,6 +67,12 @@ function mergeStreamingUsage(
  * work on Unix and Windows without going through a shell wrapper.
  */
 function resolveFlowSpawn(): { command: string; prefixArgs: string[] } {
+	// Support PI_FLOW_SPAWN_COMMAND env var override for exotic runtime
+	// environments (e.g. bundled with pkg/nexe where process.argv[1] is unreliable).
+	const envOverride = process.env["PI_FLOW_SPAWN_COMMAND"];
+	if (envOverride && envOverride.trim()) {
+		return { command: envOverride.trim(), prefixArgs: [] };
+	}
 	const isNode = /[\\/]node(?:\.exe)?$/i.test(process.execPath);
 	if (isNode && process.argv[1]) {
 		return { command: process.execPath, prefixArgs: [process.argv[1]] };
