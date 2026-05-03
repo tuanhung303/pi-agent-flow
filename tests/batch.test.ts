@@ -2246,8 +2246,8 @@ describe("batch_read tool", () => {
 			expect(result.details.results[0].content).toContain("b\nc");
 		});
 
-		it("does not truncate large files at the regular batch line cap", async () => {
-			const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+		it("returns only total lines for large plain text full-file reads", async () => {
+			const lines = Array.from({ length: 301 }, (_, i) => `line ${i}`);
 			fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
 
 			const tool = createTool();
@@ -2259,11 +2259,179 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.details.results[0].truncated).toBeUndefined();
+			expect(result.details.results[0]).toMatchObject({
+				op: "read",
+				path: "large.txt",
+				status: "ok",
+				totalLines: 301,
+				contextMap: true,
+			});
+			expect(result.details.results[0].content).toBeUndefined();
+			expect(result.content[0].text).toContain("--- large.txt file summary ---");
+			expect(result.content[0].text).toContain("Total lines: 301");
+			expect(result.content[0].text).not.toContain("line 300");
+		});
+
+		it("returns raw content for small full-file reads", async () => {
+			const lines = Array.from({ length: 15 }, (_, i) => `print(${i})`);
+			fs.writeFileSync(path.join(tmpDir, "config.py"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "config.py" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].contextMap).toBeUndefined();
 			expect(result.details.results[0].content).toBe(lines.join("\n"));
-			expect(result.details.results[0].content).toContain("line 2999");
-			expect(result.content[0].text).not.toContain("truncated");
-			expect(result.content[0].text).not.toContain("[Showing lines");
+			expect(result.content[0].text).toContain("print(14)");
+		});
+
+		it("returns a capped context map for large TypeScript full-file reads", async () => {
+			const symbols = Array.from({ length: 105 }, (_, i) => `function fn${i}() {\n\treturn ${i};\n}`).join("\n");
+			const filler = Array.from({ length: 20 }, (_, i) => `// filler ${i}`).join("\n");
+			fs.writeFileSync(path.join(tmpDir, "large.ts"), `${symbols}\n${filler}`, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "large.ts" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				contextMap: true,
+				language: "typescript",
+				symbolsTruncated: true,
+			});
+			expect(result.details.results[0].content).toBeUndefined();
+			expect(result.details.results[0].symbols).toHaveLength(100);
+			expect(result.details.results[0].symbols[0]).toMatchObject({ kind: "function", name: "fn0", startLine: 1 });
+			expect(result.content[0].text).toContain("Context map:");
+			expect(result.content[0].text).toContain("Context map truncated");
+			expect(result.content[0].text).not.toContain("return 104");
+		});
+
+		it("clamps oversized targeted reads with a warning", async () => {
+			const lines = Array.from({ length: 1500 }, (_, i) => `line ${i + 1}`);
+			fs.writeFileSync(path.join(tmpDir, "target.txt"), lines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "target.txt", s: 1, l: 1200 }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				truncated: true,
+				nextOffset: 1001,
+				warning: expect.stringContaining("Raw content truncated at 1000 lines"),
+			});
+			expect(result.details.results[0].content).toContain("line 1000");
+			expect(result.details.results[0].content).not.toContain("line 1001");
+			expect(result.content[0].text).toContain("Raw content truncated at 1000 lines");
+		});
+
+		it("returns Terraform context maps for large full-file reads", async () => {
+			const header = [
+				'resource "aws_instance" "web" {',
+				'  ami = "ami-123"',
+				'}',
+				'',
+				'module "vpc" {',
+				'  source = "./vpc"',
+				'}',
+				'',
+				'variable "region" {',
+				'  type = string',
+				'}',
+			].join("\n");
+			const filler = Array.from({ length: 295 }, (_, i) => `# filler ${i}`).join("\n");
+			fs.writeFileSync(path.join(tmpDir, "main.tf"), `${header}\n${filler}`, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "main.tf" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({ contextMap: true, language: "terraform" });
+			expect(result.details.results[0].symbols).toEqual(expect.arrayContaining([
+				expect.objectContaining({ kind: "resource", name: "aws_instance.web" }),
+				expect.objectContaining({ kind: "module", name: "vpc" }),
+				expect.objectContaining({ kind: "variable", name: "region" }),
+			]));
+		});
+
+		it("returns YAML infra context maps for large full-file reads", async () => {
+			const workflow = [
+				"name: CI",
+				"on:",
+				"  push:",
+				"jobs:",
+				"  test:",
+				"    steps:",
+				"      - uses: actions/checkout@v4",
+				"      - run: npm test",
+			].join("\n");
+			const filler = Array.from({ length: 295 }, (_, i) => `# filler ${i}`).join("\n");
+			fs.writeFileSync(path.join(tmpDir, "ci.yml"), `${workflow}\n${filler}`, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "ci.yml" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({ contextMap: true, language: "yaml" });
+			expect(result.details.results[0].symbols).toEqual(expect.arrayContaining([
+				expect.objectContaining({ kind: "section", name: "jobs" }),
+				expect.objectContaining({ kind: "job", name: "test" }),
+				expect.objectContaining({ kind: "step", name: "actions/checkout@v4" }),
+			]));
+		});
+
+		it("returns Dockerfile context maps for large full-file reads", async () => {
+			const dockerfile = [
+				"FROM node:22 AS builder",
+				"WORKDIR /app",
+				"COPY package*.json ./",
+				"RUN npm ci",
+				"FROM node:22-slim AS runtime",
+				"CMD [\"node\", \"dist/index.js\"]",
+			].join("\n");
+			const filler = Array.from({ length: 300 }, (_, i) => `# filler ${i}`).join("\n");
+			fs.writeFileSync(path.join(tmpDir, "Dockerfile"), `${dockerfile}\n${filler}`, "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "read", p: "Dockerfile" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({ contextMap: true, language: "dockerfile" });
+			expect(result.details.results[0].symbols).toEqual(expect.arrayContaining([
+				expect.objectContaining({ kind: "stage", name: "builder FROM node:22" }),
+				expect.objectContaining({ kind: "RUN", name: "npm ci" }),
+				expect.objectContaining({ kind: "CMD", name: '["node", "dist/index.js"]' }),
+			]));
 		});
 
 		it("does not truncate multi-line reads at the regular batch byte cap", async () => {

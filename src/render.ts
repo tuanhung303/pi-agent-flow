@@ -241,6 +241,42 @@ function renderFlowExpanded(
 	// Flow report (structured output)
 	container.addChild(new Spacer(1));
 	container.addChild(new Text(theme.fg("muted", sectionHeader("report")), 0, 0));
+
+	// Structured output summary (compact badge when available)
+	if (r.structuredOutput) {
+		const so = r.structuredOutput;
+		const statusColor = so.status === "complete" ? "success" : so.status === "partial" ? "warning" : "error";
+		container.addChild(new Text(
+			`${theme.fg(statusColor, `[${so.status}]`)} ${theme.fg("dim", so.summary)}`,
+			0, 0,
+		));
+		if (so.files.length > 0) {
+			container.addChild(new Text(theme.fg("dim", `Files: ${so.files.map((f) => f.path).join(", ")}`), 0, 0));
+		}
+		if (so.commands?.length > 0) {
+			const cmdLabels = so.commands.map((c) => {
+				const short = c.command.length > 30 ? c.command.slice(0, 30) + "..." : c.command;
+				return `${c.tool ?? "cmd"}: ${short}`;
+			});
+			container.addChild(new Text(theme.fg("dim", `Commands: ${cmdLabels.join(", ")}`), 0, 0));
+		}
+		if (so.notDone.length > 0) {
+			const notDoneText = so.notDone.map((item) => {
+				const details = [
+					item.reason ? `reason: ${item.reason}` : undefined,
+					item.blocker ? `blocker: ${item.blocker}` : undefined,
+					item.nextStep ? `next: ${item.nextStep}` : undefined,
+				].filter(Boolean).join("; ");
+				return details ? `${item.item} (${details})` : item.item;
+			}).join("; ");
+			container.addChild(new Text(theme.fg("dim", `Not Done: ${notDoneText}`), 0, 0));
+		}
+		if (so.nextSteps.length > 0) {
+			container.addChild(new Text(theme.fg("dim", `Next: ${so.nextSteps.join("; ")}`), 0, 0));
+		}
+		container.addChild(new Spacer(1));
+	}
+
 	if (flowOutput) {
 		container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));
 	} else {
@@ -293,6 +329,9 @@ function renderFlowCollapsed(
 	// msg: line (last assistant text or streaming)
 	if (r.exitCode === -1 && streamingText) {
 		const logContent = tailText(streamingText, contentBudget(10));
+		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
+	} else if (r.structuredOutput?.summary) {
+		const logContent = truncateChars(r.structuredOutput.summary, contentBudget(10));
 		container.addChild(new TruncatedText(`${theme.fg("dim", "└─ msg:")} ${theme.fg("dim", logContent)}`, 0, 0));
 	} else if (flowOutput) {
 		const logContent = tailText(flowOutput, contentBudget(10));
