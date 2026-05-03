@@ -315,6 +315,8 @@ export interface PostFlowHookResult {
 	content: string;
 	/** Ordering key; lower runs first. Default: 0. */
 	priority?: number;
+	/** Optional auto-transition to queue after this flow completes. */
+	autoTransition?: AutoTransition;
 }
 
 /** A post-flow hook that injects advisory messages into tool results. */
@@ -325,4 +327,44 @@ export interface PostFlowHook {
 	trigger: PostFlowHookTrigger;
 	/** Returns advisory text, or null to skip. */
 	action: (ctx: PostFlowHookContext) => PostFlowHookResult | null;
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry types
+// ---------------------------------------------------------------------------
+
+/** Metrics emitted after each flow completes. */
+export interface FlowMetrics {
+	/** Flow type name. */
+	type: string;
+	/** Duration in milliseconds. */
+	durationMs: number;
+	/** Final exit code. */
+	exitCode: number;
+	/** Whether the flow succeeded. */
+	success: boolean;
+	/** Model used for this execution. */
+	model?: string;
+	/** Number of failover attempts. */
+	failoverCount: number;
+	/** Token usage. */
+	usage: UsageStats;
+	/** Flow source. */
+	source: string;
+	/** Current delegation depth. */
+	depth: number;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-transition types
+// ---------------------------------------------------------------------------
+
+/** Descriptor for an auto-queued follow-up flow. */
+export interface AutoTransition {
+	/** Flow type to run next. */
+	type: string;
+	/** Intent for the follow-up flow. */
+	intent: string;
+	/** Confidence score (0-1). Higher means more certain. */
+	confidence: number;
 }

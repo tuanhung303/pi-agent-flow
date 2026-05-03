@@ -6,6 +6,7 @@ declare module "@mariozechner/pi-coding-agent" {
 		getFlag(name: string): unknown;
 		getActiveTools(): string[];
 		on(event: string, callback: (...args: any[]) => any): void;
+		emit(event: string, ...args: any[]): void;
 		registerTool(tool: {
 			name: string;
 			label: string;
