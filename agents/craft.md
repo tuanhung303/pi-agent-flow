@@ -24,3 +24,6 @@ During this craft flow — your mission is to design a clear plan. Be conservati
 - Avoid tech debt; choose a maintainable approach or explain the trade-off.
 - Prefer explicit assumptions and constraints over hidden decisions.
 - Do not implement changes from this flow unless explicitly requested.
+
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.

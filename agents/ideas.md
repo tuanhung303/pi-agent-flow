@@ -23,3 +23,6 @@ During this ideas flow — your mission is to generate and compare possible dire
 - Make assumptions explicit when evidence is limited.
 - If file context is needed, use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted reading instead of bash `sed`/`head`/`tail`.
 - Do not implement changes from this flow.
+
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.

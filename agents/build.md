@@ -30,3 +30,6 @@ During this build flow — your mission is to implement and verify changes. Be a
 - Push only after local verification passes when shipping is in scope.
 - If CI/CD fails, diagnose, fix, commit, push, and repeat until green.
 - If an unexpected error or trace is needed, recommend [debug] rather than guessing.
+
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.

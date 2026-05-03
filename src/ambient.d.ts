@@ -21,7 +21,7 @@ declare module "@mariozechner/pi-coding-agent" {
 		cwd: string;
 		hasUI: boolean;
 		ui: { confirm: (title: string, body: string) => Promise<boolean> };
-		sessionManager: { getSessionDir(): string };
+		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[] };
 	}
 	export function parseFrontmatter<T extends Record<string, unknown>>(content: string): { frontmatter: T; body: string };
 	export function getMarkdownTheme(): any;

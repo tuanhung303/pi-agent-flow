@@ -490,7 +490,7 @@ const flowResultCache = new Map<string, CompressedFlowResult[]>();
 /**
  * Build compressed representations of flow results and cache them by toolCallId.
  */
-function cacheFlowResults(results: SingleResult[]): void {
+function cacheFlowResults(toolCallId: string, results: SingleResult[]): void {
 	for (const result of results) {
 		const so = result.structuredOutput;
 		if (!so) continue;
@@ -501,9 +501,9 @@ function cacheFlowResults(results: SingleResult[]): void {
 		if (so.files.length > 0) compressed.files = so.files;
 		if (so.commands.length > 0) compressed.commands = so.commands;
 		if (result.errorMessage) compressed.error = result.errorMessage;
-		const existing = flowResultCache.get(result.type) ?? [];
+		const existing = flowResultCache.get(toolCallId) ?? [];
 		existing.push(compressed);
-		flowResultCache.set(result.type, existing);
+		flowResultCache.set(toolCallId, existing);
 	}
 }
 
@@ -734,6 +734,8 @@ export default function (pi: ExtensionAPI) {
 
 	// toolOptimize: CLI flag > env var > settings.json > default (true)
 	let toolOptimize = true;
+	// structuredOutput: settings.json > default (true)
+	let structuredOutput = true;
 	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
 	if (envToolOptimize !== undefined) {
 		const parsed = parseBoolean(envToolOptimize);
@@ -764,6 +766,9 @@ export default function (pi: ExtensionAPI) {
 			const flowSettings = loadFlowSettings(ctx.cwd);
 			if (typeof flowSettings.toolOptimize === "boolean") {
 				toolOptimize = flowSettings.toolOptimize;
+			}
+			if (typeof flowSettings.structuredOutput === "boolean") {
+				structuredOutput = flowSettings.structuredOutput;
 			}
 		}
 
@@ -928,7 +933,7 @@ flow [type] accomplished
 			].join("\n"),
 			parameters: FlowParams,
 
-			async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			async execute(toolCallId, params, signal, onUpdate, ctx) {
 				const discovery = discoverFlows(ctx.cwd, "all");
 				flowResultCache.clear();
 				const { flows } = discovery;
@@ -1093,6 +1098,7 @@ flow [type] accomplished
 							maxDepth: effectiveMaxDepth,
 							preventCycles,
 							toolOptimize,
+							structuredOutput,
 							model: candidateModel,
 							signal,
 							onUpdate: (partial) => {
@@ -1123,7 +1129,7 @@ flow [type] accomplished
 					return result;
 				});
 
-				cacheFlowResults(results);
+				cacheFlowResults(toolCallId, results);
 				// Build tool result with FULL flow output — no truncation
 				const successCount = results.filter((r) => isFlowSuccess(r)).length;
 				const flowReports = results.map((r) => {

@@ -26,3 +26,6 @@ During this audit flow — your mission is to verify and remediate quality, secu
 - Do not apply risky rewrites or broad redesigns from audit; flag them with severity instead.
 - If a fix requires broader redesign, recommend [craft] in [Next Steps].
 - If root cause is unclear, recommend [debug] rather than guessing.
+
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.
