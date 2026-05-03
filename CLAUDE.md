@@ -19,15 +19,20 @@ When the user asks to publish:
    ```bash
    gh workflow run bump-version.yml -f bump_type=patch
    ```
-3. The workflow bumps `package.json`, commits, tags `v*`, and pushes — which auto-triggers `publish.yml` to npm.
+3. The workflow bumps `package.json`, commits, tags `v*`, and pushes.
+4. **Then manually trigger publish** (tag-trigger only fires if a PAT secret is configured):
+   ```bash
+   gh workflow run publish.yml --ref v<NEW_VERSION>
+   ```
+5. Verify: `npm view pi-agent-flow version`
 
 ### Workflows
 
 | File | Trigger | Purpose |
 |------|---------|--------|
 | `ci.yml` | PR / push to `main` | Runs `lint` + `test` |
-| `bump-version.yml` | `workflow_dispatch` (patch/minor/major) | Bumps version → commits → tags → pushes → triggers npm publish |
-| `publish.yml` | Push `v*` tag | Publishes to npm with provenance |
+| `bump-version.yml` | `workflow_dispatch` (patch/minor/major) | Bumps version → commits → tags → pushes |
+| `publish.yml` | `workflow_dispatch` or push `v*` tag | Publishes to npm with provenance |
 
 ## Local Development
 
