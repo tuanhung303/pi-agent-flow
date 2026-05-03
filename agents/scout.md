@@ -24,3 +24,6 @@ During this scout flow — your mission is to discover relevant context. Move fa
 - Include relevant snippets or evidence inline so citations are verifiable.
 - Show actual code/data, not excessive summaries.
 - If something is not found, say so directly — do not guess.
+
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.

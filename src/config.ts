@@ -29,6 +29,10 @@ export interface FlowSettings {
 	toolOptimize?: boolean;
 	/** Whether to inject structured JSON output instructions into flow prompts. Default: true. */
 	structuredOutput?: boolean;
+	/** Maximum number of flows to execute concurrently. Default: 4. */
+	maxConcurrency?: number;
+	/** Whether to automatically queue follow-up flows based on hook transitions. Default: false. */
+	autoTransition?: boolean;
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
@@ -175,6 +179,12 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 	}
 	if (typeof obj.structuredOutput === "boolean") {
 		result.structuredOutput = obj.structuredOutput;
+	}
+	if (typeof obj.maxConcurrency === "number" && Number.isSafeInteger(obj.maxConcurrency) && obj.maxConcurrency >= 1) {
+		result.maxConcurrency = obj.maxConcurrency;
+	}
+	if (typeof obj.autoTransition === "boolean") {
+		result.autoTransition = obj.autoTransition;
 	}
 	return result;
 }

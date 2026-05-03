@@ -61,6 +61,17 @@ export interface ParsedFlowCliArgs {
  * - alwaysProxy: forwarded verbatim to every child
  * - fallbackModel/thinking/tools: used only when the flow file does not set them
  */
+let _cachedArgs: ParsedFlowCliArgs | undefined;
+
+/**
+ * Lazily parse process.argv once and cache the result.
+ * Avoids module-level side effects at import time.
+ */
+export function getInheritedCliArgs(): ParsedFlowCliArgs {
+	if (!_cachedArgs) _cachedArgs = parseFlowCliArgs(process.argv);
+	return _cachedArgs;
+}
+
 export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 	const extensionArgs: string[] = [];
 	const alwaysProxy: string[] = [];

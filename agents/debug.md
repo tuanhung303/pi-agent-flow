@@ -24,3 +24,6 @@ During this debug flow — your mission is to investigate root cause. Be forensi
 - Use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
 - Do not suggest fixes until root cause is confirmed.
 - Do not implement changes from this flow unless explicitly requested.
+
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.
