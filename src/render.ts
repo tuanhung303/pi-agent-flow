@@ -253,6 +253,24 @@ function renderFlowExpanded(
 		if (so.files.length > 0) {
 			container.addChild(new Text(theme.fg("dim", `Files: ${so.files.map((f) => f.path).join(", ")}`), 0, 0));
 		}
+		if (so.commands?.length > 0) {
+			const cmdLabels = so.commands.map((c) => {
+				const short = c.command.length > 30 ? c.command.slice(0, 30) + "..." : c.command;
+				return `${c.tool ?? "cmd"}: ${short}`;
+			});
+			container.addChild(new Text(theme.fg("dim", `Commands: ${cmdLabels.join(", ")}`), 0, 0));
+		}
+		if (so.notDone.length > 0) {
+			const notDoneText = so.notDone.map((item) => {
+				const details = [
+					item.reason ? `reason: ${item.reason}` : undefined,
+					item.blocker ? `blocker: ${item.blocker}` : undefined,
+					item.nextStep ? `next: ${item.nextStep}` : undefined,
+				].filter(Boolean).join("; ");
+				return details ? `${item.item} (${details})` : item.item;
+			}).join("; ");
+			container.addChild(new Text(theme.fg("dim", `Not Done: ${notDoneText}`), 0, 0));
+		}
 		if (so.nextSteps.length > 0) {
 			container.addChild(new Text(theme.fg("dim", `Next: ${so.nextSteps.join("; ")}`), 0, 0));
 		}

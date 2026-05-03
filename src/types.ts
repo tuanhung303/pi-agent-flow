@@ -37,6 +37,22 @@ export interface FileEntry {
 	}>;
 }
 
+/** Structured command/tool invocation entry in a flow's output. */
+export interface CommandEntry {
+	/** The command string or tool call representation. */
+	command: string;
+	/** Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web. */
+	tool?: string;
+	/** Working directory or target scope (file path, URL, etc.). */
+	target?: string;
+	/** Whether it succeeded, failed, or was aborted. */
+	result?: "success" | "failure" | "partial" | "aborted";
+	/** High-level output or error excerpt (not full stdout). */
+	output?: string;
+	/** Why this command was run (1 sentence). */
+	purpose?: string;
+}
+
 /** Action performed or attempted by a flow. */
 export interface Action {
 	type: string;
@@ -44,6 +60,18 @@ export interface Action {
 	target?: string;
 	result?: "success" | "failure" | "partial" | "skipped";
 	evidence?: string;
+}
+
+/** Incomplete, skipped, blocked, or deferred work reported by a flow. */
+export interface NotDoneItem {
+	/** The unfinished item. */
+	item: string;
+	/** Why the item was not completed. */
+	reason?: string;
+	/** Concrete blocker preventing completion, when applicable. */
+	blocker?: string;
+	/** Suggested follow-up for this item. */
+	nextStep?: string;
 }
 
 /** Structured JSON output from a flow run. */
@@ -58,6 +86,10 @@ export interface FlowStructuredOutput {
 	files: FileEntry[];
 	/** Actions performed or attempted. */
 	actions: Action[];
+	/** Commands or tool calls executed during the flow. */
+	commands: CommandEntry[];
+	/** Incomplete, skipped, blocked, or deferred work. */
+	notDone: NotDoneItem[];
 	/** Recommended next steps or follow-up flows. */
 	nextSteps: string[];
 	/** Reasoning chains, hypotheses, inferences made during the flow. */

@@ -231,13 +231,19 @@ function buildFlowArgs(
 			`  "actions": [\n` +
 			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
 			`  ],\n` +
+			`  "commands": [\n` +
+			`    { "command": "npm test", "tool": "bash", "target": ".", "result": "success", "output": "12 passing, 2 failing", "purpose": "Run test suite to verify fix" }\n` +
+			`  ],\n` +
+			`  "notDone": [\n` +
+			`    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue if any", "nextStep": "specific follow-up" }\n` +
+			`  ],\n` +
 			`  "nextSteps": ["recommended follow-up action"],\n` +
 			`  "reasoning": ["key hypothesis or inference"],\n` +
 			`  "notes": ["observation or warning"]\n` +
 			`}\n` +
 			`\`\`\`\n` +
 			`\n` +
-			`Only include fields that have data. Omit empty arrays. Keep snippets under 300 characters. List at most 10 files and 10 actions. If you cannot produce valid structured output, omit the JSON block entirely.`;
+			`Only include fields that have data. Omit empty arrays; missing array fields are acceptable. Keep snippets under 300 characters. List at most 10 files, 10 actions, 10 commands, and 10 notDone items. If you cannot produce valid structured output, omit the JSON block entirely.`;
 	}
 
 	const directive = directiveBody

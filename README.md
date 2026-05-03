@@ -213,7 +213,7 @@ The core delegation tool. Accepts an array of flow tasks and runs them in parall
 When **tool optimization** is enabled (default), the separate `read` / `write` / `edit` tools are replaced by:
 
 - **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings.
-- **`batch_read`** — read-only variant without truncation caps, ideal for reading multiple files or large sections.
+- **`batch_read`** — read-only variant for multiple reads. Small full-file reads return raw content; large full-file reads return code/infra context maps or total line counts, and oversized targeted reads are capped with continuation guidance.
 
 ### `web` — search and fetch
 
