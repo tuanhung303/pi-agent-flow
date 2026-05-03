@@ -20,6 +20,7 @@ import {
 	getFlowOutput,
 	normalizeFlowResult,
 } from "./types.js";
+import { extractStructuredOutput } from "./structured-output.js";
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
@@ -132,6 +133,7 @@ function buildFlowArgs(
 	parentDepth: number = 0,
 	maxDepth: number = 0,
 	toolOptimize: boolean = false,
+	structuredOutput: boolean = true,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -210,8 +212,36 @@ function buildFlowArgs(
 		`</activation>`;
 
 	// Phase 3: Directive — the flow's system prompt (renamed from <system-directive>)
-	const directive = flow.systemPrompt.trim()
-		? `\n\n<directive>\n${flow.systemPrompt.trim()}\n</directive>`
+	let directiveBody = flow.systemPrompt.trim();
+
+	// Append structured output instructions when enabled
+	if (structuredOutput && directiveBody) {
+		directiveBody +=
+			`\n\n## Structured Output\n\n` +
+			`End your response with a JSON code block containing:\n` +
+			`\n` +
+			`\`\`\`json\n` +
+			`{\n` +
+			`  "version": "1.0",\n` +
+			`  "status": "complete",\n` +
+			`  "summary": "2-3 sentence summary of what was accomplished",\n` +
+			`  "files": [\n` +
+			`    { "path": "relative/path", "role": "read", "description": "why it matters", "snippet": "short excerpt", "ranges": [{ "start": 10, "end": 25, "label": "bug" }] }\n` +
+			`  ],\n` +
+			`  "actions": [\n` +
+			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
+			`  ],\n` +
+			`  "nextSteps": ["recommended follow-up action"],\n` +
+			`  "reasoning": ["key hypothesis or inference"],\n` +
+			`  "notes": ["observation or warning"]\n` +
+			`}\n` +
+			`\`\`\`\n` +
+			`\n` +
+			`Only include fields that have data. Omit empty arrays. Keep snippets under 300 characters. List at most 10 files and 10 actions. If you cannot produce valid structured output, omit the JSON block entirely.`;
+	}
+
+	const directive = directiveBody
+		? `\n\n<directive>\n${directiveBody}\n</directive>`
 		: "";
 
 	// Phase 4: Mission — the intent wrapped with execution contract
@@ -256,6 +286,8 @@ export interface RunFlowOptions {
 	preventCycles: boolean;
 	/** Whether to transform tool lists to use batch. */
 	toolOptimize?: boolean;
+	/** Whether to inject structured JSON output instructions. Default: true. */
+	structuredOutput?: boolean;
 	/** Explicit model to use for this flow execution. */
 	model?: string;
 	/** Abort signal for cancellation. */
@@ -287,6 +319,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		maxDepth,
 		preventCycles,
 		toolOptimize = false,
+		structuredOutput = true,
 		model,
 		signal,
 		onUpdate,
@@ -367,6 +400,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			parentDepth,
 			maxDepth,
 			toolOptimize,
+			structuredOutput,
 		);
 		let wasAborted = false;
 
@@ -532,7 +566,18 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			result.usage.smoothedTps = finalSmoothedTps;
 		}
 
-		return normalizeFlowResult(result, wasAborted);
+		const normalized = normalizeFlowResult(result, wasAborted);
+
+		// Extract structured JSON output from the final assistant text
+		if (structuredOutput) {
+			const flowText = getFlowOutput(normalized.messages);
+			const extracted = extractStructuredOutput(flowText);
+			if (extracted) {
+				normalized.structuredOutput = extracted;
+			}
+		}
+
+		return normalized;
 	} finally {
 		cleanupFlowTempDir(forkSessionTmpDir);
 	}
