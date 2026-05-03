@@ -23,10 +23,15 @@ import { mapFlowConcurrent, runFlow } from "./flow.js";
 import {
 	type SingleResult,
 	type FlowDetails,
+	type CompressedFlowResult,
+	type FileEntry,
+	type CommandEntry,
 	emptyFlowUsage,
 	isFlowError,
 	isFlowSuccess,
+	getFlowOutput,
 } from "./types.js";
+import { extractStructuredOutput } from "./structured-output.js";
 import { createBatchTool, createBatchReadTool } from "./batch.js";
 import {
 	createWebTool,
@@ -471,6 +476,152 @@ function stripReasoningFromAssistantMessage(message: any): {
 function isJsonEqual(a: any, b: any): boolean {
 	return JSON.stringify(a) === JSON.stringify(b);
 }
+// ---------------------------------------------------------------------------
+// Flow result compression
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level cache populated after each flow tool execution.
+ * Maps toolCallId → compressed flow result.
+ * Consumed by compressFlowToolResults at fork time.
+ */
+const flowResultCache = new Map<string, CompressedFlowResult[]>();
+
+/**
+ * Build compressed representations of flow results and cache them by toolCallId.
+ */
+function cacheFlowResults(results: SingleResult[]): void {
+	for (const result of results) {
+		const so = result.structuredOutput;
+		if (!so) continue;
+		const compressed: CompressedFlowResult = {
+			type: result.type,
+			status: isFlowError(result) ? "failed" : "accomplished",
+		};
+		if (so.files.length > 0) compressed.files = so.files;
+		if (so.commands.length > 0) compressed.commands = so.commands;
+		if (result.errorMessage) compressed.error = result.errorMessage;
+		const existing = flowResultCache.get(result.type) ?? [];
+		existing.push(compressed);
+		flowResultCache.set(result.type, existing);
+	}
+}
+
+/**
+ * Render a compressed flow result as compact text for child context.
+ */
+function renderCompressedFlowResult(r: CompressedFlowResult): string {
+	const parts: string[] = [`[Flow: ${r.type} ${r.status}]`];
+	if (r.files?.length) {
+		const fileLines = r.files.map((f) => {
+			const role = f.role ? ` (${f.role})` : "";
+			const desc = f.description ? ` — ${f.description}` : "";
+			return `  ${f.path}${role}${desc}`;
+		});
+		parts.push(`Files:\n${fileLines.join("\n")}`);
+	}
+	if (r.commands?.length) {
+		const cmdLines = r.commands.map((c) => {
+			const result = c.result ? ` (${c.result})` : "";
+			const purpose = c.purpose ? ` — ${c.purpose}` : "";
+			return `  ${c.tool ?? "cmd"}: ${c.command}${result}${purpose}`;
+		});
+		parts.push(`Commands:\n${cmdLines.join("\n")}`);
+	}
+	if (r.error) parts.push(`Error: ${r.error}`);
+	return parts.join("\n");
+}
+
+/**
+ * Compress flow tool results in a sanitized session snapshot.
+ *
+ * Scans for tool result messages that correspond to flow invocations
+ * and replaces their content with compact compressed output.
+ */
+export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
+	if (cache.size === 0) return snapshot;
+
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+
+	// First pass: map toolCallId → tool name from assistant messages
+	const toolCallIdToName = new Map<string, string>();
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { continue; }
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+		const content = entry.message.content;
+		if (!Array.isArray(content)) continue;
+		for (const part of content) {
+			if (part.type === "toolCall" && part.toolCallId && part.name) {
+				toolCallIdToName.set(part.toolCallId, part.name);
+			}
+		}
+	}
+
+	// Second pass: compress flow tool results
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
+
+		if (entry?.type !== "message" || entry.message?.role !== "tool") {
+			result.push(line);
+			continue;
+		}
+
+		// Extract toolCallId — either from message-level or content-level toolResult
+		let toolCallId: string | undefined;
+		if (typeof entry.message.toolCallId === "string") {
+			toolCallId = entry.message.toolCallId;
+		} else if (Array.isArray(entry.message.content)) {
+			for (const part of entry.message.content) {
+				if (part.type === "toolResult" && part.toolCallId) {
+					toolCallId = part.toolCallId;
+					break;
+				}
+			}
+		}
+
+		if (!toolCallId) { result.push(line); continue; }
+
+		const toolName = toolCallIdToName.get(toolCallId);
+		if (toolName !== "flow") { result.push(line); continue; }
+
+		const compressed = cache.get(toolCallId);
+		if (!compressed || compressed.length === 0) { result.push(line); continue; }
+
+		const rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
+
+		// Replace content in the tool result message
+		if (typeof entry.message.toolCallId === "string") {
+			// Format 1: toolCallId at message level, content is text array
+			entry = {
+				...entry,
+				message: {
+					...entry.message,
+					content: [{ type: "text", text: rendered }],
+				},
+			};
+		} else {
+			// Format 2: toolCallId inside content array
+			entry = {
+				...entry,
+				message: {
+					...entry.message,
+					content: entry.message.content.map((part: any) =>
+						part.type === "toolResult" && part.toolCallId === toolCallId
+							? { ...part, content: rendered }
+							: part,
+					),
+				},
+			};
+		}
+
+		result.push(JSON.stringify(entry));
+	}
+
+	return `${result.join("\n")}\n`;
+}
 
 /**
  * Sanitize a fork session snapshot JSONL to remove only non-inheritable
@@ -533,7 +684,8 @@ function sanitizeForkSnapshot(snapshot: string | null): string | null {
 		sanitizedLines.push(changed ? JSON.stringify(entry) : line);
 	}
 
-	return `${sanitizedLines.join("\n")}\n`;
+	const sanitized = `${sanitizedLines.join("\n")}\n`;
+	return compressFlowToolResults(sanitized, flowResultCache);
 }
 
 function computeActiveTools(optimize: boolean): string[] {
@@ -778,6 +930,7 @@ flow [type] accomplished
 
 			async execute(_toolCallId, params, signal, onUpdate, ctx) {
 				const discovery = discoverFlows(ctx.cwd, "all");
+				flowResultCache.clear();
 				const { flows } = discovery;
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
 
@@ -970,6 +1123,7 @@ flow [type] accomplished
 					return result;
 				});
 
+				cacheFlowResults(results);
 				// Build tool result with FULL flow output — no truncation
 				const successCount = results.filter((r) => isFlowSuccess(r)).length;
 				const flowReports = results.map((r) => {
