@@ -5,7 +5,6 @@
  * Each flow receives a forked snapshot of the current session context.
  */
 
-import { randomUUID } from "node:crypto";
 import * as os from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -20,7 +19,7 @@ import {
 import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
-import { runHooks, runHooksDetailed, getRegisteredHooks, registerHook } from "./hooks.js";
+import { runHooks, runHooksDetailed, getRegisteredHooks, registerHook, unregisterHook } from "./hooks.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
 import { executeFlows } from "./executor.js";
 import {
@@ -31,6 +30,7 @@ import {
 	type FileEntry,
 	type CommandEntry,
 	type AutoTransition,
+	type PiAgentFlowAPI,
 	emptyFlowUsage,
 	isFlowError,
 	isFlowSuccess,
@@ -43,6 +43,17 @@ import {
 	looksLikeUrlPrompt,
 	looksLikeWebSearchPrompt,
 } from "./web-tool.js";
+import {
+	SLIDING_PROMPT,
+	SLIDING_PROMPT_OPEN_TAG,
+	stripSlidingPromptText,
+	stripSlidingPromptFromContent,
+	contentContainsSlidingTag,
+	isJsonEqual,
+	stripSlidingPromptsFromMessages,
+	makeSlidingPromptMessage,
+} from "./sliding-prompt.js";
+import { DEFAULT_TRANSITIONS, buildTransitionHooks } from "./transitions.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 
 // ---------------------------------------------------------------------------
@@ -346,110 +357,7 @@ async function confirmProjectFlowsIfNeeded(
 // before the latest user message by the context handler.
 // ---------------------------------------------------------------------------
 
-const SLIDING_PROMPT_UUID = randomUUID();
-const SLIDING_PROMPT_OPEN_TAG = `<pi-flow-sliding-system id="${SLIDING_PROMPT_UUID}">`;
-const SLIDING_PROMPT_CLOSE_TAG = `</pi-flow-sliding-system id="${SLIDING_PROMPT_UUID}">`;
-
-const SLIDING_PROMPT =
-	`${SLIDING_PROMPT_OPEN_TAG}\n` +
-	`You are operating with pi-agent-flow routing.\n` +
-	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
-	`For git, bash, CLI, or terminal tasks, delegate to [build].\n` +
-	`${SLIDING_PROMPT_CLOSE_TAG}`;
-
-const SLIDING_PROMPT_RE = new RegExp(
-	SLIDING_PROMPT_OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-	"[\\s\\S]*?" +
-	SLIDING_PROMPT_CLOSE_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-	"g",
-);
-
-/** Legacy regex to strip old bare sliding system prompt tags (no id attribute). */
-const LEGACY_SLIDING_PROMPT_RE = /<pi-flow-sliding-system(?:\s[^>]*)?>[\s\S]*?<\/pi-flow-sliding-system(?:\s[^>]*)?>/g;
-
-/** Strip any old sliding system prompt tags from a string. */
-function stripSlidingPromptText(text: string): string {
-	return text.replace(SLIDING_PROMPT_RE, "").replace(LEGACY_SLIDING_PROMPT_RE, "");
-}
-
-/** Strip sliding prompt tags from content (string or text-part array). */
-function stripSlidingPromptFromContent(
-	content: string | { type: string; text?: string }[],
-): string | { type: string; text?: string }[] {
-	if (typeof content === "string") {
-		return stripSlidingPromptText(content);
-	}
-	return content.map((c) => {
-		if (c.type === "text" && typeof c.text === "string") {
-			return { ...c, text: stripSlidingPromptText(c.text) };
-		}
-		return c;
-	});
-}
-
-/** Check whether content (string or text-part array) contains the sliding tag. */
-/** Input-message content types (string or multipart text-part array). */
-type MessageContent = string | Array<{ type: string; text?: string }>;
-
-/** Type guard: is this a text-part with a string .text? */
-function isTextPart(part: unknown): part is { type: "text"; text: string } {
-	return (
-		part != null &&
-		typeof part === "object" &&
-		"type" in part &&
-		part.type === "text" &&
-		"text" in part &&
-		typeof (part as { text?: unknown }).text === "string"
-	);
-}
-
-/** Check whether content (string or text-part array) contains the sliding tag. */
-function contentContainsSlidingTag(content: MessageContent): boolean {
-	const hasCurrent = (text: string) => text.includes(SLIDING_PROMPT_OPEN_TAG);
-	const hasLegacy = (text: string) => text.includes("<pi-flow-sliding-system>");
-	const check = (text: string) => hasCurrent(text) || hasLegacy(text);
-	if (typeof content === "string") {
-		return check(content);
-	}
-	if (Array.isArray(content)) {
-		return content.some((part) => isTextPart(part) && check(part.text));
-	}
-	return false;
-}
-
-/** Remove any existing sliding-system-prompt system messages and strip tags from user messages.
- *  Returns the sanitized messages and a flag indicating whether anything changed.
- */
-function stripSlidingPromptsFromMessages(messages: any[]): { messages: any[]; changed: boolean } {
-	let changed = false;
-	const result = messages
-		.filter((msg) => {
-			// Remove dedicated sliding system prompt messages
-			if (msg.role === "system" && contentContainsSlidingTag(msg.content)) {
-				changed = true;
-				return false;
-			}
-			return true;
-		})
-		.map((msg) => {
-			// Also strip stray tags embedded in user/assistant messages
-			if (!("content" in msg)) return msg;
-			const stripped = stripSlidingPromptFromContent(msg.content);
-			if (isJsonEqual(stripped, msg.content)) return msg;
-			changed = true;
-			return { ...msg, content: stripped };
-		});
-	return { messages: result, changed };
-}
-
-/** Build a system message containing the sliding prompt. */
-function makeSlidingPromptMessage(referenceMessage?: any): any {
-	return {
-		role: "system",
-		content: SLIDING_PROMPT,
-		timestamp: referenceMessage?.timestamp,
-	};
-}
+// SLIDING_PROMPT, SLIDING_PROMPT_OPEN_TAG imported from ./sliding-prompt.js
 
 const REASONING_PART_TYPES = new Set([
 	"thinking",
@@ -498,22 +406,6 @@ function stripReasoningFromAssistantMessage(message: any): {
 	return { message: next, changed };
 }
 
-/** Deep-equality check that handles unordered object keys (unlike JSON.stringify). */
-function isJsonEqual(a: unknown, b: unknown): boolean {
-	if (Object.is(a, b)) return true;
-	if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
-	if (Array.isArray(a) !== Array.isArray(b)) return false;
-
-	const keysA = Object.keys(a as Record<string, unknown>);
-	const keysB = Object.keys(b as Record<string, unknown>);
-	if (keysA.length !== keysB.length) return false;
-
-	for (const key of keysA) {
-		if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
-		if (!isJsonEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
-	}
-	return true;
-}
 // ---------------------------------------------------------------------------
 // Flow result compression
 // ---------------------------------------------------------------------------
@@ -799,6 +691,11 @@ export default function (pi: ExtensionAPI) {
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
 		loadedFlowModelConfigs = loadFlowModelConfigs(ctx.cwd);
+
+		// Register declarative transition hooks from the transition matrix
+		for (const hook of buildTransitionHooks(DEFAULT_TRANSITIONS)) {
+			registerHook(hook);
+		}
 
 		// Resolve toolOptimize: CLI flag > env var > settings.json > default
 		const cliFlag = pi.getFlag("tool-optimize");
@@ -1097,14 +994,31 @@ flow [type] accomplished
 	// -------------------------------------------------------------------------
 
 	// Emit a ready event with the API surface so external plugins can extend.
+	// Emit a typed plugin API surface
+	const pluginApi: PiAgentFlowAPI = {
+		registerHook,
+		unregisterHook,
+		getRegisteredHooks,
+		discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
+		getFlowTier: (name: string) => getFlowTier(name),
+		getSettings: () => ({ toolOptimize, structuredOutput, maxConcurrency, autoTransition }),
+	};
+
 	if (typeof pi.emit === "function") {
-		pi.emit("pi-agent-flow:ready", {
-			registerHook,
-			getRegisteredHooks,
-			discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
-			getFlowTier: (name: string) => getFlowTier(name),
-			getSettings: () => ({ toolOptimize, structuredOutput, maxConcurrency, autoTransition }),
-		});
+		pi.emit("pi-agent-flow:ready", pluginApi);
+	}
+
+	// Register cleanup on process exit (once)
+	if (!(globalThis as any).__pi_agent_flow_shutdown_registered) {
+		(globalThis as any).__pi_agent_flow_shutdown_registered = true;
+		const emitShutdown = () => {
+			if (typeof pi.emit === "function") {
+				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
+			}
+		};
+		process.on("exit", emitShutdown);
+		process.on("SIGINT", () => { emitShutdown(); process.exit(130); });
+		process.on("SIGTERM", () => { emitShutdown(); process.exit(143); });
 	}
 
 }

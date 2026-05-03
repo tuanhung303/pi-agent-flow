@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { registerHook, runHooks, clearHooks } from "../src/hooks.js";
-import { emptyFlowUsage, type SingleResult } from "../src/types.js";
+import { registerHook, unregisterHook, runHooks, clearHooks } from "../src/hooks.js";
+import { emptyFlowUsage, isFlowSuccess, type SingleResult } from "../src/types.js";
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {
@@ -558,6 +558,178 @@ describe("audit hooks integration", () => {
 			{ type: "scout", intent: "review" },
 		];
 		const advisors = runHooks(params, results);
+		expect(advisors).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// unregisterHook
+// ---------------------------------------------------------------------------
+
+describe("unregisterHook", () => {
+	beforeEach(() => {
+		clearHooks();
+	});
+
+	it("removes a registered hook by name", () => {
+		registerHook({
+			name: "test/removable",
+			trigger: { flowTypes: ["build"] },
+			action: () => ({ content: "advice", priority: 0 }),
+		});
+
+		expect(unregisterHook("test/removable")).toBe(true);
+		const results = [makeResult({ type: "build" })];
+		const advisors = runHooks([{ type: "build", intent: "fix" }], results);
+		expect(advisors).toEqual([]);
+	});
+
+	it("returns false when hook name does not exist", () => {
+		expect(unregisterHook("nonexistent")).toBe(false);
+	});
+
+	it("only removes the specified hook, leaving others intact", () => {
+		registerHook({
+			name: "test/stay",
+			trigger: { flowTypes: ["build"] },
+			action: () => ({ content: "staying", priority: 0 }),
+		});
+		registerHook({
+			name: "test/remove",
+			trigger: { flowTypes: ["build"] },
+			action: () => ({ content: "removing", priority: 0 }),
+		});
+
+		unregisterHook("test/remove");
+		const results = [makeResult({ type: "build" })];
+		const advisors = runHooks([{ type: "build", intent: "fix" }], results);
+		expect(advisors).toEqual(["staying"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Hook try/catch isolation
+// ---------------------------------------------------------------------------
+
+describe("hook error isolation", () => {
+	beforeEach(() => {
+		clearHooks();
+	});
+
+	it("catches hook action errors and reports them as advisors", () => {
+		registerHook({
+			name: "test/broken",
+			trigger: { flowTypes: ["build"] },
+			action: () => { throw new Error("hook exploded"); },
+		});
+
+		const results = [makeResult({ type: "build" })];
+		const advisors = runHooks([{ type: "build", intent: "fix" }], results);
+		expect(advisors).toHaveLength(1);
+		expect(advisors[0]).toContain("test/broken");
+		expect(advisors[0]).toContain("hook exploded");
+	});
+
+	it("continues running other hooks after one throws", () => {
+		registerHook({
+			name: "test/broken",
+			trigger: { flowTypes: ["build"] },
+			action: () => { throw new Error("boom"); },
+		});
+		registerHook({
+			name: "test/working",
+			trigger: { flowTypes: ["build"] },
+			action: () => ({ content: "works fine", priority: 0 }),
+		});
+
+		const results = [makeResult({ type: "build" })];
+		const advisors = runHooks([{ type: "build", intent: "fix" }], results);
+		expect(advisors).toHaveLength(2);
+		expect(advisors[0]).toBe("works fine");
+		expect(advisors[1]).toContain("boom");
+	});
+
+	it("handles non-Error throws gracefully", () => {
+		registerHook({
+			name: "test/string-throw",
+			trigger: { flowTypes: ["build"] },
+			action: () => { throw "string error"; },
+		});
+
+		const results = [makeResult({ type: "build" })];
+		const advisors = runHooks([{ type: "build", intent: "fix" }], results);
+		expect(advisors).toHaveLength(1);
+		expect(advisors[0]).toContain("string error");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Failure transitions
+// ---------------------------------------------------------------------------
+
+describe("failure transition hooks", () => {
+	beforeEach(() => {
+		clearHooks();
+	});
+
+	it("fires build-to-debug-on-failure when build fails", () => {
+		registerHook({
+			name: "pi-agent-flow/build-to-debug-on-failure",
+			trigger: { flowTypes: ["build"], onlyOnSuccess: false },
+			action: (ctx) => {
+				const allSucceeded = ctx.results.every((r) => isFlowSuccess(r));
+				if (allSucceeded) return null;
+				const debugWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "debug",
+				);
+				if (debugWasRequested) return null;
+				return { content: "Build failed. Consider [debug].", priority: 10 };
+			},
+		});
+
+		const failedResult = makeResult({ type: "build", exitCode: 1, sawAgentEnd: false });
+		const advisors = runHooks([{ type: "build", intent: "fix" }], [failedResult]);
+		expect(advisors).toHaveLength(1);
+		expect(advisors[0]).toContain("[debug]");
+	});
+
+	it("suppresses failure hook when build succeeds", () => {
+		registerHook({
+			name: "pi-agent-flow/build-to-debug-on-failure",
+			trigger: { flowTypes: ["build"], onlyOnSuccess: false },
+			action: (ctx) => {
+				const allSucceeded = ctx.results.every((r) => isFlowSuccess(r));
+				if (allSucceeded) return null;
+				return { content: "Build failed.", priority: 10 };
+			},
+		});
+
+		const successResult = makeResult({ type: "build", exitCode: 0, sawAgentEnd: true });
+		const advisors = runHooks([{ type: "build", intent: "fix" }], [successResult]);
+		expect(advisors).toEqual([]);
+	});
+
+	it("suppresses failure hook when target flow already requested", () => {
+		registerHook({
+			name: "pi-agent-flow/build-to-debug-on-failure",
+			trigger: { flowTypes: ["build"], onlyOnSuccess: false },
+			action: (ctx) => {
+				const allSucceeded = ctx.results.every((r) => isFlowSuccess(r));
+				if (allSucceeded) return null;
+				const debugWasRequested = ctx.params.some(
+					(p) => p.type.toLowerCase() === "debug",
+				);
+				if (debugWasRequested) return null;
+				return { content: "Build failed. Consider [debug].", priority: 10 };
+			},
+		});
+
+		const failedResult = makeResult({ type: "build", exitCode: 1, sawAgentEnd: false });
+		const params = [
+			{ type: "build", intent: "fix" },
+			{ type: "debug", intent: "investigate" },
+		];
+		const advisors = runHooks(params, [failedResult]);
 		expect(advisors).toEqual([]);
 	});
 });

@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Discover files, trace code paths, map architecture
-tools: batch_read, bash, find, grep, ls
+tools: batch, bash, find, grep, ls
 maxDepth: 0
 ---
 
@@ -12,8 +12,8 @@ During this scout flow — your mission is to discover relevant context. Move fa
 ## Workflow
 
 1. Survey — use `ls`, `find`, and `grep` to locate relevant files and symbols before reading whole files.
-2. Inspect — use `batch_read` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
-3. If `batch_read` returns a context map for a large code/infra file, do not retry the full-file read; use the reported line ranges for targeted follow-up reads.
+2. Inspect — use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
+3. If `batch` returns a context map for a large code/infra file, do not retry the full-file read; use the reported line ranges for targeted follow-up reads.
 4. Trace — follow code paths, dependencies, configuration, and tests that explain the requested area.
 5. Report — cite concrete evidence and stop when the requested context is mapped.
 
