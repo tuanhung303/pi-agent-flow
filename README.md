@@ -79,7 +79,7 @@ The result is faster, cheaper, and cleaner delegation: the main agent remains un
 
 | Flow | Purpose | Tools | Tier |
 |------|---------|-------|------|
-| `[scout]` | Discover files, trace code paths, map architecture | `batch_read`, `bash`, `find`, `grep`, `ls` | `lite` |
+| `[scout]` | Discover files, trace code paths, map architecture | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
 | `[debug]` | Investigate logs, errors, stack traces, root causes | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
 | `[build]` | Implement features, fix bugs, write tests, ship | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
 | `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls` | `full` |

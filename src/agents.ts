@@ -136,7 +136,22 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 
 	const name = typeof frontmatter.name === "string" ? frontmatter.name.trim().toLowerCase() : "";
 	const description = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
-	if (!name || !description) return null;
+	if (!name || !description) {
+		if (!name) console.warn(`[pi-agent-flow] Skipping flow file "${filePath}": missing or empty 'name' field.`);
+		if (!description) console.warn(`[pi-agent-flow] Skipping flow file "${filePath}": missing or empty 'description' field.`);
+		return null;
+	}
+
+	// Warn about unknown frontmatter keys
+	const knownKeys = new Set([
+		"name", "description", "tools", "model", "thinking",
+		"maxDepth", "inheritContext", "tier",
+	]);
+	for (const key of Object.keys(frontmatter)) {
+		if (!knownKeys.has(key)) {
+			console.warn(`[pi-agent-flow] Unknown frontmatter key "${key}" in "${filePath}". This field will be ignored.`);
+		}
+	}
 
 	let tools: string[] | undefined;
 	if (typeof frontmatter.tools === "string") {

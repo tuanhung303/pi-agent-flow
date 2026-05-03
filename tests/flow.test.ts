@@ -644,3 +644,64 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("flow");
 	});
 });
+
+describe("PI_FLOW_SPAWN_COMMAND env override", () => {
+	const mockFlow: FlowConfig = {
+		name: "scout",
+		description: "Discovery flow",
+		systemPrompt: "You are scout.",
+		source: "bundled",
+		filePath: "/agents/scout.md",
+	};
+
+	function makeMockProcess() {
+		const proc = new EventEmitter() as any;
+		proc.stdin = new EventEmitter();
+		proc.stdin.end = vi.fn();
+		proc.stdout = new EventEmitter();
+		proc.stderr = new EventEmitter();
+		proc.pid = 12345;
+		proc.kill = vi.fn();
+		return proc;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		delete process.env["PI_FLOW_SPAWN_COMMAND"];
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		delete process.env["PI_FLOW_SPAWN_COMMAND"];
+	});
+
+	it("uses PI_FLOW_SPAWN_COMMAND when set", async () => {
+		process.env["PI_FLOW_SPAWN_COMMAND"] = "/custom/pi";
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"agent_end","messages":[{"role":"assistant","content":[{"type":"text","text":"done"}]}]}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		expect(spawnCall[0]).toBe("/custom/pi");
+	});
+});
