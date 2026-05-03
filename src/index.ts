@@ -378,17 +378,28 @@ function stripSlidingPromptFromContent(
 }
 
 /** Check whether content (string or text-part array) contains the sliding tag. */
-function contentContainsSlidingTag(content: any): boolean {
+/** Input-message content types (string or multipart text-part array). */
+type MessageContent = string | Array<{ type: string; text?: string }>;
+
+/** Type guard: is this a text-part with a string .text? */
+function isTextPart(part: unknown): part is { type: "text"; text: string } {
+	return (
+		part != null &&
+		typeof part === "object" &&
+		"type" in part &&
+		part.type === "text" &&
+		"text" in part &&
+		typeof (part as { text?: unknown }).text === "string"
+	);
+}
+
+/** Check whether content (string or text-part array) contains the sliding tag. */
+function contentContainsSlidingTag(content: MessageContent): boolean {
 	if (typeof content === "string") {
 		return content.includes(SLIDING_PROMPT_OPEN_TAG);
 	}
 	if (Array.isArray(content)) {
-		return content.some(
-			(part: any) =>
-				part.type === "text" &&
-				typeof part.text === "string" &&
-				part.text.includes(SLIDING_PROMPT_OPEN_TAG),
-		);
+		return content.some((part) => isTextPart(part) && part.text.includes(SLIDING_PROMPT_OPEN_TAG));
 	}
 	return false;
 }
@@ -474,8 +485,21 @@ function stripReasoningFromAssistantMessage(message: any): {
 	return { message: next, changed };
 }
 
-function isJsonEqual(a: any, b: any): boolean {
-	return JSON.stringify(a) === JSON.stringify(b);
+/** Deep-equality check that handles unordered object keys (unlike JSON.stringify). */
+function isJsonEqual(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true;
+	if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+	if (Array.isArray(a) !== Array.isArray(b)) return false;
+
+	const keysA = Object.keys(a as Record<string, unknown>);
+	const keysB = Object.keys(b as Record<string, unknown>);
+	if (keysA.length !== keysB.length) return false;
+
+	for (const key of keysA) {
+		if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+		if (!isJsonEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+	}
+	return true;
 }
 // ---------------------------------------------------------------------------
 // Flow result compression

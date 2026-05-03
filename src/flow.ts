@@ -167,10 +167,11 @@ function buildFlowArgs(
 	if (thinking) args.push("--thinking", thinking);
 
 	// Child flows get their configured tools from flow.tools, optimized by
-	// getOptimizedTools, with web explicitly filtered out.
-	// When flow.tools is undefined and toolOptimize=true, default to batch+bash+web
-	// (flow is unnecessary since the child is already inside a flow).
-	// When toolOptimize=false, include batch and web alongside legacy tools.
+	// getOptimizedTools. `web` is always filtered out — child flows cannot
+	// browse or search the web; they work with whatever context the parent
+	// provides in the intent.
+	// When flow.tools is undefined and toolOptimize=true, default to batch+bash.
+	// When toolOptimize=false, include batch alongside legacy tools.
 	const defaultTools = toolOptimize
 		? ["batch", "bash", "web"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
