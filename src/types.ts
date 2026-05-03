@@ -365,6 +365,24 @@ export interface AutoTransition {
 	type: string;
 	/** Intent for the follow-up flow. */
 	intent: string;
-	/** Confidence score (0-1). Higher means more certain. */
-	confidence: number;
 }
+// ---------------------------------------------------------------------------
+// Plugin API types
+// ---------------------------------------------------------------------------
+
+/** Public API surface exposed via the pi-agent-flow:ready event. */
+export interface PiAgentFlowAPI {
+	/** Register or replace a post-flow hook. */
+	registerHook: (hook: PostFlowHook) => void;
+	/** Unregister a hook by name. Returns true if removed. */
+	unregisterHook: (name: string) => boolean;
+	/** Get a snapshot of all registered hooks. */
+	getRegisteredHooks: () => PostFlowHook[];
+	/** Discover all available flows for a given working directory. */
+	discoverFlows: (cwd: string) => { flows: Array<{ name: string; description: string; source: string }>; projectFlowsDir: string | null };
+	/** Determine the model tier for a given flow name. */
+	getFlowTier: (name: string) => string;
+	/** Get current flow settings. */
+	getSettings: () => { toolOptimize: boolean; structuredOutput: boolean; maxConcurrency: number; autoTransition: boolean };
+}
+

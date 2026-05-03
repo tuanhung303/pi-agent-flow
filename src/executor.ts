@@ -139,6 +139,24 @@ async function confirmProjectFlowsIfNeeded(
 	};
 }
 
+// ---------------------------------------------------------------------------
+// Cache limits
+// ---------------------------------------------------------------------------
+
+const FLOW_RESULT_CACHE_MAX_ENTRIES = 50;
+
+/** Evict oldest entries from the cache when it exceeds the cap. */
+function evictCacheOverflow(cache: Map<string, unknown>): void {
+	if (cache.size <= FLOW_RESULT_CACHE_MAX_ENTRIES) return;
+	const excess = cache.size - FLOW_RESULT_CACHE_MAX_ENTRIES;
+	const keys = cache.keys();
+	for (let i = 0; i < excess; i++) {
+		const next = keys.next();
+		if (next.done) break;
+		cache.delete(next.value);
+	}
+}
+
 function shouldFailover(result: SingleResult): boolean {
 	if (result.stopReason === "aborted") return false;
 	const text = `${result.errorMessage ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
@@ -354,6 +372,7 @@ export async function executeFlows(
 		existing.push(compressed);
 		flowResultCache.set(toolCallId, existing);
 	}
+	evictCacheOverflow(flowResultCache);
 
 	// Build tool result
 	const successCount = results.filter((r) => isFlowSuccess(r)).length;
@@ -369,21 +388,21 @@ export async function executeFlows(
 		? "\n\n---\n\n💡 " + hookResult.advisors.join("\n💡 ")
 		: "";
 
-	// Auto-transition: collect qualifying transitions
+	// Auto-transition: collect qualifying transitions.
+	// No confidence threshold gating — non-deterministic agents should not
+	// have unstable numeric params controlling execution flow.
 	const queuedTransitions: Array<{ type: string; intent: string }> = [];
 	if (autoTransition && hookResult.autoTransitions.length > 0) {
 		for (const transition of hookResult.autoTransitions) {
-			if (transition.confidence >= 0.7) {
-				const normalizedType = transition.type.toLowerCase();
-				const flowExists = flows.some((f) => f.name === normalizedType);
-				const notAlreadyRequested = !requested.has(normalizedType);
-				const noCycles = !preventCycles || !ancestorFlowStack.includes(normalizedType);
-				if (flowExists && notAlreadyRequested && noCycles) {
-					queuedTransitions.push({
-						type: transition.type,
-						intent: transition.intent,
-					});
-				}
+			const normalizedType = transition.type.toLowerCase();
+			const flowExists = flows.some((f) => f.name === normalizedType);
+			const notAlreadyRequested = !requested.has(normalizedType);
+			const noCycles = !preventCycles || !ancestorFlowStack.includes(normalizedType);
+			if (flowExists && notAlreadyRequested && noCycles) {
+				queuedTransitions.push({
+					type: transition.type,
+					intent: transition.intent,
+				});
 			}
 		}
 	}
