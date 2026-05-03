@@ -38,6 +38,7 @@ import {
 	looksLikeUrlPrompt,
 	looksLikeWebSearchPrompt,
 } from "./web-tool.js";
+import { createTimedBashToolDefinition } from "./timed-bash.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -783,6 +784,12 @@ export default function (pi: ExtensionAPI) {
 		if (toolOptimize) {
 			pi.registerTool(createBatchReadTool());
 			pi.registerTool(createBatchTool());
+		}
+
+		// Override built-in bash with timed wrapper so the LLM sees execution-time classification.
+		const timedBash = createTimedBashToolDefinition(ctx.cwd);
+		if (timedBash) {
+			pi.registerTool(timedBash);
 		}
 	});
 

@@ -28,6 +28,23 @@ declare module "@mariozechner/pi-coding-agent" {
 	export const DEFAULT_MAX_BYTES: number;
 	export const DEFAULT_MAX_LINES: number;
 	export function truncateHead(text: string, options: { maxBytes?: number; maxLines?: number }): { content: string };
+	export function createBashToolDefinition(
+		cwd: string,
+		options?: {
+			shellPath?: string;
+			commandPrefix?: string;
+			operations?: any;
+			spawnHook?: any;
+		},
+	): {
+		name: string;
+		label: string;
+		description: string;
+		parameters: any;
+		execute: (...args: any[]) => Promise<any>;
+		renderCall?: (...args: any[]) => any;
+		renderResult?: (...args: any[]) => any;
+	};
 }
 
 declare module "@mariozechner/pi-tui" {
