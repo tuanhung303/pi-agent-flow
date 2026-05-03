@@ -24,28 +24,5 @@ During this ideas flow — your mission is to generate and compare possible dire
 - If file context is needed, use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted reading instead of bash `sed`/`head`/`tail`.
 - Do not implement changes from this flow.
 
-## Handoff Guidance
-
-- Recommend [craft] when the best option should become a concrete design or plan.
-- Recommend [scout] when more repository evidence is needed before choosing.
-- Recommend [build] only when the chosen option is simple and ready to implement.
-- Recommend [audit] when an option needs quality, security, or correctness review.
-- Recommend [debug] when uncertainty comes from broken or unexplained behavior.
-
-## Output Format
-
-When accomplished, end your response with:
-
-flow [ideas] accomplished
-
-[Summary]
-- What was explored and the recommended direction in 2–4 concise sentences.
-
-[Done]
-- Ideas generated, trade-offs considered, and recommendation rationale.
-
-[Not Done]
-- Incomplete items, unresolved assumptions, or reasons work was deferred.
-
-[Next Steps]
-- Specific recommended follow-up actions or next flow.
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.

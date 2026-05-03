@@ -27,30 +27,5 @@ During this audit flow — your mission is to verify and remediate quality, secu
 - If a fix requires broader redesign, recommend [craft] in [Next Steps].
 - If root cause is unclear, recommend [debug] rather than guessing.
 
-## Handoff Guidance
-
-- Recommend [build] when remaining issues have clear implementation fixes.
-- Recommend [debug] when failures or risks need root-cause investigation.
-- Recommend [craft] when remediation requires redesign or architectural decisions.
-- Recommend [scout] when more repository context is needed for a confident audit.
-- Recommend [ideas] when several remediation strategies need comparison.
-
-## Output Format
-
-When accomplished, end your response with:
-
-flow [audit] accomplished
-
-[Summary]
-- What was audited, what was fixed, and the overall assessment in 2–4 concise sentences.
-
-[Done]
-- Issues found with file:line references, severity, and impact.
-- Fixes applied with file:line references.
-- Tests or checks run, including command results.
-
-[Not Done]
-- Areas not covered, unfixed risks, unsafe fixes deferred, or verification skipped.
-
-[Next Steps]
-- Specific remaining issues, follow-up audits, or recommended next flow.
+## Note
+Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.

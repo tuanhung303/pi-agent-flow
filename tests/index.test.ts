@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import registerExtension from "../src/index.js";
+import registerExtension, { compressFlowToolResults } from "../src/index.js";
 import { runFlow, mapFlowConcurrent } from "../src/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
@@ -1304,5 +1304,235 @@ describe("web tool integration", () => {
 		expect(modified.systemPrompt).toContain("Use inherited context as background while exploring alternatives.");
 		expect(modified.systemPrompt).not.toContain("Start from a clean slate with only the intent.");
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
+	});
+});
+
+describe("compressFlowToolResults", () => {
+	const flowCache = new Map<string, import("../src/types.js").CompressedFlowResult[]>();
+
+	beforeEach(() => {
+		flowCache.clear();
+	});
+
+	it("compresses flow tool results using cache", () => {
+		// Import the exported function
+		
+
+		flowCache.set("flow-call-1", [{
+			type: "scout",
+			status: "accomplished",
+			files: [
+				{ path: "src/auth.ts", role: "modified", description: "Fixed JWT bypass" },
+				{ path: "tests/auth.test.ts", role: "created", description: "Regression test" },
+			],
+			commands: [
+				{ command: "npm test", tool: "bash", result: "success", purpose: "Run test suite" },
+			],
+		}]);
+
+		const snapshot = [
+			JSON.stringify({ version: 1 }),
+			JSON.stringify({ type: "message", message: { role: "user", content: "Fix auth", timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "text", text: "Delegating to scout" },
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Find auth" }] } },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+				{ type: "text", text: "Flow: 1/1 completed\n\nflow [scout] accomplished\n\nFull verbose flow output that should be compressed..." },
+			], timestamp: 3 } }),
+			JSON.stringify({ type: "message", message: { role: "user", content: "Next step", timestamp: 4 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		// Should contain compressed format
+		expect(result).toContain("[Flow: scout accomplished]");
+		expect(result).toContain("src/auth.ts (modified) — Fixed JWT bypass");
+		expect(result).toContain("tests/auth.test.ts (created) — Regression test");
+		expect(result).toContain("bash: npm test (success) — Run test suite");
+
+		// Should NOT contain full verbose output
+		expect(result).not.toContain("Full verbose flow output");
+		expect(result).not.toContain("Flow: 1/1 completed");
+
+		// Should preserve non-flow messages
+		expect(result).toContain("Fix auth");
+		expect(result).toContain("Next step");
+		expect(result).toContain("Delegating to scout");
+	});
+
+	it("preserves non-flow tool results unchanged", () => {
+		
+
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "bash", toolCallId: "bash-call-1", arguments: { command: "echo hello" } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "bash-call-1", name: "bash", content: [
+				{ type: "text", text: "hello\n" },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		// Should be unchanged
+		expect(result).toContain("hello");
+		expect(result).toContain("bash-call-1");
+	});
+
+	it("returns snapshot unchanged when cache is empty", () => {
+		
+
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+				{ type: "text", text: "Full flow output" },
+			], timestamp: 1 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, new Map());
+
+		// Should be unchanged (cache empty)
+		expect(result).toContain("Full flow output");
+	});
+
+	it("preserves flow tool results when no matching cache entry exists", () => {
+		
+
+		// Cache has flow-call-2 but session has flow-call-1
+		flowCache.set("flow-call-2", [{
+			type: "scout",
+			status: "accomplished",
+			files: [{ path: "src/x.ts" }],
+		}]);
+
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+				{ type: "text", text: "Prior flow output not in cache" },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		// Should preserve the prior flow output (cache miss)
+		expect(result).toContain("Prior flow output not in cache");
+	});
+
+	it("includes error message for failed flows", () => {
+		
+
+		flowCache.set("flow-call-1", [{
+			type: "build",
+			status: "failed",
+			error: "Build failed: missing dependency @types/node",
+		}]);
+
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+				{ type: "text", text: "Flow: 0/1 completed\n\nflow [build] failed\n\nError output..." },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		expect(result).toContain("[Flow: build failed]");
+		expect(result).toContain("Error: Build failed: missing dependency @types/node");
+		expect(result).not.toContain("Error output...");
+	});
+
+	it("handles toolResult format with content-level toolCallId", () => {
+		
+
+		flowCache.set("flow-call-2", [{
+			type: "debug",
+			status: "accomplished",
+			commands: [
+				{ command: "grep -r 'TODO' src/", tool: "grep", result: "success", purpose: "Find remaining TODOs" },
+			],
+		}]);
+
+		// Format 2: toolCallId inside content array (used in some test fixtures)
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", content: [
+				{ type: "toolResult", toolCallId: "flow-call-2", content: "Full verbose debug output" },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		expect(result).toContain("[Flow: debug accomplished]");
+		expect(result).toContain("grep: grep -r 'TODO' src/ (success) — Find remaining TODOs");
+		expect(result).not.toContain("Full verbose debug output");
+	});
+
+	it("handles multiple flows in cache", () => {
+		
+
+		flowCache.set("flow-call-1", [{
+			type: "scout",
+			status: "accomplished",
+			files: [{ path: "src/a.ts", role: "read", description: "Main file" }],
+		}]);
+		flowCache.set("flow-call-2", [{
+			type: "build",
+			status: "accomplished",
+			commands: [{ command: "npm test", tool: "bash", result: "success" }],
+		}]);
+
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+				{ type: "text", text: "Full scout output" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: {} },
+			], timestamp: 3 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-2", name: "flow", content: [
+				{ type: "text", text: "Full build output" },
+			], timestamp: 4 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		// Both flows compressed
+		expect(result).toContain("[Flow: scout accomplished]");
+		expect(result).toContain("src/a.ts (read) — Main file");
+		expect(result).toContain("[Flow: build accomplished]");
+		expect(result).toContain("bash: npm test (success)");
+		expect(result).not.toContain("Full scout output");
+		expect(result).not.toContain("Full build output");
+	});
+
+	it("handles flow with no files or commands in structured output", () => {
+		
+
+		flowCache.set("flow-call-1", [{
+			type: "ideas",
+			status: "accomplished",
+		}]);
+
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+				{ type: "text", text: "Full verbose ideas output" },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = compressFlowToolResults(snapshot, flowCache);
+
+		expect(result).toContain("[Flow: ideas accomplished]");
+		expect(result).not.toContain("Full verbose ideas output");
 	});
 });

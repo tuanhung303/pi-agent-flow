@@ -724,6 +724,39 @@ describe("expanded view rendering", () => {
 		expect(text).toContain("ctx: 10.0k");
 	});
 
+	it("single expanded renders structured notDone details", () => {
+		const result = makeResult({
+			type: "build",
+			intent: "Implement structured output",
+			structuredOutput: {
+				version: "1.0",
+				status: "partial",
+				summary: "Implemented most structured output work.",
+				files: [],
+				actions: [],
+				notDone: [
+					{
+						item: "Cross-validation",
+						reason: "Deferred",
+						blocker: "Needs tool-call summary",
+						nextStep: "Design validation layer",
+					},
+				],
+				commands: [],
+				nextSteps: [],
+				reasoning: [],
+				notes: [],
+			},
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("Not Done: Cross-validation");
+		expect(text).toContain("reason: Deferred");
+		expect(text).toContain("blocker: Needs tool-call summary");
+		expect(text).toContain("next: Design validation layer");
+	});
+
 	it("multi expanded summary shows count only", () => {
 		const result1 = makeResult({
 			type: "debug",
