@@ -27,6 +27,8 @@ export interface LoadedFlowModelConfigs {
 
 export interface FlowSettings {
 	toolOptimize?: boolean;
+	/** Whether to inject structured JSON output instructions into flow prompts. Default: true. */
+	structuredOutput?: boolean;
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
@@ -170,6 +172,9 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 	const result: FlowSettings = {};
 	if (typeof obj.toolOptimize === "boolean") {
 		result.toolOptimize = obj.toolOptimize;
+	}
+	if (typeof obj.structuredOutput === "boolean") {
+		result.structuredOutput = obj.structuredOutput;
 	}
 	return result;
 }
