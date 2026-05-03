@@ -28,6 +28,24 @@ describe("extractStructuredOutput", () => {
 				evidence: "file created",
 			},
 		],
+		commands: [
+			{
+				command: "npm test",
+				tool: "bash",
+				target: ".",
+				result: "success",
+				output: "12 passing",
+				purpose: "Run test suite",
+			},
+		],
+		notDone: [
+			{
+				item: "Cross-validate actions against tool calls",
+				reason: "Deferred to v2",
+				blocker: "No derived tool-call summary exists yet",
+				nextStep: "Design validation layer",
+			},
+		],
 		nextSteps: ["Run tests", "Commit changes"],
 		reasoning: ["Chose approach A because of X"],
 		notes: ["Consider refactoring later"],
@@ -61,21 +79,43 @@ ${JSON.stringify({ ...validOutput, status: "unknown" })}
 		expect(extractStructuredOutput(text)).toBeUndefined();
 	});
 
-	it("returns undefined when arrays are missing", () => {
+	it("normalizes omitted arrays to empty arrays", () => {
 		const partial = {
 			version: "1.0",
 			status: "complete",
 			summary: "Done.",
-			files: [],
-			actions: [],
-			// missing nextSteps, reasoning, notes
 		};
 		const text = `Done.
 
 \`\`\`json
 ${JSON.stringify(partial)}
 \`\`\``;
-		expect(extractStructuredOutput(text)).toBeUndefined();
+		const result = extractStructuredOutput(text);
+		expect(result).toBeDefined();
+		expect(result!.files).toEqual([]);
+		expect(result!.actions).toEqual([]);
+		expect(result!.commands).toEqual([]);
+		expect(result!.notDone).toEqual([]);
+		expect(result!.nextSteps).toEqual([]);
+		expect(result!.reasoning).toEqual([]);
+		expect(result!.notes).toEqual([]);
+	});
+
+	it("returns undefined when an optional array field is not an array", () => {
+		for (const field of ["files", "actions", "commands", "notDone", "nextSteps", "reasoning", "notes"]) {
+			const invalid = {
+				version: "1.0",
+				status: "complete",
+				summary: "Done.",
+				[field]: "not an array",
+			};
+			const text = `Done.
+
+\`\`\`json
+${JSON.stringify(invalid)}
+\`\`\``;
+			expect(extractStructuredOutput(text), field).toBeUndefined();
+		}
 	});
 
 	it("extracts a valid structured output block", () => {
@@ -98,9 +138,38 @@ ${JSON.stringify(validOutput)}
 		expect(result!.files).toHaveLength(1);
 		expect(result!.files[0].path).toBe("src/example.ts");
 		expect(result!.actions).toHaveLength(1);
+		expect(result!.commands).toHaveLength(1);
+		expect(result!.commands[0]).toEqual({
+			command: "npm test",
+			tool: "bash",
+			target: ".",
+			result: "success",
+			output: "12 passing",
+			purpose: "Run test suite",
+		});
+		expect(result!.notDone).toHaveLength(1);
+		expect(result!.notDone[0]).toEqual({
+			item: "Cross-validate actions against tool calls",
+			reason: "Deferred to v2",
+			blocker: "No derived tool-call summary exists yet",
+			nextStep: "Design validation layer",
+		});
 		expect(result!.nextSteps).toHaveLength(2);
 		expect(result!.reasoning).toHaveLength(1);
 		expect(result!.notes).toHaveLength(1);
+	});
+
+	it("keeps backward compatibility with structured output that omits notDone", () => {
+		const { notDone: _notDone, commands: _commands, ...legacyOutput } = validOutput;
+		const text = `Done.
+
+\`\`\`json
+${JSON.stringify(legacyOutput)}
+\`\`\``;
+		const result = extractStructuredOutput(text);
+		expect(result).toBeDefined();
+		expect(result!.notDone).toEqual([]);
+		expect(result!.summary).toBe(validOutput.summary);
 	});
 
 	it("uses the last JSON block when multiple exist", () => {
@@ -171,6 +240,18 @@ ${JSON.stringify(spaced)}
 		const result = extractStructuredOutput(text);
 		expect(result).toBeDefined();
 		expect(result!.summary).toBe("Spaced summary");
+	});
+
+	it("trims whitespace from version", () => {
+		const spaced = { ...validOutput, version: "  1.0  " };
+		const text = `Done.
+
+\`\`\`json
+${JSON.stringify(spaced)}
+\`\`\``;
+		const result = extractStructuredOutput(text);
+		expect(result).toBeDefined();
+		expect(result!.version).toBe("1.0");
 	});
 
 	it("handles code fence with language tag on same line", () => {

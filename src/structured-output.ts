@@ -5,22 +5,49 @@
  * and validates it against the FlowStructuredOutput schema.
  */
 
-import type { FlowStructuredOutput } from "./types.js";
+import type { Action, CommandEntry, FileEntry, FlowStructuredOutput, NotDoneItem } from "./types.js";
+
+type FlowStatus = FlowStructuredOutput["status"];
+
+type StructuredOutputRecord = {
+	version: string;
+	status: FlowStatus;
+	summary: string;
+	files?: FileEntry[];
+	actions?: Action[];
+	commands?: CommandEntry[];
+	notDone?: NotDoneItem[];
+	nextSteps?: string[];
+	reasoning?: string[];
+	notes?: string[];
+	extensions?: Record<string, unknown>;
+};
+
+const VALID_STATUSES: FlowStatus[] = ["complete", "partial", "blocked", "failed"];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOptionalArray(record: Record<string, unknown>, key: string): boolean {
+	return record[key] === undefined || Array.isArray(record[key]);
+}
 
 /** Minimum required fields to consider parsed JSON a valid structured output. */
-function isValidStructuredOutput(obj: unknown): obj is FlowStructuredOutput {
-	if (typeof obj !== "object" || obj === null) return false;
-	const record = obj as Record<string, unknown>;
+function isValidStructuredOutput(obj: unknown): obj is StructuredOutputRecord {
+	if (!isRecord(obj)) return false;
 	return (
-		typeof record.version === "string" &&
-		typeof record.status === "string" &&
-		["complete", "partial", "blocked", "failed"].includes(record.status) &&
-		typeof record.summary === "string" &&
-		Array.isArray(record.files) &&
-		Array.isArray(record.actions) &&
-		Array.isArray(record.nextSteps) &&
-		Array.isArray(record.reasoning) &&
-		Array.isArray(record.notes)
+		typeof obj.version === "string" &&
+		typeof obj.status === "string" &&
+		VALID_STATUSES.includes(obj.status as FlowStatus) &&
+		typeof obj.summary === "string" &&
+		isOptionalArray(obj, "files") &&
+		isOptionalArray(obj, "actions") &&
+		isOptionalArray(obj, "commands") &&
+		isOptionalArray(obj, "notDone") &&
+		isOptionalArray(obj, "nextSteps") &&
+		isOptionalArray(obj, "reasoning") &&
+		isOptionalArray(obj, "notes")
 	);
 }
 
@@ -52,16 +79,19 @@ export function extractStructuredOutput(text: string): FlowStructuredOutput | un
 
 	if (!isValidStructuredOutput(parsed)) return undefined;
 
-	// Sanitize: trim string fields, ensure arrays exist
+	// Sanitize: trim string fields and normalize omitted arrays to [] for
+	// backward compatibility with earlier structured-output prompts.
 	return {
 		version: parsed.version.trim(),
 		status: parsed.status,
 		summary: parsed.summary.trim(),
-		files: parsed.files,
-		actions: parsed.actions,
-		nextSteps: parsed.nextSteps,
-		reasoning: parsed.reasoning,
-		notes: parsed.notes,
+		files: parsed.files ?? [],
+		actions: parsed.actions ?? [],
+		commands: parsed.commands ?? [],
+		notDone: parsed.notDone ?? [],
+		nextSteps: parsed.nextSteps ?? [],
+		reasoning: parsed.reasoning ?? [],
+		notes: parsed.notes ?? [],
 		...(parsed.extensions !== undefined ? { extensions: parsed.extensions } : {}),
 	};
 }
