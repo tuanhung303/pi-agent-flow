@@ -1072,7 +1072,7 @@ flow [type] accomplished
 						sessionManager: ctx.sessionManager,
 						hasUI: ctx.hasUI,
 						uiConfirm: (title, body) => ctx.ui.confirm(title, body),
-						onFlowMetrics: (metrics) => pi.emit("pi-agent-flow:complete", metrics),
+						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
 					},
 					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, cwd: f.cwd })),
