@@ -15,7 +15,7 @@ During this scout flow — your mission is to discover relevant context. Move fa
 2. Inspect — use `batch_read` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
 3. If `batch_read` returns a context map for a large code/infra file, do not retry the full-file read; use the reported line ranges for targeted follow-up reads.
 4. Trace — follow code paths, dependencies, configuration, and tests that explain the requested area.
-4. Report — cite concrete evidence and stop when the requested context is mapped.
+5. Report — cite concrete evidence and stop when the requested context is mapped.
 
 ## Rules
 
