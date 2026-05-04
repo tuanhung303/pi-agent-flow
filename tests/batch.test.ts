@@ -2026,6 +2026,78 @@ describe("edge cases", () => {
 			expect(result.content[0].text).toContain("⚠ byte-warn.txt truncated");
 			expect(result.content[0].text).toContain("Use s=");
 		});
+
+		it("skips remaining reads when aggregate line limit is exceeded", async () => {
+			// 4 files × 500 lines = 2000 total; cap is 1500
+			for (let i = 0; i < 4; i++) {
+				const lines = Array.from({ length: 500 }, (_, j) => `file${i} line ${j}`);
+				fs.writeFileSync(path.join(tmpDir, `batch-agg-${i}.txt`), lines.join("\n"), "utf-8");
+			}
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ op: "read", path: "batch-agg-0.txt" },
+						{ op: "read", path: "batch-agg-1.txt" },
+						{ op: "read", path: "batch-agg-2.txt" },
+						{ op: "read", path: "batch-agg-3.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[1].status).toBe("ok");
+			expect(result.details.results[2].status).toBe("ok");
+			expect(result.details.results[3]).toMatchObject({
+				op: "read",
+				path: "batch-agg-3.txt",
+				status: "skipped",
+				error: expect.stringContaining("aggregate line limit of 1500"),
+			});
+			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 1 read: batch-agg-3.txt");
+		});
+
+		it("continues non-read operations after aggregate line limit is reached", async () => {
+			for (let i = 0; i < 4; i++) {
+				const lines = Array.from({ length: 500 }, (_, j) => `file${i} line ${j}`);
+				fs.writeFileSync(path.join(tmpDir, `mixed-${i}.txt`), lines.join("\n"), "utf-8");
+			}
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ op: "read", path: "mixed-0.txt" },
+						{ op: "read", path: "mixed-1.txt" },
+						{ op: "read", path: "mixed-2.txt" },
+						{ op: "read", path: "mixed-3.txt" },
+						{ op: "write", path: "new.txt", content: "written after cap\n" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[1].status).toBe("ok");
+			expect(result.details.results[2].status).toBe("ok");
+			expect(result.details.results[3]).toMatchObject({
+				status: "skipped",
+			});
+			expect(result.details.results[4]).toMatchObject({
+				op: "write",
+				path: "new.txt",
+				status: "ok",
+			});
+			expect(result.content[0].text).toContain("1 write");
+		});
 	});
 
 	describe("renderCall", () => {
@@ -2473,6 +2545,78 @@ describe("batch_read tool", () => {
 				error: expect.stringContaining("Line 2 exceeds limit"),
 			});
 			expect(result.details.results[0].error).toContain("batch_read");
+		});
+
+		it("skips remaining reads when aggregate line limit is exceeded", async () => {
+			// 4 files × 800 lines; targeted read of 799 lines each
+			// File 1 + File 2 = 1598 lines > 1500 cap, so Files 3 and 4 are skipped
+			for (let i = 0; i < 4; i++) {
+				const lines = Array.from({ length: 800 }, (_, j) => `file${i} line ${j}`);
+				fs.writeFileSync(path.join(tmpDir, `agg-${i}.txt`), lines.join("\n"), "utf-8");
+			}
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "agg-0.txt", s: 1, l: 799 },
+						{ o: "read", p: "agg-1.txt", s: 1, l: 799 },
+						{ o: "read", p: "agg-2.txt", s: 1, l: 799 },
+						{ o: "read", p: "agg-3.txt", s: 1, l: 799 },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[1].status).toBe("ok");
+			expect(result.details.results[2]).toMatchObject({
+				op: "read",
+				path: "agg-2.txt",
+				status: "skipped",
+				error: expect.stringContaining("aggregate line limit of 1500"),
+			});
+			expect(result.details.results[3]).toMatchObject({
+				op: "read",
+				path: "agg-3.txt",
+				status: "skipped",
+				error: expect.stringContaining("aggregate line limit of 1500"),
+			});
+			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 2 reads: agg-2.txt, agg-3.txt");
+		});
+
+		it("does not count context maps toward aggregate line limit", async () => {
+			// A context map read (301+ lines, full-file) should not consume the aggregate cap
+			const lines = Array.from({ length: 301 }, (_, i) => `line ${i}`);
+			fs.writeFileSync(path.join(tmpDir, "large-map.txt"), lines.join("\n"), "utf-8");
+			const smallLines = Array.from({ length: 500 }, (_, i) => `small line ${i}`);
+			fs.writeFileSync(path.join(tmpDir, "small.txt"), smallLines.join("\n"), "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "large-map.txt" },
+						{ o: "read", p: "small.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "ok",
+				contextMap: true,
+			});
+			expect(result.details.results[1]).toMatchObject({
+				status: "ok",
+				path: "small.txt",
+			});
 		});
 	});
 
