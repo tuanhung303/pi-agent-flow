@@ -16,6 +16,7 @@ import {
 	MAX_BYTES,
 	SAFE_FULL_READ_LIMIT,
 	TARGETED_READ_LINE_LIMIT,
+	MAX_TOTAL_RESULT_LINES,
 } from "./constants.js";
 import {
 	normalizeToLF,
@@ -212,6 +213,8 @@ export async function executeOperations(
 	const counts = { read: 0, write: 0, edit: 0, delete: 0, error: 0, skipped: 0 };
 	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
+	const aggregateLimitSkipped: { path: string }[] = [];
+	let aggregateLinesRead = 0;
 	const includeLimitWarnings = options.includeLimitWarnings ?? true;
 
 	for (const op of operations) {
@@ -232,6 +235,18 @@ export async function executeOperations(
 
 			switch (op.o) {
 				case "read": {
+					if (aggregateLinesRead >= MAX_TOTAL_RESULT_LINES) {
+						results.push({
+							op: "read",
+							path: op.p,
+							status: "skipped",
+							error: `Skipped: aggregate line limit of ${MAX_TOTAL_RESULT_LINES} already reached. Use separate batch/batch_read calls.`,
+						});
+						counts.skipped++;
+						aggregateLimitSkipped.push({ path: op.p });
+						break;
+					}
+
 					// Access check before reading
 					try {
 						await fs.access(resolvedPath);
@@ -292,6 +307,8 @@ export async function executeOperations(
 							nextOffset,
 						});
 					}
+
+					aggregateLinesRead += linesRead;
 
 					results.push({
 						op: "read",
@@ -404,7 +421,7 @@ export async function executeOperations(
 		}
 	}
 	// Build the enhanced summary and content text
-	const summary = buildSummary(counts, errors, truncatedFiles);
+	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped);
 	const contentText = buildContentText(summary, results);
 
 	return { summary, contentText, results };
@@ -418,6 +435,7 @@ function buildSummary(
 	counts: { read: number; write: number; edit: number; delete: number; error: number; skipped: number },
 	errors: { path: string; op: string; message: string; hint?: string }[],
 	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
+	aggregateLimitSkipped: { path: string }[] = [],
 ): string {
 	const totalSuccess =
 		counts.read + counts.write + counts.edit + counts.delete;
@@ -469,6 +487,13 @@ function buildSummary(
 				`  ⚠ ${tf.path} truncated (${tf.shown}/${tf.total} lines) — use s=${tf.nextOffset}`,
 			);
 		}
+	}
+
+	// Aggregate line limit warnings
+	if (aggregateLimitSkipped.length > 0) {
+		parts.push(
+			`  ⚠ Aggregate line limit (${MAX_TOTAL_RESULT_LINES}) reached — skipped ${aggregateLimitSkipped.length} read${aggregateLimitSkipped.length > 1 ? "s" : ""}: ${aggregateLimitSkipped.map((s) => s.path).join(", ")}`,
+		);
 	}
 
 	return parts.join("\n");
