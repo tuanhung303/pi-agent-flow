@@ -27,6 +27,8 @@ export interface FlowTransition {
 	on: "success" | "failure" | "always";
 	/** Advisory message shown to the user. */
 	advice: string;
+	/** When true and autoTransition is enabled, queue this transition automatically. */
+	autoQueue?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,8 +40,8 @@ export const DEFAULT_TRANSITIONS: FlowTransition[] = [
 	{ from: "scout", to: "debug", on: "success", advice: "Context mapped. Consider running a [debug] flow if investigating an issue." },
 	{ from: "debug", to: "build", on: "success", advice: "The root cause has been identified. Consider running a [build] flow to implement the fix." },
 	{ from: "debug", to: "audit", on: "success", advice: "Root cause identified. Consider running an [audit] flow to verify the fix area for related issues." },
-	{ from: "build", to: "audit", on: "success", advice: "Consider running a [audit] flow to audit the changes for security, correctness, and code quality." },
-	{ from: "build", to: "debug", on: "failure", advice: "Build failed. Consider running a [debug] flow to investigate the root cause." },
+	{ from: "build", to: "audit", on: "success", advice: "Consider running a [audit] flow to audit the changes for security, correctness, and code quality.", autoQueue: true },
+	{ from: "build", to: "debug", on: "failure", advice: "Build failed. Consider running a [debug] flow to investigate the root cause.", autoQueue: true },
 	{ from: "audit", to: "scout", on: "success", advice: "Audit complete. Consider running a [scout] flow to trace the audit findings across the codebase." },
 	{ from: "audit", to: "build", on: "failure", advice: "Audit found issues. Consider running a [build] flow to fix them." },
 	{ from: "craft", to: "build", on: "success", advice: "Plan ready. Consider running a [build] flow to implement the design." },
@@ -77,10 +79,17 @@ export function buildTransitionHooks(transitions: FlowTransition[]): PostFlowHoo
 			);
 			if (alreadyRequested) return null;
 
-			return {
+			const result: import("./types.js").PostFlowHookResult = {
 				content: t.advice,
 				priority: 10,
 			};
+
+			// Auto-queue transition when configured
+			if (t.autoQueue) {
+				result.autoTransition = { type: t.to, intent: t.advice };
+			}
+
+			return result;
 		},
 	}));
 }

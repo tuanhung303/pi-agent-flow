@@ -10,7 +10,6 @@ import type { FlowConfig } from "./agents.js";
 import type {
 	SingleResult,
 	FlowDetails,
-	CompressedFlowResult,
 	FlowMetrics,
 } from "./types.js";
 import { isFlowSuccess, isFlowError, getFlowOutput, emptyFlowUsage } from "./types.js";
@@ -61,8 +60,6 @@ export interface FlowExecutorDeps {
 	fallbackModel?: string;
 	/** Fork session snapshot JSONL. */
 	forkSessionSnapshotJsonl: string | null;
-	/** Flow result cache for compression. */
-	flowResultCache: Map<string, CompressedFlowResult[]>;
 	/** Project flows directory. */
 	projectFlowsDir: string | null;
 	/** Session manager for fork snapshot. */
@@ -139,24 +136,6 @@ async function confirmProjectFlowsIfNeeded(
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Cache limits
-// ---------------------------------------------------------------------------
-
-const FLOW_RESULT_CACHE_MAX_ENTRIES = 50;
-
-/** Evict oldest entries from the cache when it exceeds the cap. */
-function evictCacheOverflow(cache: Map<string, unknown>): void {
-	if (cache.size <= FLOW_RESULT_CACHE_MAX_ENTRIES) return;
-	const excess = cache.size - FLOW_RESULT_CACHE_MAX_ENTRIES;
-	const keys = cache.keys();
-	for (let i = 0; i < excess; i++) {
-		const next = keys.next();
-		if (next.done) break;
-		cache.delete(next.value);
-	}
-}
-
 function shouldFailover(result: SingleResult): boolean {
 	if (result.stopReason === "aborted") return false;
 	const text = `${result.errorMessage ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
@@ -186,7 +165,7 @@ export async function executeFlows(
 		toolOptimize, structuredOutput, cwd, loadedFlowModelConfigs,
 		maxConcurrency, autoTransition, signal, onUpdate, makeDetails,
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
-		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
+		projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
 		confirmProjectFlows,
 	} = deps;
 
@@ -356,23 +335,6 @@ export async function executeFlows(
 
 		return result;
 	});
-
-	// Cache flow results
-	for (const result of results) {
-		const so = result.structuredOutput;
-		if (!so) continue;
-		const compressed: CompressedFlowResult = {
-			type: result.type,
-			status: isFlowError(result) ? "failed" : "accomplished",
-		};
-		if (so.files.length > 0) compressed.files = so.files;
-		if (so.commands.length > 0) compressed.commands = so.commands;
-		if (result.errorMessage) compressed.error = result.errorMessage;
-		const existing = flowResultCache.get(toolCallId) ?? [];
-		existing.push(compressed);
-		flowResultCache.set(toolCallId, existing);
-	}
-	evictCacheOverflow(flowResultCache);
 
 	// Build tool result
 	const successCount = results.filter((r) => isFlowSuccess(r)).length;
