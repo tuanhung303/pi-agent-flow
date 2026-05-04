@@ -39,7 +39,7 @@ export interface FileEntry {
 
 /** Structured command/tool invocation entry in a flow's output. */
 export interface CommandEntry {
-	/** The command string or tool call representation. */
+	/** The exact verbatim command string or tool call that was executed. */
 	command: string;
 	/** Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web. */
 	tool?: string;
