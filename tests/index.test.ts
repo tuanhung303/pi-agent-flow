@@ -1327,7 +1327,7 @@ describe("compressFlowToolResults", () => {
 				{ path: "tests/auth.test.ts", role: "created", description: "Regression test" },
 			],
 			commands: [
-				{ command: "npm test", tool: "bash", result: "success", purpose: "Run test suite" },
+				{ command: "npm test", tool: "bash" },
 			],
 		}]);
 
@@ -1350,7 +1350,7 @@ describe("compressFlowToolResults", () => {
 		expect(result).toContain("[Flow: scout accomplished]");
 		expect(result).toContain("src/auth.ts (modified) — Fixed JWT bypass");
 		expect(result).toContain("tests/auth.test.ts (created) — Regression test");
-		expect(result).toContain("bash: npm test (success) — Run test suite");
+		expect(result).toContain("bash: npm test");
 
 		// Should NOT contain full verbose output
 		expect(result).not.toContain("Full verbose flow output");
@@ -1453,7 +1453,7 @@ describe("compressFlowToolResults", () => {
 			type: "debug",
 			status: "accomplished",
 			commands: [
-				{ command: "grep -r 'TODO' src/", tool: "grep", result: "success", purpose: "Find remaining TODOs" },
+				{ command: "grep -r 'TODO' src/", tool: "grep" },
 			],
 		}]);
 
@@ -1470,7 +1470,7 @@ describe("compressFlowToolResults", () => {
 		const result = compressFlowToolResults(snapshot, flowCache);
 
 		expect(result).toContain("[Flow: debug accomplished]");
-		expect(result).toContain("grep: grep -r 'TODO' src/ (success) — Find remaining TODOs");
+		expect(result).toContain("grep: grep -r 'TODO' src/");
 		expect(result).not.toContain("Full verbose debug output");
 	});
 
@@ -1485,7 +1485,7 @@ describe("compressFlowToolResults", () => {
 		flowCache.set("flow-call-2", [{
 			type: "build",
 			status: "accomplished",
-			commands: [{ command: "npm test", tool: "bash", result: "success" }],
+			commands: [{ command: "npm test", tool: "bash" }],
 		}]);
 
 		const snapshot = [
@@ -1509,7 +1509,7 @@ describe("compressFlowToolResults", () => {
 		expect(result).toContain("[Flow: scout accomplished]");
 		expect(result).toContain("src/a.ts (read) — Main file");
 		expect(result).toContain("[Flow: build accomplished]");
-		expect(result).toContain("bash: npm test (success)");
+		expect(result).toContain("bash: npm test");
 		expect(result).not.toContain("Full scout output");
 		expect(result).not.toContain("Full build output");
 	});

@@ -448,11 +448,7 @@ function renderCompressedFlowResult(r: CompressedFlowResult): string {
 		parts.push(`Files:\n${fileLines.join("\n")}`);
 	}
 	if (r.commands?.length) {
-		const cmdLines = r.commands.map((c) => {
-			const result = c.result ? ` (${c.result})` : "";
-			const purpose = c.purpose ? ` — ${c.purpose}` : "";
-			return `  ${c.tool ?? "cmd"}: ${c.command}${result}${purpose}`;
-		});
+		const cmdLines = r.commands.map((c) => `  ${c.tool ?? "cmd"}: ${c.command}`);
 		parts.push(`Commands:\n${cmdLines.join("\n")}`);
 	}
 	if (r.error) parts.push(`Error: ${r.error}`);
