@@ -5,6 +5,7 @@
  * and validates it against the FlowStructuredOutput schema.
  */
 
+import type { Message } from "@mariozechner/pi-ai";
 import type { Action, CommandEntry, FileEntry, FlowStructuredOutput, NotDoneItem } from "./types.js";
 
 type FlowStatus = FlowStructuredOutput["status"];
@@ -94,4 +95,65 @@ export function extractStructuredOutput(text: string): FlowStructuredOutput | un
 		notes: parsed.notes ?? [],
 		...(parsed.extensions !== undefined ? { extensions: parsed.extensions } : {}),
 	};
+}
+
+/**
+ * Walk the message history and mechanically replace paraphrased bash commands
+ * in a structured-output `commands` array with the exact verbatim strings from
+ * the actual tool calls. This fixes the common LLM behaviour of summarising
+ * `curl -s -X POST …` as `"curl GAWA baseline"`.
+ *
+ * Batch operations are flattened so that bash commands nested inside a batch
+ * call are included in the same chronological order they were executed.
+ */
+export function enrichStructuredOutputCommands(
+	structuredOutput: FlowStructuredOutput,
+	messages: Message[],
+): FlowStructuredOutput {
+	// Collect actual verbatim bash commands (including those inside batch ops)
+	const actualBashCommands: string[] = [];
+	for (const msg of messages) {
+		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+		for (const part of msg.content) {
+			if (part.type !== "toolCall") continue;
+			const name =
+				part.name ||
+				(part as unknown as { toolName?: string }).toolName ||
+				"";
+			const args = part.arguments || part.input || {};
+
+			if (name === "bash") {
+				const cmd = (args.command as string) || "";
+				if (cmd) actualBashCommands.push(cmd);
+			} else if (name === "batch") {
+				const ops = Array.isArray(args.o)
+					? args.o
+					: Array.isArray(args.op)
+						? args.op
+						: Array.isArray(args.operations)
+							? args.operations
+							: [];
+				for (const op of ops) {
+					if (!op) continue;
+					const opType = (op.o ?? op.op) as string;
+					if (opType === "bash" && op.command) {
+						actualBashCommands.push(op.command as string);
+					}
+				}
+			}
+		}
+	}
+
+	if (actualBashCommands.length === 0) return structuredOutput;
+
+	// Replace paraphrased bash commands with actual verbatim ones, in order.
+	let bashIdx = 0;
+	const enrichedCommands = structuredOutput.commands.map((cmd) => {
+		if (cmd.tool === "bash" && bashIdx < actualBashCommands.length) {
+			return { ...cmd, command: actualBashCommands[bashIdx++] };
+		}
+		return cmd;
+	});
+
+	return { ...structuredOutput, commands: enrichedCommands };
 }

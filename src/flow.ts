@@ -20,7 +20,7 @@ import {
 	getFlowOutput,
 	normalizeFlowResult,
 } from "./types.js";
-import { extractStructuredOutput } from "./structured-output.js";
+import { extractStructuredOutput, enrichStructuredOutputCommands } from "./structured-output.js";
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
@@ -227,6 +227,8 @@ function buildFlowArgs(
 			`\n\n## Structured Output\n\n` +
 			`End your response with a JSON code block containing:\n` +
 			`\n` +
+			`For every command you ran, include the exact verbatim command string in the \\"command\\" field (not a paraphrase or summary).\n` +
+			`\n` +
 			`\`\`\`json\n` +
 			`{\n` +
 			`  "version": "1.0",\n` +
@@ -239,7 +241,7 @@ function buildFlowArgs(
 			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
 			`  ],\n` +
 			`  "commands": [\n` +
-			`    { "command": "npm test", "tool": "bash", "target": ".", "result": "success", "output": "12 passing, 2 failing", "purpose": "Run test suite to verify fix" }\n` +
+			`    { "command": "curl -s -X POST https://api.example.com/v1/data -H 'Authorization: Bearer token'", "tool": "bash", "target": ".", "result": "success", "output": "{\"status\":\"ok\"}", "purpose": "Fetch data from API" }\n` +
 			`  ],\n` +
 			`  "notDone": [\n` +
 			`    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue if any", "nextStep": "specific follow-up" }\n` +
@@ -586,7 +588,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const flowText = getFlowOutput(normalized.messages);
 			const extracted = extractStructuredOutput(flowText);
 			if (extracted) {
-				normalized.structuredOutput = extracted;
+				normalized.structuredOutput = enrichStructuredOutputCommands(extracted, normalized.messages);
 			}
 		}
 
