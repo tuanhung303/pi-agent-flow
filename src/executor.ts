@@ -12,7 +12,7 @@ import type {
 	FlowDetails,
 	FlowMetrics,
 } from "./types.js";
-import { isFlowSuccess, isFlowError, getFlowOutput, emptyFlowUsage } from "./types.js";
+import { isFlowSuccess, isFlowError, emptyFlowUsage } from "./types.js";
 import { extractStructuredOutput } from "./structured-output.js";
 import { runHooksDetailed, type RunHooksResult } from "./hooks.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
