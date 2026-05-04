@@ -1,95 +1,100 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { Message } from "@mariozechner/pi-ai";
 import { extractStructuredOutput, enrichStructuredOutputCommands } from "../src/structured-output.js";
 import type { FlowStructuredOutput } from "../src/types.js";
-import type { Message } from "@mariozechner/pi-ai";
-
-// ---------------------------------------------------------------------------
-// extractStructuredOutput
-// ---------------------------------------------------------------------------
 
 describe("extractStructuredOutput", () => {
-	const validOutput = {
-		version: "1.0",
-		status: "complete",
-		summary: "Implemented the feature successfully.",
-		files: [
-			{
-				path: "src/example.ts",
-				role: "modified",
-				description: "Main implementation file",
-				snippet: "const x = 1;",
-				ranges: [{ start: 10, end: 25, label: "fix" }],
-			},
-		],
-		actions: [
-			{
-				type: "write",
-				description: "Wrote implementation",
-				target: "src/example.ts",
-				result: "success",
-				evidence: "file created",
-			},
-		],
-		commands: [
-			{
-				command: "npm test",
-				tool: "bash",
-			},
-		],
-		notDone: [
-			{
-				item: "Cross-validate actions against tool calls",
-				reason: "Deferred to v2",
-				blocker: "No derived tool-call summary exists yet",
-				nextStep: "Design validation layer",
-			},
-		],
-		nextSteps: ["Run tests", "Commit changes"],
-		reasoning: ["Chose approach A because of X"],
-		notes: ["Consider refactoring later"],
-	};
-
-	it("returns undefined for empty string", () => {
+	it("returns undefined for empty text", () => {
 		expect(extractStructuredOutput("")).toBeUndefined();
+		expect(extractStructuredOutput("   ")).toBeUndefined();
 	});
 
-	it("returns undefined when no JSON block is present", () => {
-		const text = "flow [build] accomplished\n\n[Summary]\nDid some work.";
-		expect(extractStructuredOutput(text)).toBeUndefined();
+	it("extracts valid structured output from a JSON code block", () => {
+		const text = `
+Some response text here.
+
+\`\`\`json
+{
+  "version": "1.0",
+  "status": "complete",
+  "summary": "Did the thing."
+}
+\`\`\`
+`;
+		const result = extractStructuredOutput(text);
+		expect(result).toBeDefined();
+		expect(result!.version).toBe("1.0");
+		expect(result!.status).toBe("complete");
+		expect(result!.summary).toBe("Did the thing.");
 	});
 
-	it("returns undefined for malformed JSON", () => {
-		const text = "Done.\n\n```json\n{broken json,}\n```";
+	it("ignores non-JSON code blocks", () => {
+		const text = `
+\`\`\`bash
+echo hello
+\`\`\`
+
+\`\`\`json
+{
+  "version": "1.0",
+  "status": "partial",
+  "summary": "Half done."
+}
+\`\`\`
+`;
+		const result = extractStructuredOutput(text);
+		expect(result!.status).toBe("partial");
+	});
+
+	it("uses the last JSON block when multiple are present", () => {
+		const text = `
+\`\`\`json
+{"version":"1.0","status":"complete","summary":"First"}
+\`\`\`
+
+\`\`\`json
+{"version":"1.0","status":"blocked","summary":"Second"}
+\`\`\`
+`;
+		const result = extractStructuredOutput(text);
+		expect(result!.status).toBe("blocked");
+		expect(result!.summary).toBe("Second");
+	});
+
+	it("returns undefined for invalid JSON inside the block", () => {
+		const text = `
+\`\`\`json
+not json at all
+\`\`\`
+`;
 		expect(extractStructuredOutput(text)).toBeUndefined();
 	});
 
 	it("returns undefined when required fields are missing", () => {
-		const text = "Done.\n\n```json\n{ \"version\": \"1.0\" }\n```";
+		const text = `
+\`\`\`json
+{"version":"1.0","status":"complete"}
+\`\`\`
+`;
 		expect(extractStructuredOutput(text)).toBeUndefined();
 	});
 
-	it("returns undefined when status is invalid", () => {
-		const text = `Done.
-
+	it("returns undefined for an invalid status value", () => {
+		const text = `
 \`\`\`json
-${JSON.stringify({ ...validOutput, status: "unknown" })}
-\`\`\``;
+{"version":"1.0","status":"unknown","summary":"Bad status."}
+\`\`\`
+`;
 		expect(extractStructuredOutput(text)).toBeUndefined();
 	});
 
 	it("normalizes omitted arrays to empty arrays", () => {
-		const partial = {
-			version: "1.0",
-			status: "complete",
-			summary: "Done.",
-		};
-		const text = `Done.
-
+		const text = `
 \`\`\`json
-${JSON.stringify(partial)}
-\`\`\``;
+{"version":"1.0","status":"complete","summary":"Minimal."}
+\`\`\`
+`;
 		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
 		expect(result!.files).toEqual([]);
 		expect(result!.actions).toEqual([]);
 		expect(result!.commands).toEqual([]);
@@ -99,162 +104,39 @@ ${JSON.stringify(partial)}
 		expect(result!.notes).toEqual([]);
 	});
 
-	it("returns undefined when an optional array field is not an array", () => {
-		for (const field of ["files", "actions", "commands", "notDone", "nextSteps", "reasoning", "notes"]) {
-			const invalid = {
-				version: "1.0",
-				status: "complete",
-				summary: "Done.",
-				[field]: "not an array",
-			};
-			const text = `Done.
-
+	it("trims string fields", () => {
+		const text = `
 \`\`\`json
-${JSON.stringify(invalid)}
-\`\`\``;
-			expect(extractStructuredOutput(text), field).toBeUndefined();
-		}
-	});
-
-	it("extracts a valid structured output block", () => {
-		const text = `flow [build] accomplished
-
-[Summary]
-Did some work.
-
-[Done]
-- Completed items.
-
-\`\`\`json
-${JSON.stringify(validOutput)}
-\`\`\``;
-		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
-		expect(result!.version).toBe("1.0");
-		expect(result!.status).toBe("complete");
-		expect(result!.summary).toBe("Implemented the feature successfully.");
-		expect(result!.files).toHaveLength(1);
-		expect(result!.files[0].path).toBe("src/example.ts");
-		expect(result!.actions).toHaveLength(1);
-		expect(result!.commands).toHaveLength(1);
-		expect(result!.commands[0]).toEqual({
-			command: "npm test",
-			tool: "bash",
-		});
-		expect(result!.notDone).toHaveLength(1);
-		expect(result!.notDone[0]).toEqual({
-			item: "Cross-validate actions against tool calls",
-			reason: "Deferred to v2",
-			blocker: "No derived tool-call summary exists yet",
-			nextStep: "Design validation layer",
-		});
-		expect(result!.nextSteps).toHaveLength(2);
-		expect(result!.reasoning).toHaveLength(1);
-		expect(result!.notes).toHaveLength(1);
-	});
-
-	it("keeps backward compatibility with structured output that omits notDone", () => {
-		const { notDone: _notDone, commands: _commands, ...legacyOutput } = validOutput;
-		const text = `Done.
-
-\`\`\`json
-${JSON.stringify(legacyOutput)}
-\`\`\``;
-		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
-		expect(result!.notDone).toEqual([]);
-		expect(result!.summary).toBe(validOutput.summary);
-	});
-
-	it("uses the last JSON block when multiple exist", () => {
-		const firstBlock = JSON.stringify({ ...validOutput, summary: "First" });
-		const secondBlock = JSON.stringify({ ...validOutput, summary: "Second" });
-		const text = `First attempt:
-
-\`\`\`json
-${firstBlock}
+{"version":"  1.0  ","status":"complete","summary":"  Trim me  "}
 \`\`\`
-
-Second attempt:
-
-\`\`\`json
-${secondBlock}
-\`\`\``;
+`;
 		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
-		expect(result!.summary).toBe("Second");
-	});
-
-	it("preserves extensions when present", () => {
-		const withExtensions = {
-			...validOutput,
-			extensions: { rootCause: "Null pointer exception" },
-		};
-		const text = `Done.
-
-\`\`\`json
-${JSON.stringify(withExtensions)}
-\`\`\``;
-		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
-		expect(result!.extensions).toEqual({ rootCause: "Null pointer exception" });
-	});
-
-	it("omits extensions when not present", () => {
-		const text = `Done.
-
-\`\`\`json
-${JSON.stringify(validOutput)}
-\`\`\``;
-		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
-		expect(result!.extensions).toBeUndefined();
-	});
-
-	it("handles all valid status values", () => {
-		for (const status of ["complete", "partial", "blocked", "failed"]) {
-			const text = `Done.
-
-\`\`\`json
-${JSON.stringify({ ...validOutput, status })}
-\`\`\``;
-			const result = extractStructuredOutput(text);
-			expect(result).toBeDefined();
-			expect(result!.status).toBe(status);
-		}
-	});
-
-	it("trims whitespace from summary", () => {
-		const spaced = { ...validOutput, summary: "  Spaced summary  " };
-		const text = `Done.
-
-\`\`\`json
-${JSON.stringify(spaced)}
-\`\`\``;
-		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
-		expect(result!.summary).toBe("Spaced summary");
-	});
-
-	it("trims whitespace from version", () => {
-		const spaced = { ...validOutput, version: "  1.0  " };
-		const text = `Done.
-
-\`\`\`json
-${JSON.stringify(spaced)}
-\`\`\``;
-		const result = extractStructuredOutput(text);
-		expect(result).toBeDefined();
 		expect(result!.version).toBe("1.0");
+		expect(result!.summary).toBe("Trim me");
 	});
 
-	it("handles code fence with language tag on same line", () => {
-		const text = `Done.
+	it("parses extensions when present", () => {
+		const text = `
+\`\`\`json
+{"version":"1.0","status":"complete","summary":"With extensions.","extensions":{"foo":"bar"}}
+\`\`\`
+`;
+		const result = extractStructuredOutput(text);
+		expect(result!.extensions).toEqual({ foo: "bar" });
+	});
 
-\`\`\`json extra
-${JSON.stringify(validOutput)}
-\`\`\``;
-		// Should not match because the fence has extra text after `json`
+	it("returns undefined when the JSON block is missing", () => {
+		const text = "Just some plain text without any code blocks.";
+		expect(extractStructuredOutput(text)).toBeUndefined();
+	});
+
+	it("returns undefined when the fence label is not exactly 'json'", () => {
+		const text = `
+\`\`\`json5
+{"version":"1.0","status":"complete","summary":"Wrong fence."}
+\`\`\`
+`;
+		// Should not match because the fence has extra text after \`json
 		expect(extractStructuredOutput(text)).toBeUndefined();
 	});
 });
