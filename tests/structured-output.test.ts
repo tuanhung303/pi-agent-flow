@@ -34,10 +34,6 @@ describe("extractStructuredOutput", () => {
 			{
 				command: "npm test",
 				tool: "bash",
-				target: ".",
-				result: "success",
-				output: "12 passing",
-				purpose: "Run test suite",
 			},
 		],
 		notDone: [
@@ -144,10 +140,6 @@ ${JSON.stringify(validOutput)}
 		expect(result!.commands[0]).toEqual({
 			command: "npm test",
 			tool: "bash",
-			target: ".",
-			result: "success",
-			output: "12 passing",
-			purpose: "Run test suite",
 		});
 		expect(result!.notDone).toHaveLength(1);
 		expect(result!.notDone[0]).toEqual({
@@ -299,7 +291,7 @@ describe("enrichStructuredOutputCommands", () => {
 	it("returns original structured output when no bash commands exist in messages", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
-			commands: [{ command: "npm test", tool: "bash", target: ".", result: "success", output: "ok", purpose: "test" }],
+			commands: [{ command: "npm test", tool: "bash" }],
 		};
 		const messages: Message[] = [];
 		const result = enrichStructuredOutputCommands(output, messages);
@@ -310,7 +302,7 @@ describe("enrichStructuredOutputCommands", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
 			commands: [
-				{ command: "curl GAWA baseline", tool: "bash", target: "API", result: "success", output: "ok", purpose: "test" },
+				{ command: "curl GAWA baseline", tool: "bash" },
 			],
 		};
 		const messages: Message[] = [
@@ -324,9 +316,9 @@ describe("enrichStructuredOutputCommands", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
 			commands: [
-				{ command: "first curl", tool: "bash", target: ".", result: "success" },
-				{ command: "second grep", tool: "bash", target: ".", result: "success" },
-				{ command: "npm test", tool: "bash", target: ".", result: "success" },
+				{ command: "first curl", tool: "bash" },
+				{ command: "second grep", tool: "bash" },
+				{ command: "npm test", tool: "bash" },
 			],
 		};
 		const messages: Message[] = [
@@ -346,8 +338,8 @@ describe("enrichStructuredOutputCommands", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
 			commands: [
-				{ command: "some file edit", tool: "write", target: "file.ts", result: "success" },
-				{ command: "curl baseline", tool: "bash", target: ".", result: "success" },
+				{ command: "some file edit", tool: "write" },
+				{ command: "curl baseline", tool: "bash" },
 			],
 		};
 		const messages: Message[] = [
@@ -363,7 +355,7 @@ describe("enrichStructuredOutputCommands", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
 			commands: [
-				{ command: "batch setup", tool: "bash", target: ".", result: "success" },
+				{ command: "batch setup", tool: "bash" },
 			],
 		};
 		const messages: Message[] = [
@@ -387,7 +379,7 @@ describe("enrichStructuredOutputCommands", () => {
 	it("does not mutate the original structured output object", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
-			commands: [{ command: "original", tool: "bash", target: ".", result: "success" }],
+			commands: [{ command: "original", tool: "bash" }],
 		};
 		const messages: Message[] = [
 			makeMessage([{ name: "bash", args: { command: "replaced" } }]),
@@ -401,9 +393,9 @@ describe("enrichStructuredOutputCommands", () => {
 		const output: FlowStructuredOutput = {
 			...baseOutput,
 			commands: [
-				{ command: "first", tool: "bash", target: ".", result: "success" },
-				{ command: "second", tool: "bash", target: ".", result: "success" },
-				{ command: "third", tool: "bash", target: ".", result: "success" },
+				{ command: "first", tool: "bash" },
+				{ command: "second", tool: "bash" },
+				{ command: "third", tool: "bash" },
 			],
 		};
 		const messages: Message[] = [

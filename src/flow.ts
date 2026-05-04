@@ -241,7 +241,7 @@ function buildFlowArgs(
 			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
 			`  ],\n` +
 			`  "commands": [\n` +
-			`    { "command": "curl -s -X POST https://api.example.com/v1/data -H 'Authorization: Bearer token'", "tool": "bash", "target": ".", "result": "success", "output": "{\"status\":\"ok\"}", "purpose": "Fetch data from API" }\n` +
+			`    { "command": "curl -s -X POST https://api.example.com/v1/data -H 'Authorization: Bearer token'", "tool": "bash" }\n` +
 			`  ],\n` +
 			`  "notDone": [\n` +
 			`    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue if any", "nextStep": "specific follow-up" }\n` +

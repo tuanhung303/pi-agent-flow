@@ -43,14 +43,7 @@ export interface CommandEntry {
 	command: string;
 	/** Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web. */
 	tool?: string;
-	/** Working directory or target scope (file path, URL, etc.). */
-	target?: string;
-	/** Whether it succeeded, failed, or was aborted. */
-	result?: "success" | "failure" | "partial" | "aborted";
-	/** High-level output or error excerpt (not full stdout). */
-	output?: string;
-	/** Why this command was run (1 sentence). */
-	purpose?: string;
+
 }
 
 /** Compressed representation of a flow result for child context inheritance. */

@@ -150,9 +150,9 @@ export function enrichStructuredOutputCommands(
 	let bashIdx = 0;
 	const enrichedCommands = structuredOutput.commands.map((cmd) => {
 		if (cmd.tool === "bash" && bashIdx < actualBashCommands.length) {
-			return { ...cmd, command: actualBashCommands[bashIdx++] };
+			return { command: actualBashCommands[bashIdx++], tool: "bash" };
 		}
-		return cmd;
+		return { command: cmd.command, tool: cmd.tool };
 	});
 
 	return { ...structuredOutput, commands: enrichedCommands };

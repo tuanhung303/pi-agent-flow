@@ -120,14 +120,7 @@
       "required": ["command"],
       "properties": {
         "command": { "type": "string" },
-        "tool": { "type": "string", "description": "Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web." },
-        "target": { "type": "string" },
-        "result": {
-          "type": "string",
-          "enum": ["success", "failure", "partial", "aborted"]
-        },
-        "output": { "type": "string" },
-        "purpose": { "type": "string" }
+        "tool": { "type": "string", "description": "Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web." }
       }
     },
     "NotDoneItem": {
