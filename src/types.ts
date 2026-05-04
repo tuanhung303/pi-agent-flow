@@ -43,7 +43,6 @@ export interface CommandEntry {
 	command: string;
 	/** Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web. */
 	tool?: string;
-
 }
 
 /** Compressed representation of a flow result for child context inheritance. */
