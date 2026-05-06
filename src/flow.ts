@@ -26,11 +26,13 @@ const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
 const AGENT_END_GRACE_MS = 2000;
 const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
 const FLOW_TIMEOUT_ENV = "PI_FLOW_TIMEOUT_MS";
+const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 
@@ -140,6 +142,7 @@ function buildFlowArgs(
 	maxDepth: number = 0,
 	toolOptimize: boolean = false,
 	structuredOutput: boolean = true,
+	timeoutMs?: number,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -210,11 +213,17 @@ function buildFlowArgs(
 		? `You may delegate to sub-flows (depth ${currentDepth}/${effectiveMaxDepth}).`
 		: `You may NOT delegate to sub-flows (depth limit reached).`;
 
+	const timeBudgetHint =
+		timeoutMs && timeoutMs > 0
+			? `Time budget: ${Math.round(timeoutMs / 1000)}s total. You will be hard-killed when time expires — plan and prioritize accordingly.\n`
+			: "";
+
 	const activation =
 		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
 		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
+		`${timeBudgetHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
 
@@ -406,6 +415,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		forkSessionTmpPath = forkTmp.filePath;
 	}
 
+	// Resolve timeout: explicit option > env var > default (10 min)
+	const envTimeoutRaw = process.env[FLOW_TIMEOUT_ENV];
+	const envTimeout = envTimeoutRaw !== undefined ? (() => {
+		const n = Number(envTimeoutRaw);
+		return Number.isSafeInteger(n) && n >= 0 ? n : null;
+	})() : null;
+	const effectiveTimeout = opts.timeoutMs ?? envTimeout ?? DEFAULT_FLOW_TIMEOUT_MS;
+
 	try {
 		const piArgs = buildFlowArgs(
 			flow,
@@ -416,16 +433,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			maxDepth,
 			toolOptimize,
 			structuredOutput,
+			effectiveTimeout,
 		);
 		let wasAborted = false;
-
-		// Resolve timeout: explicit option > env var > default (10 min)
-		const envTimeoutRaw = process.env[FLOW_TIMEOUT_ENV];
-		const envTimeout = envTimeoutRaw !== undefined ? (() => {
-			const n = Number(envTimeoutRaw);
-			return Number.isSafeInteger(n) && n >= 0 ? n : null;
-		})() : null;
-		const effectiveTimeout = opts.timeoutMs ?? envTimeout ?? DEFAULT_FLOW_TIMEOUT_MS;
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
@@ -446,6 +456,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					[FLOW_PREVENT_CYCLES_ENV]: preventCycles ? "1" : "0",
 					[FLOW_TOOL_OPTIMIZE_ENV]: toolOptimize ? "1" : "0",
 					[PI_OFFLINE_ENV]: "1",
+					[FLOW_DEADLINE_ENV]: String(Date.now() + effectiveTimeout),
 				},
 			});
 
@@ -562,6 +573,23 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 			// Execution timeout — kill child if it runs too long
 			if (effectiveTimeout > 0) {
+				// Warning timer: notify the parent UI that the child is about to be killed.
+				// NOTE: True mid-flight injection into the child's context requires pi-core
+				// support for out-of-band messages. Until then, the agent only knows its
+				// budget from the initial prompt; this warning is parent-side only.
+				const warningMs = effectiveTimeout - FLOW_TIME_BUDGET_WARNING_MS;
+				if (warningMs > 0) {
+					const warnTimer = setTimeout(() => {
+						if (didClose || settled) return;
+						const remainingSec = Math.round(FLOW_TIME_BUDGET_WARNING_MS / 1000);
+						const warnMsg = `\n[Flow warning] ${remainingSec}s remaining before hard timeout. The agent should wrap up now.`;
+						result.stderr += warnMsg;
+						// Force an update so the parent UI shows the warning immediately.
+						emitUpdate();
+					}, warningMs);
+					warnTimer.unref();
+				}
+
 				const timeoutTimer = setTimeout(() => {
 					if (didClose || settled) return;
 					result.stderr += `\nFlow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
