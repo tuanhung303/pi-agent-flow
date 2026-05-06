@@ -46,6 +46,10 @@ declare module "@mariozechner/pi-coding-agent" {
 		renderCall?: (...args: any[]) => any;
 		renderResult?: (...args: any[]) => any;
 	};
+	/** Test-only exports provided by tests/__mocks__/pi-coding-agent.ts. */
+	export const bashToolExecuteCalls: any[][];
+	export function __setBashToolExecuteImpl(fn: (...args: any[]) => Promise<any>): void;
+	export function __resetBashToolMock(): void;
 }
 
 declare module "@mariozechner/pi-tui" {

@@ -4,6 +4,13 @@
  * Wraps the built-in bash tool to append execution-time classification
  * to every result. This gives the LLM concrete feedback to self-correct
  * strategy (e.g. switch from bash grep to grep tool, batch commands, etc.).
+ *
+ * Child flows also receive a hard deadline from the parent runner. When a
+ * bash command is still running near that deadline, this wrapper aborts just
+ * the bash tool and returns an explicit instruction to stop using tools and
+ * summarize. That preserves the child agent process long enough to produce
+ * its final structured report instead of being killed while a shell command is
+ * still active.
  */
 
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -20,6 +27,10 @@ export interface TimingReport {
 	seconds: number;
 	label: string;
 }
+
+const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
+const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
+const DEFAULT_FLOW_TOOL_SUMMARY_GRACE_MS = 30_000;
 
 /** Classify duration into user-defined tiers with actionable feedback. */
 export function classifyDuration(ms: number): TimingReport {
@@ -54,6 +65,90 @@ export function classifyDuration(ms: number): TimingReport {
 /** Format the timing appendix that gets appended to bash output. */
 export function formatTimingAppendix(report: TimingReport): string {
 	return `\n\n[Execution time: ${report.label}]`;
+}
+
+function parsePositiveSafeInteger(raw: unknown): number | null {
+	if (typeof raw !== "string" || !raw.trim()) return null;
+	const parsed = Number(raw);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseNonNegativeSafeInteger(raw: unknown): number | null {
+	if (typeof raw !== "string" || !raw.trim()) return null;
+	const parsed = Number(raw);
+	return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function getFlowDeadlineMs(): number | null {
+	return parsePositiveSafeInteger(process.env[FLOW_DEADLINE_ENV]);
+}
+
+function getFlowToolSummaryGraceMs(): number {
+	return parseNonNegativeSafeInteger(process.env[FLOW_TOOL_SUMMARY_GRACE_ENV]) ?? DEFAULT_FLOW_TOOL_SUMMARY_GRACE_MS;
+}
+
+function formatDeadlineAppendix(): string {
+	return "\n\n[Flow timeout] Bash command was interrupted to preserve time for the final flow summary. Stop running tools and return structured findings now.";
+}
+
+function appendTextToToolResult(result: any, text: string): void {
+	const textItem = result?.content?.find?.((c: any) => c.type === "text");
+	if (textItem && typeof textItem.text === "string") {
+		textItem.text += text;
+	} else if (Array.isArray(result?.content)) {
+		result.content.push({ type: "text", text: text.trim() });
+	}
+}
+
+function createDeadlineSignal(parentSignal: AbortSignal | undefined): {
+	signal: AbortSignal | undefined;
+	cleanup: () => void;
+	wasDeadlineAbort: () => boolean;
+} {
+	const deadlineMs = getFlowDeadlineMs();
+	if (!deadlineMs) {
+		return { signal: parentSignal, cleanup: () => undefined, wasDeadlineAbort: () => false };
+	}
+
+	const summaryGraceMs = getFlowToolSummaryGraceMs();
+	const abortAtMs = deadlineMs - summaryGraceMs;
+	const delayMs = abortAtMs - Date.now();
+
+	const controller = new AbortController();
+	let deadlineAbort = false;
+	let timer: NodeJS.Timeout | undefined;
+	let relayParentAbort: (() => void) | undefined;
+
+	const abortForDeadline = () => {
+		if (controller.signal.aborted) return;
+		deadlineAbort = true;
+		controller.abort(new Error("Flow deadline reached while bash command was running."));
+	};
+
+	if (parentSignal?.aborted) {
+		controller.abort(parentSignal.reason);
+	} else if (parentSignal) {
+		relayParentAbort = () => controller.abort(parentSignal.reason);
+		parentSignal.addEventListener("abort", relayParentAbort, { once: true });
+	}
+
+	if (delayMs <= 0) {
+		abortForDeadline();
+	} else {
+		timer = setTimeout(abortForDeadline, delayMs);
+		timer.unref?.();
+	}
+
+	return {
+		signal: controller.signal,
+		cleanup: () => {
+			if (timer) clearTimeout(timer);
+			if (parentSignal && relayParentAbort) {
+				parentSignal.removeEventListener("abort", relayParentAbort);
+			}
+		},
+		wasDeadlineAbort: () => deadlineAbort,
+	};
 }
 
 /**
@@ -93,11 +188,12 @@ export function createTimedBashToolDefinition(
 			ctx: any,
 		) {
 			const start = Date.now();
+			const deadlineSignal = createDeadlineSignal(signal);
 			try {
 				const result = await original.execute(
 					toolCallId,
 					params,
-					signal,
+					deadlineSignal.signal,
 					onUpdate,
 					ctx,
 				);
@@ -105,13 +201,10 @@ export function createTimedBashToolDefinition(
 				const report = classifyDuration(duration);
 				const appendix = formatTimingAppendix(report);
 
-				const textItem = result.content?.find(
-					(c: any) => c.type === "text",
-				);
-				if (textItem && typeof textItem.text === "string") {
-					textItem.text += appendix;
-				} else if (result.content) {
-					result.content.push({ type: "text", text: appendix.trim() });
+				appendTextToToolResult(result, appendix);
+				if (deadlineSignal.wasDeadlineAbort()) {
+					appendTextToToolResult(result, formatDeadlineAppendix());
+					result.isError = true;
 				}
 				return result;
 			} catch (err: any) {
@@ -119,10 +212,22 @@ export function createTimedBashToolDefinition(
 				const report = classifyDuration(duration);
 				const appendix = formatTimingAppendix(report);
 
+				if (deadlineSignal.wasDeadlineAbort()) {
+					const message = typeof err?.message === "string" && err.message.trim()
+						? `${err.message}${appendix}${formatDeadlineAppendix()}`
+						: `${appendix.trim()}${formatDeadlineAppendix()}`;
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+					};
+				}
+
 				if (err?.message && typeof err.message === "string") {
 					err.message += appendix;
 				}
 				throw err;
+			} finally {
+				deadlineSignal.cleanup();
 			}
 		},
 	};
