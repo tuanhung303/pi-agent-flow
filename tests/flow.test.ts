@@ -750,6 +750,9 @@ describe("timeout two-stage behavior", () => {
 
 		const promise = runFlow(opts);
 
+		// stdin should be ended immediately after spawn so the child doesn't hang
+		expect(mockProc.stdin.end).toHaveBeenCalledTimes(1);
+
 		// Advance to 30s before timeout (30s elapsed)
 		await vi.advanceTimersByTimeAsync(30_000);
 		expect(mockProc.stdin.write).not.toHaveBeenCalled();
@@ -767,7 +770,7 @@ describe("timeout two-stage behavior", () => {
 		await promise;
 	});
 
-	it("writes timeout JSON to stdin and waits for grace period before killing", async () => {
+	it("waits for grace period before killing on timeout", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 
@@ -788,16 +791,13 @@ describe("timeout two-stage behavior", () => {
 
 		const promise = runFlow(opts);
 
+		// stdin should be ended immediately after spawn
+		expect(mockProc.stdin.end).toHaveBeenCalledTimes(1);
+
 		// Advance past timeout
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		// Should have written timeout instruction to stdin
-		expect(mockProc.stdin.write).toHaveBeenCalledTimes(1);
-		const written = mockProc.stdin.write.mock.calls[0][0] as string;
-		expect(written).toContain('"type":"flow_timeout"');
-		expect(written).toContain('"instruction":"stop and report all findings immediately"');
-
-		// Should NOT have killed yet
+		// Should NOT have killed yet (grace period)
 		expect(mockProc.kill).not.toHaveBeenCalled();
 
 		// Advance into grace period but not past it
@@ -837,9 +837,11 @@ describe("timeout two-stage behavior", () => {
 
 		const promise = runFlow(opts);
 
+		// stdin should be ended immediately after spawn
+		expect(mockProc.stdin.end).toHaveBeenCalledTimes(1);
+
 		// Advance past timeout
 		await vi.advanceTimersByTimeAsync(60_000);
-		expect(mockProc.stdin.write).toHaveBeenCalledTimes(1);
 		expect(mockProc.kill).not.toHaveBeenCalled();
 
 		// Child exits during grace period

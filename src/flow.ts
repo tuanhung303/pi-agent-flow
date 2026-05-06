@@ -471,6 +471,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			proc.stdin.on("error", () => {
 				/* ignore broken pipe on fast exits */
 			});
+			proc.stdin.end();
 
 			let abortHandler: (() => void) | undefined;
 			let buffer = "";
@@ -620,21 +621,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					result.stderr += `\nFlow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
 					emitUpdate();
 
-					// Stage 1: Send timeout instruction to child via stdin
-					try {
-						if (!stdinEnded) {
-							proc.stdin.write(
-								JSON.stringify({
-									type: "flow_timeout",
-									instruction: "stop and report all findings immediately",
-								}) + "\n",
-							);
-						}
-					} catch {
-						/* ignore broken pipe */
-					}
-
-					// Stage 2: Grace period before hard kill
+					// Grace period before hard kill
 					const graceTimer = setTimeout(() => {
 						if (didClose || settled) return;
 						result.stopReason = "timeout";
