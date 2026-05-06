@@ -752,6 +752,12 @@ describe("timeout two-stage behavior", () => {
 
 		// stdin should be ended immediately after spawn so the child doesn't hang
 		expect(mockProc.stdin.end).toHaveBeenCalledTimes(1);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+		expect(prompt).toContain("Long-running tools may be interrupted near the deadline");
+		expect(prompt).toContain("output structured findings immediately");
+		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("6000");
 
 		// Advance to 30s before timeout (30s elapsed)
 		await vi.advanceTimersByTimeAsync(30_000);

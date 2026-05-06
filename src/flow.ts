@@ -29,12 +29,14 @@ const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
 const FLOW_FINAL_URGE_MS = 30 * 1000; // final urge 30 s before kill
 const REPORTING_GRACE_MS = 10_000; // grace period after timeout for agent to report findings
+const FLOW_TOOL_SUMMARY_GRACE_MS = FLOW_FINAL_URGE_MS; // bash/tool abort lead time so the agent can summarize
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
 const FLOW_TIMEOUT_ENV = "PI_FLOW_TIMEOUT_MS";
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
+const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
 export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 
@@ -217,7 +219,7 @@ function buildFlowArgs(
 
 	const timeBudgetHint =
 		timeoutMs && timeoutMs > 0
-			? `Time budget: ${Math.round(timeoutMs / 1000)}s total. You will be hard-killed when time expires — plan and prioritize accordingly.\n`
+			? `Time budget: ${Math.round(timeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
 			: "";
 
 	const activation =
@@ -443,6 +445,13 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 			const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
 			const propagatedStack = [...parentFlowStack, normalizedFlowName];
+			const proportionalGraceMs = Math.floor(effectiveTimeout * 0.1);
+			const minimumGraceMs = effectiveTimeout >= 10_000 ? 1_000 : Math.floor(effectiveTimeout / 2);
+			const toolSummaryGraceMs = Math.min(
+				FLOW_TOOL_SUMMARY_GRACE_MS,
+				Math.max(0, effectiveTimeout),
+				Math.max(minimumGraceMs, proportionalGraceMs),
+			);
 			const { command, prefixArgs } = resolveFlowSpawn();
 			const proc = spawn(command, [...prefixArgs, ...piArgs], {
 				cwd: taskCwd ?? cwd,
@@ -458,7 +467,13 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					[FLOW_PREVENT_CYCLES_ENV]: preventCycles ? "1" : "0",
 					[FLOW_TOOL_OPTIMIZE_ENV]: toolOptimize ? "1" : "0",
 					[PI_OFFLINE_ENV]: "1",
-					[FLOW_DEADLINE_ENV]: String(Date.now() + effectiveTimeout),
+					...(effectiveTimeout > 0 ? {
+						[FLOW_DEADLINE_ENV]: String(Date.now() + effectiveTimeout),
+						[FLOW_TOOL_SUMMARY_GRACE_ENV]: String(toolSummaryGraceMs),
+					} : {
+						[FLOW_DEADLINE_ENV]: "",
+						[FLOW_TOOL_SUMMARY_GRACE_ENV]: "0",
+					}),
 				},
 			});
 
@@ -583,7 +598,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				else signal.addEventListener("abort", abortHandler, { once: true });
 			}
 
-			// Execution timeout — two-stage: urge message, then stdin injection, then grace, then hard kill
+			// Execution timeout — two-stage: parent-side warnings, tool-level deadline abort, then grace, then hard kill
 			if (effectiveTimeout > 0) {
 				// Warning timer: notify the parent UI that the child is about to be killed.
 				// NOTE: True mid-flight injection into the child's context requires pi-core

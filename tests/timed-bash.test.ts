@@ -1,5 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { classifyDuration, formatTimingAppendix, type TimingReport } from "../src/timed-bash.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { __resetBashToolMock, __setBashToolExecuteImpl, bashToolExecuteCalls } from "@mariozechner/pi-coding-agent";
+import { classifyDuration, createTimedBashToolDefinition, formatTimingAppendix, type TimingReport } from "../src/timed-bash.js";
+
+const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
+const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
+
+afterEach(() => {
+	vi.useRealTimers();
+	delete process.env[FLOW_DEADLINE_ENV];
+	delete process.env[FLOW_TOOL_SUMMARY_GRACE_ENV];
+	__resetBashToolMock();
+});
 
 describe("classifyDuration", () => {
 	it("classifies < 10s as normal", () => {
@@ -61,5 +72,61 @@ describe("formatTimingAppendix", () => {
 	it("formats a normal report", () => {
 		const r: TimingReport = { tier: "normal", seconds: 3.5, label: "3.5s (normal)" };
 		expect(formatTimingAppendix(r)).toBe("\n\n[Execution time: 3.5s (normal)]");
+	});
+});
+
+describe("createTimedBashToolDefinition deadline handling", () => {
+	it("aborts a running bash command before the flow deadline and asks for final summary", async () => {
+		vi.useFakeTimers();
+		process.env[FLOW_DEADLINE_ENV] = String(Date.now() + 1_000);
+		process.env[FLOW_TOOL_SUMMARY_GRACE_ENV] = "500";
+
+		__setBashToolExecuteImpl(async (_toolCallId, _params, signal: AbortSignal) => {
+			return new Promise((resolve) => {
+				if (signal.aborted) {
+					resolve({ content: [{ type: "text", text: "already aborted" }] });
+					return;
+				}
+				signal.addEventListener("abort", () => {
+					resolve({ content: [{ type: "text", text: "aborted by signal" }] });
+				}, { once: true });
+			});
+		});
+
+		const tool = createTimedBashToolDefinition("/tmp");
+		const promise = tool.execute("tc1", { command: "sleep 60" }, new AbortController().signal, undefined, {});
+
+		await vi.advanceTimersByTimeAsync(501);
+		const result = await promise;
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("aborted by signal");
+		expect(result.content[0].text).toContain("[Flow timeout]");
+		expect(result.content[0].text).toContain("return structured findings now");
+		expect(result.content[0].text).toContain("[Execution time:");
+		expect(bashToolExecuteCalls[0][2]).toBeInstanceOf(AbortSignal);
+	});
+
+	it("turns a deadline abort rejection into an error tool result for the agent", async () => {
+		vi.useFakeTimers();
+		process.env[FLOW_DEADLINE_ENV] = String(Date.now() + 1_000);
+		process.env[FLOW_TOOL_SUMMARY_GRACE_ENV] = "500";
+
+		__setBashToolExecuteImpl(async (_toolCallId, _params, signal: AbortSignal) => {
+			return new Promise((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(new Error("command aborted")), { once: true });
+			});
+		});
+
+		const tool = createTimedBashToolDefinition("/tmp");
+		const promise = tool.execute("tc1", { command: "sleep 60" }, new AbortController().signal, undefined, {});
+
+		await vi.advanceTimersByTimeAsync(501);
+		const result = await promise;
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("command aborted");
+		expect(result.content[0].text).toContain("[Flow timeout]");
+		expect(result.content[0].text).toContain("Stop running tools");
 	});
 });

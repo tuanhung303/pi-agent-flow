@@ -2,6 +2,31 @@ export function getMarkdownTheme() {
 	return {};
 }
 
+let bashToolExecuteImpl: (...args: any[]) => Promise<any> = async () => ({ content: [{ type: "text", text: "" }] });
+export const bashToolExecuteCalls: any[][] = [];
+
+export function __setBashToolExecuteImpl(fn: (...args: any[]) => Promise<any>) {
+	bashToolExecuteImpl = fn;
+}
+
+export function __resetBashToolMock() {
+	bashToolExecuteCalls.length = 0;
+	bashToolExecuteImpl = async () => ({ content: [{ type: "text", text: "" }] });
+}
+
+export function createBashToolDefinition(_cwd: string, _options?: any) {
+	return {
+		name: "bash",
+		label: "Bash",
+		description: "Mock bash tool",
+		parameters: {},
+		execute: async (...args: any[]) => {
+			bashToolExecuteCalls.push(args);
+			return bashToolExecuteImpl(...args);
+		},
+	};
+}
+
 export function parseFrontmatter<T extends Record<string, unknown>>(content: string): { frontmatter: T; body: string } {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
 	if (!match) {
