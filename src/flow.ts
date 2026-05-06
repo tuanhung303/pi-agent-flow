@@ -27,6 +27,8 @@ const SIGKILL_TIMEOUT_MS = 5000;
 const AGENT_END_GRACE_MS = 2000;
 const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
+const FLOW_FINAL_URGE_MS = 30 * 1000; // final urge 30 s before kill
+const REPORTING_GRACE_MS = 10_000; // grace period after timeout for agent to report findings
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
@@ -250,7 +252,7 @@ function buildFlowArgs(
 			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
 			`  ],\n` +
 			`  "commands": [\n` +
-			`    { "command": "curl -s -X POST https://api.example.com/v1/data -H 'Authorization: Bearer token'", "tool": "bash" }\n` +
+			`    { "command": "curl -s -X POST https://api.example.com/v1/data -H 'Authorization: Bearer token'", "tool": "bash", "executionTime": "1.2s (normal)" }\n` +
 			`  ],\n` +
 			`  "notDone": [\n` +
 			`    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue if any", "nextStep": "specific follow-up" }\n` +
@@ -460,15 +462,20 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				},
 			});
 
+			let stdinEnded = false;
+			const endStdin = () => {
+				if (stdinEnded) return;
+				stdinEnded = true;
+				try { proc.stdin.end(); } catch { /* ignore */ }
+			};
 			proc.stdin.on("error", () => {
 				/* ignore broken pipe on fast exits */
 			});
-			proc.stdin.end();
 
 			let buffer = "";
 			let didClose = false;
 			let settled = false;
-			let abortHandler: (() => void) | undefined;
+			let timeoutFired = false;
 			let semanticCompletionTimer: NodeJS.Timeout | undefined;
 
 			const clearSemanticCompletionTimer = () => {
@@ -479,6 +486,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			};
 
 			const terminateChild = () => {
+				endStdin();
 				if (isWindows) {
 					if (proc.pid !== undefined) {
 						const killer = spawn("taskkill", ["/T", "/F", "/PID", String(proc.pid)], {
@@ -502,6 +510,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const finish = (code: number) => {
 				if (settled) return;
 				settled = true;
+				endStdin();
 				clearSemanticCompletionTimer();
 				if (signal && abortHandler) {
 					signal.removeEventListener("abort", abortHandler);
@@ -565,13 +574,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				abortHandler = () => {
 					if (didClose || settled) return;
 					wasAborted = true;
+					endStdin();
 					terminateChild();
 				};
 				if (signal.aborted) abortHandler();
 				else signal.addEventListener("abort", abortHandler, { once: true });
 			}
 
-			// Execution timeout — kill child if it runs too long
+			// Execution timeout — two-stage: urge message, then stdin injection, then grace, then hard kill
 			if (effectiveTimeout > 0) {
 				// Warning timer: notify the parent UI that the child is about to be killed.
 				// NOTE: True mid-flight injection into the child's context requires pi-core
@@ -590,10 +600,47 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					warnTimer.unref();
 				}
 
+				// Final urge timer: stronger warning 30 s before hard timeout
+				const urgeMs = effectiveTimeout - FLOW_FINAL_URGE_MS;
+				if (urgeMs > 0) {
+					const urgeTimer = setTimeout(() => {
+						if (didClose || settled) return;
+						const remainingSec = Math.round(FLOW_FINAL_URGE_MS / 1000);
+						const urgeMsg = `\n[Flow warning] ${remainingSec}s remaining before hard timeout. Stop all work and output your structured findings.`;
+						result.stderr += urgeMsg;
+						emitUpdate();
+					}, urgeMs);
+					urgeTimer.unref();
+				}
+
 				const timeoutTimer = setTimeout(() => {
 					if (didClose || settled) return;
+					timeoutFired = true;
 					result.stderr += `\nFlow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
-					terminateChild();
+					emitUpdate();
+
+					// Stage 1: Send timeout instruction to child via stdin
+					try {
+						if (!stdinEnded) {
+							proc.stdin.write(
+								JSON.stringify({
+									type: "flow_timeout",
+									instruction: "stop and report all findings immediately",
+								}) + "\n",
+							);
+						}
+					} catch {
+						/* ignore broken pipe */
+					}
+
+					// Stage 2: Grace period before hard kill
+					const graceTimer = setTimeout(() => {
+						if (didClose || settled) return;
+						result.stopReason = "timeout";
+						result.errorMessage = `Flow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
+						terminateChild();
+					}, REPORTING_GRACE_MS);
+					graceTimer.unref();
 				}, effectiveTimeout);
 				timeoutTimer.unref();
 			}

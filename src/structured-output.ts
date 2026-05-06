@@ -110,8 +110,30 @@ export function enrichStructuredOutputCommands(
 	structuredOutput: FlowStructuredOutput,
 	messages: Message[],
 ): FlowStructuredOutput {
+	// Build a map of toolCallId -> execution time string from tool result messages.
+	const timingMap = new Map<string, string>();
+	for (const msg of messages) {
+		if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
+		const id =
+			(msg as unknown as { toolCallId?: string }).toolCallId ||
+			(msg as unknown as { tool_call_id?: string }).tool_call_id ||
+			"";
+		if (!id) continue;
+		const text = msg.content
+			.filter((c: { type: string; text?: string }) => c.type === "text" && typeof c.text === "string")
+			.map((c: { text: string }) => c.text)
+			.join("");
+		const match = text.match(/\[Execution time: ([^\]]+)\]/);
+		if (match) timingMap.set(id, match[1]);
+	}
+
 	// Collect actual verbatim bash commands (including those inside batch ops)
-	const actualBashCommands: string[] = [];
+	// alongside their toolCallId so we can look up execution time.
+	interface BashEntry {
+		command: string;
+		toolCallId?: string;
+	}
+	const actualBashEntries: BashEntry[] = [];
 	for (const msg of messages) {
 		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
 		for (const part of msg.content) {
@@ -121,10 +143,14 @@ export function enrichStructuredOutputCommands(
 				(part as unknown as { toolName?: string }).toolName ||
 				"";
 			const args = part.arguments || part.input || {};
+			const toolCallId =
+				(part as unknown as { toolCallId?: string }).toolCallId ||
+				(part as unknown as { tool_call_id?: string }).tool_call_id ||
+				"";
 
 			if (name === "bash") {
 				const cmd = (args.command as string) || "";
-				if (cmd) actualBashCommands.push(cmd);
+				if (cmd) actualBashEntries.push({ command: cmd, toolCallId });
 			} else if (name === "batch") {
 				const ops = Array.isArray(args.o)
 					? args.o
@@ -137,20 +163,30 @@ export function enrichStructuredOutputCommands(
 					if (!op) continue;
 					const opType = (op.o ?? op.op) as string;
 					if (opType === "bash" && op.command) {
-						actualBashCommands.push(op.command as string);
+						// Batch-nested bash ops don't have individual toolCallIds,
+						// so execution time can't be correlated.
+						actualBashEntries.push({ command: op.command as string });
 					}
 				}
 			}
 		}
 	}
 
-	if (actualBashCommands.length === 0) return structuredOutput;
+	if (actualBashEntries.length === 0) return structuredOutput;
 
 	// Replace paraphrased bash commands with actual verbatim ones, in order.
 	let bashIdx = 0;
 	const enrichedCommands = structuredOutput.commands.map((cmd) => {
-		if (cmd.tool === "bash" && bashIdx < actualBashCommands.length) {
-			return { command: actualBashCommands[bashIdx++], tool: "bash" };
+		if (cmd.tool === "bash" && bashIdx < actualBashEntries.length) {
+			const entry = actualBashEntries[bashIdx++];
+			const executionTime = entry.toolCallId
+				? timingMap.get(entry.toolCallId)
+				: undefined;
+			return {
+				command: entry.command,
+				tool: "bash",
+				...(executionTime !== undefined ? { executionTime } : {}),
+			};
 		}
 		return { command: cmd.command, tool: cmd.tool };
 	});
