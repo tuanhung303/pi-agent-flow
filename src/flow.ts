@@ -472,6 +472,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				/* ignore broken pipe on fast exits */
 			});
 
+			let abortHandler: (() => void) | undefined;
 			let buffer = "";
 			let didClose = false;
 			let settled = false;
