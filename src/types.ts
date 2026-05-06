@@ -43,6 +43,8 @@ export interface CommandEntry {
 	command: string;
 	/** Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web. */
 	tool?: string;
+	/** Execution time classification from the timed bash wrapper (e.g. "3.5s (normal)"). */
+	executionTime?: string;
 }
 
 /** Compressed representation of a flow result for child context inheritance. */
@@ -176,7 +178,7 @@ export function isFlowComplete(r: Pick<SingleResult, "messages" | "sawAgentEnd">
 export function isFlowSuccess(r: SingleResult): boolean {
 	if (r.exitCode === -1) return false;
 	if (isFlowComplete(r)) return true;
-	return r.exitCode === 0 && r.stopReason !== "error" && r.stopReason !== "aborted";
+	return r.exitCode === 0 && r.stopReason !== "error" && r.stopReason !== "aborted" && r.stopReason !== "timeout";
 }
 
 /** Whether a result represents an error. */

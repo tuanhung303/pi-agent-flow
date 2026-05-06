@@ -705,3 +705,150 @@ describe("PI_FLOW_SPAWN_COMMAND env override", () => {
 		expect(spawnCall[0]).toBe("/custom/pi");
 	});
 });
+
+describe("timeout two-stage behavior", () => {
+	function makeMockProcess() {
+		const proc = new EventEmitter() as any;
+		proc.stdin = new EventEmitter();
+		proc.stdin.end = vi.fn();
+		proc.stdin.write = vi.fn();
+		proc.stdout = new EventEmitter();
+		proc.stderr = new EventEmitter();
+		proc.pid = 12345;
+		proc.kill = vi.fn();
+		return proc;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it("sends final urge message 30s before timeout", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [{ name: "scout", description: "Explore", systemPrompt: "You are scout.", source: "bundled", filePath: "/agents/scout.md" }],
+			flowName: "scout",
+			intent: "Test",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			timeoutMs: 60_000,
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const promise = runFlow(opts);
+
+		// Advance to 30s before timeout (30s elapsed)
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mockProc.stdin.write).not.toHaveBeenCalled();
+		expect(mockProc.kill).not.toHaveBeenCalled();
+
+		// Now advance past the urge timer
+		await vi.advanceTimersByTimeAsync(1);
+
+		// Still shouldn't have killed or written stdin
+		expect(mockProc.stdin.write).not.toHaveBeenCalled();
+		expect(mockProc.kill).not.toHaveBeenCalled();
+
+		// Complete the flow so the promise resolves
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("writes timeout JSON to stdin and waits for grace period before killing", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [{ name: "scout", description: "Explore", systemPrompt: "You are scout.", source: "bundled", filePath: "/agents/scout.md" }],
+			flowName: "scout",
+			intent: "Test",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			timeoutMs: 60_000,
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const promise = runFlow(opts);
+
+		// Advance past timeout
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		// Should have written timeout instruction to stdin
+		expect(mockProc.stdin.write).toHaveBeenCalledTimes(1);
+		const written = mockProc.stdin.write.mock.calls[0][0] as string;
+		expect(written).toContain('"type":"flow_timeout"');
+		expect(written).toContain('"instruction":"stop and report all findings immediately"');
+
+		// Should NOT have killed yet
+		expect(mockProc.kill).not.toHaveBeenCalled();
+
+		// Advance into grace period but not past it
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(mockProc.kill).not.toHaveBeenCalled();
+
+		// Advance past grace period
+		await vi.advanceTimersByTimeAsync(6_000);
+		expect(mockProc.kill).toHaveBeenCalledWith("SIGTERM");
+
+		// Simulate process death after SIGKILL timeout
+		await vi.advanceTimersByTimeAsync(6_000);
+		mockProc.emit("close", null);
+		const result = await promise;
+		expect(result.stopReason).toBe("timeout");
+		expect(result.errorMessage).toContain("timed out");
+	});
+
+	it("does not kill if child exits gracefully during grace period", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [{ name: "scout", description: "Explore", systemPrompt: "You are scout.", source: "bundled", filePath: "/agents/scout.md" }],
+			flowName: "scout",
+			intent: "Test",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			timeoutMs: 60_000,
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const promise = runFlow(opts);
+
+		// Advance past timeout
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(mockProc.stdin.write).toHaveBeenCalledTimes(1);
+		expect(mockProc.kill).not.toHaveBeenCalled();
+
+		// Child exits during grace period
+		await vi.advanceTimersByTimeAsync(3_000);
+		mockProc.emit("close", 0);
+
+		const result = await promise;
+		expect(mockProc.kill).not.toHaveBeenCalled();
+		expect(result.exitCode).toBe(0);
+		expect(result.stopReason).not.toBe("timeout");
+	});
+});

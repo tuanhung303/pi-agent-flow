@@ -289,3 +289,115 @@ describe("enrichStructuredOutputCommands", () => {
 		expect(result.commands[2].command).toBe("third");
 	});
 });
+
+describe("enrichStructuredOutputCommands with executionTime", () => {
+	function makeAssistantMessage(toolCalls: Array<{ name: string; args: Record<string, unknown>; toolCallId?: string }>): Message {
+		return {
+			role: "assistant",
+			content: toolCalls.map((tc) => ({
+				type: "toolCall" as const,
+				name: tc.name,
+				arguments: tc.args,
+				...(tc.toolCallId ? { toolCallId: tc.toolCallId } : {}),
+			})),
+		} as unknown as Message;
+	}
+
+	function makeToolResultMessage(toolCallId: string, text: string): Message {
+		return {
+			role: "tool",
+			toolCallId,
+			content: [{ type: "text", text }],
+		} as unknown as Message;
+	}
+
+	const baseOutput: FlowStructuredOutput = {
+		version: "1.0",
+		status: "complete",
+		summary: "Test summary",
+		files: [],
+		actions: [],
+		commands: [],
+		notDone: [],
+		nextSteps: [],
+		reasoning: [],
+		notes: [],
+	};
+
+	it("extracts executionTime from matching tool result", () => {
+		const output: FlowStructuredOutput = {
+			...baseOutput,
+			commands: [{ command: "npm test", tool: "bash" }],
+		};
+		const messages: Message[] = [
+			makeAssistantMessage([{ name: "bash", args: { command: "npm test" }, toolCallId: "tc_1" }]),
+			makeToolResultMessage("tc_1", "some output\n\n[Execution time: 3.5s (normal)]"),
+		];
+		const result = enrichStructuredOutputCommands(output, messages);
+		expect(result.commands[0].command).toBe("npm test");
+		expect(result.commands[0].executionTime).toBe("3.5s (normal)");
+	});
+
+	it("leaves executionTime undefined when timing is missing", () => {
+		const output: FlowStructuredOutput = {
+			...baseOutput,
+			commands: [{ command: "npm test", tool: "bash" }],
+		};
+		const messages: Message[] = [
+			makeAssistantMessage([{ name: "bash", args: { command: "npm test" }, toolCallId: "tc_1" }]),
+			makeToolResultMessage("tc_1", "some output without timing"),
+		];
+		const result = enrichStructuredOutputCommands(output, messages);
+		expect(result.commands[0].command).toBe("npm test");
+		expect(result.commands[0].executionTime).toBeUndefined();
+	});
+
+	it("matches multiple bash commands with executionTime in order", () => {
+		const output: FlowStructuredOutput = {
+			...baseOutput,
+			commands: [
+				{ command: "first", tool: "bash" },
+				{ command: "second", tool: "bash" },
+			],
+		};
+		const messages: Message[] = [
+			makeAssistantMessage([
+				{ name: "bash", args: { command: "echo 1" }, toolCallId: "tc_1" },
+				{ name: "bash", args: { command: "echo 2" }, toolCallId: "tc_2" },
+			]),
+			makeToolResultMessage("tc_1", "out1\n\n[Execution time: 1.0s (normal)]"),
+			makeToolResultMessage("tc_2", "out2\n\n[Execution time: 2.0s (avg) — user feedback: consider improving the current commands or find a better solution]"),
+		];
+		const result = enrichStructuredOutputCommands(output, messages);
+		expect(result.commands[0].command).toBe("echo 1");
+		expect(result.commands[0].executionTime).toBe("1.0s (normal)");
+		expect(result.commands[1].command).toBe("echo 2");
+		expect(result.commands[1].executionTime).toBe("2.0s (avg) — user feedback: consider improving the current commands or find a better solution");
+	});
+
+	it("does not add executionTime for batch-nested bash commands", () => {
+		const output: FlowStructuredOutput = {
+			...baseOutput,
+			commands: [{ command: "batch setup", tool: "bash" }],
+		};
+		const messages: Message[] = [
+			makeAssistantMessage([
+				{
+					name: "batch",
+					args: {
+						o: [
+							{ o: "bash", command: "echo 'step 1'" },
+							{ o: "read", p: "file.txt" },
+							{ o: "bash", command: "echo 'step 2'" },
+						],
+					},
+					toolCallId: "tc_batch",
+				},
+			]),
+			makeToolResultMessage("tc_batch", "batch output\n\n[Execution time: 5.0s (normal)]"),
+		];
+		const result = enrichStructuredOutputCommands(output, messages);
+		expect(result.commands[0].command).toBe("echo 'step 1'");
+		expect(result.commands[0].executionTime).toBeUndefined();
+	});
+});
