@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
-import { getTierFlowNames, type FlowTier } from "./agents.js";
+import { type FlowTier } from "./agents.js";
 
 
 export interface FlowModelTierConfig {
@@ -370,30 +370,22 @@ export function resolveFlowModelCandidates(opts: {
 	return { primary: candidates[0], candidates };
 }
 
-export function formatFlowModelStrategy(strategy: FlowModelStrategy): string {
+export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStrategy): string {
 	const tiers: FlowTier[] = ["lite", "flash", "full"];
-	const lines: string[] = [];
-	let hasAny = false;
+	const parts: string[] = [];
 	for (const tier of tiers) {
 		const config = strategy[tier];
 		const hasPrimary = Boolean(config?.primary);
 		const hasFailover = config?.failover && config.failover.length > 0;
-		if (hasPrimary || hasFailover) {
-			hasAny = true;
-			const parts: string[] = [];
-			if (hasPrimary) {
-				parts.push(`primary: ${config!.primary}`);
-			}
-			if (hasFailover) {
-				parts.push(`failover: ${config!.failover!.join(", ")}`);
-			}
-			lines.push(`  ${tier} (${getTierFlowNames(tier).join(", ")}) → ${parts.join(", ")}`);
+		let value: string;
+		if (hasPrimary) {
+			value = config!.primary!;
+		} else if (hasFailover) {
+			value = `failover: ${config!.failover!.join(", ")}`;
 		} else {
-			lines.push(`  ${tier} (${getTierFlowNames(tier).join(", ")}) → (not configured)`);
+			value = "(default)";
 		}
+		parts.push(`${tier}: ${value}`);
 	}
-	if (!hasAny) {
-		return "Using default model selection (no per-tier overrides).";
-	}
-	return lines.join("\n");
+	return `mode: ${modeName} | ${parts.join(" · ")}`;
 }

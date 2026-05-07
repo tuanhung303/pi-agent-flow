@@ -427,27 +427,23 @@ describe("loadFlowSettings", () => {
 });
 
 describe("formatFlowModelStrategy", () => {
-	it("returns default message when strategy is empty", () => {
-		expect(formatFlowModelStrategy({})).toBe("Using default model selection (no per-tier overrides).");
+	it("returns concise default message when strategy is empty", () => {
+		expect(formatFlowModelStrategy("default", {})).toBe("mode: default | lite: (default) · flash: (default) · full: (default)");
 	});
 
 	it("shows primary and failover when both present", () => {
-		const result = formatFlowModelStrategy({
+		const result = formatFlowModelStrategy("mimo", {
 			lite: { primary: "mimo-lite", failover: ["fallback-lite"] },
 			flash: { primary: "mimo-flash" },
 		});
-		expect(result).toContain("lite (scout, debug) → primary: mimo-lite, failover: fallback-lite");
-		expect(result).toContain("flash (build, audit) → primary: mimo-flash");
-		expect(result).toContain("full (ideas, craft) → (not configured)");
+		expect(result).toBe("mode: mimo | lite: mimo-lite · flash: mimo-flash · full: (default)");
 	});
 
 	it("shows failover-only tier without primary", () => {
-		const result = formatFlowModelStrategy({
+		const result = formatFlowModelStrategy("mimo", {
 			lite: { failover: ["failover-a", "failover-b"] },
 			flash: { primary: "mimo-flash" },
 		});
-		expect(result).toContain("lite (scout, debug) → failover: failover-a, failover-b");
-		expect(result).toContain("flash (build, audit) → primary: mimo-flash");
-		expect(result).toContain("full (ideas, craft) → (not configured)");
+		expect(result).toBe("mode: mimo | lite: failover: failover-a, failover-b · flash: mimo-flash · full: (default)");
 	});
 });
