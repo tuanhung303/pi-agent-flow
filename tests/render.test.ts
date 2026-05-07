@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
 	formatFixedTokens,
 	formatFlowTypeName,
 	truncateChars,
 	tailText,
 	formatCompactStats,
+	formatCompactTokenPair,
+	formatCountdown,
 	visibleLength,
 	getTruncationBudget,
 	contentBudget,
@@ -336,6 +338,24 @@ describe("formatFlowTypeName", () => {
 });
 
 // ---------------------------------------------------------------------------
+// formatCompactTokenPair / formatCountdown
+// ---------------------------------------------------------------------------
+
+describe("formatCompactTokenPair", () => {
+	it("formats only input and output tokens", () => {
+		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("↑ 46.7k · ↓  4.6k");
+	});
+});
+
+describe("formatCountdown", () => {
+	it("formats remaining milliseconds as a clock", () => {
+		expect(formatCountdown(576_000)).toBe("09:36");
+		expect(formatCountdown(0)).toBe("00:00");
+		expect(formatCountdown(-100)).toBe("00:00");
+	});
+});
+
+// ---------------------------------------------------------------------------
 // formatCompactStats
 // ---------------------------------------------------------------------------
 
@@ -461,6 +481,59 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("msg:");
 	});
 
+	it("renders in-progress aim with a live countdown prefix", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-05-07T00:00:00.000Z"));
+		try {
+			const now = Date.now();
+			const result = makeResult({
+				exitCode: -1,
+				startedAtMs: now,
+				deadlineAtMs: now + 576_000,
+				messages: [makeTextMessage("Still working")],
+			});
+			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+			const text = extractText(rendered);
+			expect(text).toContain("aim: [09:36] - test aim");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("renders msg with compact input/output token prefix", () => {
+		const result = makeResult({
+			messages: [makeTextMessage("Flow timed out after 600s.")],
+			usage: { input: 46_700, output: 4_600, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 50_000, turns: 2, toolCalls: 0 },
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Flow timed out after 600s.");
+	});
+
+	it("renders multi-flow aim countdown and msg token prefixes", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-05-07T00:00:00.000Z"));
+		try {
+			const now = Date.now();
+			const result = makeResult({
+				exitCode: -1,
+				startedAtMs: now,
+				deadlineAtMs: now + 45_000,
+				streamingText: "Deploy still running",
+				usage: { input: 46_700, output: 4_600, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 50_000, turns: 2, toolCalls: 0 },
+			});
+			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+			const text = extractText(rendered);
+			expect(text).toContain("aim: [00:45] - test aim");
+			expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Deploy still running");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("renders act line with count prefix [N]", () => {
 		const result = makeResult({
 			type: "scout",
@@ -540,7 +613,8 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		expect(scoutBlock).toContain(tailText(streaming, 50));
+		const expectedBudget = contentBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
+		expect(scoutBlock).toContain(tailText(streaming, expectedBudget));
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
 
@@ -669,9 +743,12 @@ describe("activity panel rendering", () => {
 			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
 			expect(logLine).toBeDefined();
 			// Content is a moving tail window so new characters visibly shift into view.
-			const logContent = logLine.split("msg:")[1].trim();
-			expect(logContent).toBe(tailText(longStreaming, 50));
-			expect(visibleLength(logContent)).toBeLessThanOrEqual(50);
+			const expectedPrefix = "[↑     0 · ↓     0] - ";
+			expect(logLine).toContain(`msg: ${expectedPrefix}`);
+			const logContent = logLine.split(expectedPrefix)[1].trim();
+			const expectedBudget = contentBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
+			expect(logContent).toBe(tailText(longStreaming, expectedBudget));
+			expect(visibleLength(logContent)).toBeLessThanOrEqual(expectedBudget);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}

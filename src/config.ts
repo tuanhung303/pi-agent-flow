@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 
 export type FlowTier = "lite" | "flash" | "full";
 
@@ -33,6 +34,8 @@ export interface FlowSettings {
 	maxConcurrency?: number;
 	/** Whether to automatically queue follow-up flows based on hook transitions. Default: false. */
 	autoTransition?: boolean;
+	/** Default child-flow session mode. Default: "default" (600s). */
+	sessionMode?: AgentSessionMode;
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
@@ -54,7 +57,7 @@ function readSettingsJson(filePath: string): Record<string, unknown> | null {
 	}
 }
 
-function getGlobalSettingsPath(): string {
+export function getGlobalSettingsPath(): string {
 	const agentDir = process.env["PI_CODING_AGENT_DIR"]?.trim() || path.join(os.homedir(), ".pi", "agent");
 	return path.join(agentDir, "settings.json");
 }
@@ -63,12 +66,56 @@ function getProjectSettingsPath(cwd: string): string {
 	return path.join(cwd, ".pi", "settings.json");
 }
 
+export function normalizeFlowModeName(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim();
+	return normalized.length > 0 ? normalized : undefined;
+}
+
 function extractSelectedFlowModelConfigName(settings: Record<string, unknown> | null): string | undefined {
 	if (!isPlainObject(settings)) return undefined;
-	const raw = settings.flowModelConfig;
-	if (typeof raw !== "string") return undefined;
-	const normalized = raw.trim();
-	return normalized.length > 0 ? normalized : undefined;
+	return normalizeFlowModeName(settings.flowModelConfig);
+}
+
+export function loadProjectFlowModelConfigName(cwd: string): string | undefined {
+	return extractSelectedFlowModelConfigName(readSettingsJson(getProjectSettingsPath(cwd)));
+}
+
+export function writeGlobalFlowMode(mode: string): { path: string; previous?: string } {
+	const normalized = normalizeFlowModeName(mode);
+	if (!normalized) {
+		throw new Error("Cannot update flow mode. Expected a non-empty mode name.");
+	}
+
+	const filePath = getGlobalSettingsPath();
+	let settings: Record<string, unknown> = {};
+
+	if (fs.existsSync(filePath)) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+		} catch (error) {
+			throw new Error(`Cannot update flow mode because ${filePath} contains invalid JSON.`);
+		}
+		if (!isPlainObject(parsed)) {
+			throw new Error(`Cannot update flow mode because ${filePath} must contain a JSON object.`);
+		}
+		settings = { ...parsed };
+	}
+
+	const previous = extractSelectedFlowModelConfigName(settings);
+	settings.flowModelConfig = normalized;
+
+	const dir = path.dirname(filePath);
+	fs.mkdirSync(dir, { recursive: true });
+	const tmpPath = path.join(dir, `.settings.json.${process.pid}.${Date.now()}.tmp`);
+	fs.writeFileSync(tmpPath, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
+	fs.renameSync(tmpPath, filePath);
+
+	return {
+		path: filePath,
+		...(previous !== undefined ? { previous } : {}),
+	};
 }
 
 function normalizeFailoverList(
@@ -186,6 +233,10 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 	if (typeof obj.autoTransition === "boolean") {
 		result.autoTransition = obj.autoTransition;
 	}
+	const sessionMode = parseAgentSessionMode(obj.sessionMode);
+	if (sessionMode !== undefined) {
+		result.sessionMode = sessionMode;
+	}
 	return result;
 }
 
@@ -245,7 +296,7 @@ export function selectFlowModelStrategy(
 	configs: FlowModelConfigs,
 	requestedName?: string,
 ): LoadedFlowModelConfigs {
-	const normalizedRequested = requestedName?.trim() || "default";
+	const normalizedRequested = normalizeFlowModeName(requestedName) ?? "default";
 	const strategy = configs[normalizedRequested];
 	if (strategy) {
 		return { selectedName: normalizedRequested, configs, strategy };

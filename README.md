@@ -47,6 +47,7 @@ pi install .
 - **Parallel execution** — batch independent flows into one call with bounded concurrency
 - **Structured reports** — every flow returns `[Summary]`, `[Done]`, `[Not Done]`, `[Next Steps]`
 - **Depth guards** — configurable max delegation depth (default: `3`)
+- **Session timeout modes** — child flows use controlled budgets: `fast` (300s), `default` (600s), or `long` (900s)
 - **Cycle prevention** — blocks re-entering flows already in the ancestor stack
 - **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
@@ -89,6 +90,33 @@ The result is faster, cheaper, and cleaner delegation: the main agent remains un
 > **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
 
 > **Clean slate:** Set `inheritContext: false` in a custom flow's front-matter so it receives only the intent, ideal for unbiased creative work.
+
+### Session modes
+
+Each flow call may set `sessionMode` to choose the child-agent time budget:
+
+| Mode | Budget | Recommended use |
+|------|-------:|-----------------|
+| `fast` | 300s | quick scouting, narrow checks, small design passes |
+| `default` | 600s | normal flow work; this is the default |
+| `long` | 900s | large builds, full test runs, broad refactors, complex debugging |
+
+Example:
+
+```json
+{
+  "flow": [
+    {
+      "type": "build",
+      "intent": "Run the full test suite and fix failures",
+      "aim": "Fix failing tests",
+      "sessionMode": "long"
+    }
+  ]
+}
+```
+
+The public interface is mode-based; arbitrary per-flow numeric timeouts are not exposed.
 
 ---
 
@@ -259,6 +287,36 @@ Use `flowModelConfigs` in your Pi settings to define tiered model strategies. Ea
 
 Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`.
 
+Switch the global active strategy quickly with `--flow-mode`:
+
+```bash
+pi --flow-mode balance
+pi --flow-mode quality
+pi --flow-mode mimo
+```
+
+`--flow-mode` updates `flowModelConfig` in global `~/.pi/agent/settings.json` (or `$PI_CODING_AGENT_DIR/settings.json`) and applies the mode immediately for the current invocation. The mode must already exist in the merged `flowModelConfigs`; project `.pi/settings.json` can still override global settings on later no-flag runs.
+
+You can also set flow runtime defaults under `flowSettings`:
+
+```json
+{
+  "flowSettings": {
+    "sessionMode": "default",
+    "maxConcurrency": 4,
+    "toolOptimize": true,
+    "structuredOutput": true,
+    "autoTransition": false
+  }
+}
+```
+
+`flowSettings.sessionMode` accepts `fast`, `default`, or `long`. Session mode precedence is:
+
+```txt
+per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings.sessionMode > default
+```
+
 ### Flags
 
 | Flag | Description | Default |
@@ -266,10 +324,12 @@ Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/s
 | `--flow-max-depth [n]` | Maximum delegation depth | `3` |
 | `--flow-prevent-cycles` | Block cyclic delegation | `true` |
 | `--no-flow-prevent-cycles` | Disable cycle prevention | — |
-| `--flow-model-config [name]` | Select a named model strategy | `balance` |
+| `--flow-model-config [name]` | Select a named model strategy for this invocation | `balance` |
+| `--flow-mode [name]` | Persistently switch the global model strategy and apply it immediately | — |
 | `--flow-lite-model [model]` | Override the lite-tier model | — |
 | `--flow-flash-model [model]` | Override the flash-tier model | — |
 | `--flow-full-model [model]` | Override the full-tier model | — |
+| `--flow-session-mode [mode]` | Default child-flow session mode: `fast`, `default`, or `long` | `default` |
 | `--tool-optimize` | Use unified `batch`/`batch_read` instead of separate read/write/edit | `true` |
 | `--no-tool-optimize` | Disable tool optimization; use legacy read/write/edit tools | — |
 
@@ -282,7 +342,7 @@ Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/s
 | `PI_FLOW_STACK` | JSON array of ancestor flow names |
 | `PI_FLOW_PREVENT_CYCLES` | `"1"` or `"0"` |
 | `PI_FLOW_TOOL_OPTIMIZE` | `"1"` or `"0"` (overrides default tool optimization) |
-| `PI_FLOW_TIMEOUT_MS` | Per-flow timeout in milliseconds (default: 10 minutes) |
+| `PI_FLOW_SESSION_MODE` | Default child-flow session mode: `fast`, `default`, or `long` |
 
 ---
 

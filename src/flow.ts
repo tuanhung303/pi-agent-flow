@@ -21,11 +21,11 @@ import {
 	normalizeFlowResult,
 } from "./types.js";
 import { extractStructuredOutput, enrichStructuredOutputCommands } from "./structured-output.js";
+import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
 const AGENT_END_GRACE_MS = 2000;
-const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
 const FLOW_FINAL_URGE_MS = 30 * 1000; // final urge 30 s before kill
 const REPORTING_GRACE_MS = 10_000; // grace period after timeout for agent to report findings
@@ -34,7 +34,6 @@ const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 const FLOW_STACK_ENV = "PI_FLOW_STACK";
 const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
-const FLOW_TIMEOUT_ENV = "PI_FLOW_TIMEOUT_MS";
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
 export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
@@ -146,7 +145,8 @@ function buildFlowArgs(
 	maxDepth: number = 0,
 	toolOptimize: boolean = false,
 	structuredOutput: boolean = true,
-	timeoutMs?: number,
+	sessionMode: AgentSessionMode = DEFAULT_AGENT_SESSION_MODE,
+	sessionTimeoutMs: number = getAgentSessionTimeoutMs(sessionMode),
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -162,6 +162,9 @@ function buildFlowArgs(
 
 	if (inheritedCliArgs.flowModelConfig) {
 		args.push("--flow-model-config", inheritedCliArgs.flowModelConfig);
+	}
+	if (inheritedCliArgs.flowSessionMode) {
+		args.push("--flow-session-mode", inheritedCliArgs.flowSessionMode);
 	}
 	if (inheritedCliArgs.tieredModels?.lite) {
 		args.push("--flow-lite-model", inheritedCliArgs.tieredModels.lite);
@@ -218,8 +221,8 @@ function buildFlowArgs(
 		: `You may NOT delegate to sub-flows (depth limit reached).`;
 
 	const timeBudgetHint =
-		timeoutMs && timeoutMs > 0
-			? `Time budget: ${Math.round(timeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
+		sessionTimeoutMs > 0
+			? `Session mode: ${sessionMode}. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
 			: "";
 
 	const activation =
@@ -324,8 +327,8 @@ export interface RunFlowOptions {
 	onUpdate?: FlowUpdateCallback;
 	/** Factory to wrap results into FlowDetails. */
 	makeDetails: (results: SingleResult[]) => FlowDetails;
-	/** Max execution time in ms before child is terminated. Default: 10 minutes. */
-	timeoutMs?: number;
+	/** Child-flow session mode. Default: "default" (600s). */
+	sessionMode?: AgentSessionMode;
 }
 
 /**
@@ -370,6 +373,10 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		};
 	}
 
+	const effectiveSessionMode = opts.sessionMode ?? DEFAULT_AGENT_SESSION_MODE;
+	const effectiveTimeout = getAgentSessionTimeoutMs(effectiveSessionMode);
+	const startedAtMs = Date.now();
+	const deadlineAtMs = effectiveTimeout > 0 ? startedAtMs + effectiveTimeout : undefined;
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	const result: SingleResult = {
 		type: normalizedFlowName,
@@ -381,6 +388,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		stderr: "",
 		usage: emptyFlowUsage(),
 		model: resolvedModel,
+		startedAtMs,
+		...(deadlineAtMs !== undefined ? { deadlineAtMs } : {}),
 	};
 
 	let liveStreamingText = "";
@@ -419,14 +428,6 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		forkSessionTmpPath = forkTmp.filePath;
 	}
 
-	// Resolve timeout: explicit option > env var > default (10 min)
-	const envTimeoutRaw = process.env[FLOW_TIMEOUT_ENV];
-	const envTimeout = envTimeoutRaw !== undefined ? (() => {
-		const n = Number(envTimeoutRaw);
-		return Number.isSafeInteger(n) && n >= 0 ? n : null;
-	})() : null;
-	const effectiveTimeout = opts.timeoutMs ?? envTimeout ?? DEFAULT_FLOW_TIMEOUT_MS;
-
 	try {
 		const piArgs = buildFlowArgs(
 			flow,
@@ -437,6 +438,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			maxDepth,
 			toolOptimize,
 			structuredOutput,
+			effectiveSessionMode,
 			effectiveTimeout,
 		);
 		let wasAborted = false;
@@ -468,7 +470,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					[FLOW_TOOL_OPTIMIZE_ENV]: toolOptimize ? "1" : "0",
 					[PI_OFFLINE_ENV]: "1",
 					...(effectiveTimeout > 0 ? {
-						[FLOW_DEADLINE_ENV]: String(Date.now() + effectiveTimeout),
+						[FLOW_DEADLINE_ENV]: String(deadlineAtMs),
 						[FLOW_TOOL_SUMMARY_GRACE_ENV]: String(toolSummaryGraceMs),
 					} : {
 						[FLOW_DEADLINE_ENV]: "",
@@ -494,11 +496,19 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			let settled = false;
 			let timeoutFired = false;
 			let semanticCompletionTimer: NodeJS.Timeout | undefined;
+			let countdownTimer: NodeJS.Timeout | undefined;
 
 			const clearSemanticCompletionTimer = () => {
 				if (semanticCompletionTimer) {
 					clearTimeout(semanticCompletionTimer);
 					semanticCompletionTimer = undefined;
+				}
+			};
+
+			const clearCountdownTimer = () => {
+				if (countdownTimer) {
+					clearInterval(countdownTimer);
+					countdownTimer = undefined;
 				}
 			};
 
@@ -529,6 +539,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				settled = true;
 				endStdin();
 				clearSemanticCompletionTimer();
+				clearCountdownTimer();
 				if (signal && abortHandler) {
 					signal.removeEventListener("abort", abortHandler);
 				}
@@ -574,6 +585,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 			proc.stdout.on("data", onStdoutData);
 			proc.stderr.on("data", onStderrData);
+
+			if (onUpdate && effectiveTimeout > 0) {
+				countdownTimer = setInterval(() => {
+					if (didClose || settled) return;
+					emitUpdate();
+				}, 1000);
+				countdownTimer.unref();
+			}
 
 			proc.on("close", (code) => {
 				didClose = true;

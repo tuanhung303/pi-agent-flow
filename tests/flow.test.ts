@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/flow.js";
 import type { FlowConfig } from "../src/agents.js";
+import type { FlowDetails } from "../src/types.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 
@@ -75,6 +76,41 @@ describe("runFlow case-insensitive lookup", () => {
 		const result = await promise;
 		expect(result.type).toBe("scout");
 		expect(result.exitCode).toBe(0);
+	});
+
+	it("includes long session mode and 900s budget in the child prompt", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			sessionMode: "long",
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+		expect(prompt).toContain("Session mode: long. Time budget: 900s total.");
+		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("30000");
+
+		mockProc.emit("close", 0);
+		await promise;
 	});
 
 	it("streams cumulative text to onUpdate", async () => {
@@ -729,6 +765,43 @@ describe("timeout two-stage behavior", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("emits live countdown metadata for rendering", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+		vi.setSystemTime(new Date("2026-05-07T00:00:00.000Z"));
+		const updates: Array<import("@mariozechner/pi-agent-core").AgentToolResult<FlowDetails>> = [];
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [{ name: "scout", description: "Explore", systemPrompt: "You are scout.", source: "bundled", filePath: "/agents/scout.md" }],
+			flowName: "scout",
+			intent: "Test",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			sessionMode: "fast",
+			onUpdate: (partial) => updates.push(partial),
+			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+		};
+
+		const startedAtMs = Date.now();
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		expect((spawnCall[2] as any).env.PI_FLOW_DEADLINE_MS).toBe(String(startedAtMs + 300_000));
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(updates.length).toBeGreaterThan(0);
+		const firstResult = updates[0].details?.results[0];
+		expect(firstResult?.startedAtMs).toBe(startedAtMs);
+		expect(firstResult?.deadlineAtMs).toBe(startedAtMs + 300_000);
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
 	it("sends final urge message 30s before timeout", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
@@ -744,7 +817,7 @@ describe("timeout two-stage behavior", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			timeoutMs: 60_000,
+			sessionMode: "fast",
 			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
 		};
 
@@ -755,12 +828,13 @@ describe("timeout two-stage behavior", () => {
 		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
 		const args = spawnCall[1] as string[];
 		const prompt = args[args.indexOf("-p") + 1];
+		expect(prompt).toContain("Session mode: fast. Time budget: 300s total.");
 		expect(prompt).toContain("Long-running tools may be interrupted near the deadline");
 		expect(prompt).toContain("output structured findings immediately");
-		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("6000");
+		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("30000");
 
-		// Advance to 30s before timeout (30s elapsed)
-		await vi.advanceTimersByTimeAsync(30_000);
+		// Advance to 30s before timeout (270s elapsed)
+		await vi.advanceTimersByTimeAsync(270_000);
 		expect(mockProc.stdin.write).not.toHaveBeenCalled();
 		expect(mockProc.kill).not.toHaveBeenCalled();
 
@@ -791,7 +865,7 @@ describe("timeout two-stage behavior", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			timeoutMs: 60_000,
+			sessionMode: "fast",
 			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
 		};
 
@@ -801,7 +875,7 @@ describe("timeout two-stage behavior", () => {
 		expect(mockProc.stdin.end).toHaveBeenCalledTimes(1);
 
 		// Advance past timeout
-		await vi.advanceTimersByTimeAsync(60_000);
+		await vi.advanceTimersByTimeAsync(300_000);
 
 		// Should NOT have killed yet (grace period)
 		expect(mockProc.kill).not.toHaveBeenCalled();
@@ -837,7 +911,7 @@ describe("timeout two-stage behavior", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			timeoutMs: 60_000,
+			sessionMode: "fast",
 			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
 		};
 
@@ -847,7 +921,7 @@ describe("timeout two-stage behavior", () => {
 		expect(mockProc.stdin.end).toHaveBeenCalledTimes(1);
 
 		// Advance past timeout
-		await vi.advanceTimersByTimeAsync(60_000);
+		await vi.advanceTimersByTimeAsync(300_000);
 		expect(mockProc.kill).not.toHaveBeenCalled();
 
 		// Child exits during grace period

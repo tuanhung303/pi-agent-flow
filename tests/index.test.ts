@@ -80,6 +80,8 @@ describe("flow tool execute", () => {
 		delete process.env.PI_FLOW_STACK;
 		process.env.PI_FLOW_MAX_DEPTH = "2";
 		delete process.env.PI_FLOW_PREVENT_CYCLES;
+		delete process.env.PI_FLOW_SESSION_MODE;
+		delete process.env.PI_CODING_AGENT_DIR;
 	});
 
 	afterEach(() => {
@@ -391,6 +393,80 @@ describe("flow tool execute", () => {
 		expect(runFlow).toHaveBeenCalledTimes(1);
 		const runFlowArgs = vi.mocked(runFlow).mock.calls[0][0];
 		expect(runFlowArgs.flowName).toBe("scout");
+	});
+
+	it("exposes sessionMode in the tool schema and passes per-flow mode to runFlow", async () => {
+		setupFlowsDir([
+			{
+				fileName: "build.md",
+				content: `---\nname: build\ndescription: Build\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		pi.setFlag("flow-session-mode", "fast");
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const tool = pi.getTool("flow");
+		expect(tool.parameters.properties.flow.items.properties.sessionMode).toBeDefined();
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "build",
+			agentSource: "project",
+			intent: "Run full checks",
+			aim: "Run checks",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "build", intent: "Run full checks", aim: "Run checks", sessionMode: "long" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(vi.mocked(runFlow).mock.calls[0][0].sessionMode).toBe("long");
+	});
+
+	it("uses PI_FLOW_SESSION_MODE as the default flow session mode", async () => {
+		process.env.PI_FLOW_SESSION_MODE = "long";
+		setupFlowsDir([
+			{
+				fileName: "scout.md",
+				content: `---\nname: scout\ndescription: Discovery\n---\nPrompt.`,
+			},
+		]);
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Discover things",
+			aim: "Discover codebase",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		const tool = pi.getTool("flow");
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(tmpDir),
+		);
+
+		expect(vi.mocked(runFlow).mock.calls[0][0].sessionMode).toBe("long");
 	});
 
 	it("detects cycles case-insensitively", async () => {
@@ -705,6 +781,137 @@ describe("flow tool execute", () => {
 			description: expect.stringContaining("flow model strategy"),
 			type: "string",
 		}));
+	});
+
+	it("registers flow-mode flag", () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		expect(pi.registerFlag).toHaveBeenCalledWith("flow-mode", expect.objectContaining({
+			description: expect.stringContaining("switch the global flow model strategy"),
+			type: "string",
+		}));
+	});
+
+	it("persists --flow-mode globally and uses it immediately over project and --flow-model-config", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const projectCwd = fs.mkdtempSync(path.join(tmpDir, "flow-mode-project-"));
+		const agentsDir = path.join(projectCwd, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		fs.writeFileSync(path.join(agentsDir, "scout.md"), `---\nname: scout\ndescription: Discovery\n---\nPrompt.`, "utf-8");
+
+		const agentDir = path.join(projectCwd, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		fs.writeFileSync(
+			path.join(agentDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "balance",
+				flowModelConfigs: {
+					balance: { lite: { primary: "balance-lite" } },
+					mimo: { lite: { primary: "mimo-lite" } },
+				},
+			}, null, 2),
+			"utf-8",
+		);
+
+		const projectSettingsDir = path.join(projectCwd, ".pi");
+		fs.writeFileSync(
+			path.join(projectSettingsDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "quality",
+				flowModelConfigs: {
+					quality: { lite: { primary: "quality-lite" } },
+				},
+			}, null, 2),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		pi.setFlag("flow-mode", "mimo");
+		pi.setFlag("flow-model-config", "balance");
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(projectCwd));
+
+		expect(JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf-8")).flowModelConfig).toBe("mimo");
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Flow mode switched to "mimo"'));
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('this project selects "quality"'));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Test",
+			aim: "Test aim",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(projectCwd),
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("mimo-lite");
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Both --flow-mode "mimo" and --flow-model-config "balance" were provided. Using --flow-mode.'));
+	});
+
+	it("does not persist or apply an unknown --flow-mode", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const projectCwd = fs.mkdtempSync(path.join(tmpDir, "flow-mode-invalid-project-"));
+		const agentsDir = path.join(projectCwd, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		fs.writeFileSync(path.join(agentsDir, "scout.md"), `---\nname: scout\ndescription: Discovery\n---\nPrompt.`, "utf-8");
+
+		const agentDir = path.join(projectCwd, "agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		fs.writeFileSync(
+			path.join(agentDir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "balance",
+				flowModelConfigs: {
+					balance: { lite: { primary: "balance-lite" } },
+				},
+			}, null, 2),
+			"utf-8",
+		);
+
+		const pi = createMockPi();
+		pi.setFlag("flow-mode", "missing");
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(projectCwd));
+
+		expect(JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf-8")).flowModelConfig).toBe("balance");
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Cannot switch flow mode to "missing"'));
+
+		const tool = pi.getTool("flow");
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "scout",
+			agentSource: "project",
+			intent: "Test",
+			aim: "Test aim",
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		});
+
+		await tool.execute(
+			"call-1",
+			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			makeMockCtx(projectCwd),
+		);
+
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("balance-lite");
 	});
 
 	it("passes strategy primary model to runFlow for lite-tier flow", async () => {

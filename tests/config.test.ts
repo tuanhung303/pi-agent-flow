@@ -3,9 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+	getGlobalSettingsPath,
 	loadFlowModelConfigs,
 	loadFlowSettings,
 	resolveFlowModelCandidates,
+	writeGlobalFlowMode,
 } from "../src/config.js";
 
 describe("loadFlowModelConfigs", () => {
@@ -166,6 +168,88 @@ describe("loadFlowModelConfigs", () => {
 	});
 });
 
+describe("writeGlobalFlowMode", () => {
+	let tmpDir: string;
+	let originalHome: string | undefined;
+	let originalAgentDir: string | undefined;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-mode-test-"));
+		originalHome = process.env.HOME;
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.HOME = tmpDir;
+		delete process.env.PI_CODING_AGENT_DIR;
+	});
+
+	afterEach(() => {
+		process.env.HOME = originalHome;
+		if (originalAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("creates global settings when missing", () => {
+		const result = writeGlobalFlowMode("mimo");
+
+		expect(result.path).toBe(path.join(tmpDir, ".pi", "agent", "settings.json"));
+		expect(JSON.parse(fs.readFileSync(result.path, "utf-8"))).toEqual({
+			flowModelConfig: "mimo",
+		});
+	});
+
+	it("preserves existing settings while updating only flowModelConfig", () => {
+		const dir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(
+			path.join(dir, "settings.json"),
+			JSON.stringify({
+				flowModelConfig: "balance",
+				flowSettings: { maxConcurrency: 2 },
+				flowModelConfigs: { balance: {}, mimo: {} },
+			}, null, 2),
+			"utf-8",
+		);
+
+		const result = writeGlobalFlowMode("mimo");
+
+		expect(result.previous).toBe("balance");
+		expect(JSON.parse(fs.readFileSync(result.path, "utf-8"))).toEqual({
+			flowModelConfig: "mimo",
+			flowSettings: { maxConcurrency: 2 },
+			flowModelConfigs: { balance: {}, mimo: {} },
+		});
+	});
+
+	it("respects PI_CODING_AGENT_DIR", () => {
+		const customDir = path.join(tmpDir, "custom-agent");
+		process.env.PI_CODING_AGENT_DIR = customDir;
+
+		writeGlobalFlowMode("quality");
+
+		expect(getGlobalSettingsPath()).toBe(path.join(customDir, "settings.json"));
+		expect(JSON.parse(fs.readFileSync(path.join(customDir, "settings.json"), "utf-8"))).toEqual({
+			flowModelConfig: "quality",
+		});
+	});
+
+	it("refuses to overwrite invalid JSON", () => {
+		const dir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(dir, { recursive: true });
+		const settingsPath = path.join(dir, "settings.json");
+		fs.writeFileSync(settingsPath, "not json", "utf-8");
+
+		expect(() => writeGlobalFlowMode("mimo")).toThrow(/invalid JSON/);
+		expect(fs.readFileSync(settingsPath, "utf-8")).toBe("not json");
+	});
+
+	it("rejects empty mode names", () => {
+		expect(() => writeGlobalFlowMode("   ")).toThrow(/non-empty mode name/);
+	});
+});
+
 describe("resolveFlowModelCandidates", () => {
 	it("returns explicit flow model only", () => {
 		const result = resolveFlowModelCandidates({
@@ -287,6 +371,31 @@ describe("loadFlowSettings", () => {
 		});
 		const result = loadFlowSettings(tmpDir);
 		expect(result).toEqual({ toolOptimize: false });
+	});
+
+	it("reads and merges sessionMode settings", () => {
+		writeGlobalSettings({
+			flowSettings: {
+				sessionMode: "fast",
+			},
+		});
+		writeProjectSettings(tmpDir, {
+			flowSettings: {
+				sessionMode: "long",
+			},
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({ sessionMode: "long" });
+	});
+
+	it("ignores invalid sessionMode settings", () => {
+		writeGlobalSettings({
+			flowSettings: {
+				sessionMode: "extra-long",
+			},
+		});
+		const result = loadFlowSettings(tmpDir);
+		expect(result).toEqual({});
 	});
 
 	it("ignores non-boolean toolOptimize", () => {

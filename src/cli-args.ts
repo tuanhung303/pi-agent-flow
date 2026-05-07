@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 
 function looksLikeExplicitRelativePath(value: string): boolean {
 	return (
@@ -47,6 +48,8 @@ export interface ParsedFlowCliArgs {
 	fallbackTools?: string;
 	fallbackNoTools: boolean;
 	flowModelConfig?: string;
+	flowMode?: string;
+	flowSessionMode?: AgentSessionMode;
 	tieredModels: {
 		lite?: string;
 		flash?: string;
@@ -80,6 +83,8 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 	let fallbackTools: string | undefined;
 	let fallbackNoTools = false;
 	let flowModelConfig: string | undefined;
+	let flowMode: string | undefined;
+	let flowSessionMode: AgentSessionMode | undefined;
 	let tieredLiteModel: string | undefined;
 	let tieredFlashModel: string | undefined;
 	let tieredFullModel: string | undefined;
@@ -108,6 +113,20 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 		if (flagName === "--flow-model-config") {
 			const [value, skip] = getValue();
 			if (value !== undefined) flowModelConfig = value;
+			i += skip;
+			continue;
+		}
+
+		if (flagName === "--flow-mode") {
+			const [value, skip] = getValue();
+			if (value !== undefined) flowMode = value;
+			i += skip;
+			continue;
+		}
+
+		if (flagName === "--flow-session-mode") {
+			const [value, skip] = getValue();
+			flowSessionMode = parseAgentSessionMode(value);
 			i += skip;
 			continue;
 		}
@@ -285,6 +304,8 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 		fallbackTools,
 		fallbackNoTools,
 		flowModelConfig,
+		flowMode,
+		flowSessionMode,
 		tieredModels: {
 			lite: tieredLiteModel,
 			flash: tieredFlashModel,

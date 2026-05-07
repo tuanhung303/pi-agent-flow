@@ -18,7 +18,8 @@ import { extractStructuredOutput } from "./structured-output.js";
 import { runHooksDetailed, type RunHooksResult } from "./hooks.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
 import { getFlowSummaryText } from "./runner-events.js";
-import { resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
+import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
+import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +48,8 @@ export interface FlowExecutorDeps {
 	maxConcurrency: number;
 	/** Whether auto-transition is enabled. */
 	autoTransition: boolean;
+	/** Default child-flow session mode. */
+	defaultSessionMode: AgentSessionMode;
 	/** Abort signal. */
 	signal?: AbortSignal;
 	/** Streaming update callback. */
@@ -82,6 +85,7 @@ export interface ExecuteFlowParams {
 	intent: string;
 	aim: string;
 	cwd?: string;
+	sessionMode?: AgentSessionMode;
 }
 
 export interface ExecuteFlowResult {
@@ -184,7 +188,7 @@ export async function executeFlows(
 	const {
 		flows, currentDepth, maxDepth, ancestorFlowStack, preventCycles,
 		toolOptimize, structuredOutput, cwd, loadedFlowModelConfigs,
-		maxConcurrency, autoTransition, signal, onUpdate, makeDetails,
+		maxConcurrency, autoTransition, defaultSessionMode, signal, onUpdate, makeDetails,
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
 		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
 		confirmProjectFlows,
@@ -222,13 +226,16 @@ export async function executeFlows(
 	}
 
 	// Resolve model strategy
-	const cliFlowModelConfig =
-		typeof getFlag("flow-model-config") === "string"
-			? (getFlag("flow-model-config") as string)
-			: undefined;
+	const cliFlowMode = normalizeFlowModeName(getFlag("flow-mode"));
+	const cliFlowModelConfig = normalizeFlowModeName(getFlag("flow-model-config"));
+	if (cliFlowMode !== undefined && cliFlowModelConfig !== undefined && cliFlowMode !== cliFlowModelConfig) {
+		console.warn(
+			`[pi-agent-flow] Both --flow-mode "${cliFlowMode}" and --flow-model-config "${cliFlowModelConfig}" were provided. Using --flow-mode.`,
+		);
+	}
 	const selectedFlowModelConfig = selectFlowModelStrategy(
 		loadedFlowModelConfigs.configs,
-		cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
+		cliFlowMode ?? cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
 	);
 
 	// Pre-allocate results array
@@ -257,10 +264,12 @@ export async function executeFlows(
 			text +
 			"|" +
 			allResults
-				.map(
-					(r) =>
-						`${r.messages.length}:${r.usage.toolCalls}:${r.usage.input}:${r.usage.output}:${r.usage.contextTokens}:${r.usage.smoothedTps ?? 0}:${r.errorMessage ?? ""}`,
-				)
+				.map((r) => {
+					const remainingSeconds = r.exitCode === -1 && typeof r.deadlineAtMs === "number"
+						? Math.max(0, Math.ceil((r.deadlineAtMs - Date.now()) / 1000))
+						: "";
+					return `${r.messages.length}:${r.usage.toolCalls}:${r.usage.input}:${r.usage.output}:${r.usage.contextTokens}:${r.usage.smoothedTps ?? 0}:${r.startedAtMs ?? ""}:${r.deadlineAtMs ?? ""}:${remainingSeconds}:${r.errorMessage ?? ""}`;
+				})
 				.join(";");
 		if (signature === lastEmittedSignature) return;
 		lastEmittedSignature = signature;
@@ -276,6 +285,7 @@ export async function executeFlows(
 	const executionStart = Date.now();
 	const results = await mapFlowConcurrent(params, maxConcurrency, async (item, index) => {
 		const normalizedType = item.type.toLowerCase();
+		const sessionMode = resolveAgentSessionMode(item.sessionMode, defaultSessionMode);
 		const targetFlow = flows.find((f) => f.name === normalizedType);
 		const effectiveMaxDepth =
 			targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
@@ -297,6 +307,22 @@ export async function executeFlows(
 		for (let attempt = 0; attempt < attemptModels.length; attempt++) {
 			const candidateModel = attemptModels[attempt];
 			if (candidateModel) attemptedModels.push(candidateModel);
+			const attemptStartMs = Date.now();
+			const attemptTimeoutMs = getAgentSessionTimeoutMs(sessionMode);
+			allResults[index] = {
+				type: normalizedType,
+				agentSource: targetFlow?.source ?? "unknown",
+				intent: item.intent,
+				aim: item.aim,
+				exitCode: -1,
+				messages: [],
+				stderr: "",
+				usage: emptyFlowUsage(),
+				model: candidateModel,
+				startedAtMs: attemptStartMs,
+				deadlineAtMs: attemptStartMs + attemptTimeoutMs,
+			};
+			emitProgress();
 			result = await runFlow({
 				cwd,
 				flows,
@@ -311,6 +337,7 @@ export async function executeFlows(
 				preventCycles,
 				toolOptimize,
 				structuredOutput,
+				sessionMode,
 				model: candidateModel,
 				signal,
 				onUpdate: (partial) => {
