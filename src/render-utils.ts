@@ -108,12 +108,15 @@ export function getTruncationBudget(prefixLength: number): number {
 /** Fixed content budget for collapsed-line text (dir/act/log). */
 export const CONTENT_MAX = 60;
 
+/** Longer budget for detail lines (act/msg) to show more content. */
+export const DETAIL_CONTENT_MAX = 80;
+
 /**
  * Compute how many visible chars of content fit after a prefix,
- * using the fixed CONTENT_MAX budget. Floor of 8 to keep things readable.
+ * using the given budget (defaults to CONTENT_MAX). Floor of 8 to keep things readable.
  */
-export function contentBudget(prefixVisibleLen: number): number {
-	return Math.max(CONTENT_MAX - prefixVisibleLen, 8);
+export function contentBudget(prefixVisibleLen: number, max = CONTENT_MAX): number {
+	return Math.max(max - prefixVisibleLen, 8);
 }
 
 /**
