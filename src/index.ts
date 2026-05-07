@@ -1094,7 +1094,12 @@ flow [type] accomplished
 		pi.emit("pi-agent-flow:ready", pluginApi);
 	}
 
-	// Register cleanup on process exit (once)
+	// Register cleanup on process exit (once).
+	// We intentionally do NOT hook SIGINT/SIGTERM here. A plugin must not
+	// override the host process signal handling; doing so can cut off the
+	// host's terminal-cleanup logic and leave escape sequences or status
+	// lines visible on Ctrl+C. The 'exit' event fires for normal exits,
+	// including when the host handles the signal and calls process.exit().
 	if (!(globalThis as any).__pi_agent_flow_shutdown_registered) {
 		(globalThis as any).__pi_agent_flow_shutdown_registered = true;
 		const emitShutdown = () => {
@@ -1103,8 +1108,6 @@ flow [type] accomplished
 			}
 		};
 		process.on("exit", emitShutdown);
-		process.on("SIGINT", () => { emitShutdown(); process.exit(130); });
-		process.on("SIGTERM", () => { emitShutdown(); process.exit(143); });
 	}
 
 }

@@ -47,27 +47,30 @@ export function formatCompactTokenPair(usage: Partial<UsageStats>): string {
 	return `↑ ${formatFixedTokens(usage.input || 0)} · ↓ ${formatFixedTokens(usage.output || 0)}`;
 }
 
-export function formatCompactStats(usage: Partial<UsageStats>, model?: string, maxWidth?: number): string {
-	const parts: string[] = [];
-	parts.push(`↑ ${formatFixedTokens(usage.input || 0)}`);
-	parts.push(`↓ ${formatFixedTokens(usage.output || 0)}`);
-	parts.push(`tps: ${formatTps(usage.smoothedTps)}`);
-	parts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
+export function formatCompactStats(
+	usage: Partial<UsageStats>,
+	model?: string,
+	maxWidth?: number,
+	options: { skipTokens?: boolean } = {},
+): string {
+	const tokenParts = [`↑ ${formatFixedTokens(usage.input || 0)}`, `↓ ${formatFixedTokens(usage.output || 0)}`];
+	const runtimeParts = [`tps: ${formatTps(usage.smoothedTps)}`, `ctx: ${formatFixedTokens(usage.contextTokens || 0)}`];
+	const parts = options.skipTokens ? runtimeParts : [...tokenParts, ...runtimeParts];
 
 	const displayModel = model ? model.replace(/^[^/]+\//, "") : undefined;
 	let result = parts.join(" · ") + (displayModel ? ` · ${displayModel}` : "");
 	if (maxWidth && visibleLength(result) > maxWidth) {
-		// Drop model first
+		// Drop model first.
 		let narrow = parts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
-		// Drop context tokens
-		const narrowParts = parts.slice(0, 3); // up to tps
-		narrow = narrowParts.join(" · ");
+		// Drop context tokens next.
+		const withoutContext = parts.filter((part) => !part.startsWith("ctx:"));
+		narrow = withoutContext.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
-		// Bare minimum (just input/output)
-		narrow = `${parts[0]} · ${parts[1]}`;
+		// Bare minimum: token pair for normal stats, tps for token-free headers.
+		narrow = options.skipTokens ? runtimeParts[0] : tokenParts.join(" · ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		return truncateChars(result, maxWidth);

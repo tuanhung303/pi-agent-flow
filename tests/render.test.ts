@@ -402,6 +402,12 @@ describe("formatCompactStats", () => {
 		expect(result).toBe("↑  2.0k · ↓   500 · tps:  42.3 · ctx: 21.0k · K2.6");
 	});
 
+	it("can skip token counts for compact flow headers", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
+		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true });
+		expect(result).toBe("tps:  42.3 · ctx: 21.0k · K2.6");
+	});
+
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
@@ -509,6 +515,11 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
+		const headerLine = text.split("\n")[0];
+		expect(headerLine).toContain("scout");
+		expect(headerLine).toContain("ctx: 50.0k");
+		expect(headerLine).not.toContain("↑ 46.7k");
+		expect(headerLine).not.toContain("↓  4.6k");
 		expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Flow timed out after 600s.");
 	});
 
@@ -527,6 +538,11 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
+			const firstHeaderLine = text.split("\n")[0];
+			expect(firstHeaderLine).toContain("scout");
+			expect(firstHeaderLine).toContain("ctx: 50.0k");
+			expect(firstHeaderLine).not.toContain("↑ 46.7k");
+			expect(firstHeaderLine).not.toContain("↓  4.6k");
 			expect(text).toContain("aim: [00:45] - test aim");
 			expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Deploy still running");
 		} finally {
