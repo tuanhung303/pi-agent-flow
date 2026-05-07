@@ -13,6 +13,7 @@
  * still active.
  */
 
+import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
 
 export type TimingTier =
@@ -30,6 +31,7 @@ export interface TimingReport {
 
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
+const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
 const DEFAULT_FLOW_TOOL_SUMMARY_GRACE_MS = 30_000;
 
 /** Classify duration into user-defined tiers with actionable feedback. */
@@ -85,6 +87,30 @@ function getFlowDeadlineMs(): number | null {
 
 function getFlowToolSummaryGraceMs(): number {
 	return parseNonNegativeSafeInteger(process.env[FLOW_TOOL_SUMMARY_GRACE_ENV]) ?? DEFAULT_FLOW_TOOL_SUMMARY_GRACE_MS;
+}
+
+function getFlowReminderFilePath(): string | null {
+	const raw = process.env[FLOW_REMINDER_FILE_ENV];
+	return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+/**
+ * Read any pending reminder from the reminder file set by the parent runner.
+ * Returns the reminder text (without trailing newline), or null if no reminder exists.
+ * Clears the file after reading so the agent only sees each reminder once.
+ */
+export function readAndClearReminderFile(): string | null {
+	const filePath = getFlowReminderFilePath();
+	if (!filePath) return null;
+	try {
+		if (!fs.existsSync(filePath)) return null;
+		const content = fs.readFileSync(filePath, { encoding: "utf-8" }).trim();
+		// Clear the file after reading so each reminder is only injected once.
+		try { fs.writeFileSync(filePath, "", { encoding: "utf-8" }); } catch { /* best-effort */ }
+		return content || null;
+	} catch {
+		return null;
+	}
 }
 
 function formatDeadlineAppendix(): string {
@@ -189,6 +215,12 @@ export function createTimedBashToolDefinition(
 		) {
 			const start = Date.now();
 			const deadlineSignal = createDeadlineSignal(signal);
+
+			// Check for pending reminder from parent runner before executing bash.
+			// This allows the parent to inject timeout warnings into the agent's context
+			// via the tool result, since stdin is closed after spawn.
+			const reminderPreamble = readAndClearReminderFile();
+
 			try {
 				const result = await original.execute(
 					toolCallId,
@@ -201,6 +233,10 @@ export function createTimedBashToolDefinition(
 				const report = classifyDuration(duration);
 				const appendix = formatTimingAppendix(report);
 
+				// Inject reminder preamble before timing info so it's the first thing the agent sees.
+				if (reminderPreamble) {
+					appendTextToToolResult(result, `\n\n[REMINDER FROM PARENT] ${reminderPreamble}`);
+				}
 				appendTextToToolResult(result, appendix);
 				if (deadlineSignal.wasDeadlineAbort()) {
 					appendTextToToolResult(result, formatDeadlineAppendix());
