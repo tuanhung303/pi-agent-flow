@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
+import { getTierFlowNames } from "./agents.js";
 
 export type FlowTier = "lite" | "flash" | "full";
 
@@ -387,9 +388,9 @@ export function formatFlowModelStrategy(strategy: FlowModelStrategy): string {
 			if (hasFailover) {
 				parts.push(`failover: ${config!.failover!.join(", ")}`);
 			}
-			lines.push(`  ${tier} → ${parts.join(", ")}`);
+			lines.push(`  ${tier} (${getTierFlowNames(tier).join(", ")}) → ${parts.join(", ")}`);
 		} else {
-			lines.push(`  ${tier} → (not configured)`);
+			lines.push(`  ${tier} (${getTierFlowNames(tier).join(", ")}) → (not configured)`);
 		}
 	}
 	if (!hasAny) {
