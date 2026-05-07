@@ -9,21 +9,23 @@ import {
 } from "../src/session-mode.js";
 
 describe("agent session modes", () => {
-	it("defines fast/default/long budgets with default at 600s and long capped at 900s", () => {
+	it("defines fast/default/long/extreme_long budgets with default at 600s and extreme_long capped at 1200s", () => {
 		expect(DEFAULT_AGENT_SESSION_MODE).toBe("default");
 		expect(AGENT_SESSION_TIMEOUTS_MS).toEqual({
 			fast: 300_000,
 			default: 600_000,
 			long: 900_000,
+			extreme_long: 1_200_000,
 		});
-		expect(getAgentSessionTimeoutMs("long")).toBe(MAX_AGENT_SESSION_TIMEOUT_MS);
+		expect(getAgentSessionTimeoutMs("extreme_long")).toBe(MAX_AGENT_SESSION_TIMEOUT_MS);
 	});
 
 	it("parses modes case-insensitively and rejects arbitrary timeout values", () => {
 		expect(parseAgentSessionMode("FAST")).toBe("fast");
 		expect(parseAgentSessionMode(" default ")).toBe("default");
 		expect(parseAgentSessionMode("900")).toBeUndefined();
-		expect(parseAgentSessionMode("extra-long")).toBeUndefined();
+		expect(parseAgentSessionMode("extreme_long")).toBe("extreme_long");
+	expect(parseAgentSessionMode("extra-long")).toBeUndefined();
 	});
 
 	it("falls back to the provided default for invalid values", () => {

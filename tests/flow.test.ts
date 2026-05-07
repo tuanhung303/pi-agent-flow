@@ -107,7 +107,7 @@ describe("runFlow case-insensitive lookup", () => {
 		const args = spawnCall[1] as string[];
 		const prompt = args[args.indexOf("-p") + 1];
 		expect(prompt).toContain("Session mode: long. Time budget: 900s total.");
-		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("45000");
+		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("90000");
 
 		mockProc.emit("close", 0);
 		await promise;
@@ -802,7 +802,7 @@ describe("timeout two-stage behavior", () => {
 		await promise;
 	});
 
-	it("sends final urge message 45s before timeout", async () => {
+	it("sends final urge message 135s before timeout", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 
@@ -833,12 +833,12 @@ describe("timeout two-stage behavior", () => {
 		expect(prompt).toContain("output structured findings immediately");
 		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("30000");
 
-		// Advance to 45s before timeout (255s elapsed, urge fires here)
-		await vi.advanceTimersByTimeAsync(255_000);
+		// Advance to 135s before timeout (165s elapsed, urge fires here)
+		await vi.advanceTimersByTimeAsync(165_000);
 		expect(mockProc.stdin.write).not.toHaveBeenCalled();
 		expect(mockProc.kill).not.toHaveBeenCalled();
 
-		// Advance another 15s to 270s (well past the urge timer)
+		// Advance another 15s to 180s (well past the urge timer)
 		await vi.advanceTimersByTimeAsync(15_000);
 		expect(mockProc.stdin.write).not.toHaveBeenCalled();
 		expect(mockProc.kill).not.toHaveBeenCalled();
@@ -889,8 +889,8 @@ describe("timeout two-stage behavior", () => {
 		await vi.advanceTimersByTimeAsync(5_000);
 		expect(mockProc.kill).not.toHaveBeenCalled();
 
-		// Advance past grace period (30s now)
-		await vi.advanceTimersByTimeAsync(26_000);
+		// Advance past grace period (90s now)
+		await vi.advanceTimersByTimeAsync(85_000);
 		expect(mockProc.kill).toHaveBeenCalledWith("SIGTERM");
 
 		// Simulate process death after SIGKILL timeout
