@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, truncateChars, tailText, contentBudget, visibleLength } from "./render-utils.js";
+import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, truncateChars, tailText, contentBudget, visibleLength, DETAIL_CONTENT_MAX } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -32,6 +32,12 @@ function shortenPath(p: string): string {
 type ThemeFg = (color: string, text: string) => string;
 type ThemeBg = (color: string, text: string) => string;
 type FlowTheme = { fg: ThemeFg; bold: (s: string) => string; bg: ThemeBg };
+
+const COLLAPSED_FLOW_HEADER_TYPE_WIDTH = 8;
+
+function formatCollapsedFlowHeaderTypeName(type: string): string {
+	return formatFlowTypeName(type).padEnd(COLLAPSED_FLOW_HEADER_TYPE_WIDTH, " ");
+}
 
 function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg: ThemeFg): string {
 	const pathArg = (args.file_path || args.path || "...") as string;
@@ -320,8 +326,8 @@ function renderFlowCollapsed(
 	const container = new Container();
 	const maxWidth = process.stdout.columns ?? 80;
 	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true });
-	const typeName = formatFlowTypeName(r.type);
-	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
+	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
+	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", `· ${stats}`)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
@@ -337,13 +343,13 @@ function renderFlowCollapsed(
 	if (lastTool) {
 		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
 		const actPrefix = `├─ act: [${r.usage.toolCalls}] - `;
-		const actContent = truncateChars(actStr, contentBudget(visibleLength(actPrefix)));
+		const actContent = truncateChars(actStr, contentBudget(visibleLength(actPrefix), DETAIL_CONTENT_MAX));
 		container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 	}
 
 	// msg: line (last assistant text or streaming)
 	const msgPrefix = formatMsgLinePrefix("└─", r);
-	const msgBudget = contentBudget(visibleLength(msgPrefix));
+	const msgBudget = contentBudget(visibleLength(msgPrefix), DETAIL_CONTENT_MAX);
 	if (r.exitCode === -1 && streamingText) {
 		const logContent = tailText(streamingText, msgBudget);
 		container.addChild(new TruncatedText(`${theme.fg("dim", msgPrefix)}${theme.fg("dim", logContent)}`, 0, 0));
@@ -453,11 +459,11 @@ function renderActivityPanel(
 		const isLast = i === results.length - 1;
 		const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true });
 		const error = isFlowError(r);
-		const typeName = formatFlowTypeName(r.type);
+		const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", `· ${stats}`)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
@@ -478,13 +484,13 @@ function renderActivityPanel(
 		if (lastTool) {
 			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
 			const actPrefix = `${indent}├─ act: [${r.usage.toolCalls}] - `;
-			const actContent = truncateChars(actStr, contentBudget(visibleLength(actPrefix)));
+			const actContent = truncateChars(actStr, contentBudget(visibleLength(actPrefix), DETAIL_CONTENT_MAX));
 			container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 		}
 
 		// msg: line (live streaming text or last assistant text)
 		const msgPrefix = formatMsgLinePrefix(indent + "└─", r);
-		const msgBudget = contentBudget(visibleLength(msgPrefix));
+		const msgBudget = contentBudget(visibleLength(msgPrefix), DETAIL_CONTENT_MAX);
 		const liveText = r.exitCode === -1 ? r.streamingText : undefined;
 		const lastText = liveText || getLastAssistantText(r.messages);
 		if (lastText) {
