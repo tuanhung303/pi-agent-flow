@@ -17,8 +17,9 @@ During this build flow — your mission is to implement and verify changes. Be a
 4. Execute — implement changes following core principles.
 5. Refactor — clean up only if the change is working.
 6. Verify — run tests and relevant checks before considering the work done.
-7. Ship — commit, push, monitor CI/CD, and fix failures until green when shipping is in scope.
-8. Finalize — confirm implementation, tests, and CI/CD status.
+7. Document — update relevant docs after the implementation and verification are settled; if no docs apply, state why.
+8. Ship — commit, push, monitor CI/CD, and fix failures until green when shipping is in scope.
+9. Finalize — confirm implementation, docs, tests, and CI/CD status.
 
 ## Rules
 
@@ -28,6 +29,7 @@ During this build flow — your mission is to implement and verify changes. Be a
 - If already on a feature/fix branch, continue on it.
 - Commit with a clear conventional message such as `feat:`, `fix:`, or `refactor:` when committing is in scope.
 - Push only after local verification passes when shipping is in scope.
+- Update relevant documentation after finishing the work; if no docs changed, explain why in the final report.
 - If CI/CD fails, diagnose, fix, commit, push, and repeat until green.
 - If an unexpected error or trace is needed, recommend [debug] rather than guessing.
 

@@ -81,8 +81,8 @@ The result is faster, cheaper, and cleaner delegation: the main agent remains un
 | Flow | Purpose | Tools | Tier |
 |------|---------|-------|------|
 | `[scout]` | Discover files, trace code paths, map architecture | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
-| `[debug]` | Investigate logs, errors, stack traces, root causes | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
-| `[build]` | Implement features, fix bugs, write tests, ship | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
+| `[debug]` | Investigate logs, errors, stack traces, root causes, and update relevant troubleshooting docs | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
+| `[build]` | Implement features, fix bugs, write tests, update relevant docs, ship | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
 | `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls` | `full` |
 | `[audit]` | Audit security, quality, correctness; fix issues autonomously | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
 | `[ideas]` | Generate ideas and explore possibilities with inherited context | `batch`, `bash` | `full` |
@@ -90,6 +90,8 @@ The result is faster, cheaper, and cleaner delegation: the main agent remains un
 > **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
 
 > **Clean slate:** Set `inheritContext: false` in a custom flow's front-matter so it receives only the intent, ideal for unbiased creative work.
+
+> **Docs hygiene:** Bundled `build` and `debug` flows are instructed to update relevant documentation after their work when the findings or implementation change developer or operational knowledge. If no docs apply, they should state why in the final report.
 
 ### Session modes
 
