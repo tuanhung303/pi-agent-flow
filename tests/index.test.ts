@@ -834,10 +834,7 @@ describe("flow tool execute", () => {
 		await pi.trigger("session_start", {}, makeMockCtx(projectCwd));
 
 		expect(JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf-8")).flowModelConfig).toBe("mimo");
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Flow mode switched to "mimo"'));
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("lite (scout, debug) → primary: mimo-lite"));
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("flash (build, audit) → (not configured)"));
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("full (ideas, craft) → (not configured)"));
+		expect(warnSpy).toHaveBeenCalledWith("mode: mimo | lite: mimo-lite · flash: (default) · full: (default)");
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('this project selects "quality"'));
 
 		const tool = pi.getTool("flow");

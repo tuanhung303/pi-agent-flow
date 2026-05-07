@@ -730,8 +730,8 @@ export default function (pi: ExtensionAPI) {
 				try {
 					const writeResult = writeGlobalFlowMode(requestedFlowMode);
 					const strategy = loadedFlowModelConfigs.configs[requestedFlowMode] ?? {};
-					const strategyDescription = formatFlowModelStrategy(strategy);
-					console.warn(`[pi-agent-flow] Flow mode switched to "${requestedFlowMode}" in ${writeResult.path}.\n${strategyDescription}`);
+					const strategyDescription = formatFlowModelStrategy(requestedFlowMode, strategy);
+					console.warn(strategyDescription);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					console.warn(`[pi-agent-flow] ${message}`);
