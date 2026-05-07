@@ -77,6 +77,17 @@ describe("discoverFlows", () => {
 		const codeFlows = result.flows.filter((f) => f.name === "code");
 		expect(codeFlows).toHaveLength(1);
 	});
+
+	it("bundled build and debug prompts require relevant docs updates", () => {
+		const result = discoverFlows(tmpDir, "bundled");
+		const flowsByName = new Map(result.flows.map((flow) => [flow.name, flow]));
+
+		expect(flowsByName.get("build")?.systemPrompt).toContain("update relevant docs");
+		expect(flowsByName.get("build")?.systemPrompt).toContain("if no docs apply, state why");
+		expect(flowsByName.get("debug")?.systemPrompt).toContain("update relevant docs, runbooks, or troubleshooting notes");
+		expect(flowsByName.get("debug")?.systemPrompt).toContain("after finishing the investigation");
+		expect(flowsByName.get("debug")?.systemPrompt).toContain("Documentation-only updates are required after finishing the work");
+	});
 });
 
 describe("getFlowTier", () => {

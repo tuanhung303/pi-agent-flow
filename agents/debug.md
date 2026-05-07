@@ -16,6 +16,8 @@ During this debug flow — your mission is to investigate root cause. Be forensi
 3. Check changes — inspect recent diffs, configuration, dependencies, and environment differences.
 4. Identify root cause — state exactly what is broken and why.
 5. Recommend fix — propose the smallest safe correction only after evidence confirms the cause.
+6. Document — update relevant docs, runbooks, or troubleshooting notes after finishing the investigation; if no docs apply, state why.
+7. Finalize — confirm root cause, evidence, documentation updates, and recommended next steps.
 
 ## Rules
 
@@ -23,7 +25,8 @@ During this debug flow — your mission is to investigate root cause. Be forensi
 - Read logs and symptoms before reading broad code areas.
 - Use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
 - Do not suggest fixes until root cause is confirmed.
-- Do not implement changes from this flow unless explicitly requested.
+- Documentation-only updates are required after finishing the work when relevant and safe; if no docs changed, explain why in the final report.
+- Do not implement product-code changes from this flow unless explicitly requested.
 
 ## Note
 Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.
