@@ -728,7 +728,7 @@ export default function (pi: ExtensionAPI) {
 				);
 			} else {
 				try {
-					const writeResult = writeGlobalFlowMode(requestedFlowMode);
+					writeGlobalFlowMode(requestedFlowMode);
 					const strategy = loadedFlowModelConfigs.configs[requestedFlowMode] ?? {};
 					const strategyDescription = formatFlowModelStrategy(requestedFlowMode, strategy);
 					console.warn(strategyDescription);
