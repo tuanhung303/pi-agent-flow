@@ -319,7 +319,7 @@ function renderFlowCollapsed(
 ): Container {
 	const container = new Container();
 	const maxWidth = process.stdout.columns ?? 80;
-	const stats = formatCompactStats(r.usage, r.model, maxWidth);
+	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true });
 	const typeName = formatFlowTypeName(r.type);
 	let header = `${theme.fg("accent", theme.bold(typeName))} ${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
@@ -451,7 +451,7 @@ function renderActivityPanel(
 	for (let i = 0; i < results.length; i++) {
 		const r = results[i];
 		const isLast = i === results.length - 1;
-		const stats = formatCompactStats(r.usage, r.model, maxWidth);
+		const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true });
 		const error = isFlowError(r);
 		const typeName = formatFlowTypeName(r.type);
 
