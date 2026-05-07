@@ -10,6 +10,7 @@ import {
 	visibleLength,
 	getTruncationBudget,
 	contentBudget,
+	DETAIL_CONTENT_MAX,
 } from "../src/render-utils.js";
 import { renderFlowResult } from "../src/render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
@@ -226,6 +227,17 @@ describe("contentBudget", () => {
 
 	it("exact boundary: prefix 52 gives 8", () => {
 		expect(contentBudget(52)).toBe(8);
+	});
+
+	it("accepts a custom max budget", () => {
+		expect(contentBudget(0, DETAIL_CONTENT_MAX)).toBe(80);
+		expect(contentBudget(10, DETAIL_CONTENT_MAX)).toBe(70);
+		expect(contentBudget(20, DETAIL_CONTENT_MAX)).toBe(60);
+	});
+
+	it("floors custom budget at 8", () => {
+		expect(contentBudget(75, DETAIL_CONTENT_MAX)).toBe(8);
+		expect(contentBudget(100, DETAIL_CONTENT_MAX)).toBe(8);
 	});
 });
 
@@ -516,7 +528,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout");
+		expect(headerLine).toContain("scout   · tps:");
 		expect(headerLine).toContain("ctx: 50.0k");
 		expect(headerLine).not.toContain("↑ 46.7k");
 		expect(headerLine).not.toContain("↓  4.6k");
@@ -539,7 +551,7 @@ describe("activity panel rendering", () => {
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const firstHeaderLine = text.split("\n")[0];
-			expect(firstHeaderLine).toContain("scout");
+			expect(firstHeaderLine).toContain("├─ scout   · tps:");
 			expect(firstHeaderLine).toContain("ctx: 50.0k");
 			expect(firstHeaderLine).not.toContain("↑ 46.7k");
 			expect(firstHeaderLine).not.toContain("↓  4.6k");
@@ -575,7 +587,8 @@ describe("activity panel rendering", () => {
 			{ flow: [{ type: "code", intent: "Refactor the auth module", aim: "Refactor auth module" }] },
 		);
 		const text = extractText(rendered);
-		expect(text).toContain("code");
+		const headerLine = text.split("\n")[0];
+		expect(headerLine).toContain("code    · tps:");
 		expect(text).toContain("aim:");
 		expect(text).toContain("Refactor auth module");
 		expect(text).toContain("↑     0");
@@ -629,7 +642,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = contentBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
+		const expectedBudget = contentBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "), DETAIL_CONTENT_MAX);
 		expect(scoutBlock).toContain(tailText(streaming, expectedBudget));
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
@@ -762,7 +775,7 @@ describe("activity panel rendering", () => {
 			const expectedPrefix = "[↑     0 · ↓     0] - ";
 			expect(logLine).toContain(`msg: ${expectedPrefix}`);
 			const logContent = logLine.split(expectedPrefix)[1].trim();
-			const expectedBudget = contentBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
+			const expectedBudget = contentBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "), DETAIL_CONTENT_MAX);
 			expect(logContent).toBe(tailText(longStreaming, expectedBudget));
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(expectedBudget);
 		} finally {
