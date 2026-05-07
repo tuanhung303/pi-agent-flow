@@ -369,3 +369,23 @@ export function resolveFlowModelCandidates(opts: {
 
 	return { primary: candidates[0], candidates };
 }
+
+export function formatFlowModelStrategy(strategy: FlowModelStrategy): string {
+	const tiers: FlowTier[] = ["lite", "flash", "full"];
+	const lines: string[] = [];
+	let hasAny = false;
+	for (const tier of tiers) {
+		const config = strategy[tier];
+		if (config?.primary) {
+			hasAny = true;
+			const failover = config.failover?.length ? `, failover: ${config.failover.join(", ")}` : "";
+			lines.push(`  ${tier} → primary: ${config.primary}${failover}`);
+		} else {
+			lines.push(`  ${tier} → (not configured)`);
+		}
+	}
+	if (!hasAny) {
+		return "Using default model selection (no per-tier overrides).";
+	}
+	return lines.join("\n");
+}
