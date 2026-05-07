@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+	formatFlowModelStrategy,
 	getGlobalSettingsPath,
 	loadFlowModelConfigs,
 	loadFlowSettings,
@@ -422,5 +423,31 @@ describe("loadFlowSettings", () => {
 		});
 		const result = loadFlowSettings(tmpDir);
 		expect(result).toEqual({});
+	});
+});
+
+describe("formatFlowModelStrategy", () => {
+	it("returns default message when strategy is empty", () => {
+		expect(formatFlowModelStrategy({})).toBe("Using default model selection (no per-tier overrides).");
+	});
+
+	it("shows primary and failover when both present", () => {
+		const result = formatFlowModelStrategy({
+			lite: { primary: "mimo-lite", failover: ["fallback-lite"] },
+			flash: { primary: "mimo-flash" },
+		});
+		expect(result).toContain("lite → primary: mimo-lite, failover: fallback-lite");
+		expect(result).toContain("flash → primary: mimo-flash");
+		expect(result).toContain("full → (not configured)");
+	});
+
+	it("shows failover-only tier without primary", () => {
+		const result = formatFlowModelStrategy({
+			lite: { failover: ["failover-a", "failover-b"] },
+			flash: { primary: "mimo-flash" },
+		});
+		expect(result).toContain("lite → failover: failover-a, failover-b");
+		expect(result).toContain("flash → primary: mimo-flash");
+		expect(result).toContain("full → (not configured)");
 	});
 });

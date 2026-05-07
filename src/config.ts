@@ -376,10 +376,18 @@ export function formatFlowModelStrategy(strategy: FlowModelStrategy): string {
 	let hasAny = false;
 	for (const tier of tiers) {
 		const config = strategy[tier];
-		if (config?.primary) {
+		const hasPrimary = Boolean(config?.primary);
+		const hasFailover = config?.failover && config.failover.length > 0;
+		if (hasPrimary || hasFailover) {
 			hasAny = true;
-			const failover = config.failover?.length ? `, failover: ${config.failover.join(", ")}` : "";
-			lines.push(`  ${tier} → primary: ${config.primary}${failover}`);
+			const parts: string[] = [];
+			if (hasPrimary) {
+				parts.push(`primary: ${config!.primary}`);
+			}
+			if (hasFailover) {
+				parts.push(`failover: ${config!.failover!.join(", ")}`);
+			}
+			lines.push(`  ${tier} → ${parts.join(", ")}`);
 		} else {
 			lines.push(`  ${tier} → (not configured)`);
 		}
