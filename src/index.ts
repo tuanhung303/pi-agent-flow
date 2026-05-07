@@ -24,7 +24,7 @@ import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { runHooks, runHooksDetailed, getRegisteredHooks, registerHook, unregisterHook } from "./hooks.js";
-import { mapFlowConcurrent, runFlow } from "./flow.js";
+import { mapFlowConcurrent, runFlow, terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
 import {
 	type SingleResult,
@@ -1095,14 +1095,20 @@ flow [type] accomplished
 	}
 
 	// Register cleanup on process exit (once).
-	// We intentionally do NOT hook SIGINT/SIGTERM here. A plugin must not
-	// override the host process signal handling; doing so can cut off the
-	// host's terminal-cleanup logic and leave escape sequences or status
-	// lines visible on Ctrl+C. The 'exit' event fires for normal exits,
-	// including when the host handles the signal and calls process.exit().
+	// We use prependListener on SIGINT/SIGTERM to propagate to child processes
+	// before the host's own signal handler runs. This avoids orphaned sub-agents.
+	// The host handler still runs afterward and handles terminal cleanup.
 	if (!(globalThis as any).__pi_agent_flow_shutdown_registered) {
 		(globalThis as any).__pi_agent_flow_shutdown_registered = true;
+
+		// Propagate signals to child process groups so sub-agents don't become orphans.
+		// We use prependListener so our handler runs first, before the host's cleanup.
+		process.prependListener("SIGINT", terminateAllChildGroups);
+		process.prependListener("SIGTERM", terminateAllChildGroups);
+
+		// Also handle the 'exit' event, which fires when the host calls process.exit().
 		const emitShutdown = () => {
+			terminateAllChildGroups();
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}

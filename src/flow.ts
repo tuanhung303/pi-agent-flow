@@ -25,10 +25,11 @@ import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSession
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
+const FINISH_KILL_GRACE_MS = 5_000; // wait 5s after finish() before force-killing the child process
 const AGENT_END_GRACE_MS = 2000;
 const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
-const FLOW_FINAL_URGE_MS = 30 * 1000; // final urge 30 s before kill
-const REPORTING_GRACE_MS = 10_000; // grace period after timeout for agent to report findings
+const FLOW_FINAL_URGE_MS = 45 * 1000; // final urge 45 s before kill (increased from 30s for wider summary window)
+const REPORTING_GRACE_MS = 30_000; // grace period after timeout for agent to report findings (increased from 10s)
 const FLOW_TOOL_SUMMARY_GRACE_MS = FLOW_FINAL_URGE_MS; // bash/tool abort lead time so the agent can summarize
 const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
@@ -38,6 +39,54 @@ const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
 export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
+const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
+
+// ---------------------------------------------------------------------------
+// Global child process group tracking for signal propagation
+// ---------------------------------------------------------------------------
+
+/** Track child process groups so we can kill them on parent exit / signal. */
+const runningChildGroups = new Map<number, { groupPid: number; name: string }>();
+
+/** Register a child process group for cleanup on shutdown. */
+export function registerChildGroup(pid: number, name: string): void {
+	if (pid > 0 && !isWindows) {
+		runningChildGroups.set(pid, { groupPid: pid, name });
+	}
+}
+
+/** Unregister a completed/stopped child process group. */
+export function unregisterChildGroup(pid: number): void {
+	runningChildGroups.delete(pid);
+}
+
+/**
+ * Terminate all registered child process groups via SIGTERM (then SIGKILL after timeout).
+ * Called on parent exit, SIGINT, SIGTERM, or pi-agent-flow:shutdown.
+ */
+export function terminateAllChildGroups(): void {
+	if (runningChildGroups.size === 0) return;
+	const pids = Array.from(runningChildGroups.keys());
+	for (const pid of pids) {
+		try {
+			process.kill(-pid, "SIGTERM");
+		} catch {
+			try { process.kill(pid, "SIGTERM"); } catch { /* gone */ }
+		}
+	}
+	// Hard kill after timeout
+	const sigkillTimer = setTimeout(() => {
+		for (const pid of pids) {
+			try {
+				process.kill(-pid, "SIGKILL");
+			} catch {
+				try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+			}
+		}
+		runningChildGroups.clear();
+	}, 5000);
+	sigkillTimer.unref();
+}
 
 type FlowUpdateCallback = (partial: AgentToolResult<FlowDetails>) => void;
 
@@ -106,6 +155,24 @@ function cleanupFlowTempDir(dir: string | null): void {
 		fs.rmSync(dir, { recursive: true, force: true });
 	} catch {
 		/* ignore */
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Reminder file helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Write a reminder message to the reminder file so the child agent can see it
+ * via the timed-bash wrapper before its next tool call.
+ * Creates the file if it doesn't exist; appends the message.
+ */
+function writeReminderFile(reminderFilePath: string | null, message: string): void {
+	if (!reminderFilePath) return;
+	try {
+		fs.writeFileSync(reminderFilePath, message + "\n", { encoding: "utf-8", flag: "a" });
+	} catch {
+		/* best-effort */
 	}
 }
 
@@ -428,6 +495,15 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		forkSessionTmpPath = forkTmp.filePath;
 	}
 
+	// Create a temp dir for the reminder file so the child agent can read timeout warnings
+	// via the timed-bash wrapper before its next tool call.
+	let reminderTmpDir: string | null = null;
+	let reminderFilePath: string | null = null;
+	if (effectiveTimeout > 0) {
+		reminderTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-flow-reminder-"));
+		reminderFilePath = path.join(reminderTmpDir, "reminder.txt");
+	}
+
 	try {
 		const piArgs = buildFlowArgs(
 			flow,
@@ -472,12 +548,19 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					...(effectiveTimeout > 0 ? {
 						[FLOW_DEADLINE_ENV]: String(deadlineAtMs),
 						[FLOW_TOOL_SUMMARY_GRACE_ENV]: String(toolSummaryGraceMs),
+						[FLOW_REMINDER_FILE_ENV]: reminderFilePath ?? "",
 					} : {
 						[FLOW_DEADLINE_ENV]: "",
 						[FLOW_TOOL_SUMMARY_GRACE_ENV]: "0",
+						[FLOW_REMINDER_FILE_ENV]: "",
 					}),
 				},
 			});
+
+			// Register the child process group for global cleanup on signal/exit
+			if (proc.pid !== undefined && !isWindows) {
+				registerChildGroup(proc.pid, normalizedFlowName);
+			}
 
 			let stdinEnded = false;
 			const endStdin = () => {
@@ -497,6 +580,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			let timeoutFired = false;
 			let semanticCompletionTimer: NodeJS.Timeout | undefined;
 			let countdownTimer: NodeJS.Timeout | undefined;
+			let finishKillTimer: NodeJS.Timeout | undefined;
 
 			const clearSemanticCompletionTimer = () => {
 				if (semanticCompletionTimer) {
@@ -534,6 +618,13 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				sigkillTimer.unref();
 			};
 
+			const clearFinishKillTimer = () => {
+				if (finishKillTimer) {
+					clearTimeout(finishKillTimer);
+					finishKillTimer = undefined;
+				}
+			};
+
 			const finish = (code: number) => {
 				if (settled) return;
 				settled = true;
@@ -543,6 +634,15 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				if (signal && abortHandler) {
 					signal.removeEventListener("abort", abortHandler);
 				}
+				// Soft-kill: give the child a short grace to exit naturally after stdin close.
+				// If it hasn't closed by then, force-kill to prevent orphaned processes.
+				clearFinishKillTimer();
+				finishKillTimer = setTimeout(() => {
+					if (!didClose) {
+						terminateChild();
+					}
+				}, FINISH_KILL_GRACE_MS);
+				finishKillTimer.unref();
 				resolve(code);
 			};
 
@@ -596,6 +696,10 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 			proc.on("close", (code) => {
 				didClose = true;
+				clearFinishKillTimer();
+				if (proc.pid !== undefined) {
+					unregisterChildGroup(proc.pid);
+				}
 				if (buffer.trim()) flushBufferedLines(buffer);
 				finish(code ?? 0);
 			});
@@ -630,13 +734,15 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 						const remainingSec = Math.round(FLOW_TIME_BUDGET_WARNING_MS / 1000);
 						const warnMsg = `\n[Flow warning] ${remainingSec}s remaining before hard timeout. The agent should wrap up now.`;
 						result.stderr += warnMsg;
+						// Write to reminder file so the child agent sees it on its next bash call.
+						writeReminderFile(reminderFilePath, `[Flow warning] ${remainingSec}s remaining before hard timeout. Wrap up your work and output structured findings.`);
 						// Force an update so the parent UI shows the warning immediately.
 						emitUpdate();
 					}, warningMs);
 					warnTimer.unref();
 				}
 
-				// Final urge timer: stronger warning 30 s before hard timeout
+				// Final urge timer: stronger warning 45 s before hard timeout
 				const urgeMs = effectiveTimeout - FLOW_FINAL_URGE_MS;
 				if (urgeMs > 0) {
 					const urgeTimer = setTimeout(() => {
@@ -644,6 +750,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 						const remainingSec = Math.round(FLOW_FINAL_URGE_MS / 1000);
 						const urgeMsg = `\n[Flow warning] ${remainingSec}s remaining before hard timeout. Stop all work and output your structured findings.`;
 						result.stderr += urgeMsg;
+						// Write to reminder file so the child agent sees it on its next bash call.
+						writeReminderFile(reminderFilePath, `[Flow urge] ${remainingSec}s remaining before hard timeout. STOP all tool use and output your structured findings NOW.`);
 						emitUpdate();
 					}, urgeMs);
 					urgeTimer.unref();
@@ -692,6 +800,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		return normalized;
 	} finally {
 		cleanupFlowTempDir(forkSessionTmpDir);
+		cleanupFlowTempDir(reminderTmpDir);
 	}
 }
 
