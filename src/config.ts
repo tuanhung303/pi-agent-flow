@@ -9,9 +9,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
-import { getTierFlowNames } from "./agents.js";
+import { getTierFlowNames, type FlowTier } from "./agents.js";
 
-export type FlowTier = "lite" | "flash" | "full";
 
 export interface FlowModelTierConfig {
 	primary?: string;
