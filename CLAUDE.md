@@ -29,7 +29,7 @@ When the user asks to publish:
 ### Workflows
 
 | File | Trigger | Purpose |
-|------|---------|--------|
+|------|---------|---------|
 | `ci.yml` | PR / push to `main` | Runs `lint` + `test` |
 | `bump-version.yml` | `workflow_dispatch` (patch/minor/major) | Bumps version → commits → tags → pushes |
 | `publish.yml` | `workflow_dispatch` or push `v*` tag | Publishes to npm with provenance |
@@ -46,14 +46,14 @@ npm ls -g pi-agent-flow     # Verify link status
 
 Six flow-state prompts in `agents/`:
 
-| Flow | Tools | maxDepth | Notes |
-|------|-------|----------|-------|
-| `scout` | batch, bash, find, grep, ls | 0 | Discovery, surgical efficiency |
-| `architect` | batch, bash, find, grep, ls | 0 | Conservative design, may delegate to `[scout]` |
-| `code` | batch, bash, find, grep, ls | 0 | TDD workflow (red → green → refactor → verify) |
-| `debug` | batch, bash, find, grep, ls | 0 | Forensic investigation, evidence-only |
-| `review` | batch, bash, find, grep, ls | 0 | **Read-only audit** — reports only, no edits |
-| `brainstorm` | batch, bash | 0 | Clean slate, diverge → evaluate → recommend |
+| Flow | Tools | maxDepth | Tier | Notes |
+|------|-------|----------|------|-------|
+| `scout` | batch, bash, find, grep, ls | 0 | lite | Discovery, surgical efficiency |
+| `debug` | batch, bash, find, grep, ls | 0 | lite | Forensic investigation, evidence-only |
+| `build` | batch, bash, find, grep, ls | 0 | flash | Implement, test, verify, ship |
+| `craft` | batch, bash, find, grep, ls | 0 | full | Conservative design, may delegate to `[scout]` |
+| `audit` | batch, bash, find, grep, ls | 0 | flash | Audit security, quality, correctness; fix safe issues |
+| `ideas` | batch, bash | 0 | full | Clean slate, diverge → evaluate → recommend |
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 
@@ -63,3 +63,12 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 - **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`. Tags avoid CLI parsing conflicts (none start with `-`).
 - **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.
 - **Cycle prevention**: Blocks re-entering flows already in the ancestor stack.
+- **Session modes**: `fast` (300s), `default` (600s), `long` (900s), `extreme_long` (1200s). Defined in `session-mode.ts`.
+- **Two-stage timeout**: Parent-side warning at `effectiveTimeout - 2min`, final urge at `effectiveTimeout - 2m15s`, hard timeout + 90s reporting grace before SIGKILL. Deadline and grace env vars are propagated to children (`PI_FLOW_DEADLINE_MS`, `PI_FLOW_TOOL_SUMMARY_GRACE_MS`).
+- **Timeout reminder injection**: A reminder file (`PI_FLOW_REMINDER_FILE`) is written by the parent and read by the timed-bash wrapper so the child sees warnings before its next tool call.
+- **Graceful shutdown**: `SIGINT`/`SIGTERM` handlers on the parent propagate to all registered child process groups via `terminateAllChildGroups()`. `process.prependListener` is used so our handler runs before the host's cleanup.
+- **Structured output**: JSON schema injected at the end of the flow prompt when `structuredOutput` is true. Parsed by `extractStructuredOutput()` and mechanically enriched by `enrichStructuredOutputCommands()` which replaces paraphrased bash commands with verbatim tool-call args and attaches `executionTime` from the timed-bash wrapper.
+- **Flow-mode persistence**: `--flow-mode` writes `flowModelConfig` to global `settings.json` via atomic rename (`writeGlobalFlowMode`). Startup prints either concise (`mode: name | lite: model · flash: model · full: model`) or verbose format with per-tier flow-name labels.
+- **Transition matrix**: Data-driven post-flow routing in `transitions.ts`. Converted to hooks via `buildTransitionHooks()`. `autoTransition` (opt-in) queues qualifying follow-up flows automatically.
+- **Tool optimization**: When enabled, `getOptimizedTools()` strips legacy `read`/`write`/`edit` and injects `batch`. The parent sets active tools to `["batch_read", "flow"]`; children get `["batch", "bash"]` (or plus `flow` if they can delegate).
+- **Session snapshot sanitization**: `sanitizeForkSnapshot()` strips sliding prompts, reasoning artifacts, and compresses prior flow tool results into compact `CompressedFlowResult` context maps before forking.
