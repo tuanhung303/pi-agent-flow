@@ -12,8 +12,11 @@ import { type FlowConfig, discoverFlows, getFlowTier } from "./agents.js";
 import {
 	loadFlowModelConfigs,
 	loadFlowSettings,
+	loadProjectFlowModelConfigName,
+	normalizeFlowModeName,
 	resolveFlowModelCandidates,
 	selectFlowModelStrategy,
+	writeGlobalFlowMode,
 	type LoadedFlowModelConfigs,
 } from "./config.js";
 import { getInheritedCliArgs } from "./cli-args.js";
@@ -55,6 +58,12 @@ import {
 } from "./sliding-prompt.js";
 import { DEFAULT_TRANSITIONS, buildTransitionHooks } from "./transitions.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
+import {
+	DEFAULT_AGENT_SESSION_MODE,
+	PI_FLOW_SESSION_MODE_ENV,
+	parseAgentSessionMode,
+	type AgentSessionMode,
+} from "./session-mode.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -85,13 +94,23 @@ const FlowItem = Type.Object({
 	cwd: Type.Optional(
 		Type.String({ description: "Working directory override for this flow." }),
 	),
+	sessionMode: Type.Optional(
+		Type.Union([
+			Type.Literal("fast"),
+			Type.Literal("default"),
+			Type.Literal("long"),
+		], {
+			description: "Agent session budget for this flow: fast=300s, default=600s, long=900s. Use long only for large builds, broad refactors, full test runs, or complex debugging.",
+		}),
+	),
 });
 
 const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			'Example: { flow: [{ type: "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }, { type: "build", "intent": "Fix the bug in user registration", "aim": "Fix registration bug" }] }',
+			"Optional sessionMode selects the child-agent budget: fast=300s, default=600s, long=900s. " +
+			'Example: { flow: [{ type: "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "sessionMode": "fast" }, { type: "build", "intent": "Fix the bug in user registration", "aim": "Fix registration bug", "sessionMode": "long" }] }',
 		minItems: 1,
 	}),
 	confirmProjectFlows: Type.Optional(
@@ -634,6 +653,10 @@ export default function (pi: ExtensionAPI) {
 		description: "Named flow model strategy from settings.json flowModelConfigs.",
 		type: "string",
 	});
+	pi.registerFlag("flow-mode", {
+		description: "Persistently switch the global flow model strategy in ~/.pi/agent/settings.json.",
+		type: "string",
+	});
 	pi.registerFlag("flow-lite-model", {
 		description: "Model for lite-tier flows (scout, debug).",
 		type: "string",
@@ -648,6 +671,10 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.registerFlag("flow-max-concurrency", {
 		description: "Maximum number of flows to execute in parallel (default: 4).",
+		type: "string",
+	});
+	pi.registerFlag("flow-session-mode", {
+		description: "Default child-flow session mode: fast (300s), default (600s), or long (900s).",
 		type: "string",
 	});
 	pi.registerFlag("auto-transition", {
@@ -669,6 +696,7 @@ export default function (pi: ExtensionAPI) {
 	let structuredOutput = true;
 	let maxConcurrency = 4;
 	let autoTransition = false;
+	let defaultSessionMode: AgentSessionMode = DEFAULT_AGENT_SESSION_MODE;
 	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
 	if (envToolOptimize !== undefined) {
 		const parsed = parseBoolean(envToolOptimize);
@@ -681,39 +709,96 @@ export default function (pi: ExtensionAPI) {
 		configs: { default: {} },
 		strategy: {},
 	};
+	let activeRuntimeFlowMode: string | undefined;
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
 		const discovery = discoverFlows(ctx.cwd, "all");
 		discoveredFlows = discovery.flows;
 		loadedFlowModelConfigs = loadFlowModelConfigs(ctx.cwd);
+		activeRuntimeFlowMode = undefined;
+
+		const requestedFlowMode = normalizeFlowModeName(pi.getFlag("flow-mode"));
+		if (requestedFlowMode !== undefined) {
+			if (!Object.prototype.hasOwnProperty.call(loadedFlowModelConfigs.configs, requestedFlowMode)) {
+				const availableModes = Object.keys(loadedFlowModelConfigs.configs).sort().join(", ") || "(none)";
+				console.warn(
+					`[pi-agent-flow] Cannot switch flow mode to "${requestedFlowMode}"; no flowModelConfigs.${requestedFlowMode} strategy was found. Available modes: ${availableModes}.`,
+				);
+			} else {
+				try {
+					const writeResult = writeGlobalFlowMode(requestedFlowMode);
+					console.warn(`[pi-agent-flow] Flow mode switched to "${requestedFlowMode}" in ${writeResult.path}.`);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					console.warn(`[pi-agent-flow] ${message}`);
+				}
+
+				const projectFlowModelConfig = loadProjectFlowModelConfigName(ctx.cwd);
+				if (projectFlowModelConfig !== undefined && projectFlowModelConfig !== requestedFlowMode) {
+					console.warn(
+						`[pi-agent-flow] Switched global flow mode to "${requestedFlowMode}"; this project selects "${projectFlowModelConfig}" in .pi/settings.json, so future runs in this project may still use "${projectFlowModelConfig}" unless project settings are changed.`,
+					);
+				}
+
+				activeRuntimeFlowMode = requestedFlowMode;
+				loadedFlowModelConfigs = selectFlowModelStrategy(loadedFlowModelConfigs.configs, requestedFlowMode);
+			}
+		}
 
 		// Register declarative transition hooks from the transition matrix
 		for (const hook of buildTransitionHooks(DEFAULT_TRANSITIONS)) {
 			registerHook(hook);
 		}
 
+		const flowSettings = loadFlowSettings(ctx.cwd);
+		if (typeof flowSettings.structuredOutput === "boolean") {
+			structuredOutput = flowSettings.structuredOutput;
+		}
+		if (typeof flowSettings.maxConcurrency === "number") {
+			maxConcurrency = flowSettings.maxConcurrency;
+		}
+		if (typeof flowSettings.autoTransition === "boolean") {
+			autoTransition = flowSettings.autoTransition;
+		}
+
 		// Resolve toolOptimize: CLI flag > env var > settings.json > default
 		const cliFlag = pi.getFlag("tool-optimize");
+		if (typeof flowSettings.toolOptimize === "boolean") {
+			toolOptimize = flowSettings.toolOptimize;
+		}
+		if (envToolOptimize !== undefined) {
+			const parsed = parseBoolean(envToolOptimize);
+			if (parsed !== null) toolOptimize = parsed;
+		}
 		if (typeof cliFlag === "boolean") {
 			toolOptimize = cliFlag;
 		} else if (typeof cliFlag === "string") {
 			const parsed = parseBoolean(cliFlag);
 			if (parsed !== null) toolOptimize = parsed;
-		} else {
-			const flowSettings = loadFlowSettings(ctx.cwd);
-			if (typeof flowSettings.toolOptimize === "boolean") {
-				toolOptimize = flowSettings.toolOptimize;
+		}
+
+		// Resolve sessionMode: CLI flag > env var > settings.json > default
+		defaultSessionMode = flowSettings.sessionMode ?? DEFAULT_AGENT_SESSION_MODE;
+		const envSessionModeRaw = process.env[PI_FLOW_SESSION_MODE_ENV];
+		if (envSessionModeRaw !== undefined) {
+			const envSessionMode = parseAgentSessionMode(envSessionModeRaw);
+			if (envSessionMode !== undefined) {
+				defaultSessionMode = envSessionMode;
+			} else {
+				console.warn(`[pi-agent-flow] Ignoring invalid ${PI_FLOW_SESSION_MODE_ENV}="${envSessionModeRaw}". Expected fast, default, or long.`);
 			}
-			if (typeof flowSettings.structuredOutput === "boolean") {
-				structuredOutput = flowSettings.structuredOutput;
+		}
+		const cliSessionModeRaw = pi.getFlag("flow-session-mode");
+		if (typeof cliSessionModeRaw === "string") {
+			const cliSessionMode = parseAgentSessionMode(cliSessionModeRaw);
+			if (cliSessionMode !== undefined) {
+				defaultSessionMode = cliSessionMode;
+			} else {
+				console.warn(`[pi-agent-flow] Ignoring invalid --flow-session-mode value "${cliSessionModeRaw}". Expected fast, default, or long.`);
 			}
-			if (typeof flowSettings.maxConcurrency === "number") {
-				maxConcurrency = flowSettings.maxConcurrency;
-			}
-			if (typeof flowSettings.autoTransition === "boolean") {
-				autoTransition = flowSettings.autoTransition;
-			}
+		} else if (inheritedCliArgs.flowSessionMode !== undefined) {
+			defaultSessionMode = inheritedCliArgs.flowSessionMode;
 		}
 
 		// Resolve maxConcurrency: CLI flag > env var > settings.json > default
@@ -908,7 +993,8 @@ flow [type] accomplished
 				"You MUST enter to the following flow states, with tool call method.",
 				"",
 				"Flow states are isolated \u03c0 processes with forked session snapshots. They run in parallel.",
-				'Invoke: { "flow": [{ "type": "scout", "intent": "..." }, ...] }',
+				'Invoke: { "flow": [{ "type": "scout", "intent": "...", "aim": "...", "sessionMode": "default" }, ...] }',
+				"Session modes: fast=300s, default=600s, long=900s. Use long only when the work genuinely needs the larger budget.",
 				"States: scout, debug, build, craft, audit, ideas.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
@@ -953,10 +1039,11 @@ flow [type] accomplished
 						loadedFlowModelConfigs,
 						maxConcurrency,
 						autoTransition,
+						defaultSessionMode,
 						signal,
 						onUpdate,
 						makeDetails,
-						getFlag: (name: string) => pi.getFlag(name),
+						getFlag: (name: string) => name === "flow-mode" ? activeRuntimeFlowMode : pi.getFlag(name),
 						tierOverrideResolver: getTierOverride,
 						fallbackModel: inheritedCliArgs.fallbackModel,
 						forkSessionSnapshotJsonl,
@@ -968,7 +1055,7 @@ flow [type] accomplished
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
 					},
-					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, cwd: f.cwd })),
+					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, cwd: f.cwd, sessionMode: f.sessionMode })),
 					toolCallId,
 				);
 

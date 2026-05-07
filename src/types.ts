@@ -122,6 +122,10 @@ export interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	sawAgentEnd?: boolean;
+	/** Epoch ms when flow execution started; used for live countdown rendering. */
+	startedAtMs?: number;
+	/** Epoch ms when the flow hard timeout occurs; used for live countdown rendering. */
+	deadlineAtMs?: number;
 	/** Live in-progress text for status rendering; not part of the final flow report. */
 	streamingText?: string;
 	/** Structured JSON output parsed from the flow's final response. */

@@ -43,6 +43,10 @@ function formatTps(value: number | undefined): string {
 	return value.toFixed(1).padStart(5);
 }
 
+export function formatCompactTokenPair(usage: Partial<UsageStats>): string {
+	return `↑ ${formatFixedTokens(usage.input || 0)} · ↓ ${formatFixedTokens(usage.output || 0)}`;
+}
+
 export function formatCompactStats(usage: Partial<UsageStats>, model?: string, maxWidth?: number): string {
 	const parts: string[] = [];
 	parts.push(`↑ ${formatFixedTokens(usage.input || 0)}`);
@@ -70,6 +74,13 @@ export function formatCompactStats(usage: Partial<UsageStats>, model?: string, m
 	}
 
 	return result;
+}
+
+export function formatCountdown(ms: number): string {
+	const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 /** Regex matching ANSI escape sequences. */

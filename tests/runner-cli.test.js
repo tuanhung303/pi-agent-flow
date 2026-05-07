@@ -101,6 +101,34 @@ describe("parseFlowCliArgs", () => {
     expect(result.flowModelConfig).toBe("balanced");
   });
 
+  it("extracts --flow-mode without proxying it", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-mode", "mimo"]);
+    expect(result.flowMode).toBe("mimo");
+    expect(result.alwaysProxy).not.toContain("--flow-mode");
+    expect(result.alwaysProxy).not.toContain("mimo");
+  });
+
+  it("extracts --flow-mode with equals syntax", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-mode=mimo"]);
+    expect(result.flowMode).toBe("mimo");
+    expect(result.alwaysProxy).not.toContain("--flow-mode");
+  });
+
+  it("extracts --flow-session-mode", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-session-mode", "long"]);
+    expect(result.flowSessionMode).toBe("long");
+  });
+
+  it("extracts --flow-session-mode with equals syntax", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-session-mode=fast"]);
+    expect(result.flowSessionMode).toBe("fast");
+  });
+
+  it("rejects invalid --flow-session-mode values", () => {
+    const result = parseFlowCliArgs(["node", "script", "--flow-session-mode", "900"]);
+    expect(result.flowSessionMode).toBeUndefined();
+  });
+
   it("extracts tiered models with equals syntax", () => {
     const result = parseFlowCliArgs([
       "node", "script",

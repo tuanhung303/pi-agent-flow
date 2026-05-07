@@ -1,0 +1,33 @@
+import { describe, it, expect } from "vitest";
+import {
+	AGENT_SESSION_TIMEOUTS_MS,
+	DEFAULT_AGENT_SESSION_MODE,
+	MAX_AGENT_SESSION_TIMEOUT_MS,
+	getAgentSessionTimeoutMs,
+	parseAgentSessionMode,
+	resolveAgentSessionMode,
+} from "../src/session-mode.js";
+
+describe("agent session modes", () => {
+	it("defines fast/default/long budgets with default at 600s and long capped at 900s", () => {
+		expect(DEFAULT_AGENT_SESSION_MODE).toBe("default");
+		expect(AGENT_SESSION_TIMEOUTS_MS).toEqual({
+			fast: 300_000,
+			default: 600_000,
+			long: 900_000,
+		});
+		expect(getAgentSessionTimeoutMs("long")).toBe(MAX_AGENT_SESSION_TIMEOUT_MS);
+	});
+
+	it("parses modes case-insensitively and rejects arbitrary timeout values", () => {
+		expect(parseAgentSessionMode("FAST")).toBe("fast");
+		expect(parseAgentSessionMode(" default ")).toBe("default");
+		expect(parseAgentSessionMode("900")).toBeUndefined();
+		expect(parseAgentSessionMode("extra-long")).toBeUndefined();
+	});
+
+	it("falls back to the provided default for invalid values", () => {
+		expect(resolveAgentSessionMode("bad", "fast")).toBe("fast");
+		expect(resolveAgentSessionMode(undefined)).toBe("default");
+	});
+});
