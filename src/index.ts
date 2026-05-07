@@ -100,8 +100,9 @@ const FlowItem = Type.Object({
 			Type.Literal("fast"),
 			Type.Literal("default"),
 			Type.Literal("long"),
+			Type.Literal("extreme_long"),
 		], {
-			description: "Agent session budget for this flow: fast=300s, default=600s, long=900s. Use long only for large builds, broad refactors, full test runs, or complex debugging.",
+			description: "Agent session budget for this flow: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
 		}),
 	),
 });
@@ -110,7 +111,7 @@ const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			"Optional sessionMode selects the child-agent budget: fast=300s, default=600s, long=900s. " +
+			"Optional sessionMode selects the child-agent budget: fast=300s, default=600s, long=900s, extreme_long=1200s. " +
 			'Example: { flow: [{ type: "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "sessionMode": "fast" }, { type: "build", "intent": "Fix the bug in user registration", "aim": "Fix registration bug", "sessionMode": "long" }] }',
 		minItems: 1,
 	}),
@@ -933,6 +934,14 @@ flow [type] accomplished
 
 ### Guards
 - Depth: ${currentDepth}/${maxDepth} | Cycles: ${preventCycles ? "blocked" : "off"} | Stack: ${ancestorFlowStack.length > 0 ? ancestorFlowStack.join(" -> ") : "(root)"}
+
+### Shared Context
+Child flows fork your session automatically:
+
+- They receive a sanitized snapshot of your conversation — files read, commands run, prior flow results.
+- Prior flow tool results are **compressed** into compact summaries (files touched, commands used, status).
+- Write 'intent' as a **forward-looking mission** — reference what the child already sees, don't re-describe it.
+- Set inheritContext: false in a custom flow's front-matter to start with a **clean slate** (no inherited context).
 `,
 		};
 	});
@@ -997,7 +1006,7 @@ flow [type] accomplished
 				"",
 				"Flow states are isolated \u03c0 processes with forked session snapshots. They run in parallel.",
 				'Invoke: { "flow": [{ "type": "scout", "intent": "...", "aim": "...", "sessionMode": "default" }, ...] }',
-				"Session modes: fast=300s, default=600s, long=900s. Use long only when the work genuinely needs the larger budget.",
+				"Session modes: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
 				"States: scout, debug, build, craft, audit, ideas.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),

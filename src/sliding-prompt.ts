@@ -22,6 +22,7 @@ export const SLIDING_PROMPT =
 	`You are operating with pi-agent-flow routing.\n` +
 	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
 	`For git, bash, CLI, or terminal tasks, delegate to [build].\n` +
+	`Child flows inherit your session context — write intents that focus on new work rather than restating what the child already sees.\n` +
 	`${SLIDING_PROMPT_CLOSE_TAG}`;
 
 const SLIDING_PROMPT_RE = new RegExp(
