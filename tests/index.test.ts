@@ -835,9 +835,9 @@ describe("flow tool execute", () => {
 
 		expect(JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf-8")).flowModelConfig).toBe("mimo");
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Flow mode switched to "mimo"'));
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("lite → primary: mimo-lite"));
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("flash → (not configured)"));
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("full → (not configured)"));
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("lite (scout, debug) → primary: mimo-lite"));
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("flash (build, audit) → (not configured)"));
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("full (ideas, craft) → (not configured)"));
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('this project selects "quality"'));
 
 		const tool = pi.getTool("flow");
