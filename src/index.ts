@@ -41,7 +41,7 @@ import {
 	getFlowOutput,
 } from "./types.js";
 import { extractStructuredOutput } from "./structured-output.js";
-import { createBatchTool, createBatchReadTool } from "./batch.js";
+import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBashPollTool } from "./batch.js";
 import {
 	createWebTool,
 	looksLikeUrlPrompt,
@@ -634,7 +634,7 @@ function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, Compre
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch_read", "flow"]
+		? ["batch_read", "batch", "batch_bash_poll", "flow"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
@@ -842,9 +842,13 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Register batch and batch_read so they are available for main agent and child flows.
+		// The bashProcessTracker is shared between the batch tool (launches bash ops)
+		// and the batch_bash_poll tool (checks on pending bash ops).
 		if (toolOptimize) {
+			const bashTracker = new BashProcessTracker();
 			pi.registerTool(createBatchReadTool());
-			pi.registerTool(createBatchTool());
+			pi.registerTool(createBatchTool(bashTracker));
+			pi.registerTool(createBatchBashPollTool(bashTracker));
 		}
 
 		// Override built-in bash with timed wrapper so the LLM sees execution-time classification.
