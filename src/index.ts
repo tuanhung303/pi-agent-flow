@@ -23,7 +23,6 @@ import {
 import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { getFlowSummaryText } from "./runner-events.js";
-import { runHooks, runHooksDetailed, getRegisteredHooks, registerHook, unregisterHook } from "./hooks.js";
 import { mapFlowConcurrent, runFlow, terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
 import {
@@ -33,7 +32,6 @@ import {
 	type FlowMetrics,
 	type FileEntry,
 	type CommandEntry,
-	type AutoTransition,
 	type PiAgentFlowAPI,
 	emptyFlowUsage,
 	isFlowError,
@@ -57,7 +55,7 @@ import {
 	stripSlidingPromptsFromMessages,
 	makeSlidingPromptMessage,
 } from "./sliding-prompt.js";
-import { DEFAULT_TRANSITIONS, buildTransitionHooks } from "./transitions.js";
+
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {
 	DEFAULT_AGENT_SESSION_MODE,
@@ -679,10 +677,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Default child-flow session mode: fast (300s), default (600s), or long (900s).",
 		type: "string",
 	});
-	pi.registerFlag("auto-transition", {
-		description: "Automatically queue follow-up flows based on hook transitions (default: false).",
-		type: "boolean",
-	});
+
 	pi.registerFlag("tool-optimize", {
 		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
 		type: "boolean",
@@ -697,7 +692,7 @@ export default function (pi: ExtensionAPI) {
 	// structuredOutput: settings.json > default (true)
 	let structuredOutput = true;
 	let maxConcurrency = 4;
-	let autoTransition = false;
+
 	let defaultSessionMode: AgentSessionMode = DEFAULT_AGENT_SESSION_MODE;
 	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
 	if (envToolOptimize !== undefined) {
@@ -712,6 +707,7 @@ export default function (pi: ExtensionAPI) {
 		strategy: {},
 	};
 	let activeRuntimeFlowMode: string | undefined;
+	let bashTracker: BashProcessTracker | undefined;
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
@@ -750,11 +746,6 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Register declarative transition hooks from the transition matrix
-		for (const hook of buildTransitionHooks(DEFAULT_TRANSITIONS)) {
-			registerHook(hook);
-		}
-
 		const flowSettings = loadFlowSettings(ctx.cwd);
 		if (typeof flowSettings.structuredOutput === "boolean") {
 			structuredOutput = flowSettings.structuredOutput;
@@ -762,9 +753,7 @@ export default function (pi: ExtensionAPI) {
 		if (typeof flowSettings.maxConcurrency === "number") {
 			maxConcurrency = flowSettings.maxConcurrency;
 		}
-		if (typeof flowSettings.autoTransition === "boolean") {
-			autoTransition = flowSettings.autoTransition;
-		}
+
 
 		// Resolve toolOptimize: CLI flag > env var > settings.json > default
 		const cliFlag = pi.getFlag("tool-optimize");
@@ -824,15 +813,7 @@ export default function (pi: ExtensionAPI) {
 			if (hwConcurrency > 0) maxConcurrency = Math.min(maxConcurrency, hwConcurrency);
 		}
 
-		// Resolve autoTransition: CLI flag > settings.json > default
-		const cliAutoTransition = pi.getFlag("auto-transition");
-		if (typeof cliAutoTransition === "boolean") {
-			autoTransition = cliAutoTransition;
-		} else if (typeof cliAutoTransition === "string") {
-			const parsed = parseBoolean(cliAutoTransition);
-			if (parsed !== null) autoTransition = parsed;
-		
-		}
+
 
 		// Only restrict tools for the main orchestrator (depth 0).
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
@@ -1054,7 +1035,7 @@ Child flows fork your session automatically:
 						cwd: ctx.cwd,
 						loadedFlowModelConfigs,
 						maxConcurrency,
-						autoTransition,
+
 						defaultSessionMode,
 						signal,
 						onUpdate,
@@ -1095,12 +1076,10 @@ Child flows fork your session automatically:
 	// Emit a ready event with the API surface so external plugins can extend.
 	// Emit a typed plugin API surface
 	const pluginApi: PiAgentFlowAPI = {
-		registerHook,
-		unregisterHook,
-		getRegisteredHooks,
+	
 		discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
 		getFlowTier: (name: string) => getFlowTier(name),
-		getSettings: () => ({ toolOptimize, structuredOutput, maxConcurrency, autoTransition }),
+		getSettings: () => ({ toolOptimize, structuredOutput, maxConcurrency }),
 	};
 
 	if (typeof pi.emit === "function") {
@@ -1116,17 +1095,22 @@ Child flows fork your session automatically:
 
 		// Propagate signals to child process groups so sub-agents don't become orphans.
 		// We use prependListener so our handler runs first, before the host's cleanup.
-		process.prependListener("SIGINT", terminateAllChildGroups);
-		process.prependListener("SIGTERM", terminateAllChildGroups);
-
-		// Also handle the 'exit' event, which fires when the host calls process.exit().
-		const emitShutdown = () => {
+		const shutdown = () => {
+			// First, abort any pending bash operations tracked by the batch tool.
+			if (bashTracker) {
+				try { bashTracker.abortAll(); } catch { /* best-effort */ }
+			}
 			terminateAllChildGroups();
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}
 		};
-		process.on("exit", emitShutdown);
+
+		process.prependListener("SIGINT", shutdown);
+		process.prependListener("SIGTERM", shutdown);
+
+		// Also handle the 'exit' event, which fires when the host calls process.exit().
+		process.on("exit", shutdown);
 	}
 
 }
