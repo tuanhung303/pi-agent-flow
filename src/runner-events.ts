@@ -300,45 +300,10 @@ function updateAssistantMetadata(result: { model?: string; stopReason?: string; 
 	if (message.errorMessage) result.errorMessage = message.errorMessage;
 }
 
-// Reasoning/thinking part types to strip from flow results
-const REASONING_PART_TYPES = new Set([
-	"thinking",
-	"reasoning",
-	"reasoning_content",
-	"reasoningContent",
-]);
+// Canonical reasoning stripping imported from ./reasoning-strip.js
+import { stripReasoningFromAssistantMessage as stripReasoning } from "./reasoning-strip.js";
 
-interface MessagePart {
-	type: string;
-	text?: string;
-}
 
-/**
- * Strip thinking/reasoning content from assistant messages.
- * Removes top-level thinking/reasoning fields and filters content parts.
- * Preserves text, toolCall, and other non-reasoning parts.
- */
-function stripReasoningFromMessage(message: AssistantMessage): AssistantMessage {
-	if (!message || message.role !== "assistant") return message;
-
-	const sanitized: AssistantMessage = { ...message };
-
-	// Remove top-level reasoning fields
-	delete (sanitized as Record<string, unknown>).thinking;
-	delete (sanitized as Record<string, unknown>).thinkingSignature;
-	delete (sanitized as Record<string, unknown>).reasoning;
-	delete (sanitized as Record<string, unknown>).reasoning_content;
-	delete (sanitized as Record<string, unknown>).reasoningContent;
-
-	// Filter out reasoning parts from content array
-	if (Array.isArray(sanitized.content)) {
-		sanitized.content = (sanitized.content as MessagePart[]).filter(
-			(part) => !REASONING_PART_TYPES.has(part?.type),
-		);
-	}
-
-	return sanitized;
-}
 
 export interface FlowResult {
 	messages: Message[];
@@ -367,7 +332,7 @@ function addFlowAssistantMessage(result: FlowResult, message: AssistantMessage):
 	if (!message || message.role !== "assistant") return false;
 
 	// Strip reasoning/thinking from the message before storing
-	const sanitized = stripReasoningFromMessage(message);
+	const { message: sanitized } = stripReasoning(message);
 
 	updateAssistantMetadata(result, sanitized);
 

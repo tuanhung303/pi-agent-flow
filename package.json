@@ -3,15 +3,15 @@
   "version": "1.8.1",
   "description": "Flow-state delegation extension for Pi coding agent.",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "files": [
-    "src/",
+    "dist/",
     "agents/",
     "README.md"
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./dist/index.js"
     ]
   },
   "keywords": [
@@ -29,8 +29,10 @@
     "node": ">=20.19.0"
   },
   "scripts": {
+    "build": "tsc",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

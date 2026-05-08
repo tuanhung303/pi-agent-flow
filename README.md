@@ -55,14 +55,12 @@ pi install .
 - **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
 - **Persistent flow mode** — switch global model strategies with `--flow-mode`; written to `settings.json` and remembered across sessions
 - **Flow-mode notification** — concise (`mode: name | lite: model · flash: model · full: model`) or verbose (with per-tier flow-name labels) startup message
-- **Auto-transition** — opt-in automatic queuing of follow-up flows based on the declarative transition matrix
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
 - **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
 - **Sliding system prompt** — lightweight routing reminder injected before each user message, stripped from child snapshots to avoid duplication
 - **Session snapshot sanitization** — removes sliding prompts, reasoning/thinking artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
 - **Shared context inheritance** — child flows receive the parent's sanitized session automatically; write forward-looking intents and let the child pick up context from its inherited snapshot
 - **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
-- **Post-flow hooks** — automatic advisory messages suggesting follow-up flows (e.g., `build → audit`)
 - **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, live countdowns, and expanded view with full reports and tool traces
 - **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
 
@@ -254,7 +252,7 @@ Only include fields that have data. Omit empty arrays; missing array fields are 
 
 ---
 
-## Post-Flow Hooks & Auto-Transitions
+## Post-Flow Advisory Messages
 
 When certain flows complete, the system injects advisory messages suggesting follow-up flows. This keeps the agent on the optimal path without requiring the user to manually chain flows.
 
@@ -273,28 +271,7 @@ When certain flows complete, the system injects advisory messages suggesting fol
 | `craft` | `build` | success | Plan ready. Consider running a [build] flow to implement the design. |
 | `ideas` | `craft` | success | Ideas explored. Consider running a [craft] flow to design the approach, or [build] to implement directly. |
 
-Hooks are smart: if the agent already included the suggested flow in the same batch, the advisory is suppressed to avoid redundancy.
-
-### Auto-transition
-
-Enable `autoTransition: true` in `flowSettings` (or `--auto-transition`) to automatically queue follow-up flows without manual intervention. The system checks that the target flow exists, was not already requested, and would not create a cycle before queuing it.
-
-### Extending hooks
-
-Hooks are registered via `registerHook()` in `hooks.ts`. Each hook defines a trigger (flow type + success requirement) and an action that returns advisory text.
-
-Example — a custom `scout → craft` hook:
-
-```ts
-registerHook({
-  name: "my/scout-to-craft",
-  trigger: { flowTypes: ["scout"], onlyOnSuccess: true },
-  action: (ctx) => ({
-    content: "Consider running a [craft] flow to design a solution.",
-    priority: 10,
-  }),
-});
-```
+Advisories are smart: if the agent already included the suggested flow in the same batch, the advisory is suppressed to avoid redundancy.
 
 ---
 
@@ -429,7 +406,6 @@ You can also set flow runtime defaults under `flowSettings`:
     "maxConcurrency": 4,
     "toolOptimize": true,
     "structuredOutput": true,
-    "autoTransition": false
   }
 }
 ```
@@ -440,7 +416,6 @@ You can also set flow runtime defaults under `flowSettings`:
 | `maxConcurrency` | `4` | Maximum parallel flows (capped to CPU count) |
 | `toolOptimize` | `true` | Use unified `batch`/`batch_read` instead of separate read/write/edit |
 | `structuredOutput` | `true` | Inject JSON structured-output instructions into flow prompts |
-| `autoTransition` | `false` | Automatically queue follow-up flows based on the transition matrix |
 
 Session mode precedence is:
 
@@ -464,7 +439,6 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `--flow-max-concurrency [n]` | Maximum parallel flows | `4` |
 | `--tool-optimize` | Use unified `batch`/`batch_read` | `true` |
 | `--no-tool-optimize` | Disable tool optimization; use legacy read/write/edit | — |
-| `--auto-transition` | Automatically queue follow-up flows | `false` |
 | `--structured-output` | Inject structured JSON output instructions | `true` |
 | `--no-structured-output` | Disable structured output injection | — |
 
