@@ -12,6 +12,8 @@ export const SAFE_FULL_READ_LIMIT = 300;
 export const TARGETED_READ_LINE_LIMIT = 1000;
 export const MAX_CONTEXT_MAP_ENTRIES = 100;
 export const MAX_TOTAL_RESULT_LINES = 1500;
+export const BASH_SOFT_TIMEOUT_MS = 20_000;
+export const BASH_POLL_TAIL_LINES = 50;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,12 +25,15 @@ export interface EditReplacement {
 }
 
 export interface FileOpInput {
-	o: "read" | "write" | "edit" | "delete";
+	o: "read" | "write" | "edit" | "delete" | "bash";
 	p: string;
 	c?: string;
 	e?: EditReplacement[];
 	s?: number;
 	l?: number;
+	i?: string;
+	t?: number;
+	h?: string;
 }
 
 export interface ContextMapEntry {
@@ -40,9 +45,9 @@ export interface ContextMapEntry {
 }
 
 export interface OpResult {
-	op: "read" | "write" | "edit" | "delete";
+	op: "read" | "write" | "edit" | "delete" | "bash";
 	path: string;
-	status: "ok" | "error" | "skipped";
+	status: "ok" | "error" | "skipped" | "pending";
 	content?: string;
 	bytes?: number;
 	blocksChanged?: number;
@@ -56,6 +61,13 @@ export interface OpResult {
 	nextOffset?: number;
 	error?: string;
 	hint?: string;
+	id?: string;
+	command?: string;
+	exitCode?: number;
+	stdout?: string;
+	stderr?: string;
+	duration?: number;
+	timingTier?: string;
 }
 
 export interface ReadTruncationResult {
@@ -101,3 +113,16 @@ export type BatchTheme = {
 	bold: (s: string) => string;
 	bg: (color: string, text: string) => string;
 };
+
+export interface PendingBashResult {
+	id: string;
+	command: string;
+	status: "pending" | "completed";
+	exitCode?: number;
+	stdout?: string;
+	stderr?: string;
+	duration?: number;
+	timingTier?: string;
+}
+
+export type BashOpResult = OpResult;
