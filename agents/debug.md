@@ -3,6 +3,7 @@ name: debug
 description: Investigate logs, errors, stack traces, root causes
 tools: batch, bash, find, grep, ls
 maxDepth: 0
+tier: lite
 ---
 
 ## Mission
