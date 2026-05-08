@@ -634,7 +634,7 @@ function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, Compre
 
 function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch_read", "batch", "batch_bash_poll", "flow"]
+		? ["batch_read", "batch_bash_poll", "flow"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 
