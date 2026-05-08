@@ -1246,7 +1246,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "batch_bash_poll", "flow"]);
+		expect(calledWith).toEqual(["batch_read", "flow"]);
 	});
 
 	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
@@ -1297,7 +1297,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch_read", "batch_bash_poll", "flow"]);
+		expect(lastCall).toEqual(["batch_read", "flow"]);
 	});
 
 	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
@@ -1332,7 +1332,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "batch_bash_poll", "flow"]);
+		expect(calledWith).toEqual(["batch_read", "flow"]);
 	});
 
 	it("registers batch, batch_read, and batch_bash_poll globally; batch is registered but not active in main agent", async () => {
@@ -1348,9 +1348,9 @@ describe("main agent tool restriction", () => {
 		expect(pi.getTool("batch")).toBeDefined();
 		expect(pi.getTool("batch_bash_poll")).toBeDefined();
 
-		// Main agent active tools: batch_read + batch_bash_poll (batch registered but not active)
+		// Main agent active tools: batch_read + flow (batch and batch_bash_poll registered but not active)
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch_read", "batch_bash_poll", "flow"]);
+		expect(lastCall).toEqual(["batch_read", "flow"]);
 		expect(lastCall).not.toContain("web");
 	});
 
