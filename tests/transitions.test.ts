@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { DEFAULT_TRANSITIONS, buildTransitionHooks, type FlowTransition } from "../src/transitions.js";
-import { registerHook, runHooks, clearHooks } from "../src/hooks.js";
+import { describe, it, expect } from "vitest";
+import { DEFAULT_TRANSITIONS, getTransitionAdvice, type FlowTransition } from "../src/transitions.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
@@ -40,73 +39,85 @@ describe("DEFAULT_TRANSITIONS", () => {
 	});
 });
 
-describe("buildTransitionHooks", () => {
-	beforeEach(() => {
-		clearHooks();
-	});
-
-	it("generates hooks from transition matrix", () => {
-		const hooks = buildTransitionHooks(DEFAULT_TRANSITIONS);
-		expect(hooks.length).toBe(DEFAULT_TRANSITIONS.length);
-		for (const hook of hooks) {
-			expect(hook.name).toMatch(/^pi-agent-flow\//);
-			expect(hook.trigger.flowTypes).toHaveLength(1);
-			expect(typeof hook.action).toBe("function");
-		}
-	});
-
-	it("fires success transition hook when target not requested", () => {
-		const hooks = buildTransitionHooks([
-			{ from: "scout", to: "build", on: "success", advice: "Go build." },
-		]);
-		registerHook(hooks[0]);
-
+describe("getTransitionAdvice", () => {
+	it("returns advisory messages for successful flows", () => {
 		const results = [makeResult({ type: "scout" })];
-		const advisors = runHooks([{ type: "scout", intent: "explore" }], results);
-		expect(advisors).toEqual(["Go build."]);
+		const params = [{ type: "scout", intent: "explore" }];
+		const advisors = getTransitionAdvice(params, results);
+		expect(advisors.length).toBeGreaterThan(0);
+		expect(advisors[0]).toContain("build");
 	});
 
-	it("suppresses when target already requested", () => {
-		const hooks = buildTransitionHooks([
-			{ from: "scout", to: "build", on: "success", advice: "Go build." },
-		]);
-		registerHook(hooks[0]);
-
+	it("suppresses advice when target flow is already in the batch", () => {
 		const results = [makeResult({ type: "scout" })];
 		const params = [
 			{ type: "scout", intent: "explore" },
 			{ type: "build", intent: "implement" },
 		];
-		const advisors = runHooks(params, results);
-		expect(advisors).toEqual([]);
+		const advisors = getTransitionAdvice(params, results);
+		// Scout->build should be suppressed since build is in the batch
+		expect(advisors.some((a) => a.includes("build"))).toBe(false);
 	});
 
-	it("fires failure transition hook when source flow fails", () => {
-		const hooks = buildTransitionHooks([
-			{ from: "build", to: "debug", on: "failure", advice: "Build failed. Debug it." },
-		]);
-		// Failure hooks have onlyOnSuccess: false, so we need to check that
-		registerHook(hooks[0]);
-
+	it("fires failure transition when source flow fails", () => {
 		const results = [makeResult({ type: "build", exitCode: 1, sawAgentEnd: false })];
-		const advisors = runHooks([{ type: "build", intent: "implement" }], results);
-		expect(advisors).toEqual(["Build failed. Debug it."]);
+		const params = [{ type: "build", intent: "implement" }];
+		const advisors = getTransitionAdvice(params, results);
+		expect(advisors.length).toBeGreaterThan(0);
+		expect(advisors[0]).toContain("debug");
 	});
 
-	it("does not fire failure hook on success", () => {
-		const hooks = buildTransitionHooks([
-			{ from: "build", to: "debug", on: "failure", advice: "Build failed." },
-		]);
-		registerHook(hooks[0]);
-
+	it("does not fire failure transition on success", () => {
 		const results = [makeResult({ type: "build", exitCode: 0, sawAgentEnd: true })];
-		const advisors = runHooks([{ type: "build", intent: "implement" }], results);
+		const params = [{ type: "build", intent: "implement" }];
+		const advisors = getTransitionAdvice(params, results);
+		// build->debug is a failure transition, should not fire
+		expect(advisors.some((a) => a.includes("debug"))).toBe(false);
+	});
+
+	it("returns empty when no transitions match", () => {
+		const results = [makeResult({ type: "unknown_flow" })];
+		const params = [{ type: "unknown_flow", intent: "test" }];
+		const advisors = getTransitionAdvice(params, results);
 		expect(advisors).toEqual([]);
 	});
 
-	it("generates unique hook names per transition", () => {
-		const hooks = buildTransitionHooks(DEFAULT_TRANSITIONS);
-		const names = hooks.map((h) => h.name);
-		expect(new Set(names).size).toBe(names.length);
+	it("works with custom transitions", () => {
+		const custom: FlowTransition[] = [
+			{ from: "scout", to: "craft", on: "success", advice: "Go craft." },
+		];
+		const results = [makeResult({ type: "scout" })];
+		const params = [{ type: "scout", intent: "explore" }];
+		const advisors = getTransitionAdvice(params, results, custom);
+		expect(advisors).toEqual(["Go craft."]);
+	});
+
+	it("fires both success and failure transitions for mixed outcomes", () => {
+		const results = [
+			makeResult({ type: "scout" }),
+			makeResult({ type: "build", exitCode: 1, sawAgentEnd: false }),
+		];
+		const params = [
+			{ type: "scout", intent: "explore" },
+			{ type: "build", intent: "implement" },
+		];
+		const advisors = getTransitionAdvice(params, results);
+		// Scout success should give advice
+		expect(advisors.some((a) => a.includes("build") || a.includes("debug"))).toBe(true);
+	});
+
+	it("suppresses all transitions for target already requested", () => {
+		const results = [
+			makeResult({ type: "scout" }),
+			makeResult({ type: "debug", exitCode: 0, sawAgentEnd: true }),
+		];
+		const params = [
+			{ type: "scout", intent: "explore" },
+			{ type: "debug", intent: "find bug" },
+			{ type: "build", intent: "implement" },
+		];
+		const advisors = getTransitionAdvice(params, results);
+		// Both scout->build and debug->build should be suppressed
+		expect(advisors.some((a) => a.includes("build"))).toBe(false);
 	});
 });

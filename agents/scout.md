@@ -3,6 +3,7 @@ name: scout
 description: Discover files, trace code paths, map architecture
 tools: batch, bash, find, grep, ls
 maxDepth: 0
+tier: lite
 ---
 
 ## Mission

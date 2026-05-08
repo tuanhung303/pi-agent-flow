@@ -546,7 +546,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout    tps:");
+		expect(headerLine).toContain("scout · tps:");
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("↑ 46.7k");
 		expect(headerLine).not.toContain("↓  4.6k");
@@ -569,7 +569,7 @@ describe("activity panel rendering", () => {
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const firstHeaderLine = text.split("\n")[0];
-			expect(firstHeaderLine).toContain("├─ scout    tps:");
+			expect(firstHeaderLine).toContain("├─ scout · tps:");
 			expect(firstHeaderLine).not.toContain("ctx:");
 			expect(firstHeaderLine).not.toContain("↑ 46.7k");
 			expect(firstHeaderLine).not.toContain("↓  4.6k");
@@ -606,7 +606,7 @@ describe("activity panel rendering", () => {
 		);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("code     tps:");
+		expect(headerLine).toContain("code · tps:");
 		expect(text).toContain("aim:");
 		expect(text).toContain("Refactor auth module");
 		expect(text).toContain("↑     0");

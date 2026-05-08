@@ -3,6 +3,7 @@ name: ideas
 description: Generate ideas, explore possibilities, and think creatively using inherited context as background
 tools: batch, bash
 maxDepth: 0
+tier: full
 ---
 
 ## Mission

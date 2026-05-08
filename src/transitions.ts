@@ -1,18 +1,12 @@
 /**
- * Declarative transition matrix for post-flow routing.
+ * Declarative transition matrix for post-flow advisory messages.
  *
- * Instead of imperative hooks for common flow paths, this module defines a
- * data-driven transition map. Each entry describes a recommended follow-up
- * flow given a source flow's outcome. The matrix is user-overridable via
- * settings.json.
- *
- * NOTE: There is no confidence threshold gating. Non-deterministic agents
- * should not have unstable numeric params controlling execution flow.
- * All matching transitions are recommended; the caller decides whether to
- * auto-queue them.
+ * Defines a data-driven transition map. Each entry describes a recommended
+ * follow-up flow given a source flow's outcome. The matrix is used by
+ * getTransitionAdvice() to generate advisory strings.
  */
 
-import { type PostFlowHook, type AutoTransition, isFlowSuccess } from "./types.js";
+import { isFlowSuccess } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Transition descriptor
@@ -47,40 +41,44 @@ export const DEFAULT_TRANSITIONS: FlowTransition[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Hook generation
+// Advice generation
 // ---------------------------------------------------------------------------
 
 /**
- * Convert the transition matrix into PostFlowHook instances.
+ * Get advisory messages for completed flows based on the transition matrix.
  *
- * Each transition becomes a hook that checks:
+ * For each flow result, finds matching transitions where:
  *   1. The source flow type matches
- *   2. The target flow was not already requested
- *   3. The outcome matches the `on` condition
+ *   2. The outcome matches the `on` condition
+ *   3. The target flow was not already in the batch
+ *
+ * Returns advisory strings in matrix order.
  */
-export function buildTransitionHooks(transitions: FlowTransition[]): PostFlowHook[] {
-	return transitions.map((t) => ({
-		name: `pi-agent-flow/${t.from}-to-${t.to}-${t.on}`,
-		trigger: {
-			flowTypes: [t.from],
-			onlyOnSuccess: t.on === "success",
-		},
-		action: (ctx) => {
-			// Respect the on condition: success hooks only fire when all results
-			// succeeded; failure hooks only fire when at least one result failed.
-			const allSucceeded = ctx.results.every((r) => isFlowSuccess(r));
-			if (t.on === "success" && !allSucceeded) return null;
-			if (t.on === "failure" && allSucceeded) return null;
+export function getTransitionAdvice(
+	params: Array<{ type: string; intent: string }>,
+	results: Array<{ type: string; exitCode: number; stopReason?: string; sawAgentEnd?: boolean; messages: unknown[] }>,
+	transitions: FlowTransition[] = DEFAULT_TRANSITIONS,
+): string[] {
+	const requestedTypes = new Set(params.map((p) => p.type.toLowerCase()));
+	const advisors: string[] = [];
 
-			const alreadyRequested = ctx.params.some(
-				(p) => p.type.toLowerCase() === t.to,
-			);
-			if (alreadyRequested) return null;
+	for (const result of results) {
+		const resultType = result.type.toLowerCase();
+		const succeeded = isFlowSuccess(result as import("./types.js").SingleResult);
 
-			return {
-				content: t.advice,
-				priority: 10,
-			};
-		},
-	}));
+		for (const t of transitions) {
+			if (t.from.toLowerCase() !== resultType) continue;
+
+			// Check outcome condition
+			if (t.on === "success" && !succeeded) continue;
+			if (t.on === "failure" && succeeded) continue;
+
+			// Suppress if target already in the batch
+			if (requestedTypes.has(t.to.toLowerCase())) continue;
+
+			advisors.push(t.advice);
+		}
+	}
+
+	return advisors;
 }
