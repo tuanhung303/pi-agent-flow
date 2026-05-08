@@ -11,5 +11,18 @@ export {
 	createBatchReadTool,
 } from "./batch/index.js";
 
+export {
+	BashProcessTracker,
+	createBatchBashPollTool,
+	pollBatchBashResults,
+} from "./batch/index.js";
+
 export { suggestSimilarFiles } from "./batch/execute.js";
 export { isWithinDirectory } from "./batch/fuzzy-edit.js";
+
+export type {
+	BashOpResult,
+	PendingBashResult,
+	OpResult,
+	FileOpInput,
+} from "./batch/constants.js";

@@ -11,7 +11,7 @@ function shortenPath(p: string): string {
 	return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
-function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: string; e?: unknown[] }> {
+function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: string; e?: unknown[]; c?: string }> {
 	let rawOps: unknown[];
 	if (Array.isArray(args.o)) rawOps = args.o;
 	else if (Array.isArray(args.op)) rawOps = args.op;
@@ -25,7 +25,8 @@ function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: s
 			const opName = String(op.o ?? op.op ?? "?");
 			const opPath = String(op.p ?? op.path ?? "?");
 			const edits = Array.isArray(op.e) ? op.e : Array.isArray(op.edits) ? op.edits : undefined;
-			return { o: opName, p: opPath, e: edits };
+			const cmd = typeof op.c === "string" ? op.c : typeof op.command === "string" ? op.command : undefined;
+			return { o: opName, p: opPath, e: edits, c: cmd };
 		});
 }
 
@@ -35,11 +36,17 @@ function formatBatchCall(args: Record<string, unknown>): string {
 
 	const parts: string[] = [];
 	for (const op of ops) {
-		const shortPath = shortenPath(op.p);
-		if (op.o === "edit" && op.e && op.e.length > 1) {
-			parts.push(`edit ${shortPath} (${op.e.length} blocks)`);
+		if (op.o === "bash") {
+			const cmd = op.c ?? "?";
+			const display = cmd.length > 40 ? cmd.slice(0, 37) + "..." : cmd;
+			parts.push(`bash: ${display}`);
 		} else {
-			parts.push(`${op.o} ${shortPath}`);
+			const shortPath = shortenPath(op.p);
+			if (op.o === "edit" && op.e && op.e.length > 1) {
+				parts.push(`edit ${shortPath} (${op.e.length} blocks)`);
+			} else {
+				parts.push(`${op.o} ${shortPath}`);
+			}
 		}
 	}
 
