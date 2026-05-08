@@ -325,9 +325,10 @@ function renderFlowCollapsed(
 ): Container {
 	const container = new Container();
 	const maxWidth = process.stdout.columns ?? 80;
-	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true });
+	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
-	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", `· ${stats}`)}`;
+	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
+	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` ${modelLabel} - ` : " ")}${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
@@ -457,13 +458,14 @@ function renderActivityPanel(
 	for (let i = 0; i < results.length; i++) {
 		const r = results[i];
 		const isLast = i === results.length - 1;
-		const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true });
+		const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
 		const error = isFlowError(r);
 		const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", `· ${stats}`)}`;
+		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` ${modelLabel} - ` : " ")}${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}

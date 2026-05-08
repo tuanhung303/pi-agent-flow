@@ -420,6 +420,24 @@ describe("formatCompactStats", () => {
 		expect(result).toBe("tps:  42.3 · ctx: 21.0k · K2.6");
 	});
 
+	it("with skipContext omits context tokens from runtime parts", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
+		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true, skipContext: true });
+		expect(result).toBe("tps:  42.3 · K2.6");
+	});
+
+	it("with hideModel omits model name", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
+		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true, hideModel: true });
+		expect(result).toBe("tps:  42.3 · ctx: 21.0k");
+	});
+
+	it("with skipContext and hideModel shows only tps", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
+		const result = formatCompactStats(usage, undefined, undefined, { skipTokens: true, skipContext: true, hideModel: true });
+		expect(result).toBe("tps:  42.3");
+	});
+
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
@@ -528,8 +546,8 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout   · tps:");
-		expect(headerLine).toContain("ctx: 50.0k");
+		expect(headerLine).toContain("scout    tps:");
+		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("↑ 46.7k");
 		expect(headerLine).not.toContain("↓  4.6k");
 		expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Flow timed out after 600s.");
@@ -551,8 +569,8 @@ describe("activity panel rendering", () => {
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const firstHeaderLine = text.split("\n")[0];
-			expect(firstHeaderLine).toContain("├─ scout   · tps:");
-			expect(firstHeaderLine).toContain("ctx: 50.0k");
+			expect(firstHeaderLine).toContain("├─ scout    tps:");
+			expect(firstHeaderLine).not.toContain("ctx:");
 			expect(firstHeaderLine).not.toContain("↑ 46.7k");
 			expect(firstHeaderLine).not.toContain("↓  4.6k");
 			expect(text).toContain("aim: [00:45] - test aim");
@@ -588,13 +606,13 @@ describe("activity panel rendering", () => {
 		);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("code    · tps:");
+		expect(headerLine).toContain("code     tps:");
 		expect(text).toContain("aim:");
 		expect(text).toContain("Refactor auth module");
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
 		expect(text).toContain("tps:     -");
-		expect(text).toContain("ctx:     0");
+		expect(text).not.toContain("ctx:");
 		expect(text).toContain("Starting...");
 	});
 

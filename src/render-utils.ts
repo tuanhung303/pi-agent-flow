@@ -51,13 +51,16 @@ export function formatCompactStats(
 	usage: Partial<UsageStats>,
 	model?: string,
 	maxWidth?: number,
-	options: { skipTokens?: boolean } = {},
+	options: { skipTokens?: boolean; skipContext?: boolean; hideModel?: boolean } = {},
 ): string {
 	const tokenParts = [`↑ ${formatFixedTokens(usage.input || 0)}`, `↓ ${formatFixedTokens(usage.output || 0)}`];
-	const runtimeParts = [`tps: ${formatTps(usage.smoothedTps)}`, `ctx: ${formatFixedTokens(usage.contextTokens || 0)}`];
+	let runtimeParts = [`tps: ${formatTps(usage.smoothedTps)}`];
+	if (!options.skipContext) {
+		runtimeParts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
+	}
 	const parts = options.skipTokens ? runtimeParts : [...tokenParts, ...runtimeParts];
 
-	const displayModel = model ? model.replace(/^[^/]+\//, "") : undefined;
+	const displayModel = options.hideModel ? undefined : (model ? model.replace(/^[^/]+\//, "") : undefined);
 	let result = parts.join(" · ") + (displayModel ? ` · ${displayModel}` : "");
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first.
