@@ -7,7 +7,7 @@
 
 import { Type } from "@sinclair/typebox";
 import type { BatchTheme, FileOpInput } from "./constants.js";
-import { SAFE_FULL_READ_LIMIT, TARGETED_READ_LINE_LIMIT } from "./constants.js";
+import { SAFE_FULL_READ_LIMIT, TARGETED_READ_LINE_LIMIT, BASH_SOFT_TIMEOUT_MS } from "./constants.js";
 import { executeOperations, suggestSimilarFiles } from "./execute.js";
 import { expandTilde, isWithinDirectory } from "./fuzzy-edit.js";
 import {
@@ -15,6 +15,15 @@ import {
 	renderBatchReadCall,
 	renderBatchResult,
 } from "./render.js";
+import {
+	type BashProcessTracker,
+	generateBashId,
+	normalizeBashOp,
+	executeBatchBash,
+} from "./batch-bash.js";
+
+// Re-export polling tool factory and tracker from batch-bash
+export { BashProcessTracker, createBatchBashPollTool, pollBatchBashResults } from "./batch-bash.js";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -34,12 +43,13 @@ const FileOp = Type.Object({
 		Type.Literal("write"),
 		Type.Literal("edit"),
 		Type.Literal("delete"),
+		Type.Literal("bash"),
 	]),
-	p: Type.String({ description: "Path to the file (relative or absolute)" }),
+	p: Type.String({ description: "Path to the file (relative or absolute). Use 'bash' or any string for o: 'bash'." }),
 	c: Type.Optional(
 		Type.String({
 			description:
-				"Full file content. Creates if new, overwrites if exists. Auto-creates parent dirs. Used with o: 'write'.",
+				"File content for o: 'write'. Shell command for o: 'bash'.",
 		}),
 	),
 	e: Type.Optional(
@@ -62,12 +72,28 @@ const FileOp = Type.Object({
 				"Maximum number of lines to read (limit). Used with o: 'read'.",
 		}),
 	),
+	i: Type.Optional(
+		Type.String({
+			description: "Unique ID for this bash operation. Auto-generated if omitted. Used with o: 'bash'.",
+		}),
+	),
+	t: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			description: `Soft timeout in ms. Default: ${BASH_SOFT_TIMEOUT_MS}. Command keeps running after timeout; returns partial output with pending status. Used with o: 'bash'.`,
+		}),
+	),
+	h: Type.Optional(
+		Type.String({
+			description: "Working directory override for this command. Used with o: 'bash'.",
+		}),
+	),
 });
 
 export const WeavePatchParams = Type.Object({
 	o: Type.Array(FileOp, {
 		description:
-			"Ordered list of file operations. Executed sequentially. On failure, remaining operations are skipped.",
+			"Ordered list of operations. File ops (read/write/edit/delete) execute sequentially — on failure, remaining file ops are skipped. Bash ops (bash) run in parallel after file ops complete and do not skip each other on failure.",
 	}),
 });
 
@@ -107,6 +133,11 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 
 	// Map operation type
 	op.o = raw.o ?? raw.op ?? (raw.c != null || raw.content != null ? "write" : (raw.e != null || raw.edits != null ? "edit" : "read"));
+
+	// Bash ops use a separate normalizer
+	if (op.o === "bash") {
+		return normalizeBashOp(raw);
+	}
 
 	// Map path
 	op.p = raw.p ?? raw.path;
@@ -298,22 +329,32 @@ export function createBatchReadTool() {
 	};
 }
 
-export function createBatchTool() {
+/**
+ * Create the batch tool.
+ *
+ * @param bashTracker Optional BashProcessTracker for executing bash operations.
+ *   When omitted, bash ops return an error. Both the batch tool and the
+ *   batch_bash_poll tool must share the same tracker instance.
+ */
+export function createBatchTool(bashTracker?: BashProcessTracker) {
 	return {
 		name: "batch",
 		label: "batch",
 		description: [
-			"Batch file operations — run multiple read, write, edit, or delete ops in a single call.",
-			"Each operation is independent: edits are matched against the current on-disk file, not against prior operations in the same call.",
-			"Operations execute sequentially in array order; on failure, remaining operations are skipped.",
+			"Batch operations — run multiple file ops (read/write/edit/delete) and bash commands in a single call.",
+			"Each file operation is independent: edits are matched against the current on-disk file, not against prior operations in the same call.",
+			"File operations execute sequentially in array order; on failure, remaining file operations are skipped.",
+			"Bash operations (o: 'bash') run in parallel after all file ops complete. Bash ops do NOT skip each other on failure.",
+			`Bash ops use c (command), i (id), t (timeout, default ${BASH_SOFT_TIMEOUT_MS}ms), h (cwd). Commands exceeding the soft timeout return "pending" status with last 50 lines of output; poll with batch_bash_poll.`,
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
 			"Best for cross-cutting changes, multi-file refactors, or mixing reads with writes across several files.",
 		].join("\n"),
-		promptSnippet: "Batch file operations — run multiple read/write/edit/delete ops in one call",
+		promptSnippet: "Batch operations — run multiple file ops and bash commands in one call",
 		promptGuidelines: [
-			"Use batch to perform multiple file operations in a single call rather than separate tool calls.",
-			"Prefer batch when touching 2+ files or mixing creates, edits, reads, and deletes.",
-			"Each operation is independent — edits match the on-disk file, not prior ops in the same call.",
+			"Use batch to perform multiple file operations and bash commands in a single call.",
+			"Prefer batch when touching 2+ files, mixing creates/edits/reads/deletes, or running shell commands.",
+			"Each file operation is independent — edits match the on-disk file, not prior ops in the same call.",
+			"Bash ops run in parallel. Use i (id) to track them. Use batch_bash_poll to check on pending commands.",
 			"For single-file edits, the edit tool is fine; batch shines for cross-cutting and multi-file work.",
 		],
 		parameters: WeavePatchParams,
@@ -349,11 +390,100 @@ export function createBatchTool() {
 				};
 			}
 
-			const { contentText, results } = await executeOperations(ops, ctx.cwd, signal);
+			// Split ops into file ops and bash ops
+			const fileOps: FileOpInput[] = [];
+			const bashOps: FileOpInput[] = [];
+			for (const op of ops) {
+				if (op.o === "bash") {
+					bashOps.push(op);
+				} else {
+					fileOps.push(op);
+				}
+			}
+
+			// Execute file ops first (sequential, skip-on-failure)
+			let fileContentText = "";
+			let fileResults: import("./constants.js").OpResult[] = [];
+			let fileFailed = false;
+
+			if (fileOps.length > 0) {
+				const fileOutput = await executeOperations(fileOps, ctx.cwd, signal);
+				fileContentText = fileOutput.contentText;
+				fileResults = fileOutput.results;
+				fileFailed = fileOutput.results.some((r) => r.status === "error");
+			}
+
+			// Execute bash ops in parallel (independent of file failures,
+			// unless ALL ops are file+bash and a file op failed before any bash op)
+			// Per spec: file op failure skips bash ops
+			let bashResults: import("./constants.js").OpResult[] = [];
+			let bashContentText = "";
+
+			if (bashOps.length > 0 && !fileFailed && bashTracker) {
+				const normalizedBashOps = bashOps.map((op) => ({
+					i: op.i ?? generateBashId(),
+					c: op.c ?? "",
+					t: op.t,
+					h: op.h,
+				}));
+
+				const bashOutput = await executeBatchBash(
+					normalizedBashOps,
+					ctx.cwd,
+					bashTracker,
+					signal,
+				);
+
+				bashResults = bashOutput;
+
+				// Format bash results into content text
+				const bashLines: string[] = [];
+				for (const r of bashOutput) {
+					const timingInfo = r.timingTier ? ` (${r.timingTier})` : "";
+					if (r.status === "ok") {
+						bashLines.push(`\n--- bash [${r.id}] exit ${r.exitCode}${timingInfo} ---`);
+						if (r.stdout?.trim()) bashLines.push(r.stdout.trimEnd());
+					} else if (r.status === "pending") {
+						bashLines.push(`\n--- bash [${r.id}] pending${timingInfo} ---`);
+						if (r.stdout?.trim()) bashLines.push(`[partial output]\n${r.stdout.trimEnd()}`);
+						bashLines.push(`[Use batch_bash_poll with i: ["${r.id}"] to check results]`);
+					} else {
+						bashLines.push(`\n--- bash [${r.id}] error${timingInfo} ---`);
+						if (r.stdout?.trim()) bashLines.push(r.stdout.trimEnd());
+						if (r.stderr?.trim()) bashLines.push(`[stderr]\n${r.stderr.trimEnd()}`);
+					}
+				}
+				bashContentText = bashLines.join("\n");
+			} else if (bashOps.length > 0 && fileFailed) {
+				// File ops failed — mark bash ops as skipped
+				bashResults = bashOps.map((op) => ({
+					op: "bash" as const,
+					path: op.p,
+					status: "skipped" as const,
+					id: op.i,
+					command: op.c,
+					error: "Skipped: a file operation failed.",
+				}));
+				bashContentText = `\n--- bash: ${bashOps.length} command(s) skipped (file op failed) ---`;
+			} else if (bashOps.length > 0 && !bashTracker) {
+				bashResults = bashOps.map((op) => ({
+					op: "bash" as const,
+					path: op.p,
+					status: "error" as const,
+					id: op.i,
+					command: op.c,
+					error: "Bash tracker not available.",
+				}));
+				bashContentText = "\n--- bash: tracker not available ---";
+			}
+
+			// Combine results
+			const allResults = [...fileResults, ...bashResults];
+			const contentText = [fileContentText, bashContentText].filter(Boolean).join("\n");
 
 			return {
 				content: [{ type: "text", text: contentText }],
-				details: { results },
+				details: { results: allResults },
 			};
 		},
 
