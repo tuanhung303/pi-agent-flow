@@ -33,10 +33,8 @@ type ThemeFg = (color: string, text: string) => string;
 type ThemeBg = (color: string, text: string) => string;
 type FlowTheme = { fg: ThemeFg; bold: (s: string) => string; bg: ThemeBg };
 
-const COLLAPSED_FLOW_HEADER_TYPE_WIDTH = 8;
-
 function formatCollapsedFlowHeaderTypeName(type: string): string {
-	return formatFlowTypeName(type).padEnd(COLLAPSED_FLOW_HEADER_TYPE_WIDTH, " ");
+	return type.toLowerCase();
 }
 
 function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg: ThemeFg): string {
@@ -328,7 +326,7 @@ function renderFlowCollapsed(
 	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
-	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` ${modelLabel} - ` : " ")}${theme.fg("dim", stats)}`;
+	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` · ${modelLabel} · ` : " · ")}${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
@@ -465,7 +463,7 @@ function renderActivityPanel(
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
 		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` ${modelLabel} - ` : " ")}${theme.fg("dim", stats)}`;
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` · ${modelLabel} · ` : " · ")}${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
