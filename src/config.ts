@@ -32,8 +32,7 @@ export interface FlowSettings {
 	structuredOutput?: boolean;
 	/** Maximum number of flows to execute concurrently. Default: 4. */
 	maxConcurrency?: number;
-	/** Whether to automatically queue follow-up flows based on hook transitions. Default: false. */
-	autoTransition?: boolean;
+
 	/** Default child-flow session mode. Default: "default" (600s). */
 	sessionMode?: AgentSessionMode;
 }
@@ -230,9 +229,7 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 	if (typeof obj.maxConcurrency === "number" && Number.isSafeInteger(obj.maxConcurrency) && obj.maxConcurrency >= 1) {
 		result.maxConcurrency = obj.maxConcurrency;
 	}
-	if (typeof obj.autoTransition === "boolean") {
-		result.autoTransition = obj.autoTransition;
-	}
+
 	const sessionMode = parseAgentSessionMode(obj.sessionMode);
 	if (sessionMode !== undefined) {
 		result.sessionMode = sessionMode;

@@ -3,7 +3,7 @@
  *
  * Encapsulates the orchestration logic for running flows: cycle detection,
  * project-flow confirmation, parallel execution with failover, caching,
- * hook invocation, auto-transition, and telemetry.
+ * and telemetry.
  */
 
 import type { FlowConfig } from "./agents.js";
@@ -15,7 +15,7 @@ import type {
 } from "./types.js";
 import { isFlowSuccess, isFlowError, getFlowOutput, emptyFlowUsage } from "./types.js";
 import { extractStructuredOutput } from "./structured-output.js";
-import { runHooksDetailed, type RunHooksResult } from "./hooks.js";
+import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
@@ -46,8 +46,7 @@ export interface FlowExecutorDeps {
 	loadedFlowModelConfigs: LoadedFlowModelConfigs;
 	/** Max concurrency for parallel flow execution. */
 	maxConcurrency: number;
-	/** Whether auto-transition is enabled. */
-	autoTransition: boolean;
+
 	/** Default child-flow session mode. */
 	defaultSessionMode: AgentSessionMode;
 	/** Abort signal. */
@@ -92,8 +91,7 @@ export interface ExecuteFlowResult {
 	content: Array<{ type: string; text: string }>;
 	details: FlowDetails;
 	isError?: boolean;
-	/** Auto-queued transitions for the caller to execute. */
-	autoTransitions?: Array<{ type: string; intent: string }>;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -177,8 +175,7 @@ function shouldFailover(result: SingleResult): boolean {
 
 /**
  * Execute a set of flow tasks with full orchestration: cycle detection,
- * project confirmation, parallel execution with model failover, hook
- * invocation, auto-transition, and telemetry.
+ * project confirmation, parallel execution with model failover, and telemetry.
  */
 export async function executeFlows(
 	deps: FlowExecutorDeps,
@@ -188,7 +185,7 @@ export async function executeFlows(
 	const {
 		flows, currentDepth, maxDepth, ancestorFlowStack, preventCycles,
 		toolOptimize, structuredOutput, cwd, loadedFlowModelConfigs,
-		maxConcurrency, autoTransition, defaultSessionMode, signal, onUpdate, makeDetails,
+		maxConcurrency, defaultSessionMode, signal, onUpdate, makeDetails,
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
 		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
 		confirmProjectFlows,
@@ -409,30 +406,11 @@ export async function executeFlows(
 		return `flow [${r.type}] ${status}\n\n${output}`;
 	});
 
-	// Post-flow hooks
-	const hookResult: RunHooksResult = runHooksDetailed(params, results);
-	const advisorBlock = hookResult.advisors.length > 0
-		? "\n\n---\n\n💡 " + hookResult.advisors.join("\n💡 ")
+	// Post-flow advisory messages from the transition matrix
+	const advisors = getTransitionAdvice(params, results);
+	const advisorBlock = advisors.length > 0
+		? "\n\n---\n\n💡 " + advisors.join("\n💡 ")
 		: "";
-
-	// Auto-transition: collect qualifying transitions.
-	// No confidence threshold gating — non-deterministic agents should not
-	// have unstable numeric params controlling execution flow.
-	const queuedTransitions: Array<{ type: string; intent: string }> = [];
-	if (autoTransition && hookResult.autoTransitions.length > 0) {
-		for (const transition of hookResult.autoTransitions) {
-			const normalizedType = transition.type.toLowerCase();
-			const flowExists = flows.some((f) => f.name === normalizedType);
-			const notAlreadyRequested = !requested.has(normalizedType);
-			const noCycles = !preventCycles || !ancestorFlowStack.includes(normalizedType);
-			if (flowExists && notAlreadyRequested && noCycles) {
-				queuedTransitions.push({
-					type: transition.type,
-					intent: transition.intent,
-				});
-			}
-		}
-	}
 
 	return {
 		content: [{
@@ -440,6 +418,5 @@ export async function executeFlows(
 			text: `Flow: ${successCount}/${results.length} completed\n\n${flowReports.join("\n\n---\n\n")}${advisorBlock}`,
 		}],
 		details: makeDetails(results),
-		autoTransitions: queuedTransitions.length > 0 ? queuedTransitions : undefined,
 	};
 }

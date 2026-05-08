@@ -288,46 +288,6 @@ export function getLastAssistantText(messages: Message[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Post-flow hook types
-// ---------------------------------------------------------------------------
-
-/** Condition that determines when a hook fires. */
-export interface PostFlowHookTrigger {
-	/** Case-insensitive flow type names that trigger this hook. */
-	flowTypes: string[];
-	/** Only fire when all matching results succeeded. Default: true. */
-	onlyOnSuccess?: boolean;
-}
-
-/** Context passed to a hook's action function. */
-export interface PostFlowHookContext {
-	/** Flow results that matched the trigger. */
-	results: SingleResult[];
-	/** Original flow request params. */
-	params: Array<{ type: string; intent: string }>;
-}
-
-/** Result returned by a hook's action function. */
-export interface PostFlowHookResult {
-	/** Advisory text to inject. */
-	content: string;
-	/** Ordering key; lower runs first. Default: 0. */
-	priority?: number;
-	/** Optional auto-transition to queue after this flow completes. */
-	autoTransition?: AutoTransition;
-}
-
-/** A post-flow hook that injects advisory messages into tool results. */
-export interface PostFlowHook {
-	/** Unique name for dedup and debugging. */
-	name: string;
-	/** When to fire this hook. */
-	trigger: PostFlowHookTrigger;
-	/** Returns advisory text, or null to skip. */
-	action: (ctx: PostFlowHookContext) => PostFlowHookResult | null;
-}
-
-// ---------------------------------------------------------------------------
 // Telemetry types
 // ---------------------------------------------------------------------------
 
@@ -354,33 +314,16 @@ export interface FlowMetrics {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-transition types
-// ---------------------------------------------------------------------------
-
-/** Descriptor for an auto-queued follow-up flow. */
-export interface AutoTransition {
-	/** Flow type to run next. */
-	type: string;
-	/** Intent for the follow-up flow. */
-	intent: string;
-}
-// ---------------------------------------------------------------------------
 // Plugin API types
 // ---------------------------------------------------------------------------
 
 /** Public API surface exposed via the pi-agent-flow:ready event. */
 export interface PiAgentFlowAPI {
-	/** Register or replace a post-flow hook. */
-	registerHook: (hook: PostFlowHook) => void;
-	/** Unregister a hook by name. Returns true if removed. */
-	unregisterHook: (name: string) => boolean;
-	/** Get a snapshot of all registered hooks. */
-	getRegisteredHooks: () => PostFlowHook[];
 	/** Discover all available flows for a given working directory. */
 	discoverFlows: (cwd: string) => { flows: Array<{ name: string; description: string; source: string }>; projectFlowsDir: string | null };
 	/** Determine the model tier for a given flow name. */
 	getFlowTier: (name: string) => string;
 	/** Get current flow settings. */
-	getSettings: () => { toolOptimize: boolean; structuredOutput: boolean; maxConcurrency: number; autoTransition: boolean };
+	getSettings: () => { toolOptimize: boolean; structuredOutput: boolean; maxConcurrency: number };
 }
 
