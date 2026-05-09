@@ -1343,10 +1343,11 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		// All batch tools are registered
+		// Main agent (depth 0): only batch_read is registered; batch/batch_bash_poll/timedBash reserved for child flows
 		expect(pi.getTool("batch_read")).toBeDefined();
-		expect(pi.getTool("batch")).toBeDefined();
-		expect(pi.getTool("batch_bash_poll")).toBeDefined();
+		expect(pi.getTool("batch")).toBeUndefined();
+		expect(pi.getTool("batch_bash_poll")).toBeUndefined();
+		expect(pi.getTool("bash")).toBeUndefined();
 
 		// Main agent active tools: batch_read + flow (batch and batch_bash_poll registered but not active)
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
@@ -1366,6 +1367,12 @@ describe("main agent tool restriction", () => {
 
 		// Child flow should NOT have setActiveTools called (no override)
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
+
+		// Child flow (depth > 0): batch, batch_bash_poll, and bash ARE registered
+		expect(pi.getTool("batch_read")).toBeDefined();
+		expect(pi.getTool("batch")).toBeDefined();
+		expect(pi.getTool("batch_bash_poll")).toBeDefined();
+		expect(pi.getTool("bash")).toBeDefined();
 	});
 
 	it("does NOT override active tools on turn_start for child flows (depth > 0)", async () => {

@@ -172,20 +172,29 @@ export default function (pi: ExtensionAPI) {
 			pi.setActiveTools(computeActiveTools(resolved.toolOptimize));
 		}
 
-		// Register batch and batch_read so they are available for main agent and child flows.
+		// Register tools based on depth.
+		// Depth 0 (main orchestrator): only batch_read — no bash ops, only reads + flow delegation.
+		// Depth > 0 (child flows): batch (with bash), batch_bash_poll — they need bash ops.
 		// The bashProcessTracker is shared between the batch tool (launches bash ops)
 		// and the batch_bash_poll tool (checks on pending bash ops).
 		if (resolved.toolOptimize) {
-			bashTracker = new BashProcessTracker();
-			pi.registerTool(createBatchReadTool());
-			pi.registerTool(createBatchTool(bashTracker));
-			pi.registerTool(createBatchBashPollTool(bashTracker));
+			if (currentDepth === 0) {
+				pi.registerTool(createBatchReadTool());
+			} else {
+				bashTracker = new BashProcessTracker();
+				pi.registerTool(createBatchReadTool());
+				pi.registerTool(createBatchTool(bashTracker));
+				pi.registerTool(createBatchBashPollTool(bashTracker));
+			}
 		}
 
 		// Override built-in bash with timed wrapper so the LLM sees execution-time classification.
-		const timedBash = createTimedBashToolDefinition(ctx.cwd);
-		if (timedBash) {
-			pi.registerTool(timedBash);
+		// Only register for child flows — main agent should delegate all bash ops to flows.
+		if (currentDepth > 0) {
+			const timedBash = createTimedBashToolDefinition(ctx.cwd);
+			if (timedBash) {
+				pi.registerTool(timedBash);
+			}
 		}
 	});
 
