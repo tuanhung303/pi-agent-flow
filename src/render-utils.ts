@@ -44,7 +44,7 @@ function formatTps(value: number | undefined): string {
 }
 
 export function formatCompactTokenPair(usage: Partial<UsageStats>): string {
-	return `↑ ${formatFixedTokens(usage.input || 0)} - ↓ ${formatFixedTokens(usage.output || 0)}`;
+	return `↑ ${formatFixedTokens(usage.input || 0)} ↓ ${formatFixedTokens(usage.output || 0)}`;
 }
 
 export function formatCompactStats(
@@ -53,7 +53,7 @@ export function formatCompactStats(
 	maxWidth?: number,
 	options: { skipTokens?: boolean; skipContext?: boolean; hideModel?: boolean } = {},
 ): string {
-	const tokenParts = [`↑ ${formatFixedTokens(usage.input || 0)}`, `↓ ${formatFixedTokens(usage.output || 0)}`];
+	const tokenParts = [`↑ ${formatFixedTokens(usage.input || 0)} ↓ ${formatFixedTokens(usage.output || 0)}`];
 	let runtimeParts = [`tps: ${formatTps(usage.smoothedTps)}`];
 	if (!options.skipContext) {
 		runtimeParts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
