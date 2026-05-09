@@ -21,6 +21,7 @@ import {
 	normalizeBashOp,
 	executeBatchBash,
 } from "./batch-bash.js";
+import { appendStrategicHint } from "../tool-utils.js";
 
 // Re-export polling tool factory and tracker from batch-bash
 export { BashProcessTracker, createBatchBashPollTool, pollBatchBashResults } from "./batch-bash.js";
@@ -317,10 +318,12 @@ export function createBatchReadTool() {
 				includeLimitWarnings: false,
 			});
 
-			return {
+			const readResult = {
 				content: [{ type: "text", text: contentText }],
 				details: { results },
 			};
+			appendStrategicHint(readResult);
+			return readResult;
 		},
 
 		renderCall: (args: Record<string, unknown>, theme: BatchTheme) => renderBatchReadCall(args, theme),
@@ -481,10 +484,12 @@ export function createBatchTool(bashTracker?: BashProcessTracker) {
 			const allResults = [...fileResults, ...bashResults];
 			const contentText = [fileContentText, bashContentText].filter(Boolean).join("\n");
 
-			return {
+			const batchResult = {
 				content: [{ type: "text", text: contentText }],
 				details: { results: allResults },
 			};
+			appendStrategicHint(batchResult);
+			return batchResult;
 		},
 
 		renderCall: (args: Record<string, unknown>, theme: BatchTheme) => renderBatchCall(args, theme),

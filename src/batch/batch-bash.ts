@@ -1,3 +1,5 @@
+import { appendStrategicHint } from "../tool-utils.js";
+
 /**
  * batch bash -- parallel bash execution and polling.
  *
@@ -434,10 +436,12 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 				lines.push("");
 			}
 
-			return {
+			const pollResult = {
 				content: [{ type: "text", text: lines.join("\n").trimEnd() }],
 				details: { results },
 			};
+			appendStrategicHint(pollResult);
+			return pollResult;
 		},
 	};
 }
