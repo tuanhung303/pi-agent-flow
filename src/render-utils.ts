@@ -44,7 +44,7 @@ function formatTps(value: number | undefined): string {
 }
 
 export function formatCompactTokenPair(usage: Partial<UsageStats>): string {
-	return `↑ ${formatFixedTokens(usage.input || 0)} · ↓ ${formatFixedTokens(usage.output || 0)}`;
+	return `↑ ${formatFixedTokens(usage.input || 0)} - ↓ ${formatFixedTokens(usage.output || 0)}`;
 }
 
 export function formatCompactStats(
@@ -61,19 +61,19 @@ export function formatCompactStats(
 	const parts = options.skipTokens ? runtimeParts : [...tokenParts, ...runtimeParts];
 
 	const displayModel = options.hideModel ? undefined : (model ? model.replace(/^[^/]+\//, "") : undefined);
-	let result = parts.join(" · ") + (displayModel ? ` · ${displayModel}` : "");
+	let result = parts.join(" - ") + (displayModel ? ` - ${displayModel}` : "");
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first.
-		let narrow = parts.join(" · ");
+		let narrow = parts.join(" - ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens next.
 		const withoutContext = parts.filter((part) => !part.startsWith("ctx:"));
-		narrow = withoutContext.join(" · ");
+		narrow = withoutContext.join(" - ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Bare minimum: token pair for normal stats, tps for token-free headers.
-		narrow = options.skipTokens ? runtimeParts[0] : tokenParts.join(" · ");
+		narrow = options.skipTokens ? runtimeParts[0] : tokenParts.join(" - ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		return truncateChars(result, maxWidth);
