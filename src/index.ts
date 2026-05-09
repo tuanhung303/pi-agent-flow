@@ -12,6 +12,7 @@ import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
+import { appendStrategicHint } from "./tool-utils.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -346,11 +347,13 @@ export default function (pi: ExtensionAPI) {
 					toolCallId,
 				);
 
-				return {
+				const flowToolResult = {
 					content: result.content,
 					details: result.details,
 					isError: result.isError,
 				};
+				appendStrategicHint(flowToolResult);
+				return flowToolResult;
 			},
 
 			renderCall: (args, theme) => renderFlowCall(args, theme),

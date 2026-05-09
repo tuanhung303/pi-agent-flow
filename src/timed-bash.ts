@@ -15,6 +15,7 @@
 
 import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
+import { appendStrategicHint, appendTextToToolResult } from "./tool-utils.js";
 
 export type TimingTier =
 	| "normal"
@@ -117,14 +118,7 @@ function formatDeadlineAppendix(): string {
 	return "\n\n[Flow timeout] Bash command was interrupted to preserve time for the final flow summary. Stop running tools and return structured findings now.";
 }
 
-function appendTextToToolResult(result: any, text: string): void {
-	const textItem = result?.content?.find?.((c: any) => c.type === "text");
-	if (textItem && typeof textItem.text === "string") {
-		textItem.text += text;
-	} else if (Array.isArray(result?.content)) {
-		result.content.push({ type: "text", text: text.trim() });
-	}
-}
+
 
 function createDeadlineSignal(parentSignal: AbortSignal | undefined): {
 	signal: AbortSignal | undefined;
@@ -241,6 +235,8 @@ export function createTimedBashToolDefinition(
 				if (deadlineSignal.wasDeadlineAbort()) {
 					appendTextToToolResult(result, formatDeadlineAppendix());
 					result.isError = true;
+				} else {
+					appendStrategicHint(result);
 				}
 				return result;
 			} catch (err: any) {

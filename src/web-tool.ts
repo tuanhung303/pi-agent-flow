@@ -7,6 +7,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
+import { appendStrategicHint } from "./tool-utils.js";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -128,10 +129,12 @@ async function runWebOps(params: WebParams, ctx: ExtensionContext, signal?: Abor
 		maxBytes: DEFAULT_MAX_BYTES,
 	}).content;
 
-	return {
+	const webResult = {
 		content: [{ type: "text" as const, text: truncated }],
 		details: { ops: details },
 	};
+	appendStrategicHint(webResult);
+	return webResult;
 }
 
 // ---------------------------------------------------------------------------
