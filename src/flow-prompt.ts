@@ -27,7 +27,7 @@ export interface BeforeAgentStartEvent {
 
 export function computeActiveTools(optimize: boolean): string[] {
 	return optimize
-		? ["batch_read", "flow"]
+		? ["batch_read", "flow", "web"]
 		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 }
 

@@ -1,7 +1,7 @@
 ---
 name: ideas
 description: Generate ideas, explore possibilities, and think creatively using inherited context as background
-tools: batch, bash
+tools: batch, bash, web
 maxDepth: 0
 tier: full
 ---

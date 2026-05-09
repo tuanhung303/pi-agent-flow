@@ -1,7 +1,7 @@
 ---
 name: build
 description: Implement features, fix bugs, write tests, deploy, and ship
-tools: batch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls, web
 maxDepth: 0
 tier: flash
 ---
