@@ -260,18 +260,20 @@ function buildFlowArgs(
 	// include "flow" so it can spawn sub-flows.
 	const defaultTools = toolOptimize
 		? canDelegate
-			? ["batch", "bash", "flow"]
-			: ["batch", "bash"]
-		: ["read", "write", "edit", "batch", "bash", "flow"];
+			? ["batch", "bash", "flow", "web"]
+			: ["batch", "bash", "web"]
+		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
 	// getOptimizedTools replaces legacy read/write/edit with batch when
 	// toolOptimize is on. If the flow's frontmatter explicitly lists "flow",
 	// it passes through; otherwise the defaultTools above handle it.
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
 	let harnessTools = optimizedTools;
 	// If the flow explicitly listed only tools that got filtered (e.g. just
-	// "web"), fall back to defaultTools so the child isn't orphaned.
-	if (harnessTools.length === 0) {
-		harnessTools = [...defaultTools];
+	// "web"), or the remaining tools lack essentials (batch/bash), fall back
+	// to defaultTools so the child isn't orphaned.
+	const hasEssentials = harnessTools.some((t) => t === "batch" || t === "bash");
+	if (harnessTools.length === 0 || !hasEssentials) {
+		harnessTools = [...new Set([...defaultTools, ...harnessTools])];
 	}
 	args.push("--tools", harnessTools.join(","));
 

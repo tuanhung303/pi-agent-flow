@@ -519,7 +519,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("flow");
 	});
 
-	it("defaults to batch+bash+flow when flow.tools is undefined, toolOptimize is true, and canDelegate", async () => {
+	it("defaults to batch+bash+flow+web when flow.tools is undefined, toolOptimize is true, and canDelegate", async () => {
 		const mockFlow: FlowConfig = {
 			name: "build",
 			description: "Code flow",
@@ -568,12 +568,13 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
+		expect(toolsValue).toContain("web");
 		expect(toolsValue).not.toContain("read");
 		expect(toolsValue).not.toContain("write");
 		expect(toolsValue).not.toContain("edit");
 	});
 
-	it("defaults to batch+bash without flow when canDelegate is false and toolOptimize is true", async () => {
+	it("defaults to batch+bash+web without flow when canDelegate is false and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
 			name: "build",
 			description: "Code flow",
@@ -620,6 +621,7 @@ describe("child flow harness tools", () => {
 		const toolsValue = args[toolsIndex + 1];
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
+		expect(toolsValue).toContain("web");
 		expect(toolsValue).not.toContain("flow");
 	});
 
@@ -673,6 +675,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
+		expect(toolsValue).toContain("web");
 	});
 
 	it("falls back to defaultTools when toolOptimize is false and tools list is empty", async () => {
@@ -728,6 +731,63 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
+		expect(toolsValue).toContain("web");
+	});
+
+	it("merges defaultTools when flow.tools has only non-essential tools (e.g. just web)", async () => {
+		const mockFlow: FlowConfig = {
+			name: "scout",
+			description: "Explore flow",
+			systemPrompt: "You are scout.",
+			source: "bundled",
+			filePath: "/agents/scout.md",
+			tools: ["web"], // only non-essential tool — triggers hasEssentials fallback
+		};
+
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			toolOptimize: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const toolsIndex = args.indexOf("--tools");
+		expect(toolsIndex).toBeGreaterThan(-1);
+		const toolsValue = args[toolsIndex + 1];
+		// Essential tools must be present from defaultTools
+		expect(toolsValue).toContain("batch");
+		expect(toolsValue).toContain("bash");
+		expect(toolsValue).toContain("flow");
+		expect(toolsValue).toContain("web");
+		// The original "web" tool is preserved (not dropped)
+		const toolsList = toolsValue.split(",");
+		expect(toolsList.filter((t) => t === "web")).toHaveLength(1);
 	});
 });
 

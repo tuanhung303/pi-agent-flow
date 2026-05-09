@@ -1,7 +1,7 @@
 ---
 name: audit
 description: Audit security, quality, correctness, and apply fixes
-tools: batch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls, web
 maxDepth: 0
 tier: flash
 ---
