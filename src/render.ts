@@ -23,7 +23,7 @@ import {
 	isFlowSuccess,
 } from "./types.js";
 import { formatBatchOpsSummary } from "./batch/render.js";
-import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, truncateChars, tailText, getTruncationBudget, visibleLength } from "./render-utils.js";
+import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -310,7 +310,7 @@ function renderFlowCollapsed(
 	const maxWidth = process.stdout.columns ?? 80;
 	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
-	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
+	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
 	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` - ${modelLabel} - ` : " - ")}${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
@@ -318,7 +318,7 @@ function renderFlowCollapsed(
 	// aim: line (short headline)
 	if (r.aim) {
 		const aimPrefix = formatAimLinePrefix("├─", r);
-		const dirContent = truncateChars(r.aim, getTruncationBudget(visibleLength(aimPrefix)));
+		const dirContent = truncateChars(lowerFirstWord(r.aim), getTruncationBudget(visibleLength(aimPrefix)));
 		container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
@@ -327,7 +327,7 @@ function renderFlowCollapsed(
 	if (lastTool) {
 		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
 		const actPrefix = `├─ act: [${r.usage.toolCalls}] - `;
-		const actContent = truncateChars(actStr, getTruncationBudget(visibleLength(actPrefix)));
+		const actContent = truncateChars(lowerFirstWord(actStr), getTruncationBudget(visibleLength(actPrefix)));
 		container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 	}
 
@@ -447,7 +447,7 @@ function renderActivityPanel(
 
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
-		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
+		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
 		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` - ${modelLabel} - ` : " - ")}${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
@@ -460,7 +460,7 @@ function renderActivityPanel(
 		// aim: line (short headline)
 		if (r.aim) {
 			const aimPrefix = formatAimLinePrefix(indent + "├─", r);
-			const dirContent = truncateChars(r.aim, getTruncationBudget(visibleLength(aimPrefix)));
+			const dirContent = truncateChars(lowerFirstWord(r.aim), getTruncationBudget(visibleLength(aimPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 
@@ -469,7 +469,7 @@ function renderActivityPanel(
 		if (lastTool) {
 			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
 			const actPrefix = `${indent}├─ act: [${r.usage.toolCalls}] - `;
-			const actContent = truncateChars(actStr, getTruncationBudget(visibleLength(actPrefix)));
+			const actContent = truncateChars(lowerFirstWord(actStr), getTruncationBudget(visibleLength(actPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 		}
 

@@ -60,7 +60,7 @@ export function formatCompactStats(
 	}
 	const parts = options.skipTokens ? runtimeParts : [...tokenParts, ...runtimeParts];
 
-	const displayModel = options.hideModel ? undefined : (model ? model.replace(/^[^/]+\//, "") : undefined);
+	const displayModel = options.hideModel ? undefined : (model ? model.replace(/^[^/]+\//, "").toLowerCase() : undefined);
 	let result = parts.join(" - ") + (displayModel ? ` - ${displayModel}` : "");
 	if (maxWidth && visibleLength(result) > maxWidth) {
 		// Drop model first.
@@ -80,6 +80,13 @@ export function formatCompactStats(
 	}
 
 	return result;
+}
+
+/** Lowercase the first word in a string (first run of non-whitespace chars). */
+export function lowerFirstWord(s: string): string {
+	const match = s.match(/(\S+)/);
+	if (!match) return s;
+	return s.slice(0, match.index!) + match[0].toLowerCase() + s.slice(match.index! + match[0].length);
 }
 
 export function formatCountdown(ms: number): string {
