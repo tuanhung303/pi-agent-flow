@@ -7,6 +7,7 @@ import {
 	formatCompactStats,
 	formatCompactTokenPair,
 	formatCountdown,
+	lowerFirstWord,
 	visibleLength,
 	getTruncationBudget,
 } from "../src/render-utils.js";
@@ -352,6 +353,32 @@ describe("formatCountdown", () => {
 });
 
 // ---------------------------------------------------------------------------
+// lowerFirstWord
+// ---------------------------------------------------------------------------
+
+describe("lowerFirstWord", () => {
+	it("lowercases the first word only", () => {
+		expect(lowerFirstWord("Refactor auth module")).toBe("refactor auth module");
+	});
+
+	it("leaves already-lowercase text unchanged", () => {
+		expect(lowerFirstWord("test aim")).toBe("test aim");
+	});
+
+	it("handles single word", () => {
+		expect(lowerFirstWord("Hello")).toBe("hello");
+	});
+
+	it("handles empty string", () => {
+		expect(lowerFirstWord("")).toBe("");
+	});
+
+	it("preserves leading whitespace", () => {
+		expect(lowerFirstWord("  Hello World")).toBe("  hello World");
+	});
+});
+
+// ---------------------------------------------------------------------------
 // formatCompactStats
 // ---------------------------------------------------------------------------
 
@@ -359,7 +386,7 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k - ↓   500 - tps:     - - ctx: 21.0k - K2.6");
+		expect(result).toBe("↑  2.0k - ↓   500 - tps:     - - ctx: 21.0k - k2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
@@ -395,19 +422,19 @@ describe("formatCompactStats", () => {
 	it("with smoothedTps value", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k - ↓   500 - tps:  42.3 - ctx: 21.0k - K2.6");
+		expect(result).toBe("↑  2.0k - ↓   500 - tps:  42.3 - ctx: 21.0k - k2.6");
 	});
 
 	it("can skip token counts for compact flow headers", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true });
-		expect(result).toBe("tps:  42.3 - ctx: 21.0k - K2.6");
+		expect(result).toBe("tps:  42.3 - ctx: 21.0k - k2.6");
 	});
 
 	it("with skipContext omits context tokens from runtime parts", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true, skipContext: true });
-		expect(result).toBe("tps:  42.3 - K2.6");
+		expect(result).toBe("tps:  42.3 - k2.6");
 	});
 
 	it("with hideModel omits model name", () => {
@@ -439,7 +466,7 @@ describe("formatCompactStats", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", 25);
 		expect(visibleLength(result)).toBeLessThanOrEqual(25);
-		expect(result).not.toContain("K2.6");
+		expect(result).not.toContain("k2.6");
 		expect(result).not.toContain("ctx");
 	});
 });
@@ -592,7 +619,7 @@ describe("activity panel rendering", () => {
 		const headerLine = text.split("\n")[0];
 		expect(headerLine).toContain("code - tps:");
 		expect(text).toContain("aim:");
-		expect(text).toContain("Refactor auth module");
+		expect(text).toContain("refactor auth module");
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓     0");
 		expect(text).toContain("tps:     -");
