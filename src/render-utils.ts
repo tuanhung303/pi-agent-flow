@@ -105,22 +105,10 @@ export function visibleLength(text: string): number {
 export function getTruncationBudget(prefixLength: number): number {
 	const cols = process.stdout.columns ?? 80;
 	const width = Math.max(cols, 40);
-	return Math.max(width - prefixLength, 1);
+	return Math.max(width - prefixLength, 8);
 }
 
-/** Fixed content budget for collapsed-line text (dir/act/log). */
-export const CONTENT_MAX = 60;
 
-/** Longer budget for detail lines (act/msg) to show more content. */
-export const DETAIL_CONTENT_MAX = 80;
-
-/**
- * Compute how many visible chars of content fit after a prefix,
- * using the given budget (defaults to CONTENT_MAX). Floor of 8 to keep things readable.
- */
-export function contentBudget(prefixVisibleLen: number, max = CONTENT_MAX): number {
-	return Math.max(max - prefixVisibleLen, 8);
-}
 
 /**
  * Truncate an ANSI-colored string to at most `max` visible characters,

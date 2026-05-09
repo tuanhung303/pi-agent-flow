@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, truncateChars, tailText, contentBudget, visibleLength, DETAIL_CONTENT_MAX } from "./render-utils.js";
+import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, truncateChars, tailText, getTruncationBudget, visibleLength } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -333,7 +333,7 @@ function renderFlowCollapsed(
 	// aim: line (short headline)
 	if (r.aim) {
 		const aimPrefix = formatAimLinePrefix("├─", r);
-		const dirContent = truncateChars(r.aim, contentBudget(visibleLength(aimPrefix)));
+		const dirContent = truncateChars(r.aim, getTruncationBudget(visibleLength(aimPrefix)));
 		container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", dirContent)}`, 0, 0));
 	}
 
@@ -342,13 +342,13 @@ function renderFlowCollapsed(
 	if (lastTool) {
 		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
 		const actPrefix = `├─ act: [${r.usage.toolCalls}] - `;
-		const actContent = truncateChars(actStr, contentBudget(visibleLength(actPrefix), DETAIL_CONTENT_MAX));
+		const actContent = truncateChars(actStr, getTruncationBudget(visibleLength(actPrefix)));
 		container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 	}
 
 	// msg: line (last assistant text or streaming)
 	const msgPrefix = formatMsgLinePrefix("└─", r);
-	const msgBudget = contentBudget(visibleLength(msgPrefix), DETAIL_CONTENT_MAX);
+	const msgBudget = getTruncationBudget(visibleLength(msgPrefix));
 	if (r.exitCode === -1 && streamingText) {
 		const logContent = tailText(streamingText, msgBudget);
 		container.addChild(new TruncatedText(`${theme.fg("dim", msgPrefix)}${theme.fg("dim", logContent)}`, 0, 0));
@@ -475,7 +475,7 @@ function renderActivityPanel(
 		// aim: line (short headline)
 		if (r.aim) {
 			const aimPrefix = formatAimLinePrefix(indent + "├─", r);
-			const dirContent = truncateChars(r.aim, contentBudget(visibleLength(aimPrefix)));
+			const dirContent = truncateChars(r.aim, getTruncationBudget(visibleLength(aimPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", dirContent)}`, 0, 0));
 		}
 
@@ -484,13 +484,13 @@ function renderActivityPanel(
 		if (lastTool) {
 			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
 			const actPrefix = `${indent}├─ act: [${r.usage.toolCalls}] - `;
-			const actContent = truncateChars(actStr, contentBudget(visibleLength(actPrefix), DETAIL_CONTENT_MAX));
+			const actContent = truncateChars(actStr, getTruncationBudget(visibleLength(actPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 		}
 
 		// msg: line (live streaming text or last assistant text)
 		const msgPrefix = formatMsgLinePrefix(indent + "└─", r);
-		const msgBudget = contentBudget(visibleLength(msgPrefix), DETAIL_CONTENT_MAX);
+		const msgBudget = getTruncationBudget(visibleLength(msgPrefix));
 		const liveText = r.exitCode === -1 ? r.streamingText : undefined;
 		const lastText = liveText || getLastAssistantText(r.messages);
 		if (lastText) {
