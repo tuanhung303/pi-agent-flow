@@ -249,17 +249,25 @@ function buildFlowArgs(
 	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
 	if (thinking) args.push("--thinking", thinking);
 
+	// Compute delegation depth before building tool list — children that can
+	// delegate need the "flow" tool in their available set.
+	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
+	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
+	const canDelegate = currentDepth < effectiveMaxDepth;
+
 	// Child flows get their configured tools from flow.tools, optimized by
-	// Child flows cannot browse or search the web — they work with whatever
-	// context the parent provides in the intent. `web` is always stripped.
+	// getOptimizedTools. When toolOptimize is on and the child can delegate,
+	// include "flow" so it can spawn sub-flows.
 	const defaultTools = toolOptimize
-		? ["batch", "bash"]
+		? canDelegate
+			? ["batch", "bash", "flow"]
+			: ["batch", "bash"]
 		: ["read", "write", "edit", "batch", "bash", "flow"];
 	// getOptimizedTools replaces legacy read/write/edit with batch when
-	// toolOptimize is on. The result may still include `web` if the flow's
-	// frontmatter explicitly lists it, so we filter here.
+	// toolOptimize is on. If the flow's frontmatter explicitly lists "flow",
+	// it passes through; otherwise the defaultTools above handle it.
 	const optimizedTools = getOptimizedTools(flow.tools, toolOptimize) ?? defaultTools;
-	let harnessTools = optimizedTools.filter((t) => t !== "web");
+	let harnessTools = optimizedTools;
 	// If the flow explicitly listed only tools that got filtered (e.g. just
 	// "web"), fall back to defaultTools so the child isn't orphaned.
 	if (harnessTools.length === 0) {
@@ -270,9 +278,6 @@ function buildFlowArgs(
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.
 	// Flow instructions go in the intent message instead.
 
-	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
-	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
-	const canDelegate = currentDepth < effectiveMaxDepth;
 	const availableTools = harnessTools.join(", ");
 
 	// Phase 1: Context seal — sharp boundary declaring history sealed

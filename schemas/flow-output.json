@@ -120,7 +120,8 @@
       "required": ["command"],
       "properties": {
         "command": { "type": "string" },
-        "tool": { "type": "string", "description": "Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web." }
+        "tool": { "type": "string", "description": "Tool used: bash, grep, find, ls, batch, read, write, edit, flow, web." },
+        "executionTime": { "type": "string", "description": "Execution time classification from the timed bash wrapper (e.g. '3.5s (normal)')." }
       }
     },
     "NotDoneItem": {

@@ -29,5 +29,4 @@ During this debug flow — your mission is to investigate root cause. Be forensi
 - Documentation-only updates are required after finishing the work when relevant and safe; if no docs changed, explain why in the final report.
 - Do not implement product-code changes from this flow unless explicitly requested.
 
-## Note
-Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.
+
