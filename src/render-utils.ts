@@ -102,10 +102,13 @@ export function visibleLength(text: string): number {
  * given the length of its prefix (indent + label + space).
  * Respects `process.stdout.columns` with a floor of 40 and default of 80.
  */
+/** Right-side padding so pi-tui's TruncatedText never re-truncates. */
+const TRUNCATION_PAD = 3;
+
 export function getTruncationBudget(prefixLength: number): number {
 	const cols = process.stdout.columns ?? 80;
 	const width = Math.max(cols, 40);
-	return Math.max(width - prefixLength, 8);
+	return Math.max(width - prefixLength - TRUNCATION_PAD, 8);
 }
 
 
