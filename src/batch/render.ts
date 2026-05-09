@@ -26,34 +26,83 @@ function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: s
 			const opPath = String(op.p ?? op.path ?? "?");
 			const edits = Array.isArray(op.e) ? op.e : Array.isArray(op.edits) ? op.edits : undefined;
 			const cmd = typeof op.c === "string" ? op.c : typeof op.command === "string" ? op.command : undefined;
-			return { o: opName, p: opPath, e: edits, c: cmd };
+			const offset = typeof op.s === "number" ? op.s : typeof op.offset === "number" ? op.offset : undefined;
+			const limit = typeof op.l === "number" ? op.l : typeof op.limit === "number" ? op.limit : undefined;
+			return { o: opName, p: opPath, e: edits, c: cmd, s: offset, l: limit };
 		});
 }
 
-function formatBatchCall(args: Record<string, unknown>): string {
+function formatOpSummary(op: { o: string; p: string; e?: unknown[]; c?: string; s?: number; l?: number }): string {
+	const shortPath = shortenPath(op.p);
+	switch (op.o) {
+		case "bash": {
+			const cmd = op.c ?? "?";
+			const display = cmd.length > 30 ? cmd.slice(0, 27) + "..." : cmd;
+			return `bash: ${display}`;
+		}
+		case "read": {
+			let text = `read ${shortPath}`;
+			if (op.s !== undefined || op.l !== undefined) {
+				const start = op.s ?? 1;
+				const end = op.l !== undefined ? start + op.l - 1 : "";
+				text += `:${start}${end ? `-${end}` : ""}`;
+			}
+			return text;
+		}
+		case "write": {
+			const lines = (op.c ?? "").split("\n").length;
+			return lines > 1 ? `write ${shortPath} (${lines} lines)` : `write ${shortPath}`;
+		}
+		case "edit": {
+			const blockInfo = op.e && op.e.length > 1 ? ` (${op.e.length} blocks)` : "";
+			return `edit ${shortPath}${blockInfo}`;
+		}
+		case "ls":
+			return `ls ${shortPath}`;
+		case "find":
+			return `find ${shortPath}`;
+		case "grep":
+			return `grep ${shortPath}`;
+		case "delete":
+			return `delete ${shortPath}`;
+		default:
+			return `${op.o} ${shortPath}`;
+	}
+}
+
+export function formatBatchOpsSummary(args: Record<string, unknown>): string {
 	const ops = extractBatchOps(args);
 	if (ops.length === 0) return "batch (empty)";
 
 	const parts: string[] = [];
+	let prev = "";
+	let count = 0;
+
 	for (const op of ops) {
-		if (op.o === "bash") {
-			const cmd = op.c ?? "?";
-			const display = cmd.length > 40 ? cmd.slice(0, 37) + "..." : cmd;
-			parts.push(`bash: ${display}`);
+		const summary = formatOpSummary(op);
+		if (summary === prev) {
+			count++;
 		} else {
-			const shortPath = shortenPath(op.p);
-			if (op.o === "edit" && op.e && op.e.length > 1) {
-				parts.push(`edit ${shortPath} (${op.e.length} blocks)`);
-			} else {
-				parts.push(`${op.o} ${shortPath}`);
+			if (count > 1) {
+				parts[parts.length - 1] += `×${count}`;
 			}
+			parts.push(summary);
+			prev = summary;
+			count = 1;
 		}
+	}
+	if (count > 1) {
+		parts[parts.length - 1] += `×${count}`;
 	}
 
 	if (parts.length <= 3) {
 		return parts.join(", ");
 	}
 	return `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
+}
+
+function formatBatchCall(args: Record<string, unknown>): string {
+	return formatBatchOpsSummary(args);
 }
 
 export function renderBatchCall(args: Record<string, unknown>, theme: BatchTheme): Text {

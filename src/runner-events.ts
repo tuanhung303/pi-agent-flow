@@ -3,6 +3,7 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
+import { formatBatchOpsSummary } from "./batch/render.js";
 
 // WeakMap-based side tables to avoid polluting caller objects and survive frozen/sealed objects.
 const seenSignaturesMap = new WeakMap<object, Set<string>>();
@@ -532,13 +533,11 @@ function formatToolCallShort(tc: ToolCallEntry): string {
 		case "ls":
 			return `ls ${args.path || "."}`;
 		case "batch": {
-			const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
-			if (ops.length === 0) return "batch (empty)";
-			const first = ops[0] || {};
-			const firstPath = ((first.p ?? first.path) as string ?? "?").split("/").pop();
-			const opType = (first.o ?? first.op) as string ?? "?";
-			const label = ops.length === 1 ? `${opType} ${firstPath}` : `${opType} ${firstPath} +${ops.length - 1} more`;
-			return `batch ${label}`;
+			const summary = formatBatchOpsSummary(args);
+			// formatBatchOpsSummary already includes "batch (empty)" prefix when empty,
+			// but for runner-events we want just the inner ops summary with "batch " prefix.
+			if (summary === "batch (empty)") return summary;
+			return `batch ${summary}`;
 		}
 		case "batch_bash_poll": {
 			const ids = Array.isArray(args.i) ? args.i : [];

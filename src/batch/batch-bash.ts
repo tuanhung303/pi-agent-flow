@@ -228,7 +228,7 @@ export function normalizeBashOp(raw: Record<string, unknown>): Record<string, un
 		i: raw.i ?? raw.id ?? generateBashId(),
 		t: raw.t ?? raw.timeout,
 		h: raw.h ?? raw.cwdPath ?? raw.cwd,
-		p: raw.p ?? "bash",
+		p: raw.p ?? raw.h ?? ".",
 	};
 }
 
