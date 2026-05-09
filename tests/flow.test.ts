@@ -467,7 +467,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).not.toContain("edit");
 	});
 
-	it("filters out web from child flow tools", async () => {
+	it("passes web tool through to child flow tools", async () => {
 		const mockFlow: FlowConfig = {
 			name: "scout",
 			description: "Explore flow",
@@ -513,13 +513,13 @@ describe("child flow harness tools", () => {
 		const toolsIndex = args.indexOf("--tools");
 		expect(toolsIndex).toBeGreaterThan(-1);
 		const toolsValue = args[toolsIndex + 1];
-		expect(toolsValue).not.toContain("web");
+		expect(toolsValue).toContain("web");
 		expect(toolsValue).toContain("read");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");
 	});
 
-	it("defaults to batch+bash when flow.tools is undefined and toolOptimize is true", async () => {
+	it("defaults to batch+bash+flow when flow.tools is undefined, toolOptimize is true, and canDelegate", async () => {
 		const mockFlow: FlowConfig = {
 			name: "build",
 			description: "Code flow",
@@ -567,20 +567,70 @@ describe("child flow harness tools", () => {
 		const toolsValue = args[toolsIndex + 1];
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
-		expect(toolsValue).not.toContain("flow");
+		expect(toolsValue).toContain("flow");
 		expect(toolsValue).not.toContain("read");
 		expect(toolsValue).not.toContain("write");
 		expect(toolsValue).not.toContain("edit");
 	});
 
-	it("falls back to defaultTools when harnessTools becomes empty after web filtering", async () => {
+	it("defaults to batch+bash without flow when canDelegate is false and toolOptimize is true", async () => {
+		const mockFlow: FlowConfig = {
+			name: "build",
+			description: "Code flow",
+			systemPrompt: "You are code.",
+			source: "bundled",
+			filePath: "/agents/code.md",
+		};
+
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "build",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 2,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			toolOptimize: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const toolsIndex = args.indexOf("--tools");
+		expect(toolsIndex).toBeGreaterThan(-1);
+		const toolsValue = args[toolsIndex + 1];
+		expect(toolsValue).toContain("batch");
+		expect(toolsValue).toContain("bash");
+		expect(toolsValue).not.toContain("flow");
+	});
+
+	it("falls back to defaultTools when harnessTools becomes empty after optimization", async () => {
 		const mockFlow: FlowConfig = {
 			name: "scout",
 			description: "Explore flow",
 			systemPrompt: "You are scout.",
 			source: "bundled",
 			filePath: "/agents/scout.md",
-			tools: ["web"], // only web, which gets filtered out
+			tools: [], // empty tools triggers fallback
 		};
 
 		const mockProc = makeMockProcess();
@@ -622,17 +672,17 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).not.toBe("");
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
-		expect(toolsValue).not.toContain("flow");
+		expect(toolsValue).toContain("flow");
 	});
 
-	it("falls back to defaultTools when toolOptimize is false and only web is configured", async () => {
+	it("falls back to defaultTools when toolOptimize is false and tools list is empty", async () => {
 		const mockFlow: FlowConfig = {
 			name: "scout",
 			description: "Explore flow",
 			systemPrompt: "You are scout.",
 			source: "bundled",
 			filePath: "/agents/scout.md",
-			tools: ["web"],
+			tools: [], // empty tools triggers fallback
 		};
 
 		const mockProc = makeMockProcess();

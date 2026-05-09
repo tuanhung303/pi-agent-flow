@@ -108,14 +108,18 @@ Each call renders as:
 • flow [scout] — Map the full directory structure...
 • flow [audit] — Audit security and quality, then fix safe issues...
 
-Each flow returns:
+Each flow returns a structured result:
 
 flow [type] accomplished
 
-[Summary] — what happened and current status
-[Done] — completed work with file:line references and verification results
-[Not Done] — incomplete items, skipped checks, blockers, and reasons
-[Next Steps] — specific recommended follow-up or next flow
+summary — what happened and current status
+files — files touched, read, or referenced
+actions — what was done, with results and evidence
+commands — commands or tool calls executed (auto-extracted from tool history)
+notDone — incomplete items, skipped checks, blockers, and reasons
+nextSteps — specific recommended follow-up or next flow
+reasoning — key hypotheses or inferences made during the flow
+notes — observations, warnings, caveats
 
 ### Guards
 - Depth: ${currentDepth}/${maxDepth} | Cycles: ${preventCycles ? "blocked" : "off"} | Stack: ${ancestorFlowStack.length > 0 ? ancestorFlowStack.join(" -> ") : "(root)"}

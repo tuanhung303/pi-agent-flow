@@ -45,7 +45,7 @@ pi install .
 - **Flow-state delegation** — six bundled specialist flows (`scout`, `debug`, `build`, `craft`, `audit`, `ideas`) plus custom flows via Markdown front-matter
 - **Isolated forked context** — each flow runs as an isolated `pi` child process with a session snapshot (or clean slate when configured)
 - **Parallel execution** — batch independent flows into one call with bounded concurrency
-- **Structured reports** — every flow returns `[Summary]`, `[Done]`, `[Not Done]`, `[Next Steps]`; optional JSON schema with files, actions, commands, and reasoning
+- **Structured reports** — every flow returns structured output with `summary`, `files`, `actions`, `commands`, `notDone`, `nextSteps`, `reasoning`, and `notes`; optional JSON schema for machine-readable results
 - **Mechanically enriched commands** — bash commands in structured output are replaced with exact verbatim tool-call strings and annotated with `executionTime`
 - **Depth guards** — configurable max delegation depth (default: `3`)
 - **Session timeout modes** — child flows use controlled budgets: `fast` (300s), `default` (600s), `long` (900s), or `extreme_long` (1200s)
@@ -74,7 +74,7 @@ This approach delivers four concrete benefits:
 
 1. **Avoid duplicate tool calls** — every sub-agent launch no longer re-runs the same `read`, `grep`, or `bash` probes that the parent already performed.
 2. **Prevent context bloat** — long transcripts with repeated file listings and command outputs are kept out of the main conversation thread.
-3. **Eliminate unnecessary noise** — the parent agent sees only structured results (`[Summary]`, `[Done]`, `[Not Done]`, `[Next Steps]`) instead of pages of intermediate reasoning.
+3. **Eliminate unnecessary noise** — the parent agent sees only structured results (`summary`, `notDone`, `nextSteps`, etc.) instead of pages of intermediate reasoning.
 4. **Preserve focus** — each flow stays locked on its intent because it isn't distracted by unrelated earlier messages.
 
 The result is faster, cheaper, and cleaner delegation: the main agent remains uncluttered while specialized flows do the heavy lifting in isolated contexts.
