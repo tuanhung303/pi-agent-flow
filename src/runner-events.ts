@@ -540,6 +540,13 @@ function formatToolCallShort(tc: ToolCallEntry): string {
 			const label = ops.length === 1 ? `${opType} ${firstPath}` : `${opType} ${firstPath} +${ops.length - 1} more`;
 			return `batch ${label}`;
 		}
+		case "batch_bash_poll": {
+			const ids = Array.isArray(args.i) ? args.i : [];
+			const idStr = ids.length <= 3
+				? ids.join(", ")
+				: `${ids.slice(0, 3).join(", ")} +${ids.length - 3}`;
+			return `batch_bash_poll [${idStr}]`;
+		}
 		default:
 			return tc.name;
 	}

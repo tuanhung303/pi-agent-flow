@@ -159,6 +159,11 @@ export class BashProcessTracker {
 		return tailLines(stdout, BASH_POLL_TAIL_LINES);
 	}
 
+	/** Get the command of a running process. */
+	getRunningCommand(id: string): string | undefined {
+		return this.running.get(id)?.command;
+	}
+
 	/** Get the result of a completed/aborted command. Does NOT remove from cache. */
 	peekCompleted(id: string): TrackedBashResult | undefined {
 		return this.completed.get(id);
@@ -353,14 +358,14 @@ export function pollBatchBashResults(
 		} else if (tracker.isRunning(id)) {
 			results.push({
 				id,
-				command: "",
+				command: tracker.getRunningCommand(id) ?? "",
 				status: "pending",
 				stdout: tracker.getRunningTail(id),
 			});
 		} else {
 			results.push({
 				id,
-				command: "",
+				command: tracker.getRunningCommand(id) ?? "",
 				status: "pending",
 				stdout: "",
 			});
@@ -426,7 +431,8 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 			for (const r of results) {
 				if (r.status === "completed") {
 					const exitInfo = r.exitCode !== undefined ? `exit ${r.exitCode}` : "interrupted";
-					lines.push(`--- [${r.id}] ${exitInfo} (${r.timingTier ?? "unknown"}) ---`);
+					lines.push(`--- [${r.id}] ${exitInfo} ---`);
+					if (r.timingTier) lines.push(`[Execution time: ${r.timingTier}]`);
 					if (r.stdout?.trim()) lines.push(r.stdout.trimEnd());
 					if (r.stderr?.trim()) lines.push(`[stderr]\n${r.stderr.trimEnd()}`);
 				} else {

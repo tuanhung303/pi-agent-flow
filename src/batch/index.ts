@@ -442,16 +442,17 @@ export function createBatchTool(bashTracker?: BashProcessTracker) {
 				// Format bash results into content text
 				const bashLines: string[] = [];
 				for (const r of bashOutput) {
-					const timingInfo = r.timingTier ? ` (${r.timingTier})` : "";
 					if (r.status === "ok") {
-						bashLines.push(`\n--- bash [${r.id}] exit ${r.exitCode}${timingInfo} ---`);
+						bashLines.push(`\n--- bash [${r.id}] exit ${r.exitCode} ---`);
+						if (r.timingTier) bashLines.push(`[Execution time: ${r.timingTier}]`);
 						if (r.stdout?.trim()) bashLines.push(r.stdout.trimEnd());
 					} else if (r.status === "pending") {
-						bashLines.push(`\n--- bash [${r.id}] pending${timingInfo} ---`);
+						bashLines.push(`\n--- bash [${r.id}] pending ---`);
 						if (r.stdout?.trim()) bashLines.push(`[partial output]\n${r.stdout.trimEnd()}`);
 						bashLines.push(`[Use batch_bash_poll with i: ["${r.id}"] to check results]`);
 					} else {
-						bashLines.push(`\n--- bash [${r.id}] error${timingInfo} ---`);
+						bashLines.push(`\n--- bash [${r.id}] error ---`);
+						if (r.timingTier) bashLines.push(`[Execution time: ${r.timingTier}]`);
 						if (r.stdout?.trim()) bashLines.push(r.stdout.trimEnd());
 						if (r.stderr?.trim()) bashLines.push(`[stderr]\n${r.stderr.trimEnd()}`);
 					}

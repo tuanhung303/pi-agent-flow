@@ -20,7 +20,7 @@ import {
 	getFlowOutput,
 	normalizeFlowResult,
 } from "./types.js";
-import { extractStructuredOutput, enrichStructuredOutputCommands } from "./structured-output.js";
+import { extractStructuredOutput, generateCommandsFromHistory } from "./structured-output.js";
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
 
 const isWindows = process.platform === "win32";
@@ -310,7 +310,7 @@ function buildFlowArgs(
 			`\n\n## Structured Output\n\n` +
 			`End your response with a JSON code block containing:\n` +
 			`\n` +
-			`For every command you ran, include the exact verbatim command string in the \\"command\\" field (not a paraphrase or summary).\n` +
+			`Commands are extracted automatically from tool call history — do not include a commands array.\n` +
 			`\n` +
 			`\`\`\`json\n` +
 			`{\n` +
@@ -323,9 +323,6 @@ function buildFlowArgs(
 			`  "actions": [\n` +
 			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
 			`  ],\n` +
-			`  "commands": [\n` +
-			`    { "command": "curl -s -X POST https://api.example.com/v1/data -H 'Authorization: Bearer token'", "tool": "bash", "executionTime": "1.2s (normal)" }\n` +
-			`  ],\n` +
 			`  "notDone": [\n` +
 			`    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue if any", "nextStep": "specific follow-up" }\n` +
 			`  ],\n` +
@@ -335,7 +332,7 @@ function buildFlowArgs(
 			`}\n` +
 			`\`\`\`\n` +
 			`\n` +
-			`Only include fields that have data. Omit empty arrays; missing array fields are acceptable. Keep snippets under 300 characters. List at most 10 files, 10 actions, 10 commands, and 10 notDone items. If you cannot produce valid structured output, omit the JSON block entirely.`;
+			`Only include fields that have data. Omit empty arrays; missing array fields are acceptable. Keep snippets under 300 characters. List at most 10 files, 10 actions, and 10 notDone items. If you cannot produce valid structured output, omit the JSON block entirely.`;
 	}
 
 	const directive = directiveBody
@@ -793,7 +790,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const flowText = getFlowOutput(normalized.messages);
 			const extracted = extractStructuredOutput(flowText);
 			if (extracted) {
-				normalized.structuredOutput = enrichStructuredOutputCommands(extracted, normalized.messages);
+				extracted.commands = generateCommandsFromHistory(normalized.messages);
+				normalized.structuredOutput = extracted;
 			}
 		}
 

@@ -97,21 +97,70 @@ export function extractStructuredOutput(text: string): FlowStructuredOutput | un
 	};
 }
 
+// ---------------------------------------------------------------------------
+// Mechanical command generation from tool call history
+// ---------------------------------------------------------------------------
+
 /**
- * Walk the message history and mechanically replace paraphrased bash commands
- * in a structured-output `commands` array with the exact verbatim strings from
- * the actual tool calls. This fixes the common LLM behaviour of summarising
- * `curl -s -X POST …` as `"curl GAWA baseline"`.
- *
- * Batch operations are flattened so that bash commands nested inside a batch
- * call are included in the same chronological order they were executed.
+ * Extract [Execution time: ...] markers keyed by bash-op-ID from batch
+ * result text. Uses the `--- bash [ID]` delimiter to split sections.
+ * Pending sections (no timing marker) are not included in the result.
  */
-export function enrichStructuredOutputCommands(
-	structuredOutput: FlowStructuredOutput,
-	messages: Message[],
-): FlowStructuredOutput {
-	// Build a map of toolCallId -> execution time string from tool result messages.
-	const timingMap = new Map<string, string>();
+function extractBatchTimingsById(text: string): Map<string, string> {
+	const result = new Map<string, string>();
+	const sections = text.split(/^--- bash \[([^\]]+)\]/m);
+	// sections: [preamble, id1, body1, id2, body2, ...]
+	for (let i = 1; i < sections.length - 1; i += 2) {
+		const id = sections[i].trim();
+		const body = sections[i + 1] || "";
+		const match = body.match(/\[Execution time: ([^\]]+)\]/);
+		if (match) result.set(id, match[1]);
+	}
+	return result;
+}
+
+/**
+ * Extract [Execution time: ...] markers keyed by bash-op-ID from poll
+ * result text. Uses the `--- [ID]` delimiter to split sections.
+ */
+function extractPollTimingsById(text: string): Map<string, string> {
+	const result = new Map<string, string>();
+	const sections = text.split(/^--- \[([^\]]+)\]/m);
+	// sections: [preamble, id1, body1, id2, body2, ...]
+	for (let i = 1; i < sections.length - 1; i += 2) {
+		const id = sections[i].trim();
+		const body = sections[i + 1] || "";
+		const match = body.match(/\[Execution time: ([^\]]+)\]/);
+		if (match) result.set(id, match[1]);
+	}
+	return result;
+}
+
+/**
+ * Walk the message history and mechanically generate a commands array
+ * from all bash tool calls (standalone, batch-nested, and batch_bash_poll).
+ *
+ * This replaces the old enrichStructuredOutputCommands approach which relied
+ * on the LLM generating a paraphrased commands array that was then replaced
+ * with verbatim versions. Now commands are generated purely from tool call
+ * history — no LLM involvement required.
+ *
+ * Deduplication strategy:
+ * - Batch-nested bash ops that completed within the batch call are emitted
+ *   immediately with their timing.
+ * - Batch-nested bash ops that were still pending when the batch returned
+ *   (no timing available) are deferred to batch_bash_poll.
+ * - batch_bash_poll only emits entries for IDs that were deferred AND have
+ *   completed (with timing). Still-pending poll results are skipped.
+ * - Once an ID is emitted (from batch or poll), subsequent encounters skip it.
+ */
+export function generateCommandsFromHistory(messages: Message[]): CommandEntry[] {
+	const commands: CommandEntry[] = [];
+
+	// ── Phase 1: Build lookup maps ──
+
+	// Map toolCallId → concatenated text from tool result messages
+	const toolResultTexts = new Map<string, string>();
 	for (const msg of messages) {
 		if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
 		const id =
@@ -123,73 +172,105 @@ export function enrichStructuredOutputCommands(
 			.filter((c: { type: string; text?: string }) => c.type === "text" && typeof c.text === "string")
 			.map((c: { text: string }) => c.text)
 			.join("");
+		toolResultTexts.set(id, text);
+	}
+
+	// Map toolCallId → execution time (from [Execution time: ...] markers)
+	const timingMap = new Map<string, string>();
+	for (const [id, text] of toolResultTexts) {
 		const match = text.match(/\[Execution time: ([^\]]+)\]/);
 		if (match) timingMap.set(id, match[1]);
 	}
 
-	// Collect actual verbatim bash commands (including those inside batch ops)
-	// alongside their toolCallId so we can look up execution time.
-	interface BashEntry {
-		command: string;
-		toolCallId?: string;
-	}
-	const actualBashEntries: BashEntry[] = [];
+	// Map bash-op-ID → command string (from all batch calls, for poll lookback)
+	const bashIdToCommand = new Map<string, string>();
+
+	// Track which bash-op IDs have already been emitted (with timing).
+	// Prevents duplicates from poll calls.
+	const emittedBashIds = new Set<string>();
+
+	// ── Phase 2: Walk tool calls ──
+
 	for (const msg of messages) {
 		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
 		for (const part of msg.content) {
 			if (part.type !== "toolCall") continue;
-			const name =
-				part.name ||
-				(part as unknown as { toolName?: string }).toolName ||
-				"";
+			const name = part.name || (part as unknown as { toolName?: string }).toolName || "";
 			const args = part.arguments || part.input || {};
-			const toolCallId =
-				(part as unknown as { toolCallId?: string }).toolCallId ||
-				(part as unknown as { tool_call_id?: string }).tool_call_id ||
-				"";
+			const toolCallId = (part as unknown as { toolCallId?: string }).toolCallId || (part as unknown as { tool_call_id?: string }).tool_call_id || "";
 
-			if (name === "bash") {
-				const cmd = (args.command as string) || "";
-				if (cmd) actualBashEntries.push({ command: cmd, toolCallId });
-			} else if (name === "batch") {
-				const ops = Array.isArray(args.o)
-					? args.o
-					: Array.isArray(args.op)
-						? args.op
-						: Array.isArray(args.operations)
-							? args.operations
-							: [];
-				for (const op of ops) {
-					if (!op) continue;
-					const opType = (op.o ?? op.op) as string;
-					if (opType === "bash" && op.command) {
-						// Batch-nested bash ops don't have individual toolCallIds,
-						// so execution time can't be correlated.
-						actualBashEntries.push({ command: op.command as string });
+			switch (name) {
+				case "bash": {
+					const cmd = (args.command as string) || "";
+					if (cmd) {
+						commands.push({
+							command: cmd,
+							tool: "bash",
+							...(timingMap.has(toolCallId) ? { executionTime: timingMap.get(toolCallId) } : {}),
+						});
 					}
+					break;
+				}
+
+				case "batch": {
+					const ops = Array.isArray(args.o)
+						? args.o
+						: Array.isArray(args.op)
+							? args.op
+							: Array.isArray(args.operations)
+								? args.operations
+								: [];
+					const resultText = toolResultTexts.get(toolCallId) || "";
+					const batchTimings = extractBatchTimingsById(resultText);
+
+					for (const op of ops) {
+						if (!op) continue;
+						const opType = (op.o ?? op.op) as string;
+						if (opType === "bash" && op.command) {
+							const id = (op.i ?? op.id) as string;
+							if (id) bashIdToCommand.set(id, op.command as string);
+
+							const timing = id ? batchTimings.get(id) : undefined;
+
+							if (timing) {
+								// Completed within batch — emit immediately with timing
+								commands.push({
+									command: op.command as string,
+									tool: "bash",
+									executionTime: timing,
+								});
+								if (id) emittedBashIds.add(id);
+							}
+							// Pending ops (no timing) are deferred to batch_bash_poll
+						}
+					}
+					break;
+				}
+
+				case "batch_bash_poll": {
+					const ids = Array.isArray(args.i) ? args.i as string[] : [];
+					const resultText = toolResultTexts.get(toolCallId) || "";
+					const pollTimings = extractPollTimingsById(resultText);
+
+					for (const id of ids) {
+						if (emittedBashIds.has(id)) continue; // already emitted
+						const command = bashIdToCommand.get(id);
+						if (!command) continue; // unknown ID — skip
+						const timing = pollTimings.get(id);
+						if (!timing) continue; // still pending — skip, defer to next poll
+
+						commands.push({
+							command,
+							tool: "bash",
+							executionTime: timing,
+						});
+						emittedBashIds.add(id);
+					}
+					break;
 				}
 			}
 		}
 	}
 
-	if (actualBashEntries.length === 0) return structuredOutput;
-
-	// Replace paraphrased bash commands with actual verbatim ones, in order.
-	let bashIdx = 0;
-	const enrichedCommands = structuredOutput.commands.map((cmd) => {
-		if (cmd.tool === "bash" && bashIdx < actualBashEntries.length) {
-			const entry = actualBashEntries[bashIdx++];
-			const executionTime = entry.toolCallId
-				? timingMap.get(entry.toolCallId)
-				: undefined;
-			return {
-				command: entry.command,
-				tool: "bash",
-				...(executionTime !== undefined ? { executionTime } : {}),
-			};
-		}
-		return { command: cmd.command, tool: cmd.tool };
-	});
-
-	return { ...structuredOutput, commands: enrichedCommands };
+	return commands;
 }
