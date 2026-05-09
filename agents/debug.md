@@ -1,7 +1,7 @@
 ---
 name: debug
 description: Investigate logs, errors, stack traces, root causes
-tools: batch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls, web
 maxDepth: 0
 tier: lite
 ---
