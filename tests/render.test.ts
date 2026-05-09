@@ -9,8 +9,6 @@ import {
 	formatCountdown,
 	visibleLength,
 	getTruncationBudget,
-	contentBudget,
-	DETAIL_CONTENT_MAX,
 } from "../src/render-utils.js";
 import { renderFlowResult } from "../src/render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
@@ -187,7 +185,29 @@ describe("getTruncationBudget", () => {
 			expect(getTruncationBudget(0)).toBe(40);
 
 			(process.stdout as any).columns = 20;
+			// width floored to 40, then 40 - 10 = 30, but floor of 8 means 30
 			expect(getTruncationBudget(10)).toBe(30);
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
+	it("floors result at 8 (readable minimum)", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40;
+			// 40 - 35 = 5, but floor is 8
+			expect(getTruncationBudget(35)).toBe(8);
+			expect(getTruncationBudget(40)).toBe(8);
+			expect(getTruncationBudget(100)).toBe(8);
+
+			(process.stdout as any).columns = 100;
+			// 100 - 95 = 5, but floor is 8
+			expect(getTruncationBudget(95)).toBe(8);
+
+			// exact boundary: 100 - 92 = 8
+			expect(getTruncationBudget(92)).toBe(8);
+			expect(getTruncationBudget(91)).toBe(9);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -201,43 +221,6 @@ describe("getTruncationBudget", () => {
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
-	});
-});
-
-// ---------------------------------------------------------------------------
-// contentBudget
-// ---------------------------------------------------------------------------
-
-describe("contentBudget", () => {
-	it("returns 60 minus prefix length", () => {
-		expect(contentBudget(0)).toBe(60);
-		expect(contentBudget(10)).toBe(50);
-		expect(contentBudget(15)).toBe(45);
-	});
-
-	it("floors at 8", () => {
-		expect(contentBudget(52)).toBe(8);
-		expect(contentBudget(60)).toBe(8);
-		expect(contentBudget(100)).toBe(8);
-	});
-
-	it("exact boundary: prefix 51 gives 9", () => {
-		expect(contentBudget(51)).toBe(9);
-	});
-
-	it("exact boundary: prefix 52 gives 8", () => {
-		expect(contentBudget(52)).toBe(8);
-	});
-
-	it("accepts a custom max budget", () => {
-		expect(contentBudget(0, DETAIL_CONTENT_MAX)).toBe(80);
-		expect(contentBudget(10, DETAIL_CONTENT_MAX)).toBe(70);
-		expect(contentBudget(20, DETAIL_CONTENT_MAX)).toBe(60);
-	});
-
-	it("floors custom budget at 8", () => {
-		expect(contentBudget(75, DETAIL_CONTENT_MAX)).toBe(8);
-		expect(contentBudget(100, DETAIL_CONTENT_MAX)).toBe(8);
 	});
 });
 
@@ -660,7 +643,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = contentBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "), DETAIL_CONTENT_MAX);
+		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
 		expect(scoutBlock).toContain(tailText(streaming, expectedBudget));
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
@@ -676,7 +659,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("aim:");
-		// Content is pre-truncated to contentBudget(10) = 50 chars
+		// Content is pre-truncated dynamically based on terminal width
 		const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
 		expect(dirLine).toContain("...");
 	});
@@ -767,9 +750,10 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
 			expect(dirLine).toBeDefined();
-			// Content is pre-truncated to contentBudget(10) = 50 chars
+			// Content is pre-truncated dynamically based on terminal width (columns=40)
 			expect(dirLine).toContain("...");
-			expect(visibleLength(dirLine.split("aim:")[1].trim())).toBeLessThanOrEqual(50);
+			const expectedBudget = getTruncationBudget(visibleLength("│  ├─ aim: "));
+			expect(visibleLength(dirLine.split("aim:")[1].trim())).toBeLessThanOrEqual(expectedBudget);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -793,7 +777,7 @@ describe("activity panel rendering", () => {
 			const expectedPrefix = "[↑     0 · ↓     0] - ";
 			expect(logLine).toContain(`msg: ${expectedPrefix}`);
 			const logContent = logLine.split(expectedPrefix)[1].trim();
-			const expectedBudget = contentBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "), DETAIL_CONTENT_MAX);
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
 			expect(logContent).toBe(tailText(longStreaming, expectedBudget));
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(expectedBudget);
 		} finally {
