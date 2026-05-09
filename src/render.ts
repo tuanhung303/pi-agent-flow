@@ -22,6 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
+import { formatBatchOpsSummary } from "./batch/render.js";
 import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, truncateChars, tailText, getTruncationBudget, visibleLength } from "./render-utils.js";
 
 function shortenPath(p: string): string {
@@ -72,23 +73,7 @@ function formatFlowToolCall(toolName: string, args: Record<string, unknown>, fg:
 			return fg("muted", "grep ") + fg("accent", `/${(args.pattern || "") as string}/`) + fg("dim", ` in ${shortenPath((args.path || ".") as string)}`);
 		case "batch":
 		case "batch_read": {
-			const ops = Array.isArray(args.o) ? args.o : Array.isArray(args.op) ? args.op : Array.isArray(args.operations) ? args.operations : Array.isArray(args) ? args : [];
-			if (ops.length === 0) return fg("muted", `${toolName} (empty)`);
-			const parts: string[] = [];
-			for (const op of ops) {
-				const opObj = op as Record<string, unknown>;
-				const opName = (opObj.o ?? opObj.op ?? "?") as string;
-				const opPath = (opObj.p ?? opObj.path ?? "?") as string;
-				const shortPath = shortenPath(opPath);
-				if (opName === "edit") {
-					const edits = (opObj.e ?? opObj.edits) as unknown[] | undefined;
-					const blockInfo = edits && edits.length > 1 ? ` (${edits.length} blocks)` : "";
-					parts.push(`edit ${shortPath}${blockInfo}`);
-				} else {
-					parts.push(`${opName} ${shortPath}`);
-				}
-			}
-			const summary = parts.length <= 3 ? parts.join(", ") : `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
+			const summary = formatBatchOpsSummary(args);
 			return fg("muted", `${toolName} `) + fg("accent", summary);
 		}
 		default:

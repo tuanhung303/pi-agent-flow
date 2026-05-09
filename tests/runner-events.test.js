@@ -831,7 +831,7 @@ describe("getFlowSummaryText — batch", () => {
       }),
     ];
     const summary = getFlowSummaryText(r);
-    expect(summary).toContain("batch write new.ts");
+    expect(summary).toContain("batch write src/new.ts");
   });
 
   it("formats multiple batch operations in summary", () => {
@@ -847,7 +847,59 @@ describe("getFlowSummaryText — batch", () => {
       }),
     ];
     const summary = getFlowSummaryText(r);
-    expect(summary).toContain("batch read a.ts +1 more");
+    expect(summary).toContain("batch read a.ts, read b.ts");
+  });
+
+  it("truncates batch operations when more than 3", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("batch", {
+        o: [
+          { op: "read", path: "a.ts" },
+          { op: "read", path: "b.ts" },
+          { op: "edit", path: "c.ts", edits: [{ oldText: "a", newText: "b" }] },
+          { op: "write", path: "d.ts", content: "export {};" },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("batch read a.ts, read b.ts +2 more");
+  });
+
+  it("formats batch bash operation as bash: <cmd> not bash bash", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("batch", {
+        o: [
+          { o: "bash", c: "npm test", p: "bash" },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("batch bash: npm test");
+    expect(summary).not.toContain("bash bash");
+  });
+
+  it("deduplicates consecutive identical batch operations in summary", () => {
+    const r = makeResult();
+    r.exitCode = 1;
+    r.stderr = "Error";
+    r.messages = [
+      makeToolCallMessage("batch", {
+        o: [
+          { op: "read", path: "a.ts" },
+          { op: "read", path: "a.ts" },
+          { op: "read", path: "a.ts" },
+          { op: "edit", path: "b.ts", edits: [{ oldText: "a", newText: "b" }] },
+        ],
+      }),
+    ];
+    const summary = getFlowSummaryText(r);
+    expect(summary).toContain("read a.ts×3");
   });
 
   it("formats empty batch operations in summary", () => {
@@ -939,7 +991,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
     const summary = getFlowSummaryText(result);
     expect(summary).toContain("Found the entry point.");
     expect(summary).toContain("[Tool Results]");
-    expect(summary).toContain("batch read index.ts:");
+    expect(summary).toContain("batch read src/index.ts:");
     expect(summary).toContain("export default function main");
   });
 

@@ -1011,4 +1011,63 @@ describe("formatFlowToolCall — batch", () => {
 		const text = extractText(rendered);
 		expect(text).toContain("batch (empty)");
 	});
+
+	it("renders bash operation as bash: <cmd> not bash bash", () => {
+		const result = makeResult({
+			type: "build",
+			intent: "Run tests",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{ o: "bash", c: "npm test", p: "bash" },
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("bash: npm test");
+		expect(text).not.toContain("bash bash");
+	});
+
+	it("renders multiple bash operations with truncation", () => {
+		const result = makeResult({
+			type: "build",
+			intent: "Run commands",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{ o: "bash", c: "npm run lint", p: "bash" },
+					{ o: "bash", c: "npm run test", p: "bash" },
+					{ o: "bash", c: "npm run build", p: "bash" },
+					{ o: "read", p: "src/index.ts" },
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("bash: npm run lint");
+		expect(text).toContain("+2 more");
+	});
+
+	it("deduplicates consecutive identical operations", () => {
+		const result = makeResult({
+			type: "scout",
+			intent: "Read files",
+			messages: [
+				makeToolCallMessage("batch", { o: [
+					{ o: "read", p: "src/a.ts" },
+					{ o: "read", p: "src/a.ts" },
+					{ o: "read", p: "src/a.ts" },
+					{ o: "edit", p: "src/b.ts", e: [{ f: "old", r: "new" }] },
+				] }),
+			],
+			usage: emptyFlowUsage(),
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("read src/a.ts×3");
+	});
 });
