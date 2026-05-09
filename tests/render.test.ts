@@ -169,10 +169,10 @@ describe("getTruncationBudget", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 100;
-			expect(getTruncationBudget(10)).toBe(90);
+			expect(getTruncationBudget(10)).toBe(87);
 
 			(process.stdout as any).columns = 60;
-			expect(getTruncationBudget(8)).toBe(52);
+			expect(getTruncationBudget(8)).toBe(49);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -182,11 +182,11 @@ describe("getTruncationBudget", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 30;
-			expect(getTruncationBudget(0)).toBe(40);
+			expect(getTruncationBudget(0)).toBe(37);
 
 			(process.stdout as any).columns = 20;
 			// width floored to 40, then 40 - 10 = 30, but floor of 8 means 30
-			expect(getTruncationBudget(10)).toBe(30);
+			expect(getTruncationBudget(10)).toBe(27);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -205,9 +205,10 @@ describe("getTruncationBudget", () => {
 			// 100 - 95 = 5, but floor is 8
 			expect(getTruncationBudget(95)).toBe(8);
 
-			// exact boundary: 100 - 92 = 8
+			// with padding: 100 - 92 - 3 = 5, floored to 8
 			expect(getTruncationBudget(92)).toBe(8);
-			expect(getTruncationBudget(91)).toBe(9);
+			// 100 - 91 - 3 = 6, also floored to 8
+			expect(getTruncationBudget(91)).toBe(8);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -217,7 +218,7 @@ describe("getTruncationBudget", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = undefined;
-			expect(getTruncationBudget(10)).toBe(70);
+			expect(getTruncationBudget(10)).toBe(67);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
