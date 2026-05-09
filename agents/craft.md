@@ -1,7 +1,7 @@
 ---
 name: craft
 description: Plan structure, break down requirements, design solutions
-tools: batch, bash, find, grep, ls
+tools: batch, bash, find, grep, ls, web
 maxDepth: 0
 tier: full
 ---

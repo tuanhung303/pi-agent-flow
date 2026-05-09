@@ -48,12 +48,12 @@ Six flow-state prompts in `agents/`:
 
 | Flow | Tools | maxDepth | Tier | Notes |
 |------|-------|----------|------|-------|
-| `scout` | batch, bash, find, grep, ls | 0 | lite | Discovery, surgical efficiency |
-| `debug` | batch, bash, find, grep, ls | 0 | lite | Forensic investigation, evidence-only |
-| `build` | batch, bash, find, grep, ls | 0 | flash | Implement, test, verify, ship |
-| `craft` | batch, bash, find, grep, ls | 0 | full | Conservative design, may delegate to `[scout]` |
-| `audit` | batch, bash, find, grep, ls | 0 | flash | Audit security, quality, correctness; fix safe issues |
-| `ideas` | batch, bash | 0 | full | Clean slate, diverge → evaluate → recommend |
+| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Discovery, surgical efficiency |
+| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Forensic investigation, evidence-only |
+| `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship |
+| `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]` |
+| `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues |
+| `ideas` | batch, bash, web | 0 | full | Clean slate, diverge → evaluate → recommend |
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 
@@ -70,5 +70,5 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 - **Structured output**: JSON schema injected at the end of the flow prompt when `structuredOutput` is true. Parsed by `extractStructuredOutput()` and mechanically enriched by `enrichStructuredOutputCommands()` which replaces paraphrased bash commands with verbatim tool-call args and attaches `executionTime` from the timed-bash wrapper.
 - **Flow-mode persistence**: `--flow-mode` writes `flowModelConfig` to global `settings.json` via atomic rename (`writeGlobalFlowMode`). Startup prints either concise (`mode: name | lite: model · flash: model · full: model`) or verbose format with per-tier flow-name labels.
 - **Transition matrix**: Data-driven post-flow routing in `transitions.ts`. Converted to hooks via `buildTransitionHooks()`. `autoTransition` (opt-in) queues qualifying follow-up flows automatically.
-- **Tool optimization**: When enabled, `getOptimizedTools()` strips legacy `read`/`write`/`edit` and injects `batch`. The parent sets active tools to `["batch_read", "flow"]`; children get `["batch", "bash"]` (or plus `flow` if they can delegate).
+- **Tool optimization**: When enabled, `getOptimizedTools()` strips legacy `read`/`write`/`edit` and injects `batch`. The parent sets active tools to `["batch_read", "flow", "web"]`; children get `["batch", "bash", "web"]` (or plus `flow` if they can delegate).
 - **Session snapshot sanitization**: `sanitizeForkSnapshot()` strips sliding prompts, reasoning artifacts, and compresses prior flow tool results into compact `CompressedFlowResult` context maps before forking.

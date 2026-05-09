@@ -207,7 +207,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Inject available flows into the system prompt.
 	// Skip entirely for child flows (depth > 0) — they get their instructions
-	// from the 4-part prompt structure in buildFlowArgs and have no web tool.
+	// from the 4-part prompt structure in buildFlowArgs.
 	pi.on("before_agent_start", async (event) => {
 		if (currentDepth > 0 || !resolved) return undefined;
 
