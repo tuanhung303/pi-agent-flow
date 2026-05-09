@@ -428,7 +428,7 @@ describe("loadFlowSettings", () => {
 
 describe("formatFlowModelStrategy", () => {
 	it("returns concise default message when strategy is empty", () => {
-		expect(formatFlowModelStrategy("default", {})).toBe("mode: default | lite: (default) · flash: (default) · full: (default)");
+		expect(formatFlowModelStrategy("default", {})).toBe("mode: default | lite: (default) - flash: (default) - full: (default)");
 	});
 
 	it("shows primary and failover when both present", () => {
@@ -436,7 +436,7 @@ describe("formatFlowModelStrategy", () => {
 			lite: { primary: "mimo-lite", failover: ["fallback-lite"] },
 			flash: { primary: "mimo-flash" },
 		});
-		expect(result).toBe("mode: mimo | lite: mimo-lite · flash: mimo-flash · full: (default)");
+		expect(result).toBe("mode: mimo | lite: mimo-lite - flash: mimo-flash - full: (default)");
 	});
 
 	it("shows failover-only tier without primary", () => {
@@ -444,6 +444,6 @@ describe("formatFlowModelStrategy", () => {
 			lite: { failover: ["failover-a", "failover-b"] },
 			flash: { primary: "mimo-flash" },
 		});
-		expect(result).toBe("mode: mimo | lite: failover: failover-a, failover-b · flash: mimo-flash · full: (default)");
+		expect(result).toBe("mode: mimo | lite: failover: failover-a, failover-b - flash: mimo-flash - full: (default)");
 	});
 });

@@ -326,7 +326,7 @@ function renderFlowCollapsed(
 	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
-	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` · ${modelLabel} · ` : " · ")}${theme.fg("dim", stats)}`;
+	let header = `${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` - ${modelLabel} - ` : " - ")}${theme.fg("dim", stats)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	container.addChild(new TruncatedText(header, 0, 0));
 
@@ -463,7 +463,7 @@ function renderActivityPanel(
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
 		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "") : "";
-		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` · ${modelLabel} · ` : " · ")}${theme.fg("dim", stats)}`;
+		let headerLine = `${theme.fg("dim", headerPrefix)} ${theme.fg("accent", theme.bold(typeName))}${theme.fg("dim", modelLabel ? ` - ${modelLabel} - ` : " - ")}${theme.fg("dim", stats)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}

@@ -384,5 +384,5 @@ export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStr
 		}
 		parts.push(`${tier}: ${value}`);
 	}
-	return `mode: ${modeName} | ${parts.join(" · ")}`;
+	return `mode: ${modeName} | ${parts.join(" - ")}`;
 }
