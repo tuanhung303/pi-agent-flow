@@ -630,6 +630,30 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("Starting...");
 	});
 
+	it("renders acceptance line in collapsed view", () => {
+		const result = makeResult({
+			acceptance: "Done when tests pass",
+			messages: [makeToolCallMessage("read", { file_path: "src/index.ts" })],
+			usage: { input: 1000, output: 200, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 500, turns: 1, toolCalls: 1 },
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("acceptance:");
+		expect(text).toContain("Done when tests pass");
+	});
+
+	it("renders acceptance line in activity panel", () => {
+		const result1 = makeResult({ type: "scout", acceptance: "Code mapped" });
+		const result2 = makeResult({ type: "build", acceptance: "Build shipped" });
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("acceptance:");
+		expect(text).toContain("Code mapped");
+		expect(text).toContain("Build shipped");
+	});
+
 	it("renders multi-flow with tree connectors", () => {
 		const result1 = makeResult({
 			type: "debug",
@@ -939,6 +963,31 @@ describe("expanded view rendering", () => {
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
 		expect(text).toContain("scout");
+	});
+
+	it("renders acceptance section in single expanded view", () => {
+		const result = makeResult({
+			type: "scout",
+			intent: "Map the codebase",
+			acceptance: "Done when all files found",
+			messages: [makeTextMessage("Found 12 files.")],
+			usage: { input: 5000, output: 800, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 6000, turns: 2, toolCalls: 1 },
+		});
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("acceptance");
+		expect(text).toContain("Done when all files found");
+	});
+
+	it("renders acceptance in multi expanded per-flow view", () => {
+		const result1 = makeResult({ type: "debug", acceptance: "Bug fixed" });
+		const result2 = makeResult({ type: "scout", acceptance: "Code mapped" });
+		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
+		const text = extractText(rendered);
+		expect(text).toContain("Bug fixed");
+		expect(text).toContain("Code mapped");
 	});
 });
 
