@@ -214,6 +214,7 @@ function buildFlowArgs(
 	structuredOutput: boolean = true,
 	sessionMode: AgentSessionMode = DEFAULT_AGENT_SESSION_MODE,
 	sessionTimeoutMs: number = getAgentSessionTimeoutMs(sessionMode),
+	acceptance?: string,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -348,13 +349,10 @@ function buildFlowArgs(
 		? `\n\n<directive>\n${directiveBody}\n</directive>`
 		: "";
 
-	// Phase 4: Mission — the intent wrapped with execution contract
+	// Phase 4: Mission — the intent (and optional acceptance criteria)
+	const acceptanceLine = acceptance ? `\nAcceptance: ${acceptance}` : "";
 	const mission =
-		`\n\n<mission>\n` +
-		`${intent}\n` +
-		`\nExecute this mission. Use only your available tools. If blocked, report why — do not guess.\n` +
-		`Follow the output format specified in your directive.\n` +
-		`</mission>`;
+		`\n\n<mission>\n${intent}${acceptanceLine}\n</mission>`;
 
 	// -p must immediately precede the prompt so the CLI parser binds it correctly
 	args.push("-p", `${contextSeal}${activation}${directive}${mission}`);
@@ -376,6 +374,8 @@ export interface RunFlowOptions {
 	intent: string;
 	/** Short headline for display. */
 	aim: string;
+	/** Short success criteria — what done looks like. */
+	acceptance?: string;
 	/** Optional override working directory. */
 	taskCwd?: string;
 	/** Serialized parent session snapshot for fork mode. Null when the flow starts with a clean slate. */
@@ -522,6 +522,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			structuredOutput,
 			effectiveSessionMode,
 			effectiveTimeout,
+			opts.acceptance,
 		);
 		let wasAborted = false;
 

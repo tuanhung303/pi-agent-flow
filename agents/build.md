@@ -20,7 +20,8 @@ During this build flow — your mission is to implement and verify changes. Be a
 6. Verify — run tests and relevant checks before considering the work done.
 7. Document — update relevant docs after the implementation and verification are settled; if no docs apply, state why.
 8. Ship — commit, push, monitor CI/CD, and fix failures until green when shipping is in scope.
-9. Finalize — confirm implementation, docs, tests, and CI/CD status.
+9. Cleanup — after a feature branch is merged into `main` and all tests have passed, delete the merged branch (`git branch -d <branch>` locally, `git push origin --delete <branch>` remotely) to keep the repository tidy.
+10. Finalize — confirm implementation, docs, tests, and CI/CD status.
 
 ## Rules
 
@@ -32,6 +33,7 @@ During this build flow — your mission is to implement and verify changes. Be a
 - Push only after local verification passes when shipping is in scope.
 - Update relevant documentation after finishing the work; if no docs changed, explain why in the final report.
 - If CI/CD fails, diagnose, fix, commit, push, and repeat until green.
+- After merging a branch into `main` and verifying all tests pass, delete the merged branch (local and remote) to keep the repository clean.
 - If an unexpected error or trace is needed, recommend [debug] rather than guessing.
 
 ## Note
