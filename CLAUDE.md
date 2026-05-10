@@ -50,33 +50,26 @@ npm ls -g pi-agent-flow     # Verify link status
 
 ## Flow Taxonomy
 
-Agent work is organized into three tiers. Each tier answers a different question: *"What can this agent touch?"* and *"What is its intent?"*
+Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
 
-### Tier 1 — Read-Only: Scout
-**Question:** "What's out there?"  
-**Mutations:** None. Zero. Nada.
-
-| Flow | Tools | maxDepth | Tier | Notes |
-|------|-------|----------|------|-------|
-| `scout` | batch_read, find, grep, ls, web | 0 | lite | Discovery, surgical efficiency. Maps terrain without leaving footprints. |
-
-Use `scout` when you need facts before decisions. It surveys files, searches code, and reports back. It never edits, commits, or deploys.
-
-### Tier 2 — Full-Access, Intent-Driven
+### Tier 1 — Intent-Driven Workers
 **Question:** "Do the thing, but stay in your lane."  
-**Mutations:** Yes — reads, writes, edits, tests, ships. But each flow has a strict mission profile. No mission drift.
+**Mutations:** Yes — reads, writes, edits, tests, ships. Each flow has a strict mission profile. No mission drift.
 
 | Flow | Tools | maxDepth | Tier | Notes |
 |------|-------|----------|------|-------|
+| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Explore, map, discover. Full access for best exploration. The pathfinder. |
 | `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship. The craftsman. |
 | `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues. The watchful eye. |
-| `debug` | batch_read, find, grep, ls, web | 0 | lite | Forensic investigation, evidence-only. The detective. |
-| `ideas` | batch, bash, web, ask_user | 0 | full | Clean slate, diverge → evaluate → recommend; overlays questionnaire for design conflicts & horizon trade-offs. The strategist. |
+| `debug` | batch, bash, find, grep, ls, web | 0 | flash | Investigate root cause AND fix the bug. The detective + fixer. |
+| `ideas` | batch, bash, web, ask_user | 0 | full | Clean slate, diverge → evaluate → recommend. The strategist. |
 | `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]`. The architect. |
 
-These flows do the heavy lifting. But they do not talk to the user — they receive a mission, execute, and return structured results. Their intent is scoped: a `build` agent ships code; an `audit` agent checks it; a `debug` agent traces roots; an `ideas` agent explores possibilities; a `craft` agent designs carefully.
+These flows do the heavy lifting. They do not talk to the user — they receive a mission, execute, and return structured results. Their intent is scoped: a `scout` maps the terrain; a `build` agent ships code; an `audit` agent checks it; a `debug` agent traces roots *and* fixes them; an `ideas` agent explores possibilities; a `craft` agent designs carefully.
 
-### Tier 3 — Orchestrator: Main Agent
+> **Tier** (lite / flash / full) only affects **model selection** — which LLM candidate to use. It does **not** restrict tools or access.
+
+### Tier 2 — Orchestrator: Main Agent
 **Question:** "What should we do, and who should do it?"  
 **Mutations:** No direct code edits.  
 **Role:** The router, synthesizer, and user-facing coordinator.

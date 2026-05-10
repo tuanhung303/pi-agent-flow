@@ -85,7 +85,7 @@ describe("discoverFlows", () => {
 		expect(flowsByName.get("build")?.systemPrompt).toContain("update relevant docs");
 		expect(flowsByName.get("build")?.systemPrompt).toContain("if no docs apply, state why");
 		expect(flowsByName.get("debug")?.systemPrompt).toContain("update relevant docs, runbooks, or troubleshooting notes");
-		expect(flowsByName.get("debug")?.systemPrompt).toContain("after finishing the investigation");
+		expect(flowsByName.get("debug")?.systemPrompt).toContain("after finishing");
 		expect(flowsByName.get("debug")?.systemPrompt).toContain("Documentation-only updates are required after finishing the work");
 	});
 });

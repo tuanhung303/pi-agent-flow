@@ -39,45 +39,6 @@ export interface FlowDiscoveryResult {
 }
 
 /** Determine the model tier for a given flow name. */
-export const TIER_TOOL_POLICY: Record<
-	FlowTier,
-	{ replacements: Record<string, string> }
-> = {
-	lite: {
-		replacements: { batch: "batch_read", bash: "" },
-	},
-	flash: {
-		replacements: {},
-	},
-	full: {
-		replacements: {},
-	},
-};
-
-/**
- * Apply tier-based tool policy: replace or remove tools according to the
- * flow's tier.  Returns a deduplicated list with replacements applied.
- * Empty-string replacements mean "remove this tool".
- */
-export function applyTierToolPolicy(tools: string[], tier: FlowTier): string[] {
-	const policy = TIER_TOOL_POLICY[tier];
-	if (!policy || Object.keys(policy.replacements).length === 0) return tools;
-
-	const seen = new Set<string>();
-	const result: string[] = [];
-
-	for (const tool of tools) {
-		const replacement = policy.replacements[tool];
-		const finalTool = replacement !== undefined ? replacement : tool;
-		if (finalTool === "") continue; // removed
-		if (seen.has(finalTool)) continue;
-		seen.add(finalTool);
-		result.push(finalTool);
-	}
-
-	return result;
-}
-
 export function getFlowTier(flowName: string): FlowTier {
 	const normalized = flowName.toLowerCase().trim();
 	switch (normalized) {
