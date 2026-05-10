@@ -7,6 +7,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { setupNotify } from "./notify.js";
 import { discoverFlows, getFlowTier } from "./agents.js";
 import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
@@ -154,6 +155,9 @@ export default function (pi: ExtensionAPI) {
 		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
 		type: "boolean",
 	});
+
+	// Wire up bundled notification channel
+	setupNotify(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
