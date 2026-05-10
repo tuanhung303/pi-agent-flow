@@ -1051,3 +1051,140 @@ describe("timeout two-stage behavior", () => {
 		expect(result.stopReason).not.toBe("timeout");
 	});
 });
+
+describe("acceptance field propagation", () => {
+	const mockFlow: FlowConfig = {
+		name: "scout",
+		description: "Discovery flow",
+		systemPrompt: "You are scout.",
+		source: "bundled",
+		filePath: "/agents/scout.md",
+	};
+
+	function makeMockProcess() {
+		const proc = new EventEmitter() as any;
+		proc.stdin = new EventEmitter();
+		proc.stdin.end = vi.fn();
+		proc.stdout = new EventEmitter();
+		proc.stderr = new EventEmitter();
+		proc.pid = 12345;
+		proc.kill = vi.fn();
+		return proc;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("includes Acceptance line in mission when acceptance is provided", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			acceptance: "Done when all tests pass",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+
+		expect(prompt).toContain("<mission>");
+		expect(prompt).toContain("Acceptance: Done when all tests pass");
+		expect(prompt).toContain("</mission>");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("omits Acceptance line when acceptance is not provided", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+
+		expect(prompt).toContain("<mission>");
+		expect(prompt).not.toContain("Acceptance:");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("omits Acceptance line when acceptance is empty string", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			acceptance: "",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+
+		expect(prompt).toContain("<mission>");
+		expect(prompt).not.toContain("Acceptance:");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+});
