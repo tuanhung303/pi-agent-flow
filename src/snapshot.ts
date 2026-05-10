@@ -1,5 +1,5 @@
 /**
- * Session snapshot building, sanitization, and flow result compression.
+ * Session snapshot building, sanitization, and tool result compression.
  *
  * Extracted from index.ts for single-responsibility and testability.
  */
@@ -65,20 +65,55 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string {
 	return parts.join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// batch_read result compression
+// ---------------------------------------------------------------------------
+
 /**
- * Compress flow tool results in a sanitized session snapshot.
- *
- * Scans for tool result messages that correspond to flow invocations
- * and replaces their content with compact compressed output.
+ * Extract file paths from a batch_read tool call's arguments.
+ * Handles both { o: [...] } and bare array argument formats.
  */
-export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
-	if (cache.size === 0) return snapshot;
+function extractBatchReadPaths(args: unknown): string[] {
+	if (!args || typeof args !== "object") return [];
 
-	const lines = snapshot.trimEnd().split("\n");
-	const result: string[] = [];
+	let ops: unknown[];
+	if (Array.isArray(args)) {
+		ops = args;
+	} else if (Array.isArray((args as Record<string, unknown>).o)) {
+		ops = (args as Record<string, unknown>).o as unknown[];
+	} else {
+		return [];
+	}
 
-	// First pass: map toolCallId → tool name from assistant messages
-	const toolCallIdToName = new Map<string, string>();
+	const paths: string[] = [];
+	for (const op of ops) {
+		if (!op || typeof op !== "object") continue;
+		const p = (op as Record<string, unknown>).p;
+		if (typeof p === "string" && p) paths.push(p);
+	}
+	return paths;
+}
+
+/**
+ * Render a compressed batch_read result as compact metadata for child context.
+ * Format: [batch_read] N ops → paths: file1.ts, file2.ts, …
+ */
+function renderCompressedBatchReadResult(paths: string[]): string {
+	const MAX_PATHS_DISPLAY = 10;
+	const display = paths.slice(0, MAX_PATHS_DISPLAY);
+	const suffix = paths.length > MAX_PATHS_DISPLAY ? `, … +${paths.length - MAX_PATHS_DISPLAY} more` : "";
+	return `[batch_read] ${paths.length} ops → paths: ${display.join(", ")}${suffix}`;
+}
+
+// ---------------------------------------------------------------------------
+// Shared: toolCallId → toolName mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a map from toolCallId → toolName by scanning assistant messages.
+ */
+function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
+	const map = new Map<string, string>();
 	for (const line of lines) {
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { continue; }
@@ -87,12 +122,63 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
 			if (part.type === "toolCall" && part.toolCallId && part.name) {
-				toolCallIdToName.set(part.toolCallId, part.name);
+				map.set(part.toolCallId, part.name);
+			}
+		}
+	}
+	return map;
+}
+
+// ---------------------------------------------------------------------------
+// Tool result compression (flow + batch_read)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compress tool results in a sanitized session snapshot.
+ *
+ * Handles two tool types:
+ * - `flow` results: replaced with compact CompressedFlowResult output from cache.
+ * - `batch_read` results: replaced with compact metadata (paths + op count)
+ *   since children have `batch` and can re-read files themselves.
+ */
+export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
+	const lines = snapshot.trimEnd().split("\n");
+
+	// Quick check: if there are no flow cache entries and no batch_read tool calls,
+	// nothing to compress — return early.
+	if (cache.size === 0) {
+		const hasBatchRead = lines.some((line) => {
+			try {
+				const entry = JSON.parse(line);
+				return entry?.type === "message" && entry.message?.role === "assistant" &&
+					Array.isArray(entry.message.content) &&
+					entry.message.content.some((p: any) => p.type === "toolCall" && p.name === "batch_read");
+			} catch { return false; }
+		});
+		if (!hasBatchRead) return snapshot;
+	}
+
+	// Build toolCallId → toolName mapping
+	const toolCallIdToName = buildToolCallIdToNameMap(lines);
+
+	// Also build toolCallId → arguments mapping for batch_read path extraction
+	const toolCallIdToArgs = new Map<string, unknown>();
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { continue; }
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+		const content = entry.message.content;
+		if (!Array.isArray(content)) continue;
+		for (const part of content) {
+			if (part.type === "toolCall" && part.toolCallId && part.name === "batch_read" && part.arguments) {
+				toolCallIdToArgs.set(part.toolCallId, part.arguments);
 			}
 		}
 	}
 
-	// Second pass: compress flow tool results
+	const result: string[] = [];
+
+	// Second pass: compress matching tool results
 	for (const line of lines) {
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
@@ -118,48 +204,154 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
 		if (!toolCallId) { result.push(line); continue; }
 
 		const toolName = toolCallIdToName.get(toolCallId);
-		if (toolName !== "flow") { result.push(line); continue; }
 
-		const compressed = cache.get(toolCallId);
-		if (!compressed || compressed.length === 0) { result.push(line); continue; }
+		// --- Compress flow tool results ---
+		if (toolName === "flow") {
+			const compressed = cache.get(toolCallId);
+			if (!compressed || compressed.length === 0) { result.push(line); continue; }
 
-		const rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
+			const rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
 
-		// Replace content in the tool result message
-		if (typeof entry.message.toolCallId === "string") {
-			// Format 1: toolCallId at message level, content is text array
-			entry = {
-				...entry,
-				message: {
-					...entry.message,
-					content: [{ type: "text", text: rendered }],
-				},
-			};
-		} else {
-			// Format 2: toolCallId inside content array
-			entry = {
-				...entry,
-				message: {
-					...entry.message,
-					content: entry.message.content.map((part: any) =>
-						part.type === "toolResult" && part.toolCallId === toolCallId
-							? { ...part, content: rendered }
-							: part,
-					),
-				},
-			};
+			if (typeof entry.message.toolCallId === "string") {
+				entry = {
+					...entry,
+					message: {
+						...entry.message,
+						content: [{ type: "text", text: rendered }],
+					},
+				};
+			} else {
+				entry = {
+					...entry,
+					message: {
+						...entry.message,
+						content: entry.message.content.map((part: any) =>
+							part.type === "toolResult" && part.toolCallId === toolCallId
+								? { ...part, content: rendered }
+								: part,
+						),
+					},
+				};
+			}
+
+			result.push(JSON.stringify(entry));
+			continue;
 		}
 
-		result.push(JSON.stringify(entry));
+		// --- Compress batch_read tool results ---
+		if (toolName === "batch_read") {
+			const args = toolCallIdToArgs.get(toolCallId);
+			const paths = extractBatchReadPaths(args);
+			const rendered = paths.length > 0
+				? renderCompressedBatchReadResult(paths)
+				: "[batch_read] result compressed";
+
+			if (typeof entry.message.toolCallId === "string") {
+				entry = {
+					...entry,
+					message: {
+						...entry.message,
+						content: [{ type: "text", text: rendered }],
+					},
+				};
+			} else {
+				entry = {
+					...entry,
+					message: {
+						...entry.message,
+						content: entry.message.content.map((part: any) =>
+							part.type === "toolResult" && part.toolCallId === toolCallId
+								? { ...part, content: rendered }
+								: part,
+						),
+					},
+				};
+			}
+
+			result.push(JSON.stringify(entry));
+			continue;
+		}
+
+		// Other tool results pass through unchanged
+		result.push(line);
 	}
 
 	return `${result.join("\n")}\n`;
 }
 
 /**
- * Sanitize a fork session snapshot JSONL to remove only non-inheritable
- * artifacts before passing full parent context to child flows: sliding system
- * prompts, legacy reminders, and assistant reasoning/thinking.
+ * Backward-compatible alias for compressToolResults.
+ * @deprecated Use compressToolResults instead.
+ */
+export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
+	return compressToolResults(snapshot, cache);
+}
+
+// ---------------------------------------------------------------------------
+// batch_read tool call stripping
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip batch_read tool calls from assistant messages in a session snapshot.
+ *
+ * Children don't have batch_read in their active tools, so seeing calls to it
+ * could confuse the model. This removes toolCall parts where name === "batch_read"
+ * from assistant messages, while keeping the rest of the message intact.
+ */
+export function stripBatchReadToolCalls(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
+
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+			result.push(line);
+			continue;
+		}
+
+		const content = entry.message.content;
+		if (!Array.isArray(content)) { result.push(line); continue; }
+
+		// Check if any toolCall parts reference batch_read
+		const hasBatchReadCall = content.some(
+			(part: any) => part.type === "toolCall" && part.name === "batch_read",
+		);
+		if (!hasBatchReadCall) { result.push(line); continue; }
+
+		// Filter out batch_read toolCall parts
+		const filteredContent = content.filter(
+			(part: any) => !(part.type === "toolCall" && part.name === "batch_read"),
+		);
+
+		// If all content was batch_read calls, keep at least an empty text part
+		// to avoid an empty content array
+		if (filteredContent.length === 0) {
+			filteredContent.push({ type: "text", text: "" });
+		}
+
+		result.push(JSON.stringify({
+			...entry,
+			message: {
+				...entry.message,
+				content: filteredContent,
+			},
+		}));
+	}
+
+	return `${result.join("\n")}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot sanitization
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize a fork session snapshot JSONL to remove non-inheritable
+ * artifacts before passing parent context to child flows:
+ * sliding system prompts, assistant reasoning/thinking,
+ * batch_read tool calls, and compress flow/batch_read tool results.
  */
 export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, CompressedFlowResult[]> = new Map()): string | null {
 	if (!snapshot) return snapshot;
@@ -217,6 +409,14 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 		sanitizedLines.push(changed ? JSON.stringify(entry) : line);
 	}
 
-	const sanitized = `${sanitizedLines.join("\n")}\n`;
-	return compressFlowToolResults(sanitized, cache);
+	let sanitized = `${sanitizedLines.join("\n")}\n`;
+
+	// Strip batch_read tool calls from assistant messages.
+	// Children don't have batch_read in their active tools.
+	sanitized = stripBatchReadToolCalls(sanitized);
+
+	// Compress flow and batch_read tool results.
+	sanitized = compressToolResults(sanitized, cache);
+
+	return sanitized;
 }

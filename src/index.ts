@@ -105,8 +105,8 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 	});
 }
 
-// Re-export compressFlowToolResults for tests
-export { compressFlowToolResults } from "./snapshot.js";
+// Re-export compressToolResults and compressFlowToolResults for tests
+export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot.js";
 
 // ---------------------------------------------------------------------------
 // Extension entry point
@@ -176,6 +176,8 @@ export default function (pi: ExtensionAPI) {
 		// Register tools based on depth.
 		// Depth 0 (main orchestrator): only batch_read — no bash ops, only reads + flow delegation.
 		// Depth > 0 (child flows): batch (with bash), batch_bash_poll — they need bash ops.
+		// Children use batch for reads (which includes read ops), so batch_read is NOT
+		// registered for depth > 0 to avoid confusion and keep the tool set minimal.
 		// The bashProcessTracker is shared between the batch tool (launches bash ops)
 		// and the batch_bash_poll tool (checks on pending bash ops).
 		if (resolved.toolOptimize) {
@@ -183,7 +185,6 @@ export default function (pi: ExtensionAPI) {
 				pi.registerTool(createBatchReadTool());
 			} else {
 				bashTracker = new BashProcessTracker();
-				pi.registerTool(createBatchReadTool());
 				pi.registerTool(createBatchTool(bashTracker));
 				pi.registerTool(createBatchBashPollTool(bashTracker));
 			}
