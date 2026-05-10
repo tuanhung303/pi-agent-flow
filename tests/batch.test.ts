@@ -252,8 +252,8 @@ describe("batch tool", () => {
 		});
 
 		describe("truncation", () => {
-			it("truncates large files at 2000 lines", async () => {
-				const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+			it("truncates large files at 3000 lines", async () => {
+				const lines = Array.from({ length: 4000 }, (_, i) => `line ${i}`);
 				fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
 
 				const tool = createTool();
@@ -266,13 +266,13 @@ describe("batch tool", () => {
 				);
 
 				expect(result.details.results[0].truncated).toBe(true);
-				expect(result.details.results[0].content).toContain("[Showing lines 1-2000 of 3000");
-				expect(result.details.results[0].content).toContain("s=2001");
-				expect(result.details.results[0].totalLines).toBe(3000);
+				expect(result.details.results[0].content).toContain("[Showing lines 1-3000 of 4000");
+				expect(result.details.results[0].content).toContain("s=3001");
+				expect(result.details.results[0].totalLines).toBe(4000);
 			});
 
 			it("includes truncation warning in summary", async () => {
-				const lines = Array.from({ length: 3000 }, (_, i) => `line ${i}`);
+				const lines = Array.from({ length: 4000 }, (_, i) => `line ${i}`);
 				fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
 
 				const tool = createTool();
@@ -285,7 +285,7 @@ describe("batch tool", () => {
 				);
 
 				expect(result.content[0].text).toContain("⚠ large.txt truncated");
-				expect(result.content[0].text).toContain("s=2001");
+				expect(result.content[0].text).toContain("s=3001");
 			});
 		});
 	});
@@ -1355,8 +1355,8 @@ describe("batch tool", () => {
 
 	describe("first-line exceeds byte limit", () => {
 		it("throws when a single line exceeds the byte limit", async () => {
-			// Create a file with a single very long line (> 50KB)
-			const hugeLine = "x".repeat(60 * 1024); // 60KB
+			// Create a file with a single very long line (> 100KB)
+			const hugeLine = "x".repeat(120 * 1024); // 120KB
 			fs.writeFileSync(path.join(tmpDir, "huge-line.txt"), hugeLine, "utf-8");
 
 			const tool = createTool();
@@ -1851,8 +1851,8 @@ describe("edge cases", () => {
 
 	describe("read edge cases", () => {
 		it("truncates by bytes across multiple lines", async () => {
-			// Each line is ~1KB, 60 lines = ~60KB total (> 50KB limit)
-			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			// Each line is ~1KB, 110 lines = ~110KB total (> 100KB limit)
+			const lines = Array.from({ length: 110 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
 			fs.writeFileSync(path.join(tmpDir, "multi-byte.txt"), lines.join("\n"), "utf-8");
 
 			const tool = createTool();
@@ -2011,7 +2011,7 @@ describe("edge cases", () => {
 		});
 
 		it("includes byte truncation warning in summary", async () => {
-			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			const lines = Array.from({ length: 110 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
 			fs.writeFileSync(path.join(tmpDir, "byte-warn.txt"), lines.join("\n"), "utf-8");
 
 			const tool = createTool();
@@ -2028,9 +2028,9 @@ describe("edge cases", () => {
 		});
 
 		it("skips remaining reads when aggregate line limit is exceeded", async () => {
-			// 4 files × 500 lines = 2000 total; cap is 1500
+			// 4 files × 1500 lines = 6000 total; cap is 4000
 			for (let i = 0; i < 4; i++) {
-				const lines = Array.from({ length: 500 }, (_, j) => `file${i} line ${j}`);
+				const lines = Array.from({ length: 1500 }, (_, j) => `file${i} line ${j}`);
 				fs.writeFileSync(path.join(tmpDir, `batch-agg-${i}.txt`), lines.join("\n"), "utf-8");
 			}
 
@@ -2057,14 +2057,14 @@ describe("edge cases", () => {
 				op: "read",
 				path: "batch-agg-3.txt",
 				status: "skipped",
-				error: expect.stringContaining("aggregate line limit of 1500"),
+				error: expect.stringContaining("aggregate line limit of 4000"),
 			});
-			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 1 read: batch-agg-3.txt");
+			expect(result.content[0].text).toContain("⚠ Aggregate line limit (4000) reached — skipped 1 read: batch-agg-3.txt");
 		});
 
 		it("continues non-read operations after aggregate line limit is reached", async () => {
 			for (let i = 0; i < 4; i++) {
-				const lines = Array.from({ length: 500 }, (_, j) => `file${i} line ${j}`);
+				const lines = Array.from({ length: 1500 }, (_, j) => `file${i} line ${j}`);
 				fs.writeFileSync(path.join(tmpDir, `mixed-${i}.txt`), lines.join("\n"), "utf-8");
 			}
 
@@ -2319,7 +2319,7 @@ describe("batch_read tool", () => {
 		});
 
 		it("returns only total lines for large plain text full-file reads", async () => {
-			const lines = Array.from({ length: 301 }, (_, i) => `line ${i}`);
+			const lines = Array.from({ length: 801 }, (_, i) => `line ${i}`);
 			fs.writeFileSync(path.join(tmpDir, "large.txt"), lines.join("\n"), "utf-8");
 
 			const tool = createTool();
@@ -2335,13 +2335,13 @@ describe("batch_read tool", () => {
 				op: "read",
 				path: "large.txt",
 				status: "ok",
-				totalLines: 301,
+				totalLines: 801,
 				contextMap: true,
 			});
 			expect(result.details.results[0].content).toBeUndefined();
 			expect(result.content[0].text).toContain("--- large.txt file summary ---");
-			expect(result.content[0].text).toContain("Total lines: 301");
-			expect(result.content[0].text).not.toContain("line 300");
+			expect(result.content[0].text).toContain("Total lines: 801");
+			expect(result.content[0].text).not.toContain("line 800");
 		});
 
 		it("returns raw content for small full-file reads", async () => {
@@ -2364,7 +2364,7 @@ describe("batch_read tool", () => {
 
 		it("returns a capped context map for large TypeScript full-file reads", async () => {
 			const symbols = Array.from({ length: 105 }, (_, i) => `function fn${i}() {\n\treturn ${i};\n}`).join("\n");
-			const filler = Array.from({ length: 20 }, (_, i) => `// filler ${i}`).join("\n");
+			const filler = Array.from({ length: 510 }, (_, i) => `// filler ${i}`).join("\n");
 			fs.writeFileSync(path.join(tmpDir, "large.ts"), `${symbols}\n${filler}`, "utf-8");
 
 			const tool = createTool();
@@ -2390,13 +2390,13 @@ describe("batch_read tool", () => {
 		});
 
 		it("clamps oversized targeted reads with a warning", async () => {
-			const lines = Array.from({ length: 1500 }, (_, i) => `line ${i + 1}`);
+			const lines = Array.from({ length: 3000 }, (_, i) => `line ${i + 1}`);
 			fs.writeFileSync(path.join(tmpDir, "target.txt"), lines.join("\n"), "utf-8");
 
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
-				{ o: [{ o: "read", p: "target.txt", s: 1, l: 1200 }] },
+				{ o: [{ o: "read", p: "target.txt", s: 1, l: 2500 }] },
 				undefined,
 				undefined,
 				makeCtx(tmpDir),
@@ -2404,12 +2404,12 @@ describe("batch_read tool", () => {
 
 			expect(result.details.results[0]).toMatchObject({
 				truncated: true,
-				nextOffset: 1001,
-				warning: expect.stringContaining("Raw content truncated at 1000 lines"),
+				nextOffset: 2001,
+				warning: expect.stringContaining("Raw content truncated at 2000 lines"),
 			});
-			expect(result.details.results[0].content).toContain("line 1000");
-			expect(result.details.results[0].content).not.toContain("line 1001");
-			expect(result.content[0].text).toContain("Raw content truncated at 1000 lines");
+			expect(result.details.results[0].content).toContain("line 2000");
+			expect(result.details.results[0].content).not.toContain("line 2001");
+			expect(result.content[0].text).toContain("Raw content truncated at 2000 lines");
 		});
 
 		it("returns Terraform context maps for large full-file reads", async () => {
@@ -2426,7 +2426,7 @@ describe("batch_read tool", () => {
 				'  type = string',
 				'}',
 			].join("\n");
-			const filler = Array.from({ length: 295 }, (_, i) => `# filler ${i}`).join("\n");
+			const filler = Array.from({ length: 795 }, (_, i) => `# filler ${i}`).join("\n");
 			fs.writeFileSync(path.join(tmpDir, "main.tf"), `${header}\n${filler}`, "utf-8");
 
 			const tool = createTool();
@@ -2457,7 +2457,7 @@ describe("batch_read tool", () => {
 				"      - uses: actions/checkout@v4",
 				"      - run: npm test",
 			].join("\n");
-			const filler = Array.from({ length: 295 }, (_, i) => `# filler ${i}`).join("\n");
+			const filler = Array.from({ length: 795 }, (_, i) => `# filler ${i}`).join("\n");
 			fs.writeFileSync(path.join(tmpDir, "ci.yml"), `${workflow}\n${filler}`, "utf-8");
 
 			const tool = createTool();
@@ -2486,7 +2486,7 @@ describe("batch_read tool", () => {
 				"FROM node:22-slim AS runtime",
 				"CMD [\"node\", \"dist/index.js\"]",
 			].join("\n");
-			const filler = Array.from({ length: 300 }, (_, i) => `# filler ${i}`).join("\n");
+			const filler = Array.from({ length: 800 }, (_, i) => `# filler ${i}`).join("\n");
 			fs.writeFileSync(path.join(tmpDir, "Dockerfile"), `${dockerfile}\n${filler}`, "utf-8");
 
 			const tool = createTool();
@@ -2507,7 +2507,7 @@ describe("batch_read tool", () => {
 		});
 
 		it("does not truncate multi-line reads at the regular batch byte cap", async () => {
-			const lines = Array.from({ length: 60 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
+			const lines = Array.from({ length: 110 }, (_, i) => `line ${i.toString().padStart(1000, "0")}`);
 			fs.writeFileSync(path.join(tmpDir, "large-bytes.txt"), lines.join("\n"), "utf-8");
 
 			const tool = createTool();
@@ -2527,7 +2527,7 @@ describe("batch_read tool", () => {
 		});
 
 		it("still errors when an individual selected line exceeds the byte cap", async () => {
-			const hugeLine = "x".repeat(60 * 1024);
+			const hugeLine = "x".repeat(120 * 1024);
 			fs.writeFileSync(path.join(tmpDir, "huge-line.txt"), `short\n${hugeLine}\n`, "utf-8");
 
 			const tool = createTool();
@@ -2548,10 +2548,10 @@ describe("batch_read tool", () => {
 		});
 
 		it("skips remaining reads when aggregate line limit is exceeded", async () => {
-			// 4 files × 800 lines; targeted read of 799 lines each
-			// File 1 + File 2 = 1598 lines > 1500 cap, so Files 3 and 4 are skipped
+			// 4 files × 3000 lines; targeted read of 2000 lines each
+			// File 1 + File 2 = 4000 lines ≥ 4000 cap, so Files 3 and 4 are skipped
 			for (let i = 0; i < 4; i++) {
-				const lines = Array.from({ length: 800 }, (_, j) => `file${i} line ${j}`);
+				const lines = Array.from({ length: 3000 }, (_, j) => `file${i} line ${j}`);
 				fs.writeFileSync(path.join(tmpDir, `agg-${i}.txt`), lines.join("\n"), "utf-8");
 			}
 
@@ -2560,10 +2560,10 @@ describe("batch_read tool", () => {
 				"call-1",
 				{
 					o: [
-						{ o: "read", p: "agg-0.txt", s: 1, l: 799 },
-						{ o: "read", p: "agg-1.txt", s: 1, l: 799 },
-						{ o: "read", p: "agg-2.txt", s: 1, l: 799 },
-						{ o: "read", p: "agg-3.txt", s: 1, l: 799 },
+						{ o: "read", p: "agg-0.txt", s: 1, l: 2000 },
+						{ o: "read", p: "agg-1.txt", s: 1, l: 2000 },
+						{ o: "read", p: "agg-2.txt", s: 1, l: 2000 },
+						{ o: "read", p: "agg-3.txt", s: 1, l: 2000 },
 					],
 				},
 				undefined,
@@ -2577,20 +2577,20 @@ describe("batch_read tool", () => {
 				op: "read",
 				path: "agg-2.txt",
 				status: "skipped",
-				error: expect.stringContaining("aggregate line limit of 1500"),
+				error: expect.stringContaining("aggregate line limit of 4000"),
 			});
 			expect(result.details.results[3]).toMatchObject({
 				op: "read",
 				path: "agg-3.txt",
 				status: "skipped",
-				error: expect.stringContaining("aggregate line limit of 1500"),
+				error: expect.stringContaining("aggregate line limit of 4000"),
 			});
-			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 2 reads: agg-2.txt, agg-3.txt");
+			expect(result.content[0].text).toContain("⚠ Aggregate line limit (4000) reached — skipped 2 reads: agg-2.txt, agg-3.txt");
 		});
 
 		it("does not count context maps toward aggregate line limit", async () => {
-			// A context map read (301+ lines, full-file) should not consume the aggregate cap
-			const lines = Array.from({ length: 301 }, (_, i) => `line ${i}`);
+			// A context map read (801+ lines, full-file) should not consume the aggregate cap
+			const lines = Array.from({ length: 801 }, (_, i) => `line ${i}`);
 			fs.writeFileSync(path.join(tmpDir, "large-map.txt"), lines.join("\n"), "utf-8");
 			const smallLines = Array.from({ length: 500 }, (_, i) => `small line ${i}`);
 			fs.writeFileSync(path.join(tmpDir, "small.txt"), smallLines.join("\n"), "utf-8");
