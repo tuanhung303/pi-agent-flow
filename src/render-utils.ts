@@ -43,6 +43,10 @@ function formatTps(value: number | undefined): string {
 	return value.toFixed(1).padStart(5);
 }
 
+export function italic(text: string): string {
+	return `\x1b[3m${text}\x1b[23m`;
+}
+
 export function formatCompactTokenPair(usage: Partial<UsageStats>): string {
 	return `↑ ${formatFixedTokens(usage.input || 0)} · ↓ ${formatFixedTokens(usage.output || 0)}`;
 }
@@ -102,6 +106,11 @@ const ANSI_RE = /\x1b\[[0-9;]*m/g;
 /** Return the visible (ANSI-stripped) character count. */
 export function visibleLength(text: string): number {
 	return text.replace(ANSI_RE, "").length;
+}
+
+/** Strip all ANSI escape sequences from a string. */
+export function stripAnsi(text: string): string {
+	return text.replace(ANSI_RE, "");
 }
 
 /**
