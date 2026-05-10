@@ -13,7 +13,7 @@ import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
-import { appendStrategicHint, appendStrategicHintOnce, resetStrategicHintTracker, stripStrategicHintsFromMessages } from "./tool-utils.js";
+import { appendStrategicHintOnce, resetStrategicHintTracker } from "./tool-utils.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -282,8 +282,6 @@ export default function (pi: ExtensionAPI) {
 		if (systemPromptChanged) {
 			result.systemPrompt = systemPrompt;
 		}
-		// Strip strategic hints from older tool results to prevent accumulation
-		result.messages = stripStrategicHintsFromMessages(result.messages);
 		return result;
 	});
 

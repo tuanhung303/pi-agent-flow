@@ -141,10 +141,22 @@ function compressBatchResult(text: string): string {
 			continue;
 		}
 
-		// Context map section — truncate
-		const ctxMapMatch = line.match(/^--- (.+) context map ---$/);
+		// Context map / file summary section — truncate
+		const ctxMapMatch = line.match(/^--- (.+) (context map|file summary) ---$/);
 		if (ctxMapMatch) {
-			out.push(`--- ${ctxMapMatch[1]} (context map, truncated) ---`);
+			out.push(`--- ${ctxMapMatch[1]} (${ctxMapMatch[2]}, truncated) ---`);
+			i++;
+			while (i < lines.length && !lines[i].match(/^--- /)) {
+				i++;
+			}
+			continue;
+		}
+
+		// File read without line count — truncate
+		// Negative lookahead excludes bash/edit/write/delete sections that should be kept verbatim
+		const fallbackReadMatch = line.match(/^--- (?!bash \[|edit:|write:|delete:|error)(.+) ---$/);
+		if (fallbackReadMatch) {
+			out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
 			i++;
 			while (i < lines.length && !lines[i].match(/^--- /)) {
 				i++;
