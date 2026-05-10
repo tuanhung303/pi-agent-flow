@@ -8,7 +8,7 @@
 import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Type, type TUnsafe } from "@sinclair/typebox";
-import { appendStrategicHint } from "./tool-utils.js";
+import { appendStrategicHintOnce } from "./tool-utils.js";
 import {
    Container,
    type Component,
@@ -1597,7 +1597,7 @@ export function createAskUserTool() {
                content: [{ type: "text", text: `User answered: ${formatResponseSummary(response)}` }],
                details: { question, context: normalizedContext, options, response, cancelled: false } as AskToolDetails,
             };
-            appendStrategicHint(_result0);
+            appendStrategicHintOnce(_result0);
             return _result0;
          }
 

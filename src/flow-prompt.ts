@@ -90,6 +90,15 @@ export function buildBeforeAgentStartPrompt(
 		})
 		.join("\n");
 
+	// Orchestrator gets the full guide; child flows get a minimal version
+	if (currentDepth > 0) {
+		return (
+			systemPrompt +
+			`\n\n## Flows\n${flowList}\n\n` +
+			`Guards: depth ${currentDepth}/${maxDepth} | cycles: ${preventCycles ? "blocked" : "off"} | stack: ${ancestorFlowStack.length > 0 ? ancestorFlowStack.join(" -> ") : "(root)"}`
+		);
+	}
+
 	return (
 		systemPrompt +
 		`\n\n## Flows

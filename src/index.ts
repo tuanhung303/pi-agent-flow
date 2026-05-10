@@ -13,7 +13,7 @@ import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
-import { appendStrategicHint } from "./tool-utils.js";
+import { appendStrategicHint, appendStrategicHintOnce, resetStrategicHintTracker, stripStrategicHintsFromMessages } from "./tool-utils.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -41,6 +41,12 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./settings-resolver.js";
+
+// ---------------------------------------------------------------------------
+// Persistent flow result cache — shared across execute() calls so historical
+// flow results are compressed properly in fork snapshots.
+// ---------------------------------------------------------------------------
+const flowResultCache = new Map<string, CompressedFlowResult[]>();
 import {
 	computeActiveTools,
 	buildBeforeAgentStartPrompt,
@@ -192,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 				pi.registerTool(createBatchReadTool());
 			} else {
 				bashTracker = new BashProcessTracker();
-				pi.registerTool(createBatchTool(bashTracker));
+				pi.registerTool(createBatchTool(bashTracker, resolved.toolOptimize));
 				pi.registerTool(createBatchBashPollTool(bashTracker));
 			}
 		}
@@ -212,6 +218,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("turn_start", () => {
 		if (currentDepth > 0 || !resolved) return;
 		pi.setActiveTools(computeActiveTools(resolved.toolOptimize));
+		resetStrategicHintTracker();
 	});
 
 	// Inject available flows into the system prompt.
@@ -275,6 +282,8 @@ export default function (pi: ExtensionAPI) {
 		if (systemPromptChanged) {
 			result.systemPrompt = systemPrompt;
 		}
+		// Strip strategic hints from older tool results to prevent accumulation
+		result.messages = stripStrategicHintsFromMessages(result.messages);
 		return result;
 	});
 
@@ -316,7 +325,8 @@ export default function (pi: ExtensionAPI) {
 
 				// Build the full fork session snapshot and sanitize only non-inheritable
 				// artifacts before passing it to child flows.
-				const flowResultCache = new Map<string, CompressedFlowResult[]>();
+				// Uses the persistent module-level cache so historical flow results
+				// are properly compressed (not passed through verbatim).
 				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
@@ -373,7 +383,7 @@ export default function (pi: ExtensionAPI) {
 					details: result.details,
 					isError: result.isError,
 				};
-				appendStrategicHint(flowToolResult);
+				appendStrategicHintOnce(flowToolResult);
 				return flowToolResult;
 			},
 

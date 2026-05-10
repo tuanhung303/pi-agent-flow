@@ -7,7 +7,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
-import { appendStrategicHint } from "./tool-utils.js";
+import { appendStrategicHintOnce } from "./tool-utils.js";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -133,7 +133,7 @@ async function runWebOps(params: WebParams, ctx: ExtensionContext, signal?: Abor
 		content: [{ type: "text" as const, text: truncated }],
 		details: { ops: details },
 	};
-	appendStrategicHint(webResult);
+	appendStrategicHintOnce(webResult);
 	return webResult;
 }
 
