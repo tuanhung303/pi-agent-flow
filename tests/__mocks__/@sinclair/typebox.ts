@@ -7,4 +7,5 @@ export const Type = {
 	Boolean: (options?: any) => ({ kind: "boolean", ...options }),
 	Union: (variants: any[]) => ({ kind: "union", variants }),
 	Literal: (value: string) => ({ kind: "literal", value }),
+	Unsafe: <T = any>(schema: any) => ({ kind: "unsafe", ...schema }),
 };
