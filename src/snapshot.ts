@@ -14,8 +14,6 @@ import {
 	stripSlidingPromptText,
 	contentContainsSlidingTag,
 	isJsonEqual,
-	SLIDING_PROMPT_OPEN_TAG,
-	SLIDING_PROMPT_CLOSE_TAG,
 } from "./sliding-prompt.js";
 import { stripStrategicHints, stripStrategicHintsFromContent } from "./tool-utils.js";
 
@@ -121,9 +119,24 @@ function logCompress(toolName: string, before: number, after: number) {
 	console.error(`[context-compress] ${toolName}: ${before} → ${after} bytes (${reduction}% reduction)`);
 }
 
+const KNOWN_SECTION_HEADERS = [
+	/^--- (.+) \((\d+) lines\) ---$/,
+	/^--- (.+) (context map|file summary) ---$/,
+	/^--- bash \[.+\] exit (\d+) ---$/,
+	/^--- edit: .+ ---$/,
+	/^--- write: .+ ---$/,
+	/^--- delete: .+ ---$/,
+	/^--- read: .+ ---$/,
+	/^--- (?!bash \[|edit:|write:|delete:|read:)(.+) ---$/,
+];
+
+function isKnownSectionHeader(line: string): boolean {
+	return KNOWN_SECTION_HEADERS.some((re) => re.test(line));
+}
+
 /** Compress batch tool result: keep bash sections verbatim, truncate read content. */
 function compressBatchResult(text: string): string {
-	const lines = text.split("\n");
+	const lines = text.replace(/\r\n/g, "\n").split("\n");
 	const out: string[] = [];
 	let i = 0;
 
@@ -135,7 +148,7 @@ function compressBatchResult(text: string): string {
 		if (readMatch) {
 			out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, content truncated) ---`);
 			i++;
-			while (i < lines.length && !lines[i].match(/^--- /)) {
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
 				i++;
 			}
 			continue;
@@ -146,7 +159,7 @@ function compressBatchResult(text: string): string {
 		if (ctxMapMatch) {
 			out.push(`--- ${ctxMapMatch[1]} (${ctxMapMatch[2]}, truncated) ---`);
 			i++;
-			while (i < lines.length && !lines[i].match(/^--- /)) {
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
 				i++;
 			}
 			continue;
@@ -158,7 +171,7 @@ function compressBatchResult(text: string): string {
 		if (fallbackReadMatch) {
 			out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
 			i++;
-			while (i < lines.length && !lines[i].match(/^--- /)) {
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
 				i++;
 			}
 			continue;
@@ -220,7 +233,7 @@ function compressAskUserResult(text: string, args?: unknown): string {
 		}
 	}
 
-	const answeredMatch = text.match(/^User answered: (.+)$/m);
+	const answeredMatch = text.match(/^User answered: (.+)$/ms);
 	if (answeredMatch) {
 		const q = question ? ` "${question}"` : "";
 		return `[ask_user]${q} → "${answeredMatch[1]}"`;
@@ -501,20 +514,17 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, CompressedFlowResult[]> = new Map()): string | null {
 	if (!snapshot) return snapshot;
 
+	const preBytes = snapshot.length;
 	const lines = snapshot.trimEnd().split("\n");
 	const sanitizedLines: string[] = [];
-	let preBytes = 0;
-	let postBytes = 0;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		preBytes += line.length + 1;
 		let entry: any;
 		try {
 			entry = JSON.parse(line);
 		} catch {
 			sanitizedLines.push(line);
-			postBytes += line.length + 1;
 			continue;
 		}
 
@@ -578,7 +588,6 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 
 		const outLine = changed ? JSON.stringify(entry) : line;
 		sanitizedLines.push(outLine);
-		postBytes += outLine.length + 1;
 	}
 
 	let sanitized = `${sanitizedLines.join("\n")}\n`;
@@ -590,8 +599,9 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 	// Compress tool results (flow, batch_read, batch, web, ask_user).
 	sanitized = compressToolResults(sanitized, cache);
 
-	// Telemetry
+	// Telemetry: measure total delta across sanitization, stripping, and compression.
 	if (DEBUG_CONTEXT) {
+		const postBytes = sanitized.length;
 		const reduction = preBytes > 0 ? ((1 - postBytes / preBytes) * 100).toFixed(0) : "0";
 		console.error(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
 	}

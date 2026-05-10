@@ -111,9 +111,9 @@ describe("compressToolResults — error sections preserved", () => {
 });
 
 describe("context handler — strategic hints not stripped", () => {
-	it("index.ts does not import stripStrategicHintsFromMessages", async () => {
-		const source = await import("fs").then(m => m.default.readFileSync("src/index.ts", "utf-8"));
-		expect(source).not.toContain("stripStrategicHintsFromMessages");
+	it("stripStrategicHintsFromMessages is removed from the public API", async () => {
+		const toolUtils = await import("fs").then(m => m.default.readFileSync("src/tool-utils.ts", "utf-8"));
+		expect(toolUtils).not.toContain("export function stripStrategicHintsFromMessages");
 	});
 
 	it("sanitizeForkSnapshot still strips hints (children don't need them)", async () => {
