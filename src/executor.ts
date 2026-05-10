@@ -83,6 +83,7 @@ export interface ExecuteFlowParams {
 	type: string;
 	intent: string;
 	aim: string;
+	acceptance?: string;
 	cwd?: string;
 	sessionMode?: AgentSessionMode;
 }
@@ -326,6 +327,7 @@ export async function executeFlows(
 				flowName: normalizedType,
 				intent: item.intent,
 				aim: item.aim,
+				acceptance: item.acceptance,
 				taskCwd: item.cwd,
 				forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
 				parentDepth: currentDepth,
