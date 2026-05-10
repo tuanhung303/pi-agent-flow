@@ -45,7 +45,7 @@ interface NotifyConfig {
 const DEFAULT_CONFIG: NotifyConfig = {
 	enabled: true,
 	onlyWhenInteractive: true,
-	title: "π",
+	title: "π flow",
 	body: "your turn.",
 	channels: {
 		terminal: true,
