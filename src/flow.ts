@@ -317,32 +317,8 @@ function buildFlowArgs(
 	// Append structured output instructions when enabled
 	if (structuredOutput && directiveBody) {
 		directiveBody +=
-			`\n\n## Structured Output\n\n` +
-			`End your response with a JSON code block containing:\n` +
-			`\n` +
-			`Commands are extracted automatically from tool call history — do not include a commands array.\n` +
-			`\n` +
-			`\`\`\`json\n` +
-			`{\n` +
-			`  "version": "1.0",\n` +
-			`  "status": "complete",\n` +
-			`  "summary": "2-3 sentence summary of what was accomplished",\n` +
-			`  "files": [\n` +
-			`    { "path": "relative/path", "role": "read", "description": "why it matters", "snippet": "short excerpt", "ranges": [{ "start": 10, "end": 25, "label": "bug" }] }\n` +
-			`  ],\n` +
-			`  "actions": [\n` +
-			`    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }\n` +
-			`  ],\n` +
-			`  "notDone": [\n` +
-			`    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue if any", "nextStep": "specific follow-up" }\n` +
-			`  ],\n` +
-			`  "nextSteps": ["recommended follow-up action"],\n` +
-			`  "reasoning": ["key hypothesis or inference"],\n` +
-			`  "notes": ["observation or warning"]\n` +
-			`}\n` +
-			`\`\`\`\n` +
-			`\n` +
-			`Only include fields that have data. Omit empty arrays; missing array fields are acceptable. Keep snippets under 300 characters. List at most 10 files, 10 actions, and 10 notDone items. If you cannot produce valid structured output, omit the JSON block entirely.`;
+			`\n\n## Structured Output\n` +
+			`End with a \`\`\`json block: { version, status, summary, files[], actions[], notDone[], nextSteps[], reasoning[], notes[] }. Commands auto-extracted; omit empty arrays. Keep snippets under 300 chars. List at most 10 items per array.`;
 	}
 
 	const directive = directiveBody

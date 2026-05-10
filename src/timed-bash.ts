@@ -15,7 +15,7 @@
 
 import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
-import { appendStrategicHint, appendTextToToolResult } from "./tool-utils.js";
+import { appendStrategicHintOnce, appendTextToToolResult } from "./tool-utils.js";
 
 export type TimingTier =
 	| "normal"
@@ -42,26 +42,26 @@ export function classifyDuration(ms: number): TimingReport {
 		return { tier: "normal", seconds: s, label: `${s.toFixed(1)}s (normal)` };
 	}
 	if (s < 30) {
-		return { tier: "avg", seconds: s, label: `${s.toFixed(1)}s (avg) — user feedback: consider improving the current commands or find a better solution` };
+		return { tier: "avg", seconds: s, label: `${s.toFixed(1)}s (avg)` };
 	}
 	if (s < 60) {
 		return {
 			tier: "long",
 			seconds: s,
-			label: `${s.toFixed(1)}s (long) — user feedback: consider improving the whole scripts`,
+			label: `${s.toFixed(1)}s (long)`,
 		};
 	}
 	if (s < 300) {
 		return {
 			tier: "extreme_long",
 			seconds: s,
-			label: `${s.toFixed(1)}s (extreme long) — user feedback: should consider to improve the whole scripts`,
+			label: `${s.toFixed(1)}s (extreme long)`,
 		};
 	}
 	return {
 		tier: "very_long",
 		seconds: s,
-		label: `${(s / 60).toFixed(1)}min (very long) — user feedback: consider to improve, only run when everything tested with other means`,
+		label: `${(s / 60).toFixed(1)}min (very long)`,
 	};
 }
 
@@ -236,7 +236,7 @@ export function createTimedBashToolDefinition(
 					appendTextToToolResult(result, formatDeadlineAppendix());
 					result.isError = true;
 				} else {
-					appendStrategicHint(result);
+					appendStrategicHintOnce(result);
 				}
 				return result;
 			} catch (err: any) {
