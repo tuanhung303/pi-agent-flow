@@ -60,6 +60,9 @@ const FlowItem = Type.Object({
 	aim: Type.String({
 		description: "Extreme short intent — one sentence, 5-7 words, headline-style summary of what this flow does.",
 	}),
+	acceptance: Type.Optional(
+		Type.String({ description: "Short success criteria — one sentence stating what done looks like." }),
+	),
 	cwd: Type.Optional(
 		Type.String({ description: "Working directory override for this flow." }),
 	),
