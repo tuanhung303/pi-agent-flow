@@ -19,13 +19,11 @@ export const SLIDING_PROMPT_CLOSE_TAG = `</pi-flow-sliding-system id="${SLIDING_
 
 export const SLIDING_PROMPT =
 	`${SLIDING_PROMPT_OPEN_TAG}\n` +
-	`You are operating with pi-agent-flow routing.\n` +
-	`If the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\n` +
-	`For git, bash, CLI, or terminal tasks, delegate to [build].\n` +
-	`Use ask_user for major conflicts or potentially misaligned goals.\n` +
-	`Child flows inherit your session context — write intents that focus on new work rather than restating what the child already sees.\n` +
+	`The flow code:\n` +
+	`- Context: Answer directly if possible; otherwise, dive to flow.\n` +
+	`- Acts: [Route all git, bash, CLI, or terminal tasks to \`build\` flow, For major conflicts or misaligned goals use ask_user]\n` +
+	`Note: Context is inherited automatically for child flow; write intents focusing only on new work.\n` +
 	`${SLIDING_PROMPT_CLOSE_TAG}`;
-
 const SLIDING_PROMPT_RE = new RegExp(
 	SLIDING_PROMPT_OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
 	"[\\s\\S]*?" +
