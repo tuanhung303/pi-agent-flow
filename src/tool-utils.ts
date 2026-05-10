@@ -26,6 +26,63 @@ const NO_STRATEGIC_HINT =
 const STRATEGIC_HINT =
 	"\n\n[Hint: Plan next step. Prioritize batch/parallel tool calls. Execute decisively.]";
 
+const STRATEGIC_HINT_RE = /\n\n\[Hint: [^\]]*\]/g;
+
+/**
+ * Strip strategic hints from text.
+ */
+export function stripStrategicHints(text: string): string {
+	return text.replace(STRATEGIC_HINT_RE, "");
+}
+
+/**
+ * Strip strategic hints from tool result content (string or text-part array).
+ */
+export function stripStrategicHintsFromContent(
+	content: string | Array<{ type: string; text?: string }>,
+): string | Array<{ type: string; text?: string }> {
+	if (typeof content === "string") {
+		return stripStrategicHints(content);
+	}
+	return content.map((part) => {
+		if (part.type === "text" && typeof part.text === "string") {
+			return { ...part, text: stripStrategicHints(part.text) };
+		}
+		return part;
+	});
+}
+
+/**
+ * Strip strategic hints from all tool result messages in a conversation.
+ * Call this before each LLM turn to prevent hint accumulation.
+ */
+export function stripStrategicHintsFromMessages(messages: any[]): any[] {
+	return messages.map((msg) => {
+		if (msg.role !== "tool") return msg;
+		if (typeof msg.content === "string") {
+			const stripped = stripStrategicHints(msg.content);
+			if (stripped === msg.content) return msg;
+			return { ...msg, content: stripped };
+		}
+		if (Array.isArray(msg.content)) {
+			let changed = false;
+			const newContent = msg.content.map((part: any) => {
+				if (part.type === "text" && typeof part.text === "string") {
+					const stripped = stripStrategicHints(part.text);
+					if (stripped !== part.text) {
+						changed = true;
+						return { ...part, text: stripped };
+					}
+				}
+				return part;
+			});
+			if (!changed) return msg;
+			return { ...msg, content: newContent };
+		}
+		return msg;
+	});
+}
+
 /**
  * Append a concise strategic planning hint to the tool result.
  *
