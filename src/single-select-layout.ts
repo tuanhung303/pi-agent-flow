@@ -98,7 +98,7 @@ function buildItemBlocks(
 	}
 
 	return allItems.map((item, itemIndex) => {
-		const pointer = itemIndex === selectedIndex ? "→" : " ";
+		const pointer = itemIndex === selectedIndex ? "▶" : " ";
 		const lines: string[] = [];
 
 		if (item.type === "comment-toggle" || item.type === "freeform") {

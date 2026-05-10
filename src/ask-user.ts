@@ -552,7 +552,7 @@ class MultiSelectList implements Component {
 
       for (let i = startIndex; i < endIndex; i++) {
          const isSelected = i === this.selectedIndex;
-         const prefix = isSelected ? theme.fg("accent", "→") : " ";
+         const prefix = isSelected ? theme.fg("accent", "▶") : " ";
 
          if (this.isCommentToggleRow(i)) {
             const checkbox = this.commentEnabled ? theme.fg("success", "[✓]") : theme.fg("dim", "[ ]");
@@ -722,7 +722,7 @@ class WrappedSingleSelectList implements Component {
          return truncateToWidth(this.theme.fg("muted", line), width, "");
       }
 
-      if (line.startsWith("→")) {
+      if (line.startsWith("▶")) {
          return truncateToWidth(this.theme.fg("accent", this.theme.bold(line)), width, "");
       }
 
