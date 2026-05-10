@@ -10,6 +10,7 @@ import {
 	lowerFirstWord,
 	visibleLength,
 	getTruncationBudget,
+	stripAnsi,
 } from "../src/render-utils.js";
 import { renderFlowResult } from "../src/render.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
@@ -17,13 +18,15 @@ import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
 
 // Helper to extract text from Text, TruncatedText, or Container objects
 function extractText(node: Text | Container | TruncatedText): string {
+	let raw: string;
 	if ("text" in node && typeof node.text === "string") {
-		return node.text;
+		raw = node.text;
+	} else if ("children" in node && Array.isArray(node.children)) {
+		raw = node.children.map((child: any) => extractText(child)).join("\n");
+	} else {
+		raw = String(node);
 	}
-	if ("children" in node && Array.isArray(node.children)) {
-		return node.children.map((child: any) => extractText(child)).join("\n");
-	}
-	return String(node);
+	return stripAnsi(raw);
 }
 
 // ---------------------------------------------------------------------------

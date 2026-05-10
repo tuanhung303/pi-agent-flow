@@ -23,7 +23,7 @@ import {
 	isFlowSuccess,
 } from "./types.js";
 import { formatBatchOpsSummary } from "./batch/render.js";
-import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength } from "./render-utils.js";
+import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -134,11 +134,13 @@ function getLiveCountdown(r: SingleResult): string | undefined {
 
 function formatAimLinePrefix(treePrefix: string, r: SingleResult): string {
 	const countdown = getLiveCountdown(r);
-	return countdown ? `${treePrefix} aim: [${countdown}] - ` : `${treePrefix} aim: `;
+	const aimLabel = italic("aim:");
+	return countdown ? `${treePrefix} ${aimLabel} [${countdown}] - ` : `${treePrefix} ${aimLabel} `;
 }
 
 function formatMsgLinePrefix(treePrefix: string, r: SingleResult): string {
-	return `${treePrefix} msg: [${formatCompactTokenPair(r.usage)}] - `;
+	const msgLabel = italic("msg:");
+	return `${treePrefix} ${msgLabel} [${formatCompactTokenPair(r.usage)}] - `;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +328,7 @@ function renderFlowCollapsed(
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
 		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		const actPrefix = `├─ act: [${r.usage.toolCalls}] - `;
+		const actPrefix = `├─ ${italic("act:")} [${r.usage.toolCalls}] - `;
 		const actContent = truncateChars(lowerFirstWord(actStr), getTruncationBudget(visibleLength(actPrefix)));
 		container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 	}
@@ -468,7 +470,7 @@ function renderActivityPanel(
 		const lastTool = getLastToolCall(r.messages);
 		if (lastTool) {
 			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			const actPrefix = `${indent}├─ act: [${r.usage.toolCalls}] - `;
+			const actPrefix = `${indent}├─ ${italic("act:")} [${r.usage.toolCalls}] - `;
 			const actContent = truncateChars(lowerFirstWord(actStr), getTruncationBudget(visibleLength(actPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", actPrefix)}${actContent}`, 0, 0));
 		}
