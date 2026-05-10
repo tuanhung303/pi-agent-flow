@@ -153,8 +153,8 @@ function compressBatchResult(text: string): string {
 		}
 
 		// File read without line count — truncate
-		// Negative lookahead excludes bash/edit/write/delete sections that should be kept verbatim
-		const fallbackReadMatch = line.match(/^--- (?!bash \[|edit:|write:|delete:|error)(.+) ---$/);
+		// Negative lookahead excludes bash/edit/write/delete/read-error sections that should be kept verbatim
+		const fallbackReadMatch = line.match(/^--- (?!bash \[|edit:|write:|delete:|read:)(.+) ---$/);
 		if (fallbackReadMatch) {
 			out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
 			i++;

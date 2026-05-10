@@ -83,6 +83,33 @@ describe("compressToolResults — reads without line count", () => {
 	});
 });
 
+describe("compressToolResults — error sections preserved", () => {
+	it("preserves read error sections (not truncated by fallback regex)", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "read", p: "missing.txt" }] } },
+				],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "✗ 1 error: read missing.txt: No such file\n\n--- read: missing.txt ---\nError: ENOENT: no such file or directory",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- read: missing.txt ---");
+		expect(result).toContain("Error: ENOENT");
+	});
+});
+
 describe("context handler — strategic hints not stripped", () => {
 	it("index.ts does not import stripStrategicHintsFromMessages", async () => {
 		const source = await import("fs").then(m => m.default.readFileSync("src/index.ts", "utf-8"));
