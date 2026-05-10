@@ -26,7 +26,7 @@ const NO_STRATEGIC_HINT =
 const STRATEGIC_HINT =
 	"\n\n[Hint: Plan next step. Batch ALL pending edits/reads/commands into ONE batch call. Execute decisively.]";
 
-const STRATEGIC_HINT_RE = /\n\n\[Hint: [^\]]*\]/g;
+const STRATEGIC_HINT_RE = /\n\n\[Hint: [\s\S]*?\]/g;
 
 /**
  * Strip strategic hints from text.
@@ -49,37 +49,6 @@ export function stripStrategicHintsFromContent(
 			return { ...part, text: stripStrategicHints(part.text) };
 		}
 		return part;
-	});
-}
-
-/**
- * Strip strategic hints from all tool result messages in a conversation.
- * Call this before each LLM turn to prevent hint accumulation.
- */
-export function stripStrategicHintsFromMessages(messages: any[]): any[] {
-	return messages.map((msg) => {
-		if (msg.role !== "tool") return msg;
-		if (typeof msg.content === "string") {
-			const stripped = stripStrategicHints(msg.content);
-			if (stripped === msg.content) return msg;
-			return { ...msg, content: stripped };
-		}
-		if (Array.isArray(msg.content)) {
-			let changed = false;
-			const newContent = msg.content.map((part: any) => {
-				if (part.type === "text" && typeof part.text === "string") {
-					const stripped = stripStrategicHints(part.text);
-					if (stripped !== part.text) {
-						changed = true;
-						return { ...part, text: stripped };
-					}
-				}
-				return part;
-			});
-			if (!changed) return msg;
-			return { ...msg, content: newContent };
-		}
-		return msg;
 	});
 }
 

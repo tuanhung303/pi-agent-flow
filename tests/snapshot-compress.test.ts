@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { compressToolResults } from "../src/snapshot.js";
-import { stripStrategicHints, stripStrategicHintsFromMessages } from "../src/tool-utils.js";
+import { stripStrategicHints } from "../src/tool-utils.js";
 
 // ---------------------------------------------------------------------------
 // stripStrategicHints
@@ -20,46 +20,10 @@ describe("stripStrategicHints", () => {
 		const text = "A\n\n[Hint: Plan next step.]B\n\n[Hint: Execute decisively.]C";
 		expect(stripStrategicHints(text)).toBe("ABC");
 	});
-});
 
-// ---------------------------------------------------------------------------
-// stripStrategicHintsFromMessages
-// ---------------------------------------------------------------------------
-describe("stripStrategicHintsFromMessages", () => {
-	it("strips hints from tool result messages with string content", () => {
-		const messages = [
-			{ role: "user", content: "Hello" },
-			{
-				role: "tool",
-				content: "Tool output\n\n[Hint: Plan next step. Prioritize batch/parallel tool calls. Execute decisively.]",
-			},
-		];
-		const result = stripStrategicHintsFromMessages(messages);
-		expect(result[0]).toBe(messages[0]);
-		expect(result[1].content).toBe("Tool output");
-	});
-
-	it("strips hints from tool result messages with array content", () => {
-		const messages = [
-			{
-				role: "tool",
-				content: [
-					{ type: "text", text: "Tool output\n\n[Hint: Plan next step. Execute decisively.]" },
-				],
-			},
-		];
-		const result = stripStrategicHintsFromMessages(messages);
-		expect(result[0].content[0].text).toBe("Tool output");
-	});
-
-	it("skips non-tool messages", () => {
-		const messages = [
-			{ role: "user", content: "Hello\n\n[Hint: Plan next step.]" },
-			{ role: "assistant", content: "Hi" },
-		];
-		const result = stripStrategicHintsFromMessages(messages);
-		expect(result[0].content).toBe("Hello\n\n[Hint: Plan next step.]");
-		expect(result[1]).toBe(messages[1]);
+	it("handles multiline hints", () => {
+		const text = "Result\n\n[Hint: Line 1\nLine 2]";
+		expect(stripStrategicHints(text)).toBe("Result");
 	});
 });
 
@@ -144,6 +108,33 @@ describe("compressToolResults — batch", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		expect(result).toContain("--- edit: src/index.ts (2 blocks) ---");
+	});
+
+	it("does not truncate on --- lines inside file content", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "read", p: "README.md" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "✓ 1 operation: 1 read\n\n--- README.md (10 lines) ---\n# Title\n\n---\n\nSome content after horizontal rule\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.1s]\noutput",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- README.md (10 lines, content truncated) ---");
+		expect(result).not.toContain("Some content after horizontal rule");
+		expect(result).toContain("--- bash [abc] exit 0 ---");
+		expect(result).toContain("[Execution time: 0.1s]");
+		expect(result).toContain("output");
 	});
 });
 
@@ -258,5 +249,32 @@ describe("compressToolResults — ask_user", () => {
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain('[ask_user] "Confirm deletion?" → cancelled');
+	});
+
+	it("compresses multiline answered result", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Any concerns?" } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "User answered: Yes\nAlso update the README",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain('[ask_user] "Any concerns?" → "Yes\nAlso update the README"');
 	});
 });
