@@ -24,7 +24,7 @@ const NO_STRATEGIC_HINT =
 	process.env.PI_FLOW_NO_STRATEGIC_HINT === "1";
 
 const STRATEGIC_HINT =
-	"\n\n[Hint: Plan next step. Prioritize batch/parallel tool calls. Execute decisively.]";
+	"\n\n[Hint: Plan next step. Batch ALL pending edits/reads/commands into ONE batch call. Execute decisively.]";
 
 const STRATEGIC_HINT_RE = /\n\n\[Hint: [^\]]*\]/g;
 
@@ -90,6 +90,20 @@ export function stripStrategicHintsFromMessages(messages: any[]): any[] {
  * is an error (no hint on failed calls — the model should focus on
  * fixing the error, not planning ahead).
  */
+let hintAppendedThisTurn = false;
+
+export function resetStrategicHintTracker(): void {
+	hintAppendedThisTurn = false;
+}
+
+export function appendStrategicHintOnce(result: any): void {
+	if (NO_STRATEGIC_HINT) return;
+	if (result?.isError) return;
+	if (hintAppendedThisTurn) return;
+	hintAppendedThisTurn = true;
+	appendTextToToolResult(result, STRATEGIC_HINT);
+}
+
 export function appendStrategicHint(result: any): void {
 	if (NO_STRATEGIC_HINT) return;
 	if (result?.isError) return;

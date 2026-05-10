@@ -15,7 +15,7 @@
 
 import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
-import { appendStrategicHint, appendTextToToolResult } from "./tool-utils.js";
+import { appendStrategicHintOnce, appendTextToToolResult } from "./tool-utils.js";
 
 export type TimingTier =
 	| "normal"
@@ -236,7 +236,7 @@ export function createTimedBashToolDefinition(
 					appendTextToToolResult(result, formatDeadlineAppendix());
 					result.isError = true;
 				} else {
-					appendStrategicHint(result);
+					appendStrategicHintOnce(result);
 				}
 				return result;
 			} catch (err: any) {

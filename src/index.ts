@@ -13,7 +13,7 @@ import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
-import { appendStrategicHint, stripStrategicHintsFromMessages } from "./tool-utils.js";
+import { appendStrategicHint, appendStrategicHintOnce, resetStrategicHintTracker, stripStrategicHintsFromMessages } from "./tool-utils.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -198,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 				pi.registerTool(createBatchReadTool());
 			} else {
 				bashTracker = new BashProcessTracker();
-				pi.registerTool(createBatchTool(bashTracker));
+				pi.registerTool(createBatchTool(bashTracker, resolved.toolOptimize));
 				pi.registerTool(createBatchBashPollTool(bashTracker));
 			}
 		}
@@ -218,6 +218,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("turn_start", () => {
 		if (currentDepth > 0 || !resolved) return;
 		pi.setActiveTools(computeActiveTools(resolved.toolOptimize));
+		resetStrategicHintTracker();
 	});
 
 	// Inject available flows into the system prompt.
@@ -382,7 +383,7 @@ export default function (pi: ExtensionAPI) {
 					details: result.details,
 					isError: result.isError,
 				};
-				appendStrategicHint(flowToolResult);
+				appendStrategicHintOnce(flowToolResult);
 				return flowToolResult;
 			},
 
