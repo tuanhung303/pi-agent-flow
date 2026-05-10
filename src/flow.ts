@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { type FlowConfig } from "./agents.js";
+import { type FlowConfig, getFlowTier, applyTierToolPolicy } from "./agents.js";
 import { getInheritedCliArgs } from "./cli-args.js";
 import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
 import {
@@ -271,10 +271,16 @@ function buildFlowArgs(
 	// If the flow explicitly listed only tools that got filtered (e.g. just
 	// "web"), or the remaining tools lack essentials (batch/bash), fall back
 	// to defaultTools so the child isn't orphaned.
-	const hasEssentials = harnessTools.some((t) => t === "batch" || t === "bash");
+	const hasEssentials = harnessTools.some(
+		(t) => t === "batch" || t === "bash" || t === "batch_read",
+	);
 	if (harnessTools.length === 0 || !hasEssentials) {
 		harnessTools = [...new Set([...defaultTools, ...harnessTools])];
 	}
+	// Apply tier-based tool policy — enforces read-only contract for lite tier.
+	const flowTier = getFlowTier(flow.name);
+	harnessTools = applyTierToolPolicy(harnessTools, flowTier);
+
 	args.push("--tools", harnessTools.join(","));
 
 	// No --append-system-prompt: child inherits parent's system prompt for cache hits.

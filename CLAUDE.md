@@ -58,7 +58,7 @@ Agent work is organized into three tiers. Each tier answers a different question
 
 | Flow | Tools | maxDepth | Tier | Notes |
 |------|-------|----------|------|-------|
-| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Discovery, surgical efficiency. Maps terrain without leaving footprints. |
+| `scout` | batch_read, find, grep, ls, web | 0 | lite | Discovery, surgical efficiency. Maps terrain without leaving footprints. |
 
 Use `scout` when you need facts before decisions. It surveys files, searches code, and reports back. It never edits, commits, or deploys.
 
@@ -70,7 +70,7 @@ Use `scout` when you need facts before decisions. It surveys files, searches cod
 |------|-------|----------|------|-------|
 | `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship. The craftsman. |
 | `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues. The watchful eye. |
-| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Forensic investigation, evidence-only. The detective. |
+| `debug` | batch_read, find, grep, ls, web | 0 | lite | Forensic investigation, evidence-only. The detective. |
 | `ideas` | batch, bash, web, ask_user | 0 | full | Clean slate, diverge → evaluate → recommend; overlays questionnaire for design conflicts & horizon trade-offs. The strategist. |
 | `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]`. The architect. |
 

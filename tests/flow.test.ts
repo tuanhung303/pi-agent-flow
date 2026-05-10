@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/flow.js";
+import { applyTierToolPolicy } from "../src/agents.js";
 import type { FlowConfig } from "../src/agents.js";
 import type { FlowDetails } from "../src/types.js";
 import * as childProcess from "node:child_process";
@@ -296,6 +297,49 @@ describe("getOptimizedTools", () => {
 	});
 });
 
+describe("applyTierToolPolicy", () => {
+	it("replaces batch with batch_read and removes bash for lite tier", () => {
+		const result = applyTierToolPolicy(
+			["batch", "bash", "find", "grep", "ls", "web"],
+			"lite",
+		);
+		expect(result).toEqual(["batch_read", "find", "grep", "ls", "web"]);
+	});
+
+	it("preserves order and deduplicates after replacement for lite tier", () => {
+		const result = applyTierToolPolicy(
+			["batch", "find", "batch", "bash", "ls"],
+			"lite",
+		);
+		expect(result).toEqual(["batch_read", "find", "ls"]);
+	});
+
+	it("allows flow tool to pass through for lite tier", () => {
+		const result = applyTierToolPolicy(["batch", "flow", "web"], "lite");
+		expect(result).toEqual(["batch_read", "flow", "web"]);
+	});
+
+	it("handles already-read-only tool lists for lite tier", () => {
+		const result = applyTierToolPolicy(
+			["batch_read", "find", "grep", "ls", "web"],
+			"lite",
+		);
+		expect(result).toEqual(["batch_read", "find", "grep", "ls", "web"]);
+	});
+
+	it("makes no changes for flash tier", () => {
+		const tools = ["batch", "bash", "find", "grep", "ls", "web"];
+		const result = applyTierToolPolicy(tools, "flash");
+		expect(result).toEqual(tools);
+	});
+
+	it("makes no changes for full tier", () => {
+		const tools = ["batch", "bash", "web"];
+		const result = applyTierToolPolicy(tools, "full");
+		expect(result).toEqual(tools);
+	});
+});
+
 describe("agent_end grace period behavior", () => {
 	function makeMockProcess() {
 		const proc = new EventEmitter() as any;
@@ -467,14 +511,14 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).not.toContain("edit");
 	});
 
-	it("passes web tool through to child flow tools", async () => {
+	it("enforces lite tier read-only policy: batch_read, no bash", async () => {
 		const mockFlow: FlowConfig = {
 			name: "scout",
-			description: "Explore flow",
+			description: "Discovery flow",
 			systemPrompt: "You are scout.",
 			source: "bundled",
 			filePath: "/agents/scout.md",
-			tools: ["read", "bash", "flow", "web"],
+			tools: ["batch", "bash", "find", "grep", "ls", "web"],
 		};
 
 		const mockProc = makeMockProcess();
@@ -484,6 +528,67 @@ describe("child flow harness tools", () => {
 			cwd: "/tmp",
 			flows: [mockFlow],
 			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			toolOptimize: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				delegationMode: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		setTimeout(() => {
+			mockProc.stdout.emit(
+				"data",
+				Buffer.from(
+					'{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n',
+				),
+			);
+			mockProc.emit("close", 0);
+		}, 10);
+
+		await promise;
+
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const toolsIndex = args.indexOf("--tools");
+		expect(toolsIndex).toBeGreaterThan(-1);
+		const toolsValue = args[toolsIndex + 1];
+		expect(toolsValue).toContain("batch_read");
+		const toolsList = toolsValue.split(",");
+		expect(toolsList).not.toContain("batch"); // plain batch should be replaced
+		expect(toolsList).not.toContain("bash"); // bash should be removed
+		expect(toolsValue).toContain("find");
+		expect(toolsValue).toContain("grep");
+		expect(toolsValue).toContain("ls");
+		expect(toolsValue).toContain("web");
+	});
+
+	it("passes web tool through to child flow tools", async () => {
+		const mockFlow: FlowConfig = {
+			name: "build",
+			description: "Code flow",
+			systemPrompt: "You are code.",
+			source: "bundled",
+			filePath: "/agents/code.md",
+			tools: ["read", "bash", "flow", "web"],
+		};
+
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "build",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -627,11 +732,11 @@ describe("child flow harness tools", () => {
 
 	it("falls back to defaultTools when harnessTools becomes empty after optimization", async () => {
 		const mockFlow: FlowConfig = {
-			name: "scout",
-			description: "Explore flow",
-			systemPrompt: "You are scout.",
+			name: "build",
+			description: "Code flow",
+			systemPrompt: "You are code.",
 			source: "bundled",
-			filePath: "/agents/scout.md",
+			filePath: "/agents/code.md",
 			tools: [], // empty tools triggers fallback
 		};
 
@@ -641,7 +746,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "scout",
+			flowName: "build",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -680,11 +785,11 @@ describe("child flow harness tools", () => {
 
 	it("falls back to defaultTools when toolOptimize is false and tools list is empty", async () => {
 		const mockFlow: FlowConfig = {
-			name: "scout",
-			description: "Explore flow",
-			systemPrompt: "You are scout.",
+			name: "build",
+			description: "Code flow",
+			systemPrompt: "You are code.",
 			source: "bundled",
-			filePath: "/agents/scout.md",
+			filePath: "/agents/code.md",
 			tools: [], // empty tools triggers fallback
 		};
 
@@ -694,7 +799,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "scout",
+			flowName: "build",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
@@ -736,11 +841,11 @@ describe("child flow harness tools", () => {
 
 	it("merges defaultTools when flow.tools has only non-essential tools (e.g. just web)", async () => {
 		const mockFlow: FlowConfig = {
-			name: "scout",
-			description: "Explore flow",
-			systemPrompt: "You are scout.",
+			name: "build",
+			description: "Code flow",
+			systemPrompt: "You are code.",
 			source: "bundled",
-			filePath: "/agents/scout.md",
+			filePath: "/agents/code.md",
 			tools: ["web"], // only non-essential tool — triggers hasEssentials fallback
 		};
 
@@ -750,7 +855,7 @@ describe("child flow harness tools", () => {
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
 			flows: [mockFlow],
-			flowName: "scout",
+			flowName: "build",
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
