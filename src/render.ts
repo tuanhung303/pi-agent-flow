@@ -176,6 +176,7 @@ export function renderFlowResult(
 				agentSource: "user",
 				intent: flowRequest.intent || "Processing...",
 				aim: flowRequest.aim || flowRequest.intent || "Processing...",
+				acceptance: flowRequest.acceptance,
 				exitCode: -1, // In progress
 				messages: [],
 				stderr: "",
@@ -242,6 +243,13 @@ function renderFlowExpanded(
 	container.addChild(new Spacer(1));
 	container.addChild(new Text(theme.fg("muted", sectionHeader("intent")), 0, 0));
 	container.addChild(new Text(theme.fg("dim", r.intent), 0, 0));
+
+	// Acceptance
+	if (r.acceptance) {
+		container.addChild(new Spacer(1));
+		container.addChild(new Text(theme.fg("muted", sectionHeader("acceptance")), 0, 0));
+		container.addChild(new Text(theme.fg("dim", r.acceptance), 0, 0));
+	}
 
 	// Flow report (structured output)
 	container.addChild(new Spacer(1));
@@ -322,6 +330,13 @@ function renderFlowCollapsed(
 		const aimPrefix = formatAimLinePrefix("├─", r);
 		const dirContent = truncateChars(lowerFirstWord(r.aim), getTruncationBudget(visibleLength(aimPrefix)));
 		container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", italic(dirContent))}`, 0, 0));
+	}
+
+	// acceptance: line
+	if (r.acceptance) {
+		const acceptancePrefix = "├─ acceptance: ";
+		const acceptanceContent = truncateChars(r.acceptance, getTruncationBudget(visibleLength(acceptancePrefix)));
+		container.addChild(new TruncatedText(`${theme.fg("dim", acceptancePrefix)}${theme.fg("dim", italic(acceptanceContent))}`, 0, 0));
 	}
 
 	// act: line (last tool call with count)
@@ -409,6 +424,10 @@ function renderMultiFlowExpanded(
 		// Intent: just show text, no prefix
 		container.addChild(new Text(theme.fg("dim", r.intent), 0, 0));
 
+		if (r.acceptance) {
+			container.addChild(new Text(theme.fg("dim", `Acceptance: ${r.acceptance}`), 0, 0));
+		}
+
 		if (flowOutput) {
 			container.addChild(new Spacer(1));
 			container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));
@@ -464,6 +483,13 @@ function renderActivityPanel(
 			const aimPrefix = formatAimLinePrefix(indent + "├─", r);
 			const dirContent = truncateChars(lowerFirstWord(r.aim), getTruncationBudget(visibleLength(aimPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", italic(dirContent))}`, 0, 0));
+		}
+
+		// acceptance: line
+		if (r.acceptance) {
+			const acceptancePrefix = `${indent}├─ acceptance: `;
+			const acceptanceContent = truncateChars(r.acceptance, getTruncationBudget(visibleLength(acceptancePrefix)));
+			container.addChild(new TruncatedText(`${theme.fg("dim", acceptancePrefix)}${theme.fg("dim", italic(acceptanceContent))}`, 0, 0));
 		}
 
 		// act: line (last tool call with count)

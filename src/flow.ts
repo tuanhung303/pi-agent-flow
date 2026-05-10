@@ -459,6 +459,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		agentSource: flow.source,
 		intent,
 		aim,
+		acceptance: opts.acceptance,
 		exitCode: -1,
 		messages: [],
 		stderr: "",

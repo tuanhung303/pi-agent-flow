@@ -114,6 +114,7 @@ export interface SingleResult {
 	agentSource: "user" | "project" | "bundled" | "unknown";
 	intent: string;
 	aim: string;
+	acceptance?: string;
 	exitCode: number;
 	messages: Message[];
 	stderr: string;

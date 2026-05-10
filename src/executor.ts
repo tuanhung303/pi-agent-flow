@@ -244,6 +244,7 @@ export async function executeFlows(
 			agentSource: "unknown",
 			intent: params[i].intent,
 			aim: params[i].aim,
+			acceptance: params[i].acceptance,
 			exitCode: -1,
 			messages: [],
 			stderr: "",
