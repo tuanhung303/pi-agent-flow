@@ -21,7 +21,7 @@ export const SLIDING_PROMPT =
 	`${SLIDING_PROMPT_OPEN_TAG}\n` +
 	`The flow code:\n` +
 	`- Context: Answer directly if possible; otherwise, dive to flow.\n` +
-	`- Acts: [Route all git, bash, CLI, or terminal tasks to \`build\` flow, For major conflicts or misaligned goals use ask_user]\n` +
+	`- Acts: [Route all git, bash, CLI, or terminal tasks to \`build\` flow, For major conflicts or misaligned goals use ask_user, For lengthy plans with many steps use ask_user to confirm main points before proceeding]\n` +
 	`Note: Context is inherited automatically for child flow; write intents focusing only on new work.\n` +
 	`${SLIDING_PROMPT_CLOSE_TAG}`;
 const SLIDING_PROMPT_RE = new RegExp(
