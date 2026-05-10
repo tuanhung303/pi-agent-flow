@@ -53,7 +53,7 @@ Six flow-state prompts in `agents/`:
 | `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship |
 | `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]` |
 | `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues |
-| `ideas` | batch, bash, web | 0 | full | Clean slate, diverge → evaluate → recommend |
+| `ideas` | batch, bash, web, ask_user | 0 | full | Clean slate, diverge → evaluate → recommend; overlays questionnaire for design conflicts & horizon trade-offs |
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 

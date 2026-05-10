@@ -21,6 +21,7 @@ import {
 } from "./types.js";
 import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBashPollTool } from "./batch.js";
 import { createWebTool } from "./web-tool.js";
+import { createAskUserTool } from "./ask-user.js";
 import {
 	stripSlidingPromptText,
 	stripSlidingPromptsFromMessages,
@@ -271,6 +272,9 @@ export default function (pi: ExtensionAPI) {
 
 	// Register the web tool
 	pi.registerTool(createWebTool());
+
+	// Register the ask_user tool
+	pi.registerTool(createAskUserTool());
 
 	// Register the flow tool
 	if (canDelegate) {
