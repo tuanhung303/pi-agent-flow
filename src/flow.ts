@@ -352,7 +352,10 @@ function buildFlowArgs(
 	// Phase 4: Mission — the intent (and optional acceptance criteria)
 	const acceptanceLine = acceptance ? `\nAcceptance: ${acceptance}` : "";
 	const mission =
-		`\n\n<mission>\n${intent}${acceptanceLine}\n</mission>`;
+		`\n\n<mission>\n${intent}${acceptanceLine}\n` +
+		`\nExecute this mission. Use only your available tools. If blocked, report why — do not guess.\n` +
+		`Follow the output format specified in your directive.\n` +
+		`</mission>`;
 
 	// -p must immediately precede the prompt so the CLI parser binds it correctly
 	args.push("-p", `${contextSeal}${activation}${directive}${mission}`);

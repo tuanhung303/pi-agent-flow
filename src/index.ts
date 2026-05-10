@@ -364,7 +364,7 @@ export default function (pi: ExtensionAPI) {
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
 					},
-					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, cwd: f.cwd, sessionMode: f.sessionMode })),
+					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, acceptance: f.acceptance, cwd: f.cwd, sessionMode: f.sessionMode })),
 					toolCallId,
 				);
 
