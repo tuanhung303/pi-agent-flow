@@ -1,5 +1,11 @@
 # pi-agent-flow — Project Notes
 
+> 🗺️ **This file is your index route.**
+> Think of it as the project's control panel — not a dry spec sheet, but an activation map. If you need to deploy, bump a version, debug a flow, or figure out which script to run, this file points you to the right door. Start here before wandering the codebase.
+>
+> 🌱 **Keep this index alive.**
+> CLAUDE.md is a living document. When flows change, scripts move, or CI/CD steps get updated, this file must reflect reality. If you just changed something structural — added a workflow, renamed a script, tweaked a flow's tools — **update this file before you wrap up**. The next agent (or future you) will thank you. Don't leave them lost in the maze.
+
 ## CI/CD
 
 Publishing is **fully automated** via GitHub Actions.
@@ -42,18 +48,46 @@ npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow  # Restore publis
 npm ls -g pi-agent-flow     # Verify link status
 ```
 
-## Bundled Flows
+## Flow Taxonomy
 
-Six flow-state prompts in `agents/`:
+Agent work is organized into three tiers. Each tier answers a different question: *"What can this agent touch?"* and *"What is its intent?"*
+
+### Tier 1 — Read-Only: Scout
+**Question:** "What's out there?"  
+**Mutations:** None. Zero. Nada.
 
 | Flow | Tools | maxDepth | Tier | Notes |
 |------|-------|----------|------|-------|
-| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Discovery, surgical efficiency |
-| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Forensic investigation, evidence-only |
-| `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship |
-| `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]` |
-| `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues |
-| `ideas` | batch, bash, web, ask_user | 0 | full | Clean slate, diverge → evaluate → recommend; overlays questionnaire for design conflicts & horizon trade-offs |
+| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Discovery, surgical efficiency. Maps terrain without leaving footprints. |
+
+Use `scout` when you need facts before decisions. It surveys files, searches code, and reports back. It never edits, commits, or deploys.
+
+### Tier 2 — Full-Access, Intent-Driven
+**Question:** "Do the thing, but stay in your lane."  
+**Mutations:** Yes — reads, writes, edits, tests, ships. But each flow has a strict mission profile. No mission drift.
+
+| Flow | Tools | maxDepth | Tier | Notes |
+|------|-------|----------|------|-------|
+| `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship. The craftsman. |
+| `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues. The watchful eye. |
+| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Forensic investigation, evidence-only. The detective. |
+| `ideas` | batch, bash, web, ask_user | 0 | full | Clean slate, diverge → evaluate → recommend; overlays questionnaire for design conflicts & horizon trade-offs. The strategist. |
+| `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]`. The architect. |
+
+These flows do the heavy lifting. But they do not talk to the user — they receive a mission, execute, and return structured results. Their intent is scoped: a `build` agent ships code; an `audit` agent checks it; a `debug` agent traces roots; an `ideas` agent explores possibilities; a `craft` agent designs carefully.
+
+### Tier 3 — Orchestrator: Main Agent
+**Question:** "What should we do, and who should do it?"  
+**Mutations:** No direct code edits.  
+**Role:** The router, synthesizer, and user-facing coordinator.
+
+The Orchestrator is the agent you're talking to right now (when not inside a flow). It:
+- Understands the user's goal.
+- Decides **whether** to delegate to a flow.
+- Chooses **which** flow matches the task.
+- Crafts the **intent** (mission) for that flow.
+- Synthesizes results back to the user.
+- **Never implements directly** — it routes and coordinates.
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 
