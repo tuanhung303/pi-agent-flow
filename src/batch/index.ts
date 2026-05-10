@@ -21,7 +21,7 @@ import {
 	normalizeBashOp,
 	executeBatchBash,
 } from "./batch-bash.js";
-import { appendStrategicHint } from "../tool-utils.js";
+import { appendStrategicHintOnce } from "../tool-utils.js";
 
 // Re-export polling tool factory and tracker from batch-bash
 export { BashProcessTracker, createBatchBashPollTool, pollBatchBashResults } from "./batch-bash.js";
@@ -322,7 +322,7 @@ export function createBatchReadTool() {
 				content: [{ type: "text", text: contentText }],
 				details: { results },
 			};
-			appendStrategicHint(readResult);
+			appendStrategicHintOnce(readResult);
 			return readResult;
 		},
 
@@ -339,7 +339,17 @@ export function createBatchReadTool() {
  *   When omitted, bash ops return an error. Both the batch tool and the
  *   batch_bash_poll tool must share the same tracker instance.
  */
-export function createBatchTool(bashTracker?: BashProcessTracker) {
+export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?: boolean) {
+	const guidelines = [
+		"ALWAYS combine all pending file operations and shell commands into a single batch call. Never issue sequential batch calls when you can batch them.",
+		"Multiple edits to the same file go in one `e` array: e:[{f:'old1',r:'new1'},{f:'old2',r:'new2'}]. Multiple files go in separate ops in the same call.",
+		"Each edit matches the on-disk file, not prior ops in the same call — so order within a file's `e` array doesn't matter.",
+		"Bash ops run in parallel. Use i (id) to track them. Use batch_bash_poll to check on pending commands.",
+		"Before calling batch, plan: list every file you need to read, edit, or create, and every command you need to run — then put them ALL in one call.",
+	];
+	if (toolOptimize) {
+		guidelines.push("In this mode batch is your ONLY edit tool — there is no separate edit command. Always use batch for every edit, even single-block single-file changes.");
+	}
 	return {
 		name: "batch",
 		label: "batch",
@@ -350,16 +360,10 @@ export function createBatchTool(bashTracker?: BashProcessTracker) {
 			"Bash operations (o: 'bash') run in parallel after all file ops complete. Bash ops do NOT skip each other on failure.",
 			`Bash ops use c (command), i (id), t (timeout, default ${BASH_SOFT_TIMEOUT_MS}ms), h (cwd). Commands exceeding the soft timeout return "pending" status with last 50 lines of output; poll with batch_bash_poll.`,
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
-			"Best for cross-cutting changes, multi-file refactors, or mixing reads with writes across several files.",
+			"The primary tool for all file operations and shell commands. Always combine multiple ops into one call: reads, edits, creates, deletes, and bash can all coexist. Avoid: 3 separate batch calls for 3 edits. Do: 1 batch call with 3 ops in the o array.",
 		].join("\n"),
 		promptSnippet: "Batch operations — run multiple file ops and bash commands in one call",
-		promptGuidelines: [
-			"Use batch to perform multiple file operations and bash commands in a single call.",
-			"Prefer batch when touching 2+ files, mixing creates/edits/reads/deletes, or running shell commands.",
-			"Each file operation is independent — edits match the on-disk file, not prior ops in the same call.",
-			"Bash ops run in parallel. Use i (id) to track them. Use batch_bash_poll to check on pending commands.",
-			"For single-file edits, the edit tool is fine; batch shines for cross-cutting and multi-file work.",
-		],
+		promptGuidelines: guidelines,
 		parameters: WeavePatchParams,
 		prepareArguments: prepareArguments,
 
@@ -489,7 +493,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker) {
 				content: [{ type: "text", text: contentText }],
 				details: { results: allResults },
 			};
-			appendStrategicHint(batchResult);
+			appendStrategicHintOnce(batchResult);
 			return batchResult;
 		},
 

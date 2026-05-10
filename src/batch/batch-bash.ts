@@ -1,4 +1,4 @@
-import { appendStrategicHint } from "../tool-utils.js";
+import { appendStrategicHintOnce } from "../tool-utils.js";
 
 /**
  * batch bash -- parallel bash execution and polling.
@@ -446,7 +446,7 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 				content: [{ type: "text", text: lines.join("\n").trimEnd() }],
 				details: { results },
 			};
-			appendStrategicHint(pollResult);
+			appendStrategicHintOnce(pollResult);
 			return pollResult;
 		},
 	};
