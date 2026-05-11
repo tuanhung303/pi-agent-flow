@@ -630,7 +630,7 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("Starting...");
 	});
 
-	it("renders acceptance line in collapsed view", () => {
+	it("hides acceptance line in collapsed view", () => {
 		const result = makeResult({
 			acceptance: "Done when tests pass",
 			messages: [makeToolCallMessage("read", { file_path: "src/index.ts" })],
@@ -639,19 +639,19 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("acceptance:");
-		expect(text).toContain("Done when tests pass");
+		expect(text).not.toContain("acceptance:");
+		expect(text).not.toContain("Done when tests pass");
 	});
 
-	it("renders acceptance line in activity panel", () => {
+	it("hides acceptance line in activity panel", () => {
 		const result1 = makeResult({ type: "scout", acceptance: "Code mapped" });
 		const result2 = makeResult({ type: "build", acceptance: "Build shipped" });
 		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("acceptance:");
-		expect(text).toContain("Code mapped");
-		expect(text).toContain("Build shipped");
+		expect(text).not.toContain("acceptance:");
+		expect(text).not.toContain("Code mapped");
+		expect(text).not.toContain("Build shipped");
 	});
 
 	it("renders multi-flow with tree connectors", () => {
