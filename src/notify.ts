@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { FLOW_DEPTH_ENV, parseNonNegativeInt } from "./depth.js";
 
 type TerminalBackend = "auto" | "osc777" | "osc99" | "none";
 type DesktopBackend = "auto" | "macos" | "linux" | "windows-toast" | "none";
@@ -218,6 +219,10 @@ async function playSound(config: NotifyConfig, backend: Exclude<SoundBackend, "a
 }
 
 export function setupNotify(pi: ExtensionAPI) {
+	const depthRaw = process.env[FLOW_DEPTH_ENV];
+	const currentDepth = parseNonNegativeInt(depthRaw) ?? 0;
+	if (currentDepth > 0) return;
+
 	pi.on("agent_end", async (_event, ctx) => {
 		const config = loadConfig(ctx.cwd);
 		if (!config.enabled) return;
