@@ -332,13 +332,6 @@ function renderFlowCollapsed(
 		container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", italic(dirContent))}`, 0, 0));
 	}
 
-	// acceptance: line
-	if (r.acceptance) {
-		const acceptancePrefix = "├─ acceptance: ";
-		const acceptanceContent = truncateChars(r.acceptance, getTruncationBudget(visibleLength(acceptancePrefix)));
-		container.addChild(new TruncatedText(`${theme.fg("dim", acceptancePrefix)}${theme.fg("dim", italic(acceptanceContent))}`, 0, 0));
-	}
-
 	// act: line (last tool call with count)
 	const lastTool = getLastToolCall(r.messages);
 	if (lastTool) {
@@ -483,13 +476,6 @@ function renderActivityPanel(
 			const aimPrefix = formatAimLinePrefix(indent + "├─", r);
 			const dirContent = truncateChars(lowerFirstWord(r.aim), getTruncationBudget(visibleLength(aimPrefix)));
 			container.addChild(new TruncatedText(`${theme.fg("dim", aimPrefix)}${theme.fg("dim", italic(dirContent))}`, 0, 0));
-		}
-
-		// acceptance: line
-		if (r.acceptance) {
-			const acceptancePrefix = `${indent}├─ acceptance: `;
-			const acceptanceContent = truncateChars(r.acceptance, getTruncationBudget(visibleLength(acceptancePrefix)));
-			container.addChild(new TruncatedText(`${theme.fg("dim", acceptancePrefix)}${theme.fg("dim", italic(acceptanceContent))}`, 0, 0));
 		}
 
 		// act: line (last tool call with count)
