@@ -16,6 +16,7 @@ import {
 	isJsonEqual,
 } from "./sliding-prompt.js";
 import { stripStrategicHints, stripStrategicHintsFromContent } from "./tool-utils.js";
+import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -261,8 +262,9 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (part.type === "toolCall" && part.toolCallId && part.name) {
-				map.set(part.toolCallId, part.name);
+			const toolCallId = part.toolCallId ?? part.id;
+				if (part.type === "toolCall" && toolCallId && part.name) {
+					map.set(toolCallId, part.name);
 			}
 		}
 	}
@@ -313,8 +315,9 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (part.type === "toolCall" && part.toolCallId && part.arguments) {
-				toolCallIdToArgs.set(part.toolCallId, part.arguments);
+			const toolCallId2 = part.toolCallId ?? part.id;
+				if (part.type === "toolCall" && toolCallId2 && part.arguments) {
+					toolCallIdToArgs.set(toolCallId2, part.arguments);
 			}
 		}
 	}
@@ -326,7 +329,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
 
-		if (entry?.type !== "message" || entry.message?.role !== "tool") {
+		if (entry?.type !== "message" || entry.message?.role !== "tool" && entry.message?.role !== "toolResult") {
 			result.push(line);
 			continue;
 		}
@@ -454,37 +457,66 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
  *
  * Children don't have batch_read in their active tools, so seeing calls to it
  * could confuse the model. This removes toolCall parts where name === "batch_read"
- * from assistant messages, while keeping the rest of the message intact.
+ * from assistant messages AND removes the corresponding orphaned tool result
+ * messages to avoid API errors (e.g. DeepSeek rejects orphaned tool results).
  */
 export function stripBatchReadToolCalls(snapshot: string): string {
 	const lines = snapshot.trimEnd().split("\n");
+
+	// Pass 1: Collect all batch_read toolCallIds from assistant messages.
+	const batchReadToolCallIds = new Set<string>();
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { continue; }
+
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+		const content = entry.message.content;
+		if (!Array.isArray(content)) continue;
+
+		for (const part of content) {
+			const toolCallId3 = part.toolCallId ?? part.id;
+				if (part.type === "toolCall" && part.name === "batch_read" && toolCallId3) {
+					batchReadToolCallIds.add(toolCallId3);
+			}
+		}
+	}
+
+	// Pass 2: Strip batch_read toolCall parts from assistant messages,
+	// and remove orphaned tool result messages.
 	const result: string[] = [];
 
 	for (const line of lines) {
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
 
-		if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+		if (entry?.type !== "message") {
 			result.push(line);
 			continue;
 		}
 
+		// Tool result message — skip if it's a batch_read result
+		if (entry.message.role === "tool" || entry.message.role === "toolResult") {
+			const toolCallId = entry.message.toolCallId ??
+				(Array.isArray(entry.message.content) ? entry.message.content.find((p: any) => p.type === "toolResult")?.toolCallId : undefined);
+			if (toolCallId && batchReadToolCallIds.has(toolCallId)) continue;
+			result.push(line);
+			continue;
+		}
+
+		if (entry.message.role !== "assistant") { result.push(line); continue; }
+
 		const content = entry.message.content;
 		if (!Array.isArray(content)) { result.push(line); continue; }
 
-		// Check if any toolCall parts reference batch_read
 		const hasBatchReadCall = content.some(
 			(part: any) => part.type === "toolCall" && part.name === "batch_read",
 		);
 		if (!hasBatchReadCall) { result.push(line); continue; }
 
-		// Filter out batch_read toolCall parts
 		const filteredContent = content.filter(
 			(part: any) => !(part.type === "toolCall" && part.name === "batch_read"),
 		);
 
-		// If all content was batch_read calls, keep at least an empty text part
-		// to avoid an empty content array
 		if (filteredContent.length === 0) {
 			filteredContent.push({ type: "text", text: "" });
 		}
@@ -501,6 +533,8 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 	return `${result.join("\n")}\n`;
 }
 
+// ---------------------------------------------------------------------------
+// Snapshot sanitization
 // ---------------------------------------------------------------------------
 // Snapshot sanitization
 // ---------------------------------------------------------------------------
@@ -568,7 +602,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 				}
 
 				// Strip strategic hints from tool results
-				if (message.role === "tool") {
+				if (message.role === "tool" || message.role === "toolResult") {
 					const afterHints = stripStrategicHintsFromContent(modifiedContent);
 					if (!isJsonEqual(afterHints, modifiedContent)) {
 						modifiedContent = afterHints;
