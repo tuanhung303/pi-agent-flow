@@ -35,21 +35,13 @@ export interface FlowSettings {
 
 	/** Default child-flow session mode. Default: "default" (600s). */
 	sessionMode?: AgentSessionMode;
-
-	/** Per-tier concurrency limits. When set, each tier has its own pool.
-	 * Missing tiers fall back to maxConcurrency. Effective cap is min(tier, maxConcurrency). */
-	tierConcurrency?: {
-		lite?: number;
-		flash?: number;
-		full?: number;
-	};
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
 	default: {},
 };
 
-export const FLOW_TIERS: FlowTier[] = ["lite", "flash", "full"];
+const FLOW_TIERS: FlowTier[] = ["lite", "flash", "full"];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -65,7 +57,7 @@ function readSettingsJson(filePath: string): Record<string, unknown> | null {
 }
 
 export function getGlobalSettingsPath(): string {
-	const agentDir = process.env["PI_CODING_AGENT_DIR"]?.trim() || path.join(process.env.HOME || os.homedir(), ".pi", "agent");
+	const agentDir = process.env["PI_CODING_AGENT_DIR"]?.trim() || path.join(os.homedir(), ".pi", "agent");
 	return path.join(agentDir, "settings.json");
 }
 
@@ -242,22 +234,6 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 	if (sessionMode !== undefined) {
 		result.sessionMode = sessionMode;
 	}
-
-	// Validate tierConcurrency
-	if (isPlainObject(obj.tierConcurrency)) {
-		const tierObj = obj.tierConcurrency as Record<string, unknown>;
-		const tc: Record<string, number> = {};
-		for (const tier of FLOW_TIERS) {
-			const val = tierObj[tier];
-			if (typeof val === "number" && Number.isSafeInteger(val) && val >= 1) {
-				tc[tier] = val;
-			}
-		}
-		if (Object.keys(tc).length > 0) {
-			result.tierConcurrency = tc;
-		}
-	}
-
 	return result;
 }
 

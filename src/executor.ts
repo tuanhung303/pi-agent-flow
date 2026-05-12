@@ -16,27 +16,11 @@ import type {
 import { isFlowSuccess, isFlowError, getFlowOutput, emptyFlowUsage } from "./types.js";
 import { extractStructuredOutput } from "./structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
-import { mapFlowConcurrentByTier, type FlowTier, runFlow } from "./flow.js";
+import { mapFlowConcurrent, runFlow } from "./flow.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the model tier for a given flow item.
- * Throws if the flow type has no matching config — catches bugs early.
- */
-function resolveFlowTier(flows: FlowConfig[], item: { type: string }): FlowTier {
-	const normalizedType = item.type.toLowerCase();
-	const targetFlow = flows.find((f) => f.name === normalizedType);
-	if (!targetFlow) {
-		throw new Error(`Unknown flow type "${normalizedType}": no matching flow config found`);
-	}
-	return targetFlow.tier as FlowTier;
-}
+import { setFlowComplete } from "./notify-state.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,9 +47,6 @@ export interface FlowExecutorDeps {
 	loadedFlowModelConfigs: LoadedFlowModelConfigs;
 	/** Max concurrency for parallel flow execution. */
 	maxConcurrency: number;
-
-	/** Per-tier concurrency limits. */
-	tierConcurrency: { lite: number; flash: number; full: number };
 
 	/** Default child-flow session mode. */
 	defaultSessionMode: AgentSessionMode;
@@ -206,7 +187,7 @@ export async function executeFlows(
 	const {
 		flows, currentDepth, maxDepth, ancestorFlowStack, preventCycles,
 		toolOptimize, structuredOutput, cwd, loadedFlowModelConfigs,
-		maxConcurrency, tierConcurrency, defaultSessionMode, signal, onUpdate, makeDetails,
+		maxConcurrency, defaultSessionMode, signal, onUpdate, makeDetails,
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
 		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
 		confirmProjectFlows,
@@ -301,20 +282,16 @@ export async function executeFlows(
 	if (onUpdate) emitProgress();
 
 	// Execute all flows in parallel
-	const results = await mapFlowConcurrentByTier(
-		params,
-		(item) => resolveFlowTier(flows, item),
-		tierConcurrency,
-		maxConcurrency,
-		async (item, index) => {
-			const normalizedType = item.type.toLowerCase();
-			const sessionMode = resolveAgentSessionMode(item.sessionMode, defaultSessionMode);
-			const targetFlow = flows.find((f) => f.name === normalizedType);
-			const effectiveMaxDepth =
-				targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
+	const executionStart = Date.now();
+	const results = await mapFlowConcurrent(params, maxConcurrency, async (item, index) => {
+		const normalizedType = item.type.toLowerCase();
+		const sessionMode = resolveAgentSessionMode(item.sessionMode, defaultSessionMode);
+		const targetFlow = flows.find((f) => f.name === normalizedType);
+		const effectiveMaxDepth =
+			targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
 
-			const shouldInheritContext = targetFlow?.inheritContext !== false;
-			const tier = targetFlow?.tier ?? "flash";
+		const shouldInheritContext = targetFlow?.inheritContext !== false;
+		const tier = targetFlow?.tier ?? "flash";
 		const { candidates } = resolveFlowModelCandidates({
 			tier,
 			flowModel: targetFlow?.model,
@@ -407,6 +384,17 @@ export async function executeFlows(
 
 		return result;
 	});
+
+	// Record last flow completion for dynamic notifications
+	const lastResult = results[results.length - 1];
+	if (lastResult) {
+		setFlowComplete(
+			lastResult.type,
+			lastResult.acceptance,
+			results.length - 1,
+			results.length,
+		);
+	}
 
 	// Cache flow results
 	for (const result of results) {

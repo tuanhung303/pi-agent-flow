@@ -9,7 +9,6 @@ import {
 	looksLikeUrlPrompt,
 	looksLikeWebSearchPrompt,
 } from "./web-tool.js";
-import { SLIDING_PROMPT } from "./sliding-prompt.js";
 import type { FlowDepthConfig } from "./depth.js";
 
 // ---------------------------------------------------------------------------
@@ -38,8 +37,9 @@ export function computeActiveTools(optimize: boolean): string[] {
 /**
  * Build the before_agent_start system prompt augmentation.
  *
- * Adds web steering (when tool optimize is off), sliding prompt,
- * and the flow delegation guide with guard info.
+ * Adds web steering (when tool optimize is off) and the flow delegation
+ * guide with guard info. The sliding prompt is NOT included here — it
+ * is injected dynamically by the context hook in index.ts.
  *
  * Returns the augmented systemPrompt, or undefined if the child flow
  * should skip this handler.
@@ -75,9 +75,6 @@ export function buildBeforeAgentStartPrompt(
 			"\n\n## pi-web steering\n" +
 			webInstructions.map((line) => `- ${line}`).join("\n");
 	}
-
-	// Append sliding prompt to static system prompt unconditionally.
-	systemPrompt += "\n\n" + SLIDING_PROMPT;
 
 	if (!canDelegate || discoveredFlows.length === 0) {
 		return systemPrompt;

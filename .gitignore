@@ -3,4 +3,3 @@ dist/
 *.tgz
 .DS_Store
 *.bak
-tmp_tests/

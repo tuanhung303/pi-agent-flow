@@ -20,7 +20,7 @@ describe("compressToolResults — file summary", () => {
 				message: {
 					role: "tool",
 					toolCallId: "tc1",
-					content: "✓ 1 operation: 1 read\n\n--- README.md file summary ---\nThis is a plain text file.\nIt has multiple lines.\nSome more content here.",
+					content: "✔ 1 operation: 1 read\n\n--- README.md file summary ---\nThis is a plain text file.\nIt has multiple lines.\nSome more content here.",
 				},
 			},
 		]);
@@ -47,7 +47,7 @@ describe("compressToolResults — reads without line count", () => {
 					message: {
 						role: "tool",
 						toolCallId: "tc1",
-						content: "✓ 1 operation: 1 read\n\n--- data.csv ---\nheader1,header2\nvalue1,value2\nvalue3,value4",
+						content: "✔ 1 operation: 1 read\n\n--- data.csv ---\nheader1,header2\nvalue1,value2\nvalue3,value4",
 					},
 			},
 		]);
@@ -72,7 +72,7 @@ describe("compressToolResults — reads without line count", () => {
 					message: {
 						role: "tool",
 						toolCallId: "tc1",
-						content: "✓ 1 operation: 1 read\n\n--- src/file.ts (42 lines) ---\nline 1\nline 2",
+						content: "✔ 1 operation: 1 read\n\n--- src/file.ts (42 lines) ---\nline 1\nline 2",
 					},
 			},
 		]);
@@ -99,7 +99,7 @@ describe("compressToolResults — error sections preserved", () => {
 				message: {
 					role: "tool",
 					toolCallId: "tc1",
-					content: "✗ 1 error: read missing.txt: No such file\n\n--- read: missing.txt ---\nError: ENOENT: no such file or directory",
+					content: "✖ 1 error: read missing.txt: No such file\n\n--- read: missing.txt ---\nError: ENOENT: no such file or directory",
 				},
 			},
 		]);

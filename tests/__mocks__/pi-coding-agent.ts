@@ -27,6 +27,12 @@ export function createBashToolDefinition(_cwd: string, _options?: any) {
 	};
 }
 
+export const registeredCommands = new Map<string, { description: string; handler: (args: string, ctx: any) => Promise<void> }>();
+
+export function registerCommand(name: string, config: { description: string; handler: (args: string, ctx: any) => Promise<void> }) {
+	registeredCommands.set(name, config);
+}
+
 export function parseFrontmatter<T extends Record<string, unknown>>(content: string): { frontmatter: T; body: string } {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
 	if (!match) {

@@ -57,12 +57,16 @@ pi install .
 - **Flow-mode notification** — concise (`mode: name | lite: model · flash: model · full: model`) or verbose (with per-tier flow-name labels) startup message
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
 - **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
-- **Sliding system prompt** — lightweight routing reminder injected before each user message, stripped from child snapshots to avoid duplication
+- **Sliding system prompt** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); switches between spec-driven planning and implement modes based on the `/spec` toggle, stripped from child snapshots to avoid duplication
 - **Session snapshot sanitization** — removes sliding prompts, reasoning/thinking artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
 - **Shared context inheritance** — child flows receive the parent's sanitized session automatically; write forward-looking intents and let the child pick up context from its inherited snapshot
 - **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
-- **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, live countdowns, and expanded view with full reports and tool traces
+- **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, live countdowns, scramble-animated act/msg/tps lines, and expanded view with full reports and tool traces
 - **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
+- **Quad-mode TUI scramble** — `stream`, `cascade`, `ripple`, and `illuminate` text animations on act, msg, TPS lines, and tool results (batch, web, ask_user) in the collapsed activity panel (default: `illuminate`)
+- **`/spec` command** — toggle spec-driven planning mode that guides the orchestrator through investigate → discuss → plan → delegate
+- **Dynamic notifications** — terminal and desktop alerts adapt their title/body based on flow completion state or pending `ask_user` decisions
+- **Preferred-choice guidance** — `ask_user` prompts can mark a recommended option with `[preferred]` and place it first
 
 ---
 
@@ -166,6 +170,27 @@ Flows are aware of their deadline from the moment they start:
 - **Two-stage warnings** — at 2 minutes before hard timeout a warning is injected into the child's reminder stream; at 2 minutes 15 seconds a final urge demands the agent stop all tool use and output structured findings.
 - **Grace period** — after the hard timeout fires, the agent gets a 90-second reporting grace to finish its summary before the process is force-killed.
 - **Graceful shutdown** — when the parent receives `SIGINT` or `SIGTERM`, the signal propagates to every child process group so sub-agents terminate cleanly instead of becoming orphans.
+
+---
+
+## `/spec` Command
+
+Toggle spec-driven planning mode with the `/spec` command. When active, the sliding system prompt instructs the orchestrator to follow a four-phase workflow:
+
+1. **Investigate** — read package files, tests, and config directly; delegate broad discovery to `[scout]`
+2. **Discuss** — ask 2–3 targeted, evidence-based questions via `ask_user`, marking the recommended choice with `[preferred]`
+3. **Plan** — delegate to `[build]` to write a structured spec to `.specs/{slug}/spec.md`
+4. **Delegate** — once the spec is confirmed, proceed with implementation flows
+
+Run `/spec` with a prompt to activate immediately and start investigating:
+
+```bash
+/spec Add a REST API endpoint for user preferences
+```
+
+Run `/spec` without arguments to toggle the mode on or off. When off, the orchestrator uses the standard implement-mode behavior: investigate first, then delegate directly to flows.
+
+When you deactivate spec mode, a new session is created and the orchestrator synthesizes a full implementation plan from the conversation history, placing it in the editor for review.
 
 ---
 
@@ -339,6 +364,8 @@ Built-in web operations (no API keys required):
 - **Search** — queries Brave and DuckDuckGo HTML endpoints, returns top results with titles, URLs, and snippets.
 - **Fetch** — downloads a page, converts HTML to Markdown via JSDOM + Turndown, saves to a temp file in the session directory, and returns a preview. Falls back through direct fetch → `r.jina.ai` → `curl`.
 
+In the collapsed activity panel, web operations display as compact one-line summaries (e.g., `search: "query"` or `fetch: example.com`). Like other tools, web results are scramble-animated in the collapsed view.
+
 ---
 
 ## Configuration
@@ -404,11 +431,6 @@ You can also set flow runtime defaults under `flowSettings`:
   "flowSettings": {
     "sessionMode": "default",
     "maxConcurrency": 4,
-    "tierConcurrency": {
-      "lite": 4,
-      "flash": 1,
-      "full": 1
-    },
     "toolOptimize": true,
     "structuredOutput": true,
   }
@@ -419,7 +441,6 @@ You can also set flow runtime defaults under `flowSettings`:
 |---------|---------|-------------|
 | `sessionMode` | `default` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
 | `maxConcurrency` | `4` | Maximum parallel flows (capped to CPU count) |
-| `tierConcurrency` | `{}` | Per-tier concurrency: `{ lite: 4, flash: 1, full: 1 }` — each tier gets its own pool, capped by `maxConcurrency` |
 | `toolOptimize` | `true` | Use unified `batch`/`batch_read` instead of separate read/write/edit |
 | `structuredOutput` | `true` | Inject JSON structured-output instructions into flow prompts |
 
@@ -460,6 +481,56 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_SESSION_MODE` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
 | `PI_FLOW_MAX_CONCURRENCY` | Maximum parallel flows |
 | `PI_FLOW_SPAWN_COMMAND` | Override the spawn command for exotic runtime environments (e.g. bundled with pkg/nexe) |
+
+### Notifications
+
+Terminal and desktop notifications fire when the agent finishes a turn and is waiting for you. They adapt dynamically: if a flow completed, the title shows the flow name and acceptance summary; if `ask_user` is pending, the title changes to "Decision Required".
+
+Configure notifications with global `~/.pi/agent/extensions/notify.json` or project `.pi/notify.json`. Project settings override global.
+
+```json
+{
+  "enabled": true,
+  "onlyWhenInteractive": true,
+  "title": "π",
+  "body": "task accomplished!",
+  "channels": {
+    "terminal": true,
+    "desktop": true,
+    "bell": true,
+    "sound": false
+  },
+  "terminal": { "backend": "auto" },
+  "desktop": { "backend": "auto" },
+  "sound": {
+    "backend": "auto",
+    "name": "Glass",
+    "linuxSoundId": "complete",
+    "frequencyHz": 1000,
+    "durationMs": 250,
+    "command": ""
+  }
+}
+```
+
+| Key | Description |
+|-----|-------------|
+| `enabled` | Master switch for notifications |
+| `onlyWhenInteractive` | Only notify when a UI is attached |
+| `channels.terminal` | OSC 777/99 terminal notifications |
+| `channels.desktop` | OS native notifications (macOS, Linux, Windows) |
+| `channels.bell` | Terminal bell |
+| `channels.sound` | System beep or custom sound |
+
+**Backends**
+
+| Channel | Backends |
+|---------|----------|
+| Terminal | `auto` (detect OSC support), `osc777`, `osc99`, `none` |
+| Desktop | `auto` (detect OS), `macos`, `linux`, `windows-toast`, `none` |
+| Sound | `auto`, `macos`, `linux`, `windows-beep`, `command`, `none` |
+
+When the terminal channel is active and the emulator supports visual OSC notifications (e.g. Warp, iTerm2, kitty), the auto-detected desktop channel is skipped to avoid duplicates.
 
 ---
 
