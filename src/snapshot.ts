@@ -468,14 +468,6 @@ function extractToolResultText(entry: any): string | undefined {
 	return undefined;
 }
 
-/**
- * Backward-compatible alias for compressToolResults.
- * @deprecated Use compressToolResults instead.
- */
-export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
-	return compressToolResults(snapshot, cache);
-}
-
 // ---------------------------------------------------------------------------
 // batch_read tool call stripping
 // ---------------------------------------------------------------------------

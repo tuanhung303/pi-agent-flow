@@ -465,9 +465,6 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `--flow-session-mode [mode]` | Default child-flow session mode | `default` |
 | `--flow-max-concurrency [n]` | Maximum parallel flows | `4` |
 | `--tool-optimize` | Use unified `batch`/`batch_read` | `true` |
-| `--no-tool-optimize` | Disable tool optimization; use legacy read/write/edit | — |
-| `--structured-output` | Inject structured JSON output instructions | `true` |
-| `--no-structured-output` | Disable structured output injection | — |
 
 ### Environment variables
 

@@ -72,13 +72,6 @@ export interface OpResult {
 	timingTier?: string;
 }
 
-export interface ReadTruncationResult {
-	content: string;
-	truncated: boolean;
-	nextOffset?: number;
-	linesRead: number;
-}
-
 export interface ReadOptions {
 	/**
 	 * When false, readWithOffsetLimit ignores regular batch MAX_LINES and total

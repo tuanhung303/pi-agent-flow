@@ -73,8 +73,3 @@ export function appendStrategicHintOnce(result: any): void {
 	appendTextToToolResult(result, STRATEGIC_HINT);
 }
 
-export function appendStrategicHint(result: any): void {
-	if (NO_STRATEGIC_HINT) return;
-	if (result?.isError) return;
-	appendTextToToolResult(result, STRATEGIC_HINT);
-}
