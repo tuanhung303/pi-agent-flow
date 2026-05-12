@@ -174,7 +174,8 @@ const MIN_RIPPLE_INTERVAL = 600;
 const DEPTH_BAND_MAX = 13;
 const TPS_FLASH_DUR = 150;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 3500;
+const AFTERGLOW_MS = 700;
+const ECHO_AFTERGLOW_MS = 3500;
 const FLASH_AFTERGLOW_MS = 195; // shorter afterglow for TPS/KPI value flashes
 const PULSE_WINDOW_MS = 2550;
 const PULSE_CYCLE_MS = 1425;
@@ -264,6 +265,7 @@ interface Ripple {
 	dur: number;
 	spread: number;
 	seed?: number;
+	contentChange?: boolean;
 }
 
 interface QueueItem {
@@ -673,7 +675,7 @@ export function applyRipples(
 
 	// Active ripples + recently-expired ripples for afterglow
 	const activeRipples = ripples.filter(r => r.time <= now && now - r.time < r.dur);
-	const afterglowRipples = ripples.filter(r => r.time <= now && now - r.time >= r.dur && now - r.time < r.dur + AFTERGLOW_MS);
+	const afterglowRipples = ripples.filter(r => r.time <= now && now - r.time >= r.dur && now - r.time < r.dur + (r.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS));
 	const activeCount = activeRipples.length;
 	const afterglowCount = afterglowRipples.length;
 	if (!activeCount && !afterglowCount && !targetText) return text;
@@ -800,24 +802,26 @@ export function applyRipples(
 			// Discrete post-ripple glitch pops: 3 brief bursts after ripple expires
 			const popWidth = 80;
 			const popGap = 160;
-			const inPopWindow = (timeSinceExpiry >= 0 && timeSinceExpiry < popWidth)
+			const inInitialPopWindow = (timeSinceExpiry >= 0 && timeSinceExpiry < popWidth)
 			    || (timeSinceExpiry >= popWidth + popGap && timeSinceExpiry < 2 * popWidth + popGap)
-			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 3 * (popWidth + popGap))
-		    || (timeSinceExpiry >= 1560 && timeSinceExpiry < 1560 + 80)
-		    || (timeSinceExpiry >= 2140 && timeSinceExpiry < 2140 + 80)
-		    || (timeSinceExpiry >= 3220 && timeSinceExpiry < 3220 + 80);
-			const isEchoPop = timeSinceExpiry >= 1560;
-		const agTick = Math.floor(now / 80);
+			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 3 * (popWidth + popGap));
+			const inEchoPopWindow = agRipple.contentChange !== false && (
+			    (timeSinceExpiry >= 1560 && timeSinceExpiry < 1560 + 80)
+			    || (timeSinceExpiry >= 2140 && timeSinceExpiry < 2140 + 80)
+			    || (timeSinceExpiry >= 3220 && timeSinceExpiry < 3220 + 80)
+			);
+			const inPopWindow = inInitialPopWindow || inEchoPopWindow;
+			const agTick = Math.floor(now / 80);
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
 			const echoTarget = Math.min(0.045, 4 / Math.max(1, text.length));
-		const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500 && glitchRoll < (isEchoPop ? echoTarget : 0.045);
+			const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 300 && glitchRoll < (inEchoPopWindow ? echoTarget : 0.045);
 			if (shouldScramble) {
 				if (config) {
 					let agPrefix: string;
 					if (config.color === 'dynamic') {
 						// Cooling ember: warm at start, fading to dim cool
 						// Echo pops get minimum intensity so chars stay visible long after ripple
-						const effectiveIntensity = isEchoPop ? Math.max(afterglowIntensity, 0.3) : afterglowIntensity;
+						const effectiveIntensity = inEchoPopWindow ? Math.max(afterglowIntensity, 0.3) : afterglowIntensity;
 						const emberR = Math.round(180 + 71 * effectiveIntensity);
 						const emberG = Math.round(155 + 21 * effectiveIntensity);
 						const emberB = Math.round(155 + 14 * effectiveIntensity);
@@ -887,14 +891,15 @@ function spawnRipple(
 	dur: number = RIPPLE_DUR_DEFAULT,
 	spread: number = RIPPLE_SPREAD_DEFAULT,
 	seed?: number,
+	contentChange?: boolean,
 ): Ripple {
 	const jitteredDur = Math.round(dur * (0.9 + Math.random() * 0.2));
-	return { pos, time: now, dur: jitteredDur, spread, seed: seed ?? makeAnimationSeed(String(pos), now) };
+	return { pos, time: now, dur: jitteredDur, spread, seed: seed ?? makeAnimationSeed(String(pos), now), contentChange };
 }
 
-function spawnIlluminateRipple(pos: number, now: number, config: IlluminateConfig, seed?: number): Ripple {
+function spawnIlluminateRipple(pos: number, now: number, config: IlluminateConfig, seed?: number, contentChange?: boolean): Ripple {
 	const jitteredDur = Math.round(config.duration * (0.9 + Math.random() * 0.2));
-	return { pos, time: now - (config.initialTimeOffset || 0), dur: jitteredDur, spread: config.spread, seed: seed ?? makeAnimationSeed(String(pos), now) };
+	return { pos, time: now - (config.initialTimeOffset || 0), dur: jitteredDur, spread: config.spread, seed: seed ?? makeAnimationSeed(String(pos), now), contentChange };
 }
 
 function getRippleDuration(textLength: number, baseDur: number = RIPPLE_DUR_DEFAULT): number {
@@ -911,19 +916,20 @@ function spawnSecondaryRipple(primary: Ripple): Ripple {
 		dur: primary.dur * 0.85,
 		spread: primary.spread * SECONDARY_RIPPLE_STRENGTH,
 		seed: (primary.seed ?? 0) + 1,
+		contentChange: primary.contentChange,
 	};
 }
 
-function spawnRippleForText(pos: number, now: number, textLength: number, seed?: number): Ripple[] {
-	const primary = spawnRipple(pos, now, getRippleDuration(textLength), RIPPLE_SPREAD_DEFAULT, seed);
+function spawnRippleForText(pos: number, now: number, textLength: number, seed?: number, contentChange?: boolean): Ripple[] {
+	const primary = spawnRipple(pos, now, getRippleDuration(textLength), RIPPLE_SPREAD_DEFAULT, seed, contentChange);
 	return [primary, spawnSecondaryRipple(primary)];
 }
 
-function spawnIlluminateRippleForText(pos: number, now: number, config: IlluminateConfig, textLength: number, seed?: number): Ripple[] {
+function spawnIlluminateRippleForText(pos: number, now: number, config: IlluminateConfig, textLength: number, seed?: number, contentChange?: boolean): Ripple[] {
 	// Illuminate labels use intentional per-config durations (400ms for labels, 1200ms for content)
 	// Skip getRippleDuration floor which forces short text to 1150-1300ms — that's meant for streaming content, not tool labels
 	const dur = config.duration;
-	const primary = spawnIlluminateRipple(pos, now, { ...config, duration: dur }, seed);
+	const primary = spawnIlluminateRipple(pos, now, { ...config, duration: dur }, seed, contentChange);
 	return [primary, spawnSecondaryRipple(primary)];
 }
 
@@ -1103,7 +1109,7 @@ function processLine(
 			// Clean up expired ripples (keep within afterglow window)
 			let keep = 0;
 			for (let i = 0; i < state.ripples.length; i++) {
-				if (now - state.ripples[i].time < state.ripples[i].dur + AFTERGLOW_MS) {
+				if (now - state.ripples[i].time < state.ripples[i].dur + (state.ripples[i].contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS)) {
 					state.ripples[keep++] = state.ripples[i];
 				}
 			}
@@ -1124,14 +1130,14 @@ function processLine(
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length));
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
 			} else if (!hasActiveRipples && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
 				// ripple it out so it doesn't sit plain indefinitely.
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length));
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
 			}
 			return;
 		}
@@ -1142,7 +1148,7 @@ function processLine(
 		}
 		const hadRipples = state.ripples.length > 0;
 		const hadActiveRipplesBefore = state.ripples.some(r => now - r.time < r.dur);
-		state.ripples = state.ripples.filter(r => now - r.time < r.dur + AFTERGLOW_MS);
+		state.ripples = state.ripples.filter(r => now - r.time < r.dur + (r.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS));
 		const justExpired = hadRipples && !hadActiveRipplesBefore;
 		const hasActiveRipples = state.ripples.some(r => now - r.time < r.dur);
 		if (hasActiveRipples) {
@@ -1160,13 +1166,13 @@ function processLine(
 		state.lastAnimTime = now;
 		const config = lineKey === 'act' ? ILLUMINATE_CONFIGS.actLabel : undefined;
 		if (config) {
-			state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, config, newText.length));
+			state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, config, newText.length, undefined, false));
 		} else {
-			state.ripples.push(...spawnRippleForText(randomizedCenter(newText.length), now, newText.length));
+			state.ripples.push(...spawnRippleForText(randomizedCenter(newText.length), now, newText.length, undefined, false));
 		}
 		let keep = 0;
 		for (let i = 0; i < state.ripples.length; i++) {
-			if (now - state.ripples[i].time < state.ripples[i].dur + AFTERGLOW_MS) {
+			if (now - state.ripples[i].time < state.ripples[i].dur + (state.ripples[i].contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS)) {
 				state.ripples[keep++] = state.ripples[i];
 			}
 		}
@@ -1185,7 +1191,7 @@ function processLine(
 			state.startTime = now;
 			state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 		} else if (mode === 'ripple') {
-			state.ripples.push(...spawnRippleForText(randomizedCenter(newText.length), now, newText.length));
+			state.ripples.push(...spawnRippleForText(randomizedCenter(newText.length), now, newText.length, undefined, lineKey === 'msg'));
 		}
 		return;
 	}
@@ -1211,13 +1217,13 @@ function processLine(
 			state.startTime = now;
 			state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 		} else {
-			state.ripples.push(...spawnRippleForText(randomizedCenter(newText.length), now, newText.length));
+			state.ripples.push(...spawnRippleForText(randomizedCenter(newText.length), now, newText.length, undefined, lineKey === 'msg'));
 		}
 	}
 	if (mode === 'ripple') {
 		let keep = 0;
 		for (let i = 0; i < state.ripples.length; i++) {
-			if (now - state.ripples[i].time < state.ripples[i].dur + AFTERGLOW_MS) {
+			if (now - state.ripples[i].time < state.ripples[i].dur + (state.ripples[i].contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS)) {
 				state.ripples[keep++] = state.ripples[i];
 			}
 		}
@@ -1429,9 +1435,9 @@ export class ScrambleStateManager {
 				state.startTime = now;
 				state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 			} else if (this.mode === 'illuminate') {
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.msgContent, text.length));
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.msgContent, text.length, undefined, true));
 			} else {
-				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length));
+				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, true));
 			}
 		} else if (staticLine && state.initialized) {
 			const oldText = state.lastText;
@@ -1452,15 +1458,12 @@ export class ScrambleStateManager {
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 					} else if (this.mode === 'illuminate') {
 						state.ripples = [];
-						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.msgContent, text.length));
+						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.msgContent, text.length, undefined, true));
 					} else {
 						state.ripples = [];
-						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length));
+						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, true));
 					}
 				}
-			} else if (!this.isLineAnimating(state, now)) {
-				state.queue = [];
-				state.ripples = [];
 			}
 		} else {
 			processLine(state, text, now, this.mode);
@@ -1513,9 +1516,9 @@ export class ScrambleStateManager {
 				state.startTime = now;
 				state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 			} else if (this.mode === 'illuminate') {
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.aimLabel, text.length));
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.aimLabel, text.length, undefined, false));
 			} else {
-				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length));
+				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, false));
 			}
 		} else if (staticLine && state.initialized) {
 			const oldText = state.lastText;
@@ -1536,10 +1539,10 @@ export class ScrambleStateManager {
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 					} else if (this.mode === 'illuminate') {
 						state.ripples = [];
-						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.aimLabel, text.length));
+						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.aimLabel, text.length, undefined, false));
 					} else {
 						state.ripples = [];
-						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length));
+						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, false));
 					}
 				}
 			} else if (!this.isLineAnimating(state, now)) {
@@ -1592,10 +1595,10 @@ export class ScrambleStateManager {
 				state.startTime = now;
 				state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 			} else if (this.mode === 'illuminate') {
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.actLabel, text.length));
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.actLabel, text.length, undefined, false));
 				state.displayedText = text;
 			} else {
-				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length));
+				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, false));
 			}
 		} else if (staticLine && state.initialized) {
 			const oldText = state.lastText;
@@ -1616,10 +1619,10 @@ export class ScrambleStateManager {
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 					} else if (this.mode === 'illuminate') {
 						state.ripples = [];
-						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.actLabel, text.length));
+						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.actLabel, text.length, undefined, false));
 					} else {
 						state.ripples = [];
-						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length));
+						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, false));
 					}
 				}
 			} else if (!this.isLineAnimating(state, now)) {
@@ -1697,7 +1700,7 @@ export class ScrambleStateManager {
 			} else if (this.mode === 'illuminate') {
 				// Chunk-based ripple: plain text while buffering, ripple on chunk threshold
 				// Clean up expired ripples
-				state.ripples = state.ripples.filter(r => now - r.time < r.dur + AFTERGLOW_MS);
+				state.ripples = state.ripples.filter(r => now - r.time < r.dur + (r.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS));
 				state.queue = [];
 
 				const hasActiveRipples = state.ripples.some(r => now - r.time < r.dur);
@@ -1713,14 +1716,14 @@ export class ScrambleStateManager {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
-					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length));
+					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
 				} else if (!hasActiveRipples && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
 					// ripple it out so it doesn't sit plain indefinitely.
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
-					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length));
+					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
 				}
 			} else {
 				// Existing behavior for cascade and ripple modes
@@ -1733,7 +1736,7 @@ export class ScrambleStateManager {
 					// and handle text changes with cooldown check.
 					const hadRipples = state.ripples.length > 0;
 					const hadActiveRipplesBefore = state.ripples.some(r => now - r.time < r.dur);
-					state.ripples = state.ripples.filter(r => now - r.time < r.dur + AFTERGLOW_MS);
+					state.ripples = state.ripples.filter(r => now - r.time < r.dur + (r.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS));
 					state.queue = [];
 					const justExpired = hadRipples && !hadActiveRipplesBefore;
 
@@ -1762,7 +1765,7 @@ export class ScrambleStateManager {
 							state.startTime = now;
 							state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 						} else {
-							state.ripples.push(...spawnRippleForText(randomSentenceStart(visibleText), now, visibleText.length));
+							state.ripples.push(...spawnRippleForText(randomSentenceStart(visibleText), now, visibleText.length, undefined, true));
 						}
 					} else {
 						// Not cooled down — track latest text but keep displayedText frozen
@@ -2153,7 +2156,7 @@ export class ScrambleStateManager {
 			const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 			return !isCascadeComplete(state.queue, frame, state.queueMaxEnd);
 		} else {
-			return state.ripples.some((rp) => rp.time + rp.dur + AFTERGLOW_MS > now);
+			return state.ripples.some((rp) => rp.time + rp.dur + (rp.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS) > now);
 		}
 	}
 
