@@ -61,7 +61,7 @@ Agent work is organized into two tiers. **Access is not the boundary — intent 
 | `scout` | batch, bash, find, grep, ls, web | 0 | lite | Explore, map, discover. Full access for best exploration. The pathfinder. |
 | `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship. The craftsman. |
 | `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues. The watchful eye. |
-| `debug` | batch, bash, find, grep, ls, web | 0 | flash | Investigate root cause AND fix the bug. The detective + fixer. |
+| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Investigate root cause AND fix the bug. The detective + fixer. |
 | `ideas` | batch, bash, web | 0 | full | Clean slate, diverge → evaluate → recommend. The strategist. |
 | `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]`. The architect. |
 
@@ -96,7 +96,7 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 - **Two-stage timeout**: Parent-side warning at `effectiveTimeout - 2min`, final urge at `effectiveTimeout - 2m15s`, hard timeout + 90s reporting grace before SIGKILL. Deadline and grace env vars are propagated to children (`PI_FLOW_DEADLINE_MS`, `PI_FLOW_TOOL_SUMMARY_GRACE_MS`).
 - **Timeout reminder injection**: A reminder file (`PI_FLOW_REMINDER_FILE`) is written by the parent and read by the timed-bash wrapper so the child sees warnings before its next tool call.
 - **Graceful shutdown**: `SIGINT`/`SIGTERM` handlers on the parent propagate to all registered child process groups via `terminateAllChildGroups()`. `process.prependListener` is used so our handler runs before the host's cleanup.
-- **Structured output**: JSON schema injected at the end of the flow prompt when `structuredOutput` is true. Parsed by `extractStructuredOutput()` and mechanically enriched by `enrichStructuredOutputCommands()` which replaces paraphrased bash commands with verbatim tool-call args and attaches `executionTime` from the timed-bash wrapper.
+- **Structured output**: JSON schema injected at the end of the flow prompt when `structuredOutput` is true. Parsed by `extractStructuredOutput()` and mechanically enriched by `generateCommandsFromHistory()` which replaces paraphrased bash commands with verbatim tool-call args and attaches `executionTime` from the timed-bash wrapper.
 - **Flow-mode persistence**: `--flow-mode` writes `flowModelConfig` to global `settings.json` via atomic rename (`writeGlobalFlowMode`). Startup prints either concise (`mode: name | lite: model · flash: model · full: model`) or verbose format with per-tier flow-name labels.
 - **Transition matrix**: Data-driven post-flow routing in `transitions.ts`. Converted to hooks via `buildTransitionHooks()`. `autoTransition` (opt-in) queues qualifying follow-up flows automatically.
 - **Tool optimization**: When enabled, `getOptimizedTools()` strips legacy `read`/`write`/`edit` and injects `batch`. The parent sets active tools to `["batch_read", "flow", "web"]`; children get `["batch", "bash", "web"]` (or plus `flow` if they can delegate).
