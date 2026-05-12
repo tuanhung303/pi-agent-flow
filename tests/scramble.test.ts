@@ -830,7 +830,7 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns shallow glitch chars for depth 4+', () => {
-		const shallowChars = '0123456789\\/[]{}|░▒▓┌┐└┘├┤┬┴┼';
+		const shallowChars = '0123456789\\/[]{}|░▒▓▄▀▌▐▚▞⠁⠂⠃';
 		for (let d = 4; d <= 6; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(shallowChars).toContain(c);
@@ -1755,7 +1755,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 	it('returns mid or shallow glitch chars at blend depth (3.0)', () => {
 		// At depth 3.0 we are in the mid→shallow blend zone [2.5, 3.5]
 		const midChars = 'abcdefghijklmnopqrstuvwxyzᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
-		const shallowChars = '0123456789\\/[]{}|░▒▓┌┐└┘├┤┬┴┼';
+		const shallowChars = '0123456789\\/[]{}|░▒▓▄▀▌▐▚▞⠁⠂⠃';
 		const c = selectScrambleChar(3, 0, 0, 12345);
 		const isMid = midChars.includes(c);
 		const isShallow = shallowChars.includes(c);
@@ -1793,7 +1793,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 			results.add(selectScrambleChar(3, seed, 0, seed));
 		}
 		const midChars = 'abcdefghijklmnopqrstuvwxyzᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
-		const shallowChars = '0123456789\\/[]{}|░▒▓┌┐└┘├┤┬┴┼';
+		const shallowChars = '0123456789\\/[]{}|░▒▓▄▀▌▐▚▞⠁⠂⠃';
 		let midCount = 0;
 		let shallowCount = 0;
 		for (const c of results) {
