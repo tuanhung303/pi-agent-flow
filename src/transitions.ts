@@ -32,7 +32,7 @@ export const DEFAULT_TRANSITIONS: FlowTransition[] = [
 	{ from: "scout", to: "debug", on: "success", advice: "Context mapped. Consider running a [debug] flow if investigating an issue." },
 	{ from: "debug", to: "build", on: "success", advice: "The root cause has been identified. Consider running a [build] flow to implement the fix." },
 	{ from: "debug", to: "audit", on: "success", advice: "Root cause identified. Consider running an [audit] flow to verify the fix area for related issues." },
-	{ from: "build", to: "audit", on: "success", advice: "Consider running a [audit] flow to audit the changes for security, correctness, and code quality." },
+	{ from: "build", to: "audit", on: "success", advice: "Consider running an [audit] flow to audit the changes for security, correctness, and code quality." },
 	{ from: "build", to: "debug", on: "failure", advice: "Build failed. Consider running a [debug] flow to investigate the root cause." },
 	{ from: "audit", to: "scout", on: "success", advice: "Audit complete. Consider running a [scout] flow to trace the audit findings across the codebase." },
 	{ from: "audit", to: "build", on: "failure", advice: "Audit found issues. Consider running a [build] flow to fix them." },
