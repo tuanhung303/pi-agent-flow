@@ -7,7 +7,7 @@
 import * as os from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { type FlowConfig, discoverFlows } from "./agents.js";
-import {
+import { FLOW_TIERS,
 	loadFlowModelConfigs,
 	loadFlowSettings,
 	loadProjectFlowModelConfigName,
@@ -34,6 +34,8 @@ export interface ResolvedSettings {
 	toolOptimize: boolean;
 	structuredOutput: boolean;
 	maxConcurrency: number;
+	/** Per-tier concurrency limits. Effective cap is min(tier, maxConcurrency). */
+	tierConcurrency: { lite: number; flash: number; full: number };
 	defaultSessionMode: AgentSessionMode;
 	discoveredFlows: FlowConfig[];
 	loadedFlowModelConfigs: LoadedFlowModelConfigs;
@@ -171,10 +173,70 @@ export function resolveSettings(
 		if (hwConcurrency > 0) maxConcurrency = Math.min(maxConcurrency, hwConcurrency);
 	}
 
+	// Resolve tierConcurrency: CLI flags > env vars > settings.json > maxConcurrency
+	const tierConcurrency: Record<string, number> = {
+		lite: maxConcurrency,
+		flash: maxConcurrency,
+		full: maxConcurrency,
+	};
+
+	// Layer 1: settings.json
+	if (typeof flowSettings.tierConcurrency === "object" && !Array.isArray(flowSettings.tierConcurrency)) {
+		const tc = flowSettings.tierConcurrency as Record<string, unknown>;
+		for (const tier of FLOW_TIERS) {
+			const val = tc[tier];
+			if (typeof val === "number" && Number.isSafeInteger(val) && val >= 1) {
+				tierConcurrency[tier] = val;
+			}
+		}
+	}
+
+	// Layer 2: env vars (PI_FLOW_LITE_CONCURRENCY, etc.)
+	const tierEnvMap: Record<string, string> = {
+		lite: "PI_FLOW_LITE_CONCURRENCY",
+		flash: "PI_FLOW_FLASH_CONCURRENCY",
+		full: "PI_FLOW_FULL_CONCURRENCY",
+	};
+	for (const [tier, envVar] of Object.entries(tierEnvMap)) {
+		const raw = process.env[envVar];
+		if (raw !== undefined) {
+			const parsed = Number(raw);
+			if (Number.isSafeInteger(parsed) && parsed >= 1) {
+				tierConcurrency[tier] = parsed;
+			}
+		}
+	}
+
+	// Layer 3: CLI flags (highest priority)
+	const cliTierMap: Record<string, string> = {
+		lite: "flow-lite-concurrency",
+		flash: "flow-flash-concurrency",
+		full: "flow-full-concurrency",
+	};
+	for (const [tier, flagName] of Object.entries(cliTierMap)) {
+		const raw = pi.getFlag(flagName);
+		if (typeof raw === "string" || typeof raw === "number") {
+			const parsed = Number(raw);
+			if (Number.isSafeInteger(parsed) && parsed >= 1) {
+				tierConcurrency[tier] = parsed;
+			}
+		}
+	}
+
+	// Cap each tier to global maxConcurrency
+	for (const tier of FLOW_TIERS) {
+		tierConcurrency[tier] = Math.min(tierConcurrency[tier], maxConcurrency);
+	}
+
 	return {
 		toolOptimize,
 		structuredOutput,
 		maxConcurrency,
+		tierConcurrency: {
+			lite: tierConcurrency.lite,
+			flash: tierConcurrency.flash,
+			full: tierConcurrency.full,
+		},
 		defaultSessionMode,
 		discoveredFlows,
 		loadedFlowModelConfigs,

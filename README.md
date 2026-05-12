@@ -404,6 +404,11 @@ You can also set flow runtime defaults under `flowSettings`:
   "flowSettings": {
     "sessionMode": "default",
     "maxConcurrency": 4,
+    "tierConcurrency": {
+      "lite": 4,
+      "flash": 1,
+      "full": 1
+    },
     "toolOptimize": true,
     "structuredOutput": true,
   }
@@ -414,6 +419,7 @@ You can also set flow runtime defaults under `flowSettings`:
 |---------|---------|-------------|
 | `sessionMode` | `default` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
 | `maxConcurrency` | `4` | Maximum parallel flows (capped to CPU count) |
+| `tierConcurrency` | `{}` | Per-tier concurrency: `{ lite: 4, flash: 1, full: 1 }` — each tier gets its own pool, capped by `maxConcurrency` |
 | `toolOptimize` | `true` | Use unified `batch`/`batch_read` instead of separate read/write/edit |
 | `structuredOutput` | `true` | Inject JSON structured-output instructions into flow prompts |
 

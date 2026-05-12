@@ -1936,4 +1936,61 @@ describe("stripBatchReadToolCalls", () => {
 		const assistantMsg = parsed.find((e: any) => e.message?.role === "assistant");
 		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
 	});
+
+	it("removes orphaned tool result messages for batch_read tool calls", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "br-1", name: "batch_read", content: [
+				{ type: "text", text: "--- src/a.ts (10 lines) ---" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "user", content: "Thanks", timestamp: 3 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-1");
+		expect(result).not.toContain("--- src/a.ts");
+		expect(result).toContain("Thanks");
+	});
+
+	it("removes orphaned tool result with content-level toolCallId", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "batch_read", toolCallId: "br-2", arguments: { o: [{ o: "read", p: "src/b.ts" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", content: [
+				{ type: "toolResult", toolCallId: "br-2", content: [{ type: "text", text: "--- src/b.ts (5 lines) ---" }] },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-2");
+	});
+
+	it("preserves non-batch_read tool results while removing batch_read results", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+				{ type: "toolCall", name: "web", toolCallId: "web-1", arguments: { op: [{ o: "search", q: "test" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "br-1", name: "batch_read", content: [
+				{ type: "text", text: "--- src/a.ts (10 lines) ---" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "web-1", name: "web", content: [
+				{ type: "text", text: "Search results..." },
+			], timestamp: 3 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-1");
+		expect(result).toContain("web-1");
+		expect(result).toContain("Search results...");
+	});
 });
