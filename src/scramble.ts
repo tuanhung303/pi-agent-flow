@@ -168,13 +168,14 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 1200;
+const RIPPLE_DUR_DEFAULT = 950;
 const RIPPLE_SPREAD_DEFAULT = 1;
-const MIN_RIPPLE_INTERVAL = 1300;
-const DEPTH_BAND_MAX = 10;
+const MIN_RIPPLE_INTERVAL = 1050;
+const DEPTH_BAND_MAX = 13;
 const TPS_FLASH_DUR = 150;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 350;
+const AFTERGLOW_MS = 600;
+const FLASH_AFTERGLOW_MS = 350; // shorter afterglow for TPS/KPI value flashes
 const PULSE_WINDOW_MS = 4500;
 const PULSE_CYCLE_MS = 2500;
 const CASCADE_FRAME_MS = 16;
@@ -717,6 +718,7 @@ export function applyRipples(
 		let maxDepth = 0;
 		let combinedDepth = 0; // Additive depth for wave interference
 		let afterglowIntensity = 0;
+		let bestAgIdx = -1;
 		let bestElapsed = 0;
 		let bestDist = 0;
 		let bestDur = activeRipples[0]?.dur ?? 0;
@@ -750,8 +752,11 @@ export function applyRipples(
 			for (let i = 0; i < afterglowCount; i++) {
 				const dist = Math.abs(idx - afterglowData[i].pos);
 				if (dist < afterglowData[i].maxReach) {
-					const primaryAg = 1 - Math.min(1, afterglowData[i].timeSinceExpiry / 200);
+					const primaryAg = 1 - Math.min(1, afterglowData[i].timeSinceExpiry / 400);
 					const secondaryAg = 0.4 * (1 - Math.min(1, afterglowData[i].timeSinceExpiry / AFTERGLOW_MS));
+					if (primaryAg > afterglowIntensity || secondaryAg > afterglowIntensity) {
+						bestAgIdx = i;
+					}
 					afterglowIntensity = Math.max(afterglowIntensity, primaryAg, secondaryAg);
 				}
 			}
@@ -784,24 +789,45 @@ export function applyRipples(
 				}
 				segments[segCount++] = char;
 			}
-		} else if (afterglowIntensity > 0 && config) {
-			let agPrefix: string;
-			if (config.color === 'dynamic') {
-				// Cooling ember: warm at start, fading to dim cool
-				const emberR = Math.round(180 + 71 * afterglowIntensity);
-				const emberG = Math.round(155 + 21 * afterglowIntensity);
-				const emberB = Math.round(155 + 14 * afterglowIntensity);
-				agPrefix = DIM_ON + `\x1b[38;2;${emberR};${emberG};${emberB}m`;
+		} else if (afterglowIntensity > 0) {
+			const shouldScramble = afterglowIntensity > 0.25 && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500;
+			if (shouldScramble) {
+				if (config) {
+					let agPrefix: string;
+					if (config.color === 'dynamic') {
+						// Cooling ember: warm at start, fading to dim cool
+						const emberR = Math.round(180 + 71 * afterglowIntensity);
+						const emberG = Math.round(155 + 21 * afterglowIntensity);
+						const emberB = Math.round(155 + 14 * afterglowIntensity);
+						agPrefix = DIM_ON + `\x1b[38;2;${emberR};${emberG};${emberB}m`;
+					} else {
+						agPrefix = DIM_ON + config.color;
+					}
+					if (!inColor || currentPrefix !== agPrefix) {
+						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
+						segments[segCount++] = agPrefix;
+						inColor = true;
+						currentPrefix = agPrefix;
+					}
+				} else if (!inColor) {
+					segments[segCount++] = DIM_ON;
+					inColor = true;
+					currentPrefix = DIM_ON;
+				}
+				const agRipple = afterglowRipples[bestAgIdx];
+				const agDepth = afterglowIntensity * 4.5;
+				const agElapsed = now - agRipple.time - agRipple.dur;
+				const char = selectScrambleChar(agDepth, 0, agElapsed, agRipple.seed, text.length);
+				segments[segCount++] = char;
 			} else {
-				agPrefix = DIM_ON + config.color;
+				// Plain afterglow — close any open styling and render origChar
+				if (inColor) {
+					segments[segCount++] = config ? ILLUMINATE_CLOSE : RESET_COLOR + DIM_OFF;
+					inColor = false;
+					currentPrefix = '';
+				}
+				segments[segCount++] = origChar;
 			}
-			if (!inColor || currentPrefix !== agPrefix) {
-				if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
-				segments[segCount++] = agPrefix;
-				inColor = true;
-				currentPrefix = agPrefix;
-			}
-			segments[segCount++] = origChar;
 		} else {
 			if (inColor) {
 				segments[segCount++] = config ? ILLUMINATE_CLOSE : RESET_COLOR + DIM_OFF;
@@ -851,8 +877,8 @@ function spawnIlluminateRipple(pos: number, now: number, config: IlluminateConfi
 }
 
 function getRippleDuration(textLength: number, baseDur: number = RIPPLE_DUR_DEFAULT): number {
-	if (textLength <= 5) return Math.max(baseDur, 1600);
-	if (textLength <= 10) return Math.max(baseDur, 1400);
+	if (textLength <= 5) return Math.max(baseDur, 1300);
+	if (textLength <= 10) return Math.max(baseDur, 1150);
 	return baseDur;
 }
 
@@ -1937,14 +1963,14 @@ export class ScrambleStateManager {
 			}
 			return value;
 		} else if (this.mode === 'illuminate') {
-			if (state.ripples.some(r => now - r.time < r.dur + AFTERGLOW_MS)) {
+			if (state.ripples.some(r => now - r.time < r.dur + FLASH_AFTERGLOW_MS)) {
 				return applyRipples(value, state.ripples, now, ILLUMINATE_CONFIGS.tps);
 			}
 			state.ripples = [];
 			state.startTime = now;
 			return value;
 		} else {
-			if (state.ripples.some(r => now - r.time < r.dur + AFTERGLOW_MS)) {
+			if (state.ripples.some(r => now - r.time < r.dur + FLASH_AFTERGLOW_MS)) {
 				return applyRipples(value, state.ripples, now);
 			}
 			state.ripples = [];
@@ -2161,7 +2187,7 @@ export class ScrambleStateManager {
 					if (!isCascadeComplete(state.queue, frame, state.queueMaxEnd)) return true;
 				}
 			} else {
-				if (state.ripples.some(r => r.time + r.dur + AFTERGLOW_MS > now)) return true;
+				if (state.ripples.some(r => r.time + r.dur + FLASH_AFTERGLOW_MS > now)) return true;
 			}
 		}
 		for (const state of this.actKpiState.values()) {
@@ -2172,7 +2198,7 @@ export class ScrambleStateManager {
 					if (!isCascadeComplete(state.queue, frame, state.queueMaxEnd)) return true;
 				}
 			} else {
-				if (state.ripples.some(r => r.time + r.dur + AFTERGLOW_MS > now)) return true;
+				if (state.ripples.some(r => r.time + r.dur + FLASH_AFTERGLOW_MS > now)) return true;
 			}
 		}
 		for (const state of this.msgKpiState.values()) {
@@ -2183,7 +2209,7 @@ export class ScrambleStateManager {
 					if (!isCascadeComplete(state.queue, frame, state.queueMaxEnd)) return true;
 				}
 			} else {
-				if (state.ripples.some(r => r.time + r.dur + AFTERGLOW_MS > now)) return true;
+				if (state.ripples.some(r => r.time + r.dur + FLASH_AFTERGLOW_MS > now)) return true;
 			}
 		}
 		for (const state of this.genericCache.values()) {
