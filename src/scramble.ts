@@ -160,7 +160,7 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 	aimLabel: { color: CYAN_GLOW, duration: 400, spread: 1.0, glowIntensity: 'high' },
 	actLabel: { color: WARM_GLOW, duration: 400, spread: 1.0, glowIntensity: 'high' },
 	msgLabel: { color: PEACH_GLOW, duration: 400, spread: 1.0, glowIntensity: 'high' },
-	msgContent: { color: 'dynamic', duration: 1200, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 50 },
+	msgContent: { color: 'dynamic', duration: 900, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 40 },
 	tps: { color: ORANGE_GLOW, duration: 120, spread: 0.5, glowIntensity: 'medium' },
 };
 
@@ -168,16 +168,16 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 950;
+const RIPPLE_DUR_DEFAULT = 710;
 const RIPPLE_SPREAD_DEFAULT = 1;
-const MIN_RIPPLE_INTERVAL = 1050;
+const MIN_RIPPLE_INTERVAL = 800;
 const DEPTH_BAND_MAX = 13;
 const TPS_FLASH_DUR = 150;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 600;
-const FLASH_AFTERGLOW_MS = 350; // shorter afterglow for TPS/KPI value flashes
-const PULSE_WINDOW_MS = 4500;
-const PULSE_CYCLE_MS = 2500;
+const AFTERGLOW_MS = 450;
+const FLASH_AFTERGLOW_MS = 260; // shorter afterglow for TPS/KPI value flashes
+const PULSE_WINDOW_MS = 3400;
+const PULSE_CYCLE_MS = 1900;
 const CASCADE_FRAME_MS = 16;
 const CASCADE_MAX_START = 40;
 const CASCADE_MAX_LENGTH = 40;
@@ -884,8 +884,8 @@ function spawnIlluminateRipple(pos: number, now: number, config: IlluminateConfi
 }
 
 function getRippleDuration(textLength: number, baseDur: number = RIPPLE_DUR_DEFAULT): number {
-	if (textLength <= 5) return Math.max(baseDur, 1300);
-	if (textLength <= 10) return Math.max(baseDur, 1150);
+	if (textLength <= 5) return Math.max(baseDur, 975);
+	if (textLength <= 10) return Math.max(baseDur, 860);
 	return baseDur;
 }
 
