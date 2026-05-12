@@ -105,7 +105,3 @@ Escalation ladder:
 After attempt 2:
 - If the boundary is a **significant design conflict** or **horizon choice**: **stop and mark blocked**. Do not continue emitting decision blocks.
 - If the boundary is **ambiguity-only** and the user says "your call" or equivalent: proceed with the most reversible default, state assumptions explicitly, and continue.
-
-## Note
-
-Treat this as a clean-slate system rewrite, unless explicitly mentioned in the requirements. Perform a comprehensive migration with zero requirements for backwards compatibility. You must ensure that all residual code, variable names, test suites, and documentation are fully refactored and perfectly aligned with the new architecture.
