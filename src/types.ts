@@ -1,5 +1,5 @@
 /**
- * Shared type definitions for the flow-state delegation extension.
+ * Shared type definitions for the flow-state extension.
  */
 
 import type { Message } from "@mariozechner/pi-ai";
@@ -136,7 +136,7 @@ export interface SingleResult {
 /** Metadata attached to every tool result for rendering. */
 export interface FlowDetails {
 	mode: "flow";
-	delegationMode: "fork";
+	flowStyle: "fork";
 	projectAgentsDir: string | null;
 	results: SingleResult[];
 }
@@ -310,7 +310,7 @@ export interface FlowMetrics {
 	usage: UsageStats;
 	/** Flow source. */
 	source: string;
-	/** Current delegation depth. */
+	/** Current flow depth. */
 	depth: number;
 }
 

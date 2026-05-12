@@ -59,7 +59,7 @@ describe("runFlow case-insensitive lookup", () => {
 			preventCycles: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -96,7 +96,7 @@ describe("runFlow case-insensitive lookup", () => {
 			sessionMode: "long",
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -138,7 +138,7 @@ describe("runFlow case-insensitive lookup", () => {
 			},
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -176,7 +176,7 @@ describe("runFlow case-insensitive lookup", () => {
 			onUpdate: (partial) => outputUpdates.push(partial.details?.results[0]?.usage.output ?? 0),
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -207,7 +207,7 @@ describe("runFlow case-insensitive lookup", () => {
 			preventCycles: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -335,7 +335,7 @@ describe("agent_end grace period behavior", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const promise = runFlow(opts);
@@ -376,7 +376,7 @@ describe("agent_end grace period behavior", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const promise = runFlow(opts);
@@ -444,7 +444,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -496,7 +496,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: false,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -521,7 +521,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).toContain("flow");
 	});
 
-	it("defaults to batch+bash+flow+web when flow.tools is undefined, toolOptimize is true, and canDelegate", async () => {
+	it("defaults to batch+bash+flow+web when flow.tools is undefined, toolOptimize is true, and canFlow", async () => {
 		const mockFlow: FlowConfig = {
 			name: "build",
 			description: "Code flow",
@@ -548,7 +548,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -576,7 +576,7 @@ describe("child flow harness tools", () => {
 		expect(toolsValue).not.toContain("edit");
 	});
 
-	it("defaults to batch+bash+web without flow when canDelegate is false and toolOptimize is true", async () => {
+	it("defaults to batch+bash+web without flow when canFlow is false and toolOptimize is true", async () => {
 		const mockFlow: FlowConfig = {
 			name: "build",
 			description: "Code flow",
@@ -602,7 +602,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -654,7 +654,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -707,7 +707,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: false,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -763,7 +763,7 @@ describe("child flow harness tools", () => {
 			toolOptimize: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -839,7 +839,7 @@ describe("PI_FLOW_SPAWN_COMMAND env override", () => {
 			parentFlowStack: [],
 			maxDepth: 3,
 			preventCycles: true,
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const promise = runFlow(opts);
@@ -896,7 +896,7 @@ describe("timeout two-stage behavior", () => {
 			preventCycles: true,
 			sessionMode: "fast",
 			onUpdate: (partial) => updates.push(partial),
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const startedAtMs = Date.now();
@@ -930,7 +930,7 @@ describe("timeout two-stage behavior", () => {
 			maxDepth: 3,
 			preventCycles: true,
 			sessionMode: "fast",
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const promise = runFlow(opts);
@@ -983,7 +983,7 @@ describe("timeout two-stage behavior", () => {
 			maxDepth: 3,
 			preventCycles: true,
 			sessionMode: "fast",
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const promise = runFlow(opts);
@@ -1029,7 +1029,7 @@ describe("timeout two-stage behavior", () => {
 			maxDepth: 3,
 			preventCycles: true,
 			sessionMode: "fast",
-			makeDetails: (results) => ({ mode: "flow", delegationMode: "fork", projectAgentsDir: null, results }),
+			makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		};
 
 		const promise = runFlow(opts);
@@ -1098,7 +1098,7 @@ describe("acceptance field propagation", () => {
 			preventCycles: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -1134,7 +1134,7 @@ describe("acceptance field propagation", () => {
 			preventCycles: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
@@ -1170,7 +1170,7 @@ describe("acceptance field propagation", () => {
 			preventCycles: true,
 			makeDetails: (results) => ({
 				mode: "flow",
-				delegationMode: "fork",
+				flowStyle: "fork",
 				projectAgentsDir: null,
 				results,
 			}),
