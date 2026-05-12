@@ -54,7 +54,7 @@ pi install .
 - **Cycle prevention** — blocks re-entering flows already in the ancestor stack
 - **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
 - **Persistent flow mode** — switch global model strategies with `--flow-mode`; written to `settings.json` and remembered across sessions
-- **Flow-mode notification** — concise (`mode: name | lite: model · flash: model · full: model`) or verbose (with per-tier flow-name labels) startup message
+- **Flow-mode notification** — concise (`mode: name | lite: model - flash: model - full: model`) or verbose (with per-tier flow-name labels) startup message
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
 - **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
 - **Sliding system prompt** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); switches between spec-driven planning and implement modes based on the `/spec` toggle, stripped from child snapshots to avoid duplication
@@ -359,6 +359,10 @@ When **tool optimization** is enabled (default), the separate `read` / `write` /
 - **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings.
 - **`batch_read`** — read-only variant for multiple reads. Small full-file reads return raw content; large full-file reads return code/infra context maps or total line counts, and oversized targeted reads are capped with continuation guidance.
 
+### `batch_bash_poll` — poll pending bash commands
+
+For child flows using the `batch` tool, `batch_bash_poll` lets the agent check on pending bash operations that exceeded the soft timeout. Pass the operation IDs from the pending results to retrieve completed output or see updated partial output.
+
 ### `web` — search and fetch
 
 Built-in web operations (no API keys required):
@@ -432,7 +436,7 @@ pi --flow-mode quality
 On startup, the selected mode is printed in a compact notification:
 
 ```
-mode: balance | lite: gpt-5.4-mini · flash: gpt-5.5 · full: gpt-5.5
+mode: balance | lite: gpt-5.4-mini - flash: gpt-5.5 - full: gpt-5.5
 ```
 
 Failover-only tiers are shown as `failover: model-a, model-b`. Verbose mode includes the flow names associated with each tier.
@@ -447,7 +451,7 @@ You can also set flow runtime defaults under `flowSettings`:
     "sessionMode": "default",
     "maxConcurrency": 4,
     "toolOptimize": true,
-    "structuredOutput": true,
+    "structuredOutput": true
   }
 }
 ```
@@ -498,6 +502,9 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_REMINDER_FILE` | Path to a file the parent writes warning messages into; the timed-bash wrapper reads it before each tool call |
 | `PI_FLOW_DEBUG_CONTEXT` | Set to `1` to emit context-compression telemetry to stderr |
 | `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to suppress the strategic planning hints appended after tool calls |
+| `PI_ASK_USER_DISPLAY_MODE` | Default display mode for `ask_user`: `overlay` or `inline` |
+| `PI_ASK_USER_OVERLAY_TOGGLE_KEY` | Default shortcut for hiding/showing the overlay popup (e.g. `alt+o`) |
+| `PI_ASK_USER_COMMENT_TOGGLE_KEY` | Default shortcut for toggling the comment row (e.g. `ctrl+g`) |
 
 ### Notifications
 

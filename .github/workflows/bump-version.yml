@@ -1,4 +1,4 @@
-# Full release workflow — bumps version, commits, tags, pushes, and publishes to npm.
+# Full release workflow — bumps version, commits, tags, and pushes.
 # Run manually when you need a specific bump type (patch/minor/major).
 
 name: Release
