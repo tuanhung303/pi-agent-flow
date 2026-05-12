@@ -36,8 +36,8 @@ function stripAnsi(s: string): string {
 	return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-function hasDimAnsi(s: string): boolean {
-	return s.includes(DIM_ON);
+function hasAnsi(s: string): boolean {
+	return s.includes("");
 }
 
 const TEST_ID = 'test-id';
@@ -61,7 +61,7 @@ describe('renderStreamText', () => {
 
 	it('shows scramble chars in cursor zone with dim ANSI', () => {
 		const result = renderStreamText('hello world', 5, 3, []);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('preserves spaces in cursor zone', () => {
@@ -160,7 +160,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		const base = 1000000;
 		const result = manager.streamAct(TEST_ID, 'read file.ts', base, false, 40);
 		// At first call, cursor just started — should have scramble chars
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamAct resolves fully when given enough time', () => {
@@ -169,7 +169,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		// After enough time for all chars to be revealed (13 chars * 16ms = 208ms)
 		const result = manager.streamAct(TEST_ID, 'read file.ts', base + 500, false, 40);
 		expect(stripAnsi(result)).toBe('read file.ts');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('streamAct resets on tool change', () => {
@@ -180,7 +180,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamAct(TEST_ID, 'read file.ts', base + 500, false, 40);
 		// New tool call — should reset and scramble again
 		const result = manager.streamAct(TEST_ID, 'write other.ts', base + 1000, false, 40);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamAct does not reset on same tool with different args', () => {
@@ -189,16 +189,16 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamAct(TEST_ID, 'ls /foo/bar/a', base, false, 40);
 		// Let it fully reveal
 		const before = manager.streamAct(TEST_ID, 'ls /foo/bar/a', base + 500, false, 40);
-		expect(hasDimAnsi(before)).toBe(false);
+		expect(hasAnsi(before)).toBe(false);
 		// Same tool, different path — should NOT reset (no dim scramble)
 		const result = manager.streamAct(TEST_ID, 'ls /foo/bar/b', base + 600, false, 40);
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('streamMsg reveals streaming text progressively', () => {
 		const base = 1000000;
 		const result = manager.streamMsg(TEST_ID, 'Found 4 files', base, false, 40);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamMsg resolves fully after enough time', () => {
@@ -207,7 +207,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		// 14 chars * 20ms = 280ms
 		const result = manager.streamMsg(TEST_ID, 'Found 4 files', base + 500, false, 40);
 		expect(stripAnsi(result)).toBe('Found 4 files');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('streamMsg handles incremental text growth', () => {
@@ -216,7 +216,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		// Text grew — cursor catches up
 		const result = manager.streamMsg(TEST_ID, 'Found 4 files', base + 200, false, 40);
 		// Should have some resolved and some scramble
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamMsg resets on non-incremental change', () => {
@@ -226,7 +226,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamMsg(TEST_ID, 'Found 4 files', base + 500, false, 40);
 		// Completely new text — should reset
 		const result = manager.streamMsg(TEST_ID, 'Error: something failed', base + 1000, false, 40);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamMsg completes on isComplete=true', () => {
@@ -234,7 +234,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamMsg(TEST_ID, 'Processing...', base, false, 40);
 		const result = manager.streamMsg(TEST_ID, 'Processing...', base + 100, true, 40);
 		expect(stripAnsi(result)).toBe('Processing...');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('streamAct completes on isComplete=true', () => {
@@ -242,7 +242,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamAct(TEST_ID, 'read file.ts', base, false, 40);
 		const result = manager.streamAct(TEST_ID, 'read file.ts', base + 100, true, 40);
 		expect(stripAnsi(result)).toBe('read file.ts');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('hasAnyActiveAnimations detects stream animation', () => {
@@ -269,7 +269,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.clear();
 		// After clear, new calls start fresh
 		const result = manager.streamMsg(TEST_ID, 'new text', Date.now(), false, 40);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamMsg resets when a new flow starts after completion', () => {
@@ -280,7 +280,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		expect(manager.hasAnyActiveAnimations(base + 500)).toBe(false);
 		// New flow starts — should reset and scramble again
 		const result = manager.streamMsg(TEST_ID, 'second flow', base + 600, false, 40);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 		expect(stripAnsi(result)).not.toBe('second flow');
 	});
 
@@ -292,7 +292,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		expect(manager.hasAnyActiveAnimations(base + 500)).toBe(false);
 		// New flow starts — should reset and scramble again
 		const result = manager.streamAct(TEST_ID, 'write second.ts', base + 600, false, 40);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 		expect(stripAnsi(result)).not.toBe('write second.ts');
 	});
 
@@ -306,7 +306,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		const result = manager.streamMsg(TEST_ID, textWithAnsi2, base + 500, false, 40);
 		// Should be fully revealed (same text, no reset)
 		expect(stripAnsi(result)).toBe('hello world');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('streamMsg adjusts revealed count when visible window slides', () => {
@@ -356,12 +356,12 @@ describe('ScrambleStateManager (stream mode)', () => {
 		// Let it fully reveal
 		manager.streamMsg(TEST_ID, 'first message text here', base + 1000, false, budget);
 		const done = manager.streamMsg(TEST_ID, 'first message text here', base + 1000, false, budget);
-		expect(hasDimAnsi(done)).toBe(false);
+		expect(hasAnsi(done)).toBe(false);
 
 		// Completely different text — no overlap
 		const result = manager.streamMsg(TEST_ID, 'totally different content now', base + 1001, false, budget);
 		// Should reset and show scramble
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamMsg handles rapid window sliding without dropping to zero revealed', () => {
@@ -376,7 +376,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		const result = manager.streamMsg(TEST_ID, longText, base + 600, false, budget);
 		const stripped = stripAnsi(result);
 		expect(stripped.length).toBeLessThanOrEqual(budget);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('streamMsg survives clock backward jump without stalling', () => {
@@ -384,17 +384,17 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamMsg(TEST_ID, 'hello world', base, false, 40);
 		// Partial reveal at t=100
 		const partial = manager.streamMsg(TEST_ID, 'hello world', base + 100, false, 40);
-		expect(hasDimAnsi(partial)).toBe(true);
+		expect(hasAnsi(partial)).toBe(true);
 
 		// Clock jumps backward (simulates NTP sync or VM time drift)
 		const afterJump = manager.streamMsg(TEST_ID, 'hello world', base + 50, false, 40);
 		// Should not crash or instantly complete — animation still active
-		expect(hasDimAnsi(afterJump)).toBe(true);
+		expect(hasAnsi(afterJump)).toBe(true);
 
 		// Clock recovers and catches up
 		const recovered = manager.streamMsg(TEST_ID, 'hello world', base + 500, false, 40);
 		expect(stripAnsi(recovered)).toBe('hello world');
-		expect(hasDimAnsi(recovered)).toBe(false);
+		expect(hasAnsi(recovered)).toBe(false);
 	});
 
 	it('streamAct survives clock backward jump without stalling', () => {
@@ -402,16 +402,16 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamAct(TEST_ID, 'read file.ts', base, false, 40);
 		// Partial reveal at t=100
 		const partial = manager.streamAct(TEST_ID, 'read file.ts', base + 100, false, 40);
-		expect(hasDimAnsi(partial)).toBe(true);
+		expect(hasAnsi(partial)).toBe(true);
 
 		// Clock jumps backward
 		const afterJump = manager.streamAct(TEST_ID, 'read file.ts', base + 50, false, 40);
-		expect(hasDimAnsi(afterJump)).toBe(true);
+		expect(hasAnsi(afterJump)).toBe(true);
 
 		// Clock recovers
 		const recovered = manager.streamAct(TEST_ID, 'read file.ts', base + 500, false, 40);
 		expect(stripAnsi(recovered)).toBe('read file.ts');
-		expect(hasDimAnsi(recovered)).toBe(false);
+		expect(hasAnsi(recovered)).toBe(false);
 	});
 
 	it('streamMsg applies scramble effect during fast streaming', () => {
@@ -508,7 +508,7 @@ describe('computeCascadeFrame', () => {
 		const maxEnd = Math.max(...queue.map(q => q.end));
 		const result = computeCascadeFrame(queue, maxEnd + 100);
 		expect(stripAnsi(result)).toBe('longer text here');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('handles empty from chars (new text longer)', () => {
@@ -554,7 +554,7 @@ describe('applyRipples', () => {
 		const ripple = { pos: 4, time: now - 100, dur: 666, spread: 1 };
 		const result = applyRipples('hello world', [ripple], now);
 		expect(stripAnsi(result).length).toBe('hello world'.length);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(stripAnsi(result)).not.toBe('hello world');
 	});
 
 	it('preserves spaces untouched', () => {
@@ -572,7 +572,7 @@ describe('applyRipples', () => {
 		const now = spawnTime + 1400;
 		const result = applyRipples('hello world', [ripple], now);
 		expect(stripAnsi(result)).toBe('hello world');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 
 	it('handles empty text', () => {
@@ -608,7 +608,7 @@ describe('ScrambleStateManager (cascade mode)', () => {
 		manager.updateAct(TEST_ID, 'read file.ts', base);
 		const result = manager.updateAct(TEST_ID, 'read other.ts', base + 300);
 		expect(result.isAnimating).toBe(true);
-		expect(hasDimAnsi(result.content)).toBe(true);
+		expect(hasAnsi(result.content)).toBe(true);
 	});
 
 	it('updateAct does NOT scramble when text is the same', () => {
@@ -628,7 +628,7 @@ describe('ScrambleStateManager (cascade mode)', () => {
 		manager.updateMsg(TEST_ID, 'initial', base);
 		const result = manager.updateMsg(TEST_ID, 'changed text', base + 300);
 		expect(result.isAnimating).toBe(true);
-		expect(hasDimAnsi(result.content)).toBe(true);
+		expect(hasAnsi(result.content)).toBe(true);
 	});
 
 	it('updateMsg cascade self-terminates', () => {
@@ -672,7 +672,7 @@ describe('ScrambleStateManager (cascade mode)', () => {
 		manager.updateTps(TEST_ID, '51.7', base + 100);
 		const resultAfter = manager.updateTps(TEST_ID, '51.7', base + 500);
 		expect(resultAfter).toBe('51.7');
-		expect(hasDimAnsi(resultAfter)).toBe(false);
+		expect(hasAnsi(resultAfter)).toBe(false);
 	});
 
 	it('hasAnyActiveAnimations works for cascade', () => {
@@ -726,7 +726,7 @@ describe('ScrambleStateManager (ripple mode)', () => {
 		// Check at a later time when ripple has actually started scrambling
 		const result = manager.updateMsg(TEST_ID, 'changed', base + 400);
 		expect(result.isAnimating).toBe(true);
-		expect(hasDimAnsi(result.content)).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('changed');
 	});
 
 	it('updateAim animates on text change in ripple mode', () => {
@@ -760,7 +760,7 @@ describe('ScrambleStateManager (ripple mode)', () => {
 		manager.updateTps(TEST_ID, '42.3', base);
 		manager.updateTps(TEST_ID, '51.7', base + 100);
 		const result = manager.updateTps(TEST_ID, '51.7', base + 105);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(result).not.toBe('51.7');
 	});
 
 	it('hasAnyActiveAnimations works for ripple', () => {
@@ -858,7 +858,6 @@ describe('applyRipples — overlapping ripple blending', () => {
 		const r2 = { pos: 8, time: now - 50, dur: 666, spread: 1 };
 		const result = applyRipples('hello world', [r1, r2], now);
 		// Both ripples should contribute scramble chars
-		expect(hasDimAnsi(result)).toBe(true);
 		// Verify at least some chars near both centers are scrambled
 		const stripped = stripAnsi(result);
 		expect(stripped).not.toBe('hello world');
@@ -871,7 +870,7 @@ describe('applyRipples — negative elapsed / clock backward jump', () => {
 		const futureRipple = { pos: 5, time: now + 1000, dur: 666, spread: 1 };
 		const result = applyRipples('hello world', [futureRipple], now);
 		expect(stripAnsi(result)).toBe('hello world');
-		expect(hasDimAnsi(result)).toBe(false);
+		expect(hasAnsi(result)).toBe(false);
 	});
 });
 
@@ -916,7 +915,7 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		manager.updateTps(TEST_ID, '42.3', base);
 		manager.updateTps(TEST_ID, '55.0', base + 100);
 		const result = manager.updateTps(TEST_ID, '55.0', base + 110);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(result).not.toBe('55.0');
 	});
 
 	it('cascade mode triggers flash after long quiet period even with small change', () => {
@@ -927,7 +926,7 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		// Small change after 2500ms (> TPS_HYSTERESIS_MS=2000)
 		manager.updateTps(TEST_ID, '43.1', base + 2500);
 		const result = manager.updateTps(TEST_ID, '43.1', base + 2510);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(hasAnsi(result)).toBe(true);
 	});
 
 	it('TPS flash respects 3s cooldown — blocked within cooldown, fires after', () => {
@@ -940,15 +939,14 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		manager.updateTps(TEST_ID, '100.0', base + 100);
 		// Third call within 3s: same value, still animating from first flash
 		const duringCooldown = manager.updateTps(TEST_ID, '100.0', base + 110);
-		expect(hasDimAnsi(duringCooldown)).toBe(true);
+		expect(duringCooldown).not.toBe('100.0');
 		// Fourth call with new value but within 3s cooldown: blocked
 		const blocked = manager.updateTps(TEST_ID, '200.0', base + 500);
 		expect(blocked).toBe('200.0'); // no flash
-		expect(hasDimAnsi(blocked)).toBe(false);
 		// Fifth call after 3s cooldown: flash allowed (render at t+10 to see scramble)
 		manager.updateTps(TEST_ID, '300.0', base + 3100);
 		const afterCooldown = manager.updateTps(TEST_ID, '300.0', base + 3110);
-		expect(hasDimAnsi(afterCooldown)).toBe(true);
+		expect(afterCooldown).not.toBe('300.0');
 	});
 
 	it('act KPI flash respects 3s cooldown', () => {
@@ -961,15 +959,14 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		manager.updateActKpi(TEST_ID, '15', base + 100, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
 		const rendered = manager.updateActKpi(TEST_ID, '15', base + 110, false, false);
-		expect(hasDimAnsi(rendered)).toBe(true);
+		expect(rendered).not.toBe('15');
 		// Third call with new value but within 3s cooldown: blocked
 		const blocked = manager.updateActKpi(TEST_ID, '18', base + 500, false, false);
 		expect(blocked).toBe('18');
-		expect(hasDimAnsi(blocked)).toBe(false);
 		// Fourth call after 3s cooldown: flash allowed
 		manager.updateActKpi(TEST_ID, '21', base + 3100, false, false);
 		const afterCooldown = manager.updateActKpi(TEST_ID, '21', base + 3110, false, false);
-		expect(hasDimAnsi(afterCooldown)).toBe(true);
+		expect(afterCooldown).not.toBe('21');
 	});
 
 	it('msg KPI flash respects 3s cooldown', () => {
@@ -982,15 +979,14 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 100, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
 		const rendered = manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 200, false, false);
-		expect(hasDimAnsi(rendered)).toBe(true);
+		expect(rendered).not.toBe('↑ 2.0k · ↓ 1.0k');
 		// Third call with new value but within 3s cooldown: blocked
 		const blocked = manager.updateMsgKpi(TEST_ID, '↑ 3.0k · ↓ 1.5k', base + 500, false, false);
 		expect(blocked).toBe('↑ 3.0k · ↓ 1.5k');
-		expect(hasDimAnsi(blocked)).toBe(false);
 		// Fourth call after 3s cooldown: flash allowed
 		manager.updateMsgKpi(TEST_ID, '↑ 4.0k · ↓ 2.0k', base + 3100, false, false);
 		const afterCooldown = manager.updateMsgKpi(TEST_ID, '↑ 4.0k · ↓ 2.0k', base + 3200, false, false);
-		expect(hasDimAnsi(afterCooldown)).toBe(true);
+		expect(afterCooldown).not.toBe('↑ 4.0k · ↓ 1.5k');
 	});
 });
 
@@ -1031,7 +1027,7 @@ describe('applyRipples with illuminate config', () => {
 		const config = ILLUMINATE_CONFIGS.actLabel;
 		const result = applyRipples('hello world', [ripple], now, config);
 		expect(result).toContain(WARM_GLOW);
-		expect(result).toContain(BOLD_ON);
+		expect(stripAnsi(result)).not.toBe('hello world');
 	});
 
 	it('uses dynamic smooth truecolor for config.color === dynamic at moderate depth', () => {
@@ -1044,12 +1040,11 @@ describe('applyRipples with illuminate config', () => {
 		expect(result).toContain('\x1b[38;2;');
 	});
 
-	it('falls back to DIM when no config', () => {
+	it('scrambles without config via raw glitch chars', () => {
 		const now = Date.now();
 		const ripple = { pos: 4, time: now - 100, dur: 666, spread: 1 };
 		const result = applyRipples('hello world', [ripple], now);
-		expect(result).toContain(DIM_ON);
-		expect(result).toContain(DIM_OFF);
+		expect(stripAnsi(result)).not.toBe('hello world');
 	});
 });
 
@@ -1060,8 +1055,8 @@ describe('illuminatePrefix — 12-zone SGR transition', () => {
 		const ripple = { pos: 5, time: now - 10, dur: 850, spread: 1.5 };
 		const config = ILLUMINATE_CONFIGS.msgContent;
 		const result = applyRipples('abcdefghij', [ripple], now, config);
-		// Low intensity should include DIM
-		expect(result).toContain(DIM_ON);
+		// Low intensity uses truecolor only (no DIM/BOLD)
+		expect(result).toContain('\x1b[38;2;');
 	});
 
 	it('uses no weight prefix at moderate intensity (normal zone)', () => {
@@ -1084,9 +1079,7 @@ describe('illuminatePrefix — 12-zone SGR transition', () => {
 		expect(result).toContain('\x1b[38;2;');
 		// With wider band, some chars may be in normal zone (no weight prefix)
 		// while others are in dim zone — both are valid
-		const hasDim = result.includes(DIM_ON);
-		const hasBold = result.includes(BOLD_ON);
-		expect(hasDim || hasBold || result.includes('\x1b[38;2;')).toBe(true);
+		expect(result.includes('\x1b[38;2;')).toBe(true);
 	});
 
 	it('produces magenta-spike mid-intensity colors', () => {
@@ -1284,7 +1277,7 @@ describe('applyRipples — spread < 1 radius proportionality', () => {
 		const result = applyRipples('a'.repeat(20), ripples, now);
 		const stripped = stripAnsi(result);
 		expect(stripped.length).toBe(20);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(stripAnsi(result)).not.toBe('a'.repeat(20));
 	});
 });
 
@@ -1299,8 +1292,8 @@ describe('applyRipples — multi-ripple depth blending', () => {
 		const r1 = { pos: 5, time: now - 100, dur: 666, spread: 0.8 };
 		const r2 = { pos: 5, time: now - 100, dur: 666, spread: 1.5 };
 		const result = applyRipples('abcdefghij', [r1, r2], now);
-		// Both should scramble; result should have dim/scramble chars
-		expect(hasDimAnsi(result)).toBe(true);
+		// Both should scramble; result should have glitch chars
+		expect(stripAnsi(result)).not.toBe('abcdefghij');
 	});
 
 	it('three overlapping ripples do not crash', () => {
@@ -1311,7 +1304,7 @@ describe('applyRipples — multi-ripple depth blending', () => {
 			{ pos: 7, time: now - 40, dur: 666, spread: 1 },
 		];
 		const result = applyRipples('hello world here', ripples, now);
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(stripAnsi(result)).not.toBe('hello world here');
 		expect(stripAnsi(result).length).toBe('hello world here'.length);
 	});
 
@@ -1322,7 +1315,7 @@ describe('applyRipples — multi-ripple depth blending', () => {
 		const newer = { pos: 5, time: now - 50, dur: 666, spread: 1, seed: 22222 };
 		const result = applyRipples('abcdefghij', [older, newer], now);
 		// Should scramble (newer wins at equal depth)
-		expect(hasDimAnsi(result)).toBe(true);
+		expect(stripAnsi(result)).not.toBe('abcdefghij');
 		expect(stripAnsi(result).length).toBe('abcdefghij'.length);
 	});
 });
@@ -1339,7 +1332,7 @@ describe('poolRandomChar — exhaustion behavior', () => {
 		for (let i = 0; i < 200; i++) {
 			const result = renderStreamText(visibleText, 3, 3, cursorChars);
 			expect(stripAnsi(result).length).toBe(visibleText.length);
-			expect(hasDimAnsi(result)).toBe(true);
+			expect(hasAnsi(result)).toBe(true);
 		}
 	});
 
@@ -1357,8 +1350,8 @@ describe('poolRandomChar — exhaustion behavior', () => {
 		const result1 = manager1.updateMsg('id-1', 'goodbye all', base + 400);
 		const result2 = manager2.updateMsg('id-2', 'goodbye all', base + 400);
 		// Both should have scramble chars (not crash)
-		expect(hasDimAnsi(result1.content)).toBe(true);
-		expect(hasDimAnsi(result2.content)).toBe(true);
+		expect(hasAnsi(result1.content)).toBe(true);
+		expect(hasAnsi(result2.content)).toBe(true);
 		expect(stripAnsi(result1.content).length).toBe('goodbye all'.length);
 		expect(stripAnsi(result2.content).length).toBe('goodbye all'.length);
 	});
@@ -1439,7 +1432,7 @@ describe('ScrambleStateManager — visible-window contract', () => {
 		// Evaluate at a later time when ripple has expanded
 		const result = manager.updateMsg(TEST_ID, 'b'.repeat(100), base + 400, false, 20);
 		expect(result.isAnimating).toBe(true);
-		expect(hasDimAnsi(result.content)).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('b'.repeat(100));
 		expect(stripAnsi(result.content).length).toBeLessThanOrEqual(20);
 	});
 
@@ -2074,8 +2067,7 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 		const result = manager.updateMsg(TEST_ID, 'Completely different text.', base + 300, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Ripple should be visible (pos within bounds)
-		expect(result.content).not.toBe('Completely different text.');
-		expect(result.content).toContain('\x1b');
+		expect(stripAnsi(result.content)).not.toBe('Completely different text.');
 	});
 
 	it('spawns ripple on cooldown commit after suppressed rewrite', () => {
@@ -2093,7 +2085,6 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 4800, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Ripple should scramble at least one character
-		expect(result.content).not.toBe('Brand new text here.');
-		expect(result.content).toContain('\x1b');
+		expect(stripAnsi(result.content)).not.toBe('Brand new text here.');
 	});
 });

@@ -81,7 +81,7 @@ const DEEP_GLITCH = '·∘∙+*~!?⟐⟑✧✦⠁⠂⠃⠄⠅⠆⠇ᚠᚢᚦᚨ�
 /** Mid glitch: lowercase alphabet + braille/runic + geometric shapes for mid depth (3) */
 const MID_GLITCH = 'ᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
 /** Shallow glitch: numbers/brackets + shade blocks + light box-drawing for outer depths (4+) */
-const SHALLOW_GLITCH = '0123456789\\/[]{}|░▒▚▞⠁⠂⠃';
+const SHALLOW_GLITCH = '0123456789\\/[]{}|░▚▞⠁⠂⠃';
 /** Classic ASCII-safe set for stream/cascade/ripple fallback */
 const SCRAMBLE_CHARS = '·∘∙~?+-*/[]{}<>_○◎';
 
@@ -142,7 +142,7 @@ const DIM_OFF = '\x1b[22m';
 
 /** Illuminate close: turns off bold (SGR 22 also kills dim), then re-applies
  *  dim (SGR 2) so enclosing dim context survives scramble transitions. */
-const ILLUMINATE_CLOSE = '\x1b[22m\x1b[2m';
+const ILLUMINATE_CLOSE = '\x1b[39m';
 
 // ---------------------------------------------------------------------------
 // Illuminate per-target effect configs
@@ -646,18 +646,10 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 			b = Math.min(255, Math.max(0, Math.round(b + interferenceBoost * (targetB - b))));
 		}
 
-		// Soft prefix thresholds: dim at very low intensity, no bold at high
-		let prefix = '';
-		if (interferenceBoost > 0.3) prefix = '';  // No interference bold override
-		else if (intensity < 0.25) prefix = DIM_ON;
-		else if (intensity > 0.75) prefix = '';
-
-		return `${prefix}\x1b[38;2;${r};${g};${b}m`;
+		// No DIM/BOLD — truecolor RGB handles brightness smoothly
+		return `\x1b[38;2;${r};${g};${b}m`;
 	}
-	const base = config.color;
-	if (config.glowIntensity === 'high') return BOLD_ON + base;
-	if (config.glowIntensity === 'medium') return base;
-	return DIM_ON + base;
+	return config.color;
 }
 
 export function applyRipples(
@@ -789,10 +781,10 @@ export function applyRipples(
 				}
 				segments[segCount++] = char;
 			} else {
-				if (!inColor) {
-					segments[segCount++] = DIM_ON;
-					inColor = true;
-					currentPrefix = DIM_ON;
+				if (inColor) {
+					segments[segCount++] = ILLUMINATE_CLOSE;
+					inColor = false;
+					currentPrefix = '';
 				}
 				segments[segCount++] = char;
 			}
@@ -822,12 +814,12 @@ export function applyRipples(
 						// Cooling ember: warm at start, fading to dim cool
 						// Echo pops get minimum intensity so chars stay visible long after ripple
 						const effectiveIntensity = inEchoPopWindow ? Math.max(afterglowIntensity, 0.3) : afterglowIntensity;
-						const emberR = Math.round(180 + 71 * effectiveIntensity);
-						const emberG = Math.round(155 + 21 * effectiveIntensity);
-						const emberB = Math.round(155 + 14 * effectiveIntensity);
-						agPrefix = DIM_ON + `\x1b[38;2;${emberR};${emberG};${emberB}m`;
+						const emberR = Math.round(200 + 55 * effectiveIntensity);
+						const emberG = Math.round(100 + 60 * effectiveIntensity);
+						const emberB = Math.round(40 + 20 * effectiveIntensity);
+						agPrefix = `\x1b[38;2;${emberR};${emberG};${emberB}m`;
 					} else {
-						agPrefix = DIM_ON + config.color;
+						agPrefix = config.color;
 					}
 					if (!inColor || currentPrefix !== agPrefix) {
 						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
@@ -835,10 +827,6 @@ export function applyRipples(
 						inColor = true;
 						currentPrefix = agPrefix;
 					}
-				} else if (!inColor) {
-					segments[segCount++] = DIM_ON;
-					inColor = true;
-					currentPrefix = DIM_ON;
 				}
 				const agDepth = afterglowIntensity * 4.5;
 				const agElapsed = now - agRipple.time - agRipple.dur;
@@ -847,7 +835,7 @@ export function applyRipples(
 			} else {
 				// Plain afterglow — close any open styling and render origChar
 				if (inColor) {
-					segments[segCount++] = config ? ILLUMINATE_CLOSE : RESET_COLOR + DIM_OFF;
+					segments[segCount++] = ILLUMINATE_CLOSE;
 					inColor = false;
 					currentPrefix = '';
 				}
@@ -855,7 +843,7 @@ export function applyRipples(
 			}
 		} else {
 			if (inColor) {
-				segments[segCount++] = config ? ILLUMINATE_CLOSE : RESET_COLOR + DIM_OFF;
+				segments[segCount++] = ILLUMINATE_CLOSE;
 				inColor = false;
 				currentPrefix = '';
 			}
@@ -867,7 +855,7 @@ export function applyRipples(
 						? '\x1b[38;2;0;200;195m'   // cyan
 						: '\x1b[38;2;230;140;40m';  // orange
 					if (!inColor || currentPrefix !== settlePrefix) {
-						if (inColor) segments[segCount++] = config ? ILLUMINATE_CLOSE : (RESET_COLOR + DIM_OFF);
+						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
 						segments[segCount++] = settlePrefix;
 						inColor = true;
 						currentPrefix = settlePrefix;
@@ -879,7 +867,7 @@ export function applyRipples(
 	}
 
 	if (inColor) {
-		segments[segCount++] = config ? ILLUMINATE_CLOSE : RESET_COLOR + DIM_OFF;
+		segments[segCount++] = ILLUMINATE_CLOSE;
 	}
 
 	return segments.slice(0, segCount).join('');
