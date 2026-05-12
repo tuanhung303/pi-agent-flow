@@ -174,7 +174,7 @@ export default function (pi: ExtensionAPI) {
 	setupSpecMode(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
-	const { currentDepth, maxDepth, canFlow, ancestorFlowStack, preventCycles } =
+	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
 	let resolved: ResolvedSettings | undefined;
@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
 		const augmented = buildBeforeAgentStartPrompt(
 			event,
 			resolved.toolOptimize,
-			canFlow,
+			canDelegate,
 			resolved.discoveredFlows,
 			depthConfig,
 		);
@@ -313,7 +313,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool(createAskUserTool());
 
 	// Register the flow tool
-	if (canFlow) {
+	if (canDelegate) {
 		pi.registerTool({
 			name: "flow",
 			label: "Flow",
