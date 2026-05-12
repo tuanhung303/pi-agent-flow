@@ -305,7 +305,7 @@ Advisories are smart: if the agent already included the suggested flow in the sa
 ### Single flow
 
 ```json
-{ "flow": [{ "type": "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT" }] }
+{ "flow": [{ "type": "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "acceptance": "All auth files identified with JWT flow traced" }] }
 ```
 
 ### Batch multiple flows
@@ -340,6 +340,8 @@ Suppress the confirmation prompt before running project-local flows:
 }
 ```
 
+Each flow item also accepts an optional `acceptance` field — a one-sentence success criteria stating what "done" looks like. This helps the flow self-assess completion.
+
 
 
 ---
@@ -365,6 +367,19 @@ Built-in web operations (no API keys required):
 - **Fetch** — downloads a page, converts HTML to Markdown via JSDOM + Turndown, saves to a temp file in the session directory, and returns a preview. Falls back through direct fetch → `r.jina.ai` → `curl`.
 
 In the collapsed activity panel, web operations display as compact one-line summaries (e.g., `search: "query"` or `fetch: example.com`). Like other tools, web results are scramble-animated in the collapsed view.
+
+### `ask_user` — interactive prompts
+
+Parameters beyond the basic `question`, `options`, `allowMultiple`, `allowFreeform`, `allowCancel`:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `context` | `string` | Summary of findings to show before the question |
+| `allowComment` | `boolean` | Collect an optional freeform comment after selection (default: false) |
+| `displayMode` | `"overlay" \| "inline"` | UI rendering mode; overlay shows a centered modal, inline renders in-place (default: overlay) |
+| `overlayToggleKey` | `string` | Shortcut for hiding/showing the overlay popup (default: `alt+o`; pass `"off"` to disable) |
+| `commentToggleKey` | `string` | Shortcut for toggling the comment row when `allowComment` is true (default: `ctrl+g`) |
+| `timeout` | `number` | Auto-dismiss after N milliseconds; returns null (cancelled) when expired |
 
 ---
 
@@ -478,6 +493,11 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_SESSION_MODE` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
 | `PI_FLOW_MAX_CONCURRENCY` | Maximum parallel flows |
 | `PI_FLOW_SPAWN_COMMAND` | Override the spawn command for exotic runtime environments (e.g. bundled with pkg/nexe) |
+| `PI_FLOW_DEADLINE_MS` | Absolute deadline timestamp (ms) propagated to child flows for timeout awareness |
+| `PI_FLOW_TOOL_SUMMARY_GRACE_MS` | Time before hard timeout when the agent should stop tool use and summarize (ms) |
+| `PI_FLOW_REMINDER_FILE` | Path to a file the parent writes warning messages into; the timed-bash wrapper reads it before each tool call |
+| `PI_FLOW_DEBUG_CONTEXT` | Set to `1` to emit context-compression telemetry to stderr |
+| `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to suppress the strategic planning hints appended after tool calls |
 
 ### Notifications
 

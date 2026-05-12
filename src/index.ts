@@ -158,7 +158,7 @@ export default function (pi: ExtensionAPI) {
 		type: "string",
 	});
 	pi.registerFlag("flow-session-mode", {
-		description: "Default child-flow session mode: fast (300s), default (600s), or long (900s).",
+		description: "Default child-flow session mode: fast (300s), default (600s), long (900s), or extreme_long (1200s).",
 		type: "string",
 	});
 

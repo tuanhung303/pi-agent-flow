@@ -2070,8 +2070,8 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 	it('spawns ripple within targetText bounds on non-extension rewrite (flush branch)', () => {
 		const base = 1_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
-		// Complete rewrite (no overlap) after cooldown
-		const result = manager.updateMsg(TEST_ID, 'Completely different text.', base + 600, false, undefined, true);
+		// Complete rewrite (no overlap) while old ripple is still active
+		const result = manager.updateMsg(TEST_ID, 'Completely different text.', base + 300, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Ripple should be visible (pos within bounds)
 		expect(result.content).not.toBe('Completely different text.');

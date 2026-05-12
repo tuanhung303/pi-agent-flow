@@ -137,7 +137,7 @@ export function resolveSettings(
 		if (envSessionMode !== undefined) {
 			defaultSessionMode = envSessionMode;
 		} else {
-			console.warn(`[pi-agent-flow] Ignoring invalid ${PI_FLOW_SESSION_MODE_ENV}="${envSessionModeRaw}". Expected fast, default, or long.`);
+			console.warn(`[pi-agent-flow] Ignoring invalid ${PI_FLOW_SESSION_MODE_ENV}="${envSessionModeRaw}". Expected fast, default, long, or extreme_long.`);
 		}
 	}
 	const cliSessionModeRaw = pi.getFlag("flow-session-mode");
@@ -146,7 +146,7 @@ export function resolveSettings(
 		if (cliSessionMode !== undefined) {
 			defaultSessionMode = cliSessionMode;
 		} else {
-			console.warn(`[pi-agent-flow] Ignoring invalid --flow-session-mode value "${cliSessionModeRaw}". Expected fast, default, or long.`);
+			console.warn(`[pi-agent-flow] Ignoring invalid --flow-session-mode value "${cliSessionModeRaw}". Expected fast, default, long, or extreme_long.`);
 		}
 	} else if (inheritedCliArgs.flowSessionMode !== undefined) {
 		defaultSessionMode = inheritedCliArgs.flowSessionMode;
