@@ -174,7 +174,7 @@ const MIN_RIPPLE_INTERVAL = 600;
 const DEPTH_BAND_MAX = 13;
 const TPS_FLASH_DUR = 150;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 340;
+const AFTERGLOW_MS = 700;
 const FLASH_AFTERGLOW_MS = 195; // shorter afterglow for TPS/KPI value flashes
 const PULSE_WINDOW_MS = 2550;
 const PULSE_CYCLE_MS = 1425;
@@ -752,7 +752,7 @@ export function applyRipples(
 			for (let i = 0; i < afterglowCount; i++) {
 				const dist = Math.abs(idx - afterglowData[i].pos);
 				if (dist < afterglowData[i].maxReach) {
-					const primaryAg = 1 - Math.min(1, afterglowData[i].timeSinceExpiry / 400);
+					const primaryAg = 1 - Math.min(1, afterglowData[i].timeSinceExpiry / 500);
 					const secondaryAg = 0.4 * (1 - Math.min(1, afterglowData[i].timeSinceExpiry / AFTERGLOW_MS));
 					if (primaryAg > afterglowIntensity || secondaryAg > afterglowIntensity) {
 						bestAgIdx = i;
@@ -796,9 +796,16 @@ export function applyRipples(
 			}
 		} else if (afterglowIntensity > 0) {
 			const agRipple = afterglowRipples[bestAgIdx];
-			const agTick = Math.floor(now / 200);
+			const timeSinceExpiry = now - agRipple.time - agRipple.dur;
+			// Discrete post-ripple glitch pops: 3 brief bursts after ripple expires
+			const popWidth = 80;
+			const popGap = 160;
+			const inPopWindow = (timeSinceExpiry >= 0 && timeSinceExpiry < popWidth)
+			    || (timeSinceExpiry >= popWidth + popGap && timeSinceExpiry < 2 * popWidth + popGap)
+			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 3 * (popWidth + popGap));
+			const agTick = Math.floor(now / 80);
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
-			const shouldScramble = afterglowIntensity > 0.25 && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500 && glitchRoll < 0.045;
+			const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500 && glitchRoll < 0.045;
 			if (shouldScramble) {
 				if (config) {
 					let agPrefix: string;

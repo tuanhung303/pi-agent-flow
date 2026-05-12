@@ -544,7 +544,7 @@ describe('applyRipples', () => {
 
 	it('returns original text when all ripples have expired', () => {
 		const now = Date.now();
-		const expiredRipple = { pos: 5, time: now - 1000, dur: 500, spread: 1 };
+		const expiredRipple = { pos: 5, time: now - 1500, dur: 500, spread: 1 };
 		const result = applyRipples('hello world', [expiredRipple], now);
 		expect(stripAnsi(result)).toBe('hello world');
 	});
