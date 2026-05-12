@@ -121,11 +121,11 @@ The child's `<context-seal>` prompt tells it: *"The conversation above is sealed
 | Flow | Purpose | Tools | Tier |
 |------|---------|-------|------|
 | `[scout]` | Discover files, trace code paths, map architecture | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
-| `[debug]` | Investigate logs, errors, stack traces, root causes | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
-| `[build]` | Implement features, fix bugs, write tests, update docs, ship | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
+| `[debug]` | Investigate logs, errors, stack traces, root causes, and fix bugs | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
+| `[build]` | Implement features, fix bugs, write tests, deploy, and ship | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
 | `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
 | `[audit]` | Audit security, quality, correctness; fix safe issues autonomously | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
-| `[ideas]` | Generate ideas and explore possibilities with inherited context | `batch`, `bash`, `web` | `full` |
+| `[ideas]` | Generate ideas, explore possibilities, and think creatively using inherited context | `batch`, `bash`, `web` | `full` |
 
 > **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
 
@@ -232,7 +232,7 @@ flow [myflow] accomplished
 |-------|------|-------------|
 | `name` | `string` | Flow identifier (lowercase, required) |
 | `description` | `string` | Short summary (required) |
-| `tools` | `string[]` | Tools available to this flow |
+| `tools` | `string \| string[]` | Tools available to this flow |
 | `model` | `string` | Override the model for this flow |
 | `thinking` | `string` | Thinking budget (e.g., `"low"`, `"medium"`, `"high"`) |
 | `maxDepth` | `number` | How many more delegation levels this flow may spawn |
@@ -476,7 +476,7 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `--flow-max-depth [n]` | Maximum delegation depth | `3` |
 | `--flow-prevent-cycles` | Block cyclic delegation | `true` |
 | `--no-flow-prevent-cycles` | Disable cycle prevention | — |
-| `--flow-model-config [name]` | Select a named model strategy for this invocation | `balance` |
+| `--flow-model-config [name]` | Select a named model strategy for this invocation | `default` |
 | `--flow-mode [name]` | Persistently switch the global model strategy and apply it immediately | — |
 | `--flow-lite-model [model]` | Override the lite-tier model | — |
 | `--flow-flash-model [model]` | Override the flash-tier model | — |
@@ -501,6 +501,7 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_TOOL_SUMMARY_GRACE_MS` | Time before hard timeout when the agent should stop tool use and summarize (ms) |
 | `PI_FLOW_REMINDER_FILE` | Path to a file the parent writes warning messages into; the timed-bash wrapper reads it before each tool call |
 | `PI_FLOW_DEBUG_CONTEXT` | Set to `1` to emit context-compression telemetry to stderr |
+| `PI_OFFLINE` | Always set to `1` for child flow processes |
 | `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to suppress the strategic planning hints appended after tool calls |
 | `PI_ASK_USER_DISPLAY_MODE` | Default display mode for `ask_user`: `overlay` or `inline` |
 | `PI_ASK_USER_OVERLAY_TOGGLE_KEY` | Default shortcut for hiding/showing the overlay popup (e.g. `alt+o`) |
