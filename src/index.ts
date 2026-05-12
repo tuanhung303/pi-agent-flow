@@ -1,7 +1,7 @@
 /**
  * Pi Flow Extension (fork-only)
  *
- * Delegates tasks to specialized flow states running as isolated pi processes.
+ * Dives into specialized flow states running as isolated pi processes.
  * Each flow receives a forked snapshot of the current session context.
  */
 
@@ -111,7 +111,7 @@ const inheritedCliArgs = getInheritedCliArgs();
 function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 	return (results: SingleResult[]): FlowDetails => ({
 		mode: "flow",
-		delegationMode: "fork",
+		flowStyle: "fork",
 		projectAgentsDir: projectFlowsDir,
 		results,
 	});
@@ -126,11 +126,11 @@ export { compressToolResults, stripBatchReadToolCalls } from "./snapshot.js";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag("flow-max-depth", {
-		description: "Maximum allowed flow delegation depth (default: 3).",
+		description: "Maximum allowed flow depth (default: 3).",
 		type: "string",
 	});
 	pi.registerFlag("flow-prevent-cycles", {
-		description: "Block delegating to flows already in the current delegation stack (default: true).",
+		description: "Block diving into flows already in the current flow stack (default: true).",
 		type: "boolean",
 	});
 	pi.registerFlag("flow-model-config", {
@@ -174,7 +174,7 @@ export default function (pi: ExtensionAPI) {
 	setupSpecMode(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
-	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
+	const { currentDepth, maxDepth, canFlow, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
 	let resolved: ResolvedSettings | undefined;
@@ -192,7 +192,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Register tools based on depth.
-		// Depth 0 (main orchestrator): only batch_read — no bash ops, only reads + flow delegation.
+		// Depth 0 (main orchestrator): only batch_read — no bash ops, only reads + flow tool.
 		// Depth > 0 (child flows): batch (with bash), batch_bash_poll — they need bash ops.
 		// Children use batch for reads (which includes read ops), so batch_read is NOT
 		// registered for depth > 0 to avoid confusion and keep the tool set minimal.
@@ -209,7 +209,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Override built-in bash with timed wrapper so the LLM sees execution-time classification.
-		// Only register for child flows — main agent should delegate all bash ops to flows.
+		// Only register for child flows — main agent should dive into flows for all bash ops.
 		if (currentDepth > 0) {
 			const timedBash = createTimedBashToolDefinition(ctx.cwd);
 			if (timedBash) {
@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
 		const augmented = buildBeforeAgentStartPrompt(
 			event,
 			resolved.toolOptimize,
-			canDelegate,
+			canFlow,
 			resolved.discoveredFlows,
 			depthConfig,
 		);
@@ -313,7 +313,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool(createAskUserTool());
 
 	// Register the flow tool
-	if (canDelegate) {
+	if (canFlow) {
 		pi.registerTool({
 			name: "flow",
 			label: "Flow",

@@ -529,7 +529,7 @@ describe("activity panel rendering", () => {
 			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
@@ -549,7 +549,7 @@ describe("activity panel rendering", () => {
 				deadlineAtMs: now + 576_000,
 				messages: [makeTextMessage("Still working")],
 			});
-			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			expect(text).toContain("aim: [09:36] -");
@@ -565,7 +565,7 @@ describe("activity panel rendering", () => {
 			messages: [makeTextMessage("Flow timed out after 600s.")],
 			usage: { input: 46_700, output: 4_600, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 50_000, turns: 2, toolCalls: 0 },
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
@@ -588,7 +588,7 @@ describe("activity panel rendering", () => {
 				streamingText: "Deploy still running",
 				usage: { input: 46_700, output: 4_600, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 50_000, turns: 2, toolCalls: 0 },
 			});
-			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const firstHeaderLine = text.split("\n")[0];
@@ -617,7 +617,7 @@ describe("activity panel rendering", () => {
 			],
 			usage: { input: 5000, output: 800, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 6000, turns: 3, toolCalls: 3 },
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("act: [3] -");
@@ -650,7 +650,7 @@ describe("activity panel rendering", () => {
 			messages: [makeToolCallMessage("read", { file_path: "src/index.ts" })],
 			usage: { input: 1000, output: 200, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 500, turns: 1, toolCalls: 1 },
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).not.toContain("acceptance:");
@@ -660,7 +660,7 @@ describe("activity panel rendering", () => {
 	it("hides acceptance line in activity panel", () => {
 		const result1 = makeResult({ type: "scout", acceptance: "Code mapped" });
 		const result2 = makeResult({ type: "build", acceptance: "Build shipped" });
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).not.toContain("acceptance:");
@@ -689,7 +689,7 @@ describe("activity panel rendering", () => {
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("├─");
@@ -708,7 +708,7 @@ describe("activity panel rendering", () => {
 			exitCode: -1,
 			streamingText: streaming,
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
@@ -724,7 +724,7 @@ describe("activity panel rendering", () => {
 			aim: longAim,
 			messages: [makeTextMessage("done")],
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("aim:");
@@ -742,7 +742,7 @@ describe("activity panel rendering", () => {
 				makeTextMessage("done"),
 			],
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
@@ -759,7 +759,7 @@ describe("activity panel rendering", () => {
 				makeTextMessage("done"),
 			],
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
@@ -774,7 +774,7 @@ describe("activity panel rendering", () => {
 		const result = makeResult({
 			messages: [],
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("[n/a]");
@@ -792,7 +792,7 @@ describe("activity panel rendering", () => {
 					makeTextMessage("done"),
 				],
 			});
-			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
@@ -814,7 +814,7 @@ describe("activity panel rendering", () => {
 				aim: longAim,
 				messages: [makeTextMessage("done")],
 			});
-			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result, makeResult()] };
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult()] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
@@ -837,7 +837,7 @@ describe("activity panel rendering", () => {
 				intent: "test",
 				messages: [],
 			});
-			const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
@@ -864,7 +864,7 @@ describe("expanded view rendering", () => {
 			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
@@ -881,7 +881,7 @@ describe("expanded view rendering", () => {
 			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("↑  9.8k · ↓  1.3k - tps:     - - ctx: 10.0k - mimo-v2.5-pro");
@@ -895,7 +895,7 @@ describe("expanded view rendering", () => {
 			usage: { input: 9800, output: 1300, cacheRead: 42000, cacheWrite: 0, cost: 0, contextTokens: 10000, turns: 2, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("ctx: 10.0k");
@@ -925,7 +925,7 @@ describe("expanded view rendering", () => {
 				notes: [],
 			},
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("Not Done: Cross-validation");
@@ -949,7 +949,7 @@ describe("expanded view rendering", () => {
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("2 flows");
@@ -972,7 +972,7 @@ describe("expanded view rendering", () => {
 			usage: { input: 20000, output: 1700, cacheRead: 51000, cacheWrite: 0, cost: 0, contextTokens: 20000, turns: 3, toolCalls: 1 },
 			model: "mimo-v2.5-pro",
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
@@ -987,7 +987,7 @@ describe("expanded view rendering", () => {
 			messages: [makeTextMessage("Found 12 files.")],
 			usage: { input: 5000, output: 800, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 6000, turns: 2, toolCalls: 1 },
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("acceptance");
@@ -997,7 +997,7 @@ describe("expanded view rendering", () => {
 	it("renders acceptance in multi expanded per-flow view", () => {
 		const result1 = makeResult({ type: "debug", acceptance: "Bug fixed" });
 		const result2 = makeResult({ type: "scout", acceptance: "Code mapped" });
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result1, result2] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("Bug fixed");
@@ -1017,7 +1017,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("batch");
@@ -1037,7 +1037,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("batch");
@@ -1063,7 +1063,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("batch");
@@ -1084,7 +1084,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("batch");
@@ -1100,7 +1100,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("batch (empty)");
@@ -1117,7 +1117,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("bash: npm test");
@@ -1138,7 +1138,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("bash: npm run lint");
@@ -1159,7 +1159,7 @@ describe("formatFlowToolCall — batch", () => {
 			],
 			usage: emptyFlowUsage(),
 		});
-		const details: FlowDetails = { mode: "flow", delegationMode: "fork", projectAgentsDir: null, results: [result] };
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("read src/a.ts×3");
