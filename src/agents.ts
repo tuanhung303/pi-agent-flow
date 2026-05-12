@@ -56,18 +56,6 @@ export function getFlowTier(flowName: string): FlowTier {
 	}
 }
 
-/** Return the bundled flow names associated with a given tier. */
-export function getTierFlowNames(tier: FlowTier): string[] {
-	switch (tier) {
-		case "lite":
-			return ["scout", "debug"];
-		case "flash":
-			return ["build", "audit"];
-		case "full":
-			return ["ideas", "craft"];
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

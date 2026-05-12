@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import registerExtension, { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "../src/index.js";
+import registerExtension, { compressToolResults, stripBatchReadToolCalls } from "../src/index.js";
 import { runFlow, mapFlowConcurrent } from "../src/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
@@ -1523,7 +1523,7 @@ describe("web tool integration", () => {
 	});
 });
 
-describe("compressFlowToolResults", () => {
+describe("compressToolResults", () => {
 	const flowCache = new Map<string, import("../src/types.js").CompressedFlowResult[]>();
 
 	beforeEach(() => {
@@ -1559,7 +1559,7 @@ describe("compressFlowToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "user", content: "Next step", timestamp: 4 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 		// Should contain compressed format
 		expect(result).toContain("[Flow: scout accomplished]");
@@ -1589,7 +1589,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 		// Should be unchanged
 		expect(result).toContain("hello");
@@ -1605,7 +1605,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 1 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, new Map());
+		const result = compressToolResults(snapshot, new Map());
 
 		// Should be unchanged (cache empty)
 		expect(result).toContain("Full flow output");
@@ -1630,7 +1630,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 		// Should preserve the prior flow output (cache miss)
 		expect(result).toContain("Prior flow output not in cache");
@@ -1654,7 +1654,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 		expect(result).toContain("[Flow: build failed]");
 		expect(result).toContain("Error: Build failed: missing dependency @types/node");
@@ -1682,7 +1682,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 		expect(result).toContain("[Flow: debug accomplished]");
 		expect(result).toContain("grep: grep -r 'TODO' src/");
@@ -1718,7 +1718,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 4 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 		// Both flows compressed
 		expect(result).toContain("[Flow: scout accomplished]");
@@ -1746,7 +1746,7 @@ describe("compressFlowToolResults", () => {
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressFlowToolResults(snapshot, flowCache);
+		const result = compressToolResults(snapshot, flowCache);
 
 			expect(result).toContain("[Flow: ideas accomplished]");
 		expect(result).not.toContain("Full verbose ideas output");

@@ -31,13 +31,16 @@ const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
 const FLOW_FINAL_URGE_MS = 135 * 1000; // final urge 135 s (2m15s) before kill (increased from 30s for wider summary window)
 const REPORTING_GRACE_MS = 90_000; // grace period after timeout for agent to report findings (increased from 10s to 90s)
 const FLOW_TOOL_SUMMARY_GRACE_MS = FLOW_FINAL_URGE_MS; // bash/tool abort lead time so the agent can summarize
-const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
-const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
-const FLOW_STACK_ENV = "PI_FLOW_STACK";
-const FLOW_PREVENT_CYCLES_ENV = "PI_FLOW_PREVENT_CYCLES";
+import {
+	FLOW_DEPTH_ENV,
+	FLOW_MAX_DEPTH_ENV,
+	FLOW_STACK_ENV,
+	FLOW_PREVENT_CYCLES_ENV,
+	FLOW_TOOL_OPTIMIZE_ENV,
+} from "./depth.js";
+
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
-export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
 

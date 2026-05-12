@@ -148,17 +148,6 @@ export function createWebTool() {
 }
 
 // ---------------------------------------------------------------------------
-// Active tool management
-// ---------------------------------------------------------------------------
-
-export function setWebToolsActive(pi: ExtensionAPI, enabled: boolean) {
-	const active = new Set(pi.getActiveTools());
-	if (enabled) active.add("web");
-	else active.delete("web");
-	pi.setActiveTools([...active]);
-}
-
-// ---------------------------------------------------------------------------
 // Core dispatch
 // ---------------------------------------------------------------------------
 
