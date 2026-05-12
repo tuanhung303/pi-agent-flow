@@ -88,7 +88,7 @@ function buildItemBlocks(
 ): ItemBlock[] {
 	const normalizedWidth = Math.max(12, width);
 	const freeformLabel = "Type something. — Enter a custom response";
-	const commentToggleLabel = `${commentEnabled ? "[✓]" : "[ ]"} Add extra context after selection`;
+	const commentToggleLabel = `${commentEnabled ? "[✔]" : "[ ]"} Add extra context after selection`;
 	const allItems: ListItem[] = options.map((option) => ({ type: "option", option }));
 	if (allowComment) {
 		allItems.push({ type: "comment-toggle", option: { title: commentToggleLabel } });

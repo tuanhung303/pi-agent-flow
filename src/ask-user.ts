@@ -9,6 +9,9 @@ import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Type, type TUnsafe } from "@sinclair/typebox";
 import { appendStrategicHintOnce } from "./tool-utils.js";
+import { setPendingDecision } from "./notify-state.js";
+import { scrambleManager, runScrambleTimer } from "./scramble.js";
+import { stripAnsi } from "./render-utils.js";
 import {
    Container,
    type Component,
@@ -555,7 +558,7 @@ class MultiSelectList implements Component {
          const prefix = isSelected ? theme.fg("accent", "▶") : " ";
 
          if (this.isCommentToggleRow(i)) {
-            const checkbox = this.commentEnabled ? theme.fg("success", "[✓]") : theme.fg("dim", "[ ]");
+            const checkbox = this.commentEnabled ? theme.fg("success", "[✔]") : theme.fg("dim", "[ ]");
             const label = isSelected
                ? theme.fg("accent", theme.bold(COMMENT_TOGGLE_LABEL))
                : theme.fg("text", theme.bold(COMMENT_TOGGLE_LABEL));
@@ -574,7 +577,7 @@ class MultiSelectList implements Component {
          const option = this.options[i];
          if (!option) continue;
 
-         const checkbox = this.checked.has(i) ? theme.fg("success", "[✓]") : theme.fg("dim", "[ ]");
+         const checkbox = this.checked.has(i) ? theme.fg("success", "[✔]") : theme.fg("dim", "[ ]");
          const num = theme.fg("dim", `${i + 1}.`);
          const title = isSelected
             ? theme.fg("accent", theme.bold(option.title))
@@ -1457,7 +1460,7 @@ export function createAskUserTool() {
       name: "ask_user",
       label: "Ask User",
       description:
-         "Ask the user a question with optional multiple-choice answers. Use this to gather information interactively. Ask exactly one focused question per call. Before calling, gather context with tools (read/web/ref) and pass a short summary via the context field.",
+         "Ask the user a question with optional multiple-choice answers. Use this to gather information interactively. Ask exactly one focused question per call. Before calling, gather context with tools (read/web/ref) and pass a short summary via the context field. When presenting options, mark your recommended choice with [preferred] and place it first. Base your recommendation on evidence gathered from tools or investigation.",
       promptSnippet:
          "Ask the user one focused question with optional multiple-choice answers to gather information interactively",
       promptGuidelines: [
@@ -1522,6 +1525,8 @@ export function createAskUserTool() {
       }),
 
       async execute(_toolCallId: string, params: AskParams, signal: AbortSignal | undefined, onUpdate: ((result: any) => void) | undefined, ctx: ExtensionContext) {
+         setPendingDecision();
+
          if (signal?.aborted) {
             return {
                content: [{ type: "text", text: "Cancelled" }],
@@ -1723,11 +1728,18 @@ export function createAskUserTool() {
          return new Text(text, 0, 0);
       },
 
-      renderResult(result: any, options: any, theme: any) {
+      renderResult(result: any, options: any, theme: any, args?: Record<string, unknown>) {
          const details = result.details as (AskToolDetails & { error?: string }) | undefined;
+         const canAnimate = !!(args as any)?.invalidate && !!(args as any)?.state;
+         const now = Date.now();
+         const id = (args as any)?.toolCallId || (args as any)?.id || "ask_user";
 
          if (details?.error) {
-            return new Text(theme.fg("error", `✗ ${details.error}`), 0, 0);
+            const line = theme.fg("error", `✖ ${details.error}`);
+            if (!canAnimate) return new Text(line, 0, 0);
+            const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
+            runScrambleTimer(args as Record<string, any> | undefined);
+            return new Text(scrambled, 0, 0);
          }
 
          if (options.isPartial) {
@@ -1736,15 +1748,23 @@ export function createAskUserTool() {
                .map((part: { text?: string }) => part.text ?? "")
                .join("\n")
                .trim() || "Waiting for user input...";
-            return new Text(theme.fg("muted", waitingText), 0, 0);
+            const line = theme.fg("muted", waitingText);
+            if (!canAnimate) return new Text(line, 0, 0);
+            const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
+            runScrambleTimer(args as Record<string, any> | undefined);
+            return new Text(scrambled, 0, 0);
          }
 
          if (!details || details.cancelled || !details.response) {
-            return new Text(theme.fg("warning", "Cancelled"), 0, 0);
+            const line = theme.fg("warning", "Cancelled");
+            if (!canAnimate) return new Text(line, 0, 0);
+            const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
+            runScrambleTimer(args as Record<string, any> | undefined);
+            return new Text(scrambled, 0, 0);
          }
 
          const response = details.response;
-         let text = theme.fg("success", "✓ ");
+         let text = theme.fg("success", "✔ ");
          if (response.kind === "freeform") {
             text += theme.fg("muted", "(wrote) ");
          }
@@ -1770,7 +1790,10 @@ export function createAskUserTool() {
             }
          }
 
-         return new Text(text, 0, 0);
+         if (!canAnimate) return new Text(text, 0, 0);
+         const scrambled = scrambleManager.updateText(id, "result", stripAnsi(text), now, false).content;
+         runScrambleTimer(args as Record<string, any> | undefined);
+         return new Text(scrambled, 0, 0);
       },
    };
 }

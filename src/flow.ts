@@ -793,88 +793,30 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Per-tier concurrency helper
+// Concurrency helper
 // ---------------------------------------------------------------------------
 
-export type FlowTier = "lite" | "flash" | "full";
-
-/** Simple async semaphore for bounded concurrency. */
-class TierSemaphore {
-	private slots: number;
-	private queue: Array<() => void> = [];
-
-	constructor(slots: number) {
-		this.slots = Math.max(1, slots);
-	}
-
-	acquire(): Promise<void> {
-		if (this.slots > 0) {
-			this.slots--;
-			return Promise.resolve();
-		}
-		return new Promise<void>((resolve) => this.queue.push(resolve));
-	}
-
-	release(): void {
-		if (this.queue.length > 0) {
-			this.queue.shift()!();
-		} else {
-			this.slots++;
-		}
-	}
-}
-
 /**
- * Map over items with per-tier bounded concurrency + a global hard cap.
- * Each item specifies its tier; items compete for both a tier slot and a global slot.
+ * Map over items with a bounded number of concurrent workers.
  */
-export async function mapFlowConcurrentByTier<TIn, TOut>(
+export async function mapFlowConcurrent<TIn, TOut>(
 	items: TIn[],
-	tierOf: (item: TIn) => FlowTier,
-	tierConcurrency: { lite: number; flash: number; full: number },
-	maxConcurrency: number,
+	concurrency: number,
 	fn: (item: TIn, index: number) => Promise<TOut>,
 ): Promise<TOut[]> {
 	if (items.length === 0) return [];
-
+	const limit = Math.max(1, Math.min(concurrency, items.length));
 	const results: TOut[] = new Array(items.length);
 	let nextIndex = 0;
-
-	// Global gate: total slots across all tiers
-	const globalGate = new TierSemaphore(Math.min(maxConcurrency, items.length));
-
-	// Per-tier gates
-	const tierGates: Record<FlowTier, TierSemaphore> = {
-		lite:   new TierSemaphore(Math.min(tierConcurrency.lite, items.length)),
-		flash:  new TierSemaphore(Math.min(tierConcurrency.flash, items.length)),
-		full:   new TierSemaphore(Math.min(tierConcurrency.full, items.length)),
-	};
 
 	const worker = async () => {
 		while (true) {
 			const i = nextIndex++;
 			if (i >= items.length) return;
-
-			const item = items[i];
-			const tier = tierOf(item);
-
-			// Acquire both: tier gate + global gate
-			await Promise.all([
-				tierGates[tier].acquire(),
-				globalGate.acquire(),
-			]);
-
-			try {
-				results[i] = await fn(item, i);
-			} finally {
-				tierGates[tier].release();
-				globalGate.release();
-			}
+			results[i] = await fn(items[i], i);
 		}
 	};
 
-	// Start workers = items.length (each item gets its own async worker)
-	// Actual parallelism is gated by the semaphores
-	await Promise.all(items.map(() => worker()));
+	await Promise.all(Array.from({ length: limit }, () => worker()));
 	return results;
 }

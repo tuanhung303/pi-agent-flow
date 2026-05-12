@@ -28,6 +28,7 @@ import {
 	stripSlidingPromptsFromMessages,
 	makeSlidingPromptMessage,
 } from "./sliding-prompt.js";
+import { setupSpecMode } from "./spec-mode.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {
 	resolveFlowDepthConfig,
@@ -156,18 +157,6 @@ export default function (pi: ExtensionAPI) {
 		description: "Maximum number of flows to execute in parallel (default: 4).",
 		type: "string",
 	});
-	pi.registerFlag("flow-lite-concurrency", {
-		description: "Max parallel flows for lite tier (scout, debug).",
-		type: "string",
-	});
-	pi.registerFlag("flow-flash-concurrency", {
-		description: "Max parallel flows for flash tier (build, audit).",
-		type: "string",
-	});
-	pi.registerFlag("flow-full-concurrency", {
-		description: "Max parallel flows for full tier (ideas, craft).",
-		type: "string",
-	});
 	pi.registerFlag("flow-session-mode", {
 		description: "Default child-flow session mode: fast (300s), default (600s), or long (900s).",
 		type: "string",
@@ -180,6 +169,9 @@ export default function (pi: ExtensionAPI) {
 
 	// Wire up bundled notification channel
 	setupNotify(pi);
+
+	// Wire up /spec toggle
+	setupSpecMode(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
@@ -253,8 +245,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Sliding system prompt: insert as a separate system message immediately
-	// before the latest user message each turn. Strips from the static
-	// systemPrompt to avoid duplication, then inserts separately.
+	// before the latest user message each turn. The sliding prompt is never
+	// part of the static systemPrompt — it is injected dynamically here only.
+	// We strip any stray sliding prompt content from systemPrompt as a safety
+	// net, then insert the fresh prompt as a separate message.
 	// Skipped for child flows (depth > 0) — they have explicit <mission> directives.
 	pi.on("context", async (event) => {
 		if (currentDepth > 0) return undefined;
@@ -268,8 +262,22 @@ export default function (pi: ExtensionAPI) {
 			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) {
-			// No user message yet: keep sliding prompt in the static system prompt only.
-			return messagesChanged ? { messages } : undefined;
+			// No user message yet: strip any stray sliding text from systemPrompt
+			// (safety net for /new or early-session), but don't inject a new one —
+			// it will appear on the first user message.
+			let systemPrompt = event.systemPrompt;
+			let systemPromptChanged = false;
+			if (typeof systemPrompt === "string") {
+				const stripped = stripSlidingPromptText(systemPrompt);
+				if (stripped !== systemPrompt) {
+					systemPrompt = stripped;
+					systemPromptChanged = true;
+				}
+			}
+			const result: any = {};
+			if (messagesChanged) result.messages = messages;
+			if (systemPromptChanged) result.systemPrompt = systemPrompt;
+			return (messagesChanged || systemPromptChanged) ? result : undefined;
 		}
 
 		// Strip sliding from the static systemPrompt so it only appears once,
@@ -368,7 +376,6 @@ export default function (pi: ExtensionAPI) {
 						cwd: ctx.cwd,
 						loadedFlowModelConfigs: resolved.loadedFlowModelConfigs,
 						maxConcurrency: resolved.maxConcurrency,
-						tierConcurrency: resolved.tierConcurrency,
 
 						defaultSessionMode: resolved.defaultSessionMode,
 						signal,
@@ -414,8 +421,8 @@ export default function (pi: ExtensionAPI) {
 		discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
 		getFlowTier: (name: string) => getFlowTier(name),
 		getSettings: () => resolved
-			? { toolOptimize: resolved.toolOptimize, structuredOutput: resolved.structuredOutput, maxConcurrency: resolved.maxConcurrency, tierConcurrency: resolved.tierConcurrency }
-			: { toolOptimize: true, structuredOutput: true, maxConcurrency: 4, tierConcurrency: { lite: 4, flash: 4, full: 4 } },
+			? { toolOptimize: resolved.toolOptimize, structuredOutput: resolved.structuredOutput, maxConcurrency: resolved.maxConcurrency }
+			: { toolOptimize: true, structuredOutput: true, maxConcurrency: 4 },
 	};
 
 	if (typeof pi.emit === "function") {

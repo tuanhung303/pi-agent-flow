@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { BashProcessTracker, generateBashId, pollBatchBashResults, executeBatchBash } from "../src/batch/batch-bash.js";
+import { BashProcessTracker, generateBashId, pollBatchBashResults, executeBatchBash, truncateBashOutput } from "../src/batch/batch-bash.js";
 import { createBatchTool, createBatchBashPollTool } from "../src/batch.js";
 
 describe("generateBashId", () => {
@@ -11,6 +11,43 @@ describe("generateBashId", () => {
 	it("generates unique ids", () => {
 		const ids = new Set(Array.from({ length: 100 }, () => generateBashId()));
 		expect(ids.size).toBe(100);
+	});
+});
+
+describe("truncateBashOutput", () => {
+	it("returns empty string for empty input", () => {
+		expect(truncateBashOutput("")).toBe("");
+	});
+
+	it("returns short text unchanged", () => {
+		const text = "hello world\nline 2";
+		expect(truncateBashOutput(text)).toBe(text);
+	});
+
+	it("truncates by line count", () => {
+		const lines = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`);
+		const text = lines.join("\n");
+		const result = truncateBashOutput(text, 100 * 1024, 5);
+		expect(result).toContain("line 1");
+		expect(result).toContain("line 5");
+		expect(result).not.toContain("line 6");
+		expect(result).toContain("[... truncated at 5 lines, 10 total ...]");
+	});
+
+	it("truncates by byte size", () => {
+		const text = "a".repeat(200 * 1024);
+		const result = truncateBashOutput(text, 100 * 1024, 10000);
+		const totalBytes = Buffer.byteLength(text, "utf-8");
+		expect(result).toContain("[... truncated at 100 KB, " + totalBytes + " total ...]");
+		expect(Buffer.byteLength(result, "utf-8")).toBeLessThanOrEqual(110 * 1024);
+	});
+
+	it("applies both line and byte limits", () => {
+		const lines = Array.from({ length: 5000 }, (_, i) => `line ${i + 1}`);
+		const text = lines.join("\n");
+		const result = truncateBashOutput(text, 10 * 1024, 100);
+		expect(result).toContain("[... truncated at 100 lines, 5000 total ...]");
+		expect(Buffer.byteLength(result, "utf-8")).toBeLessThanOrEqual(12 * 1024);
 	});
 });
 
@@ -128,6 +165,26 @@ describe("BashProcessTracker", () => {
 		await new Promise((r) => setTimeout(r, 2000));
 		// The process should have errored out (close event or error event)
 		expect(tracker.isRunning("t10")).toBe(false);
+	});
+
+	it("truncates oversized stdout", async () => {
+		tracker.launch("t11", `node -e "process.stdout.write('a'.repeat(200000))"`, process.cwd());
+		await waitFor(tracker, "t11", 5000);
+
+		const result = tracker.popCompleted("t11")!;
+		expect(result.status).toBe("ok");
+		expect(result.stdout).toContain("[... truncated at");
+		expect(Buffer.byteLength(result.stdout, "utf-8")).toBeLessThanOrEqual(110 * 1024);
+	});
+
+	it("truncates oversized stderr", async () => {
+		tracker.launch("t12", `node -e "process.stderr.write('e'.repeat(200000)); process.exitCode = 1"`, process.cwd());
+		await waitFor(tracker, "t12", 5000);
+
+		const result = tracker.popCompleted("t12")!;
+		expect(result.status).toBe("error");
+		expect(result.stderr).toContain("[... truncated at");
+		expect(Buffer.byteLength(result.stderr, "utf-8")).toBeLessThanOrEqual(110 * 1024);
 	});
 });
 

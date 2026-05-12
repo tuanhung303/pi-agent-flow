@@ -17,6 +17,9 @@ declare module "@mariozechner/pi-coding-agent" {
 			renderResult?: (...args: any[]) => any;
 		}): void;
 		setActiveTools(tools: string[]): void;
+		registerCommand(name: string, config: { description: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }): void;
+		sendUserMessage(content: string, opts?: { deliverAs?: string }): void;
+		sendMessage(msg: { content: string; customType?: string; display?: boolean; details?: any }, opts?: { deliverAs?: string; triggerTurn?: boolean }): void;
 	}
 	export interface ExtensionContext {
 		cwd: string;
@@ -28,8 +31,9 @@ declare module "@mariozechner/pi-coding-agent" {
 			custom: <T>(factory: (tui: any, theme: any, keybindings: any, done: (result: T | null) => void) => any, options?: any) => Promise<T | undefined>;
 			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
 			notify?: (message: string, type: string) => void;
+			setEditorText?: (text: string) => void;
 		};
-		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[] };
+		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
 	}
 	export interface Theme {
 		fg(key: string, text: string): string;
@@ -57,6 +61,41 @@ declare module "@mariozechner/pi-coding-agent" {
 		renderCall?: (...args: any[]) => any;
 		renderResult?: (...args: any[]) => any;
 	};
+	export interface ExtensionCommandContext {
+		cwd: string;
+		hasUI: boolean;
+		ui: {
+			confirm: (title: string, body: string) => Promise<boolean>;
+			notify?: (message: string, type: string) => void;
+			select: (prompt: string, options: string[], opts?: any) => Promise<string | null>;
+			input: (prompt: string, placeholder: string, opts?: any) => Promise<string | null>;
+			custom: <T>(factory: (...args: any[]) => any, options?: any) => Promise<T | undefined>;
+			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
+			setEditorText?: (text: string) => void;
+		};
+		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		newSession(opts?: {
+			parentSession?: string;
+			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+		}): Promise<{ cancelled: boolean }>;
+		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
+		waitForIdle(): Promise<void>;
+		reload(): Promise<void>;
+	}
+
+	/** Fresh command-capable context bound to the replacement session after a session switch. */
+	export interface ReplacedSessionContext extends ExtensionCommandContext {
+		sendUserMessage(content: string, opts?: { deliverAs?: string }): Promise<void>;
+	}
+
+	/** Event payload for pi.on("turn_end", ...) callbacks. */
+	export interface TurnEndEvent {
+		message: {
+			role: string;
+			content: string | Array<{ type: string; text?: string }>;
+		};
+	}
+
 	/** Test-only exports provided by tests/__mocks__/pi-coding-agent.ts. */
 	export const bashToolExecuteCalls: any[][];
 	export function __setBashToolExecuteImpl(fn: (...args: any[]) => Promise<any>): void;

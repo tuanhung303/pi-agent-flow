@@ -20,6 +20,8 @@ import {
 	type PendingBashResult,
 	BASH_SOFT_TIMEOUT_MS,
 	BASH_POLL_TAIL_LINES,
+	MAX_BASH_OUTPUT_BYTES,
+	MAX_BASH_OUTPUT_LINES,
 } from "./constants.js";
 import { classifyDuration } from "../timed-bash.js";
 
@@ -106,8 +108,8 @@ export class BashProcessTracker {
 		child.on("close", (code) => {
 			this.running.delete(id);
 
-			const stdout = rp.stdoutChunks.join("");
-			const stderr = rp.stderrChunks.join("");
+			const stdout = truncateBashOutput(rp.stdoutChunks.join(""));
+			const stderr = truncateBashOutput(rp.stderrChunks.join(""));
 			const duration = Date.now() - rp.startedAt;
 			const report = classifyDuration(duration);
 
@@ -128,8 +130,8 @@ export class BashProcessTracker {
 
 			const duration = Date.now() - rp.startedAt;
 			const report = classifyDuration(duration);
-			const stdout = rp.stdoutChunks.join("");
-			const stderr = rp.stderrChunks.join("") || err.message;
+			const stdout = truncateBashOutput(rp.stdoutChunks.join(""));
+			const stderr = truncateBashOutput(rp.stderrChunks.join("")) || err.message;
 
 			this.completed.set(id, {
 				id,
@@ -218,6 +220,49 @@ function tailLines(text: string, n: number): string {
 /** Generate a short random ID for bash ops that don't provide one. */
 export function generateBashId(): string {
 	return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * Truncate bash stdout/stderr to prevent oversized tool results.
+ * Applies line limit first, then byte limit, with clear markers.
+ */
+export function truncateBashOutput(
+	text: string,
+	maxBytes: number = MAX_BASH_OUTPUT_BYTES,
+	maxLines: number = MAX_BASH_OUTPUT_LINES,
+): string {
+	if (!text) return text;
+
+	const totalBytes = Buffer.byteLength(text, "utf-8");
+	const lines = text.split("\n");
+	const totalLines = lines.length;
+
+	let result = text;
+
+	// Apply line limit first
+	if (totalLines > maxLines) {
+		const kept = lines.slice(0, maxLines).join("\n");
+		result = `${kept}\n[... truncated at ${maxLines} lines, ${totalLines} total ...]`;
+	}
+
+	// Apply byte limit on the (possibly line-truncated) result
+	const resultBytes = Buffer.byteLength(result, "utf-8");
+	if (resultBytes > maxBytes) {
+		const buf = Buffer.from(result, "utf-8");
+		// Find last newline before maxBytes
+		let cutAt = maxBytes;
+		while (cutAt > 0 && buf[cutAt] !== 0x0a) {
+			cutAt--;
+		}
+		if (cutAt <= 0) {
+			// No newline found within safe range; force cut at maxBytes
+			cutAt = maxBytes;
+		}
+		result = buf.slice(0, cutAt).toString("utf-8");
+		result += `\n[... truncated at ${(maxBytes / 1024).toFixed(0)} KB, ${totalBytes} total ...]`;
+	}
+
+	return result;
 }
 
 /** Normalize a bash op from prepareArguments into a canonical form. */

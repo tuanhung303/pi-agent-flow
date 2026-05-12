@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateHead } from "@mariozechner/pi-coding-agent";
+import { Text, TruncatedText } from "@mariozechner/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -8,6 +9,8 @@ import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { appendStrategicHintOnce } from "./tool-utils.js";
+import { scrambleManager, runScrambleTimer } from "./scramble.js";
+import { stripAnsi } from "./render-utils.js";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -65,6 +68,25 @@ const ALLOWED_CONTENT_TYPES = [
 // Tool factory
 // ---------------------------------------------------------------------------
 
+function formatWebOpsSummary(args: Record<string, unknown>): string {
+	const ops = (args as any)?.op as Array<{ o: string; q?: string; u?: string }> | undefined;
+	if (!ops || ops.length === 0) return "web";
+	if (ops.length === 1) {
+		const op = ops[0];
+		if (op.o === "search") return `search: "${op.q ?? ""}"`;
+		if (op.o === "fetch") return `fetch: ${op.u ?? ""}`;
+	}
+	const counts = { search: 0, fetch: 0 };
+	for (const op of ops) {
+		if (op.o === "search") counts.search++;
+		else if (op.o === "fetch") counts.fetch++;
+	}
+	const parts: string[] = [];
+	if (counts.search) parts.push(`${counts.search} search`);
+	if (counts.fetch) parts.push(`${counts.fetch} fetch`);
+	return parts.join(", ");
+}
+
 export function createWebTool() {
 	return {
 		name: "web",
@@ -88,6 +110,39 @@ export function createWebTool() {
 			ctx: ExtensionContext,
 		) {
 			return runWebOps(params, ctx, signal);
+		},
+
+		renderCall(args: Record<string, unknown>, theme: { fg: (color: string, text: string) => string }): Text {
+			const summary = formatWebOpsSummary(args);
+			return new Text(theme.fg("muted", "web ") + theme.fg("accent", summary), 0, 0);
+		},
+
+		renderResult(
+			result: { content?: Array<{ type: string; text?: string }> },
+			{ expanded }: { expanded: boolean },
+			_theme: any,
+			args?: Record<string, unknown>,
+		): Text | TruncatedText {
+			const fullText = result.content?.find((c) => c.type === "text")?.text ?? "";
+			const canAnimate = !!(args as any)?.invalidate && !!(args as any)?.state;
+			if (!canAnimate) {
+				if (!expanded) {
+					const summary = fullText.split("\n")[0] ?? "";
+					return new TruncatedText(summary, 0, 0);
+				}
+				return new Text(fullText, 0, 0);
+			}
+			const now = Date.now();
+			const id = (args as any)?.toolCallId || (args as any)?.id || "web";
+			if (!expanded) {
+				const summary = fullText.split("\n")[0] ?? "";
+				const scrambled = scrambleManager.updateText(id, "result", stripAnsi(summary), now, false).content;
+				runScrambleTimer(args as Record<string, any> | undefined);
+				return new TruncatedText(scrambled, 0, 0);
+			}
+			const scrambled = scrambleManager.updateText(id, "result", stripAnsi(fullText), now, false).content;
+			runScrambleTimer(args as Record<string, any> | undefined);
+			return new Text(scrambled, 0, 0);
 		},
 	};
 }

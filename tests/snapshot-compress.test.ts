@@ -49,13 +49,13 @@ describe("compressToolResults — batch", () => {
 				message: {
 					role: "tool",
 					toolCallId: "tc1",
-					content: "✓ 2 operations: 1 read, 1 bash\n\n--- src/file.ts (42 lines) ---\nline 1\nline 2\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.5s (avg)]\noutput",
+					content: "✔ 2 operations: 1 read, 1 bash\n\n--- src/file.ts (42 lines) ---\nline 1\nline 2\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.5s (avg)]\noutput",
 				},
 			},
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("✓ 2 operations: 1 read, 1 bash");
+		expect(result).toContain("✔ 2 operations: 1 read, 1 bash");
 		expect(result).toContain("--- src/file.ts (42 lines, content truncated) ---");
 		expect(result).not.toContain("line 1\nline 2");
 		expect(result).toContain("--- bash [abc] exit 0 ---");
@@ -77,7 +77,7 @@ describe("compressToolResults — batch", () => {
 				message: {
 					role: "tool",
 					toolCallId: "tc1",
-					content: "✓ 1 operation: 1 read\n\n--- src/file.ts context map ---\nTotal lines: 100\nUse targeted reads...",
+					content: "✔ 1 operation: 1 read\n\n--- src/file.ts context map ---\nTotal lines: 100\nUse targeted reads...",
 				},
 			},
 		]);
@@ -101,13 +101,70 @@ describe("compressToolResults — batch", () => {
 				message: {
 					role: "tool",
 					toolCallId: "tc1",
-					content: "✓ 1 operation: 1 edit\n\n--- edit: src/index.ts (2 blocks) ---",
+					content: "✔ 1 operation: 1 edit\n\n--- edit: src/index.ts (2 blocks) ---",
 				},
 			},
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
 		expect(result).toContain("--- edit: src/index.ts (2 blocks) ---");
+	});
+
+	it("truncates oversized bash sections in snapshots", () => {
+		const longOutput = Array.from({ length: 1000 }, (_, i) => `output line ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "cat big.log" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `✔ 1 operation: 1 bash\n\n--- bash [big] exit 0 ---\n[Execution time: 0.5s (avg)]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- bash [big] exit 0 ---");
+		expect(result).toContain("[Execution time: 0.5s (avg)]");
+		expect(result).toContain("output line 1");
+		expect(result).toContain("output line 1000");
+		expect(result).toContain("[..."); // truncation marker
+		expect(result).not.toContain("output line 500"); // middle content truncated
+	});
+
+	it("truncates pending bash sections in snapshots", () => {
+		const longOutput = Array.from({ length: 1000 }, (_, i) => `pending line ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "sleep 30", i: "pending1" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `✔ 1 operation: 1 bash\n\n--- bash [pending1] pending ---\n[partial output]\n${longOutput}\n[Use batch_bash_poll with i: ["pending1"] to check results]`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- bash [pending1] pending ---");
+		expect(result).toContain("pending line 1");
+		expect(result).toContain("pending line 1000");
+		expect(result).toContain("[..."); // truncation marker
+		expect(result).not.toContain("pending line 500"); // middle content truncated
 	});
 
 	it("does not truncate on --- lines inside file content", () => {
@@ -124,7 +181,7 @@ describe("compressToolResults — batch", () => {
 				message: {
 					role: "tool",
 					toolCallId: "tc1",
-					content: "✓ 1 operation: 1 read\n\n--- README.md (10 lines) ---\n# Title\n\n---\n\nSome content after horizontal rule\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.1s]\noutput",
+					content: "✔ 1 operation: 1 read\n\n--- README.md (10 lines) ---\n# Title\n\n---\n\nSome content after horizontal rule\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.1s]\noutput",
 				},
 			},
 		]);

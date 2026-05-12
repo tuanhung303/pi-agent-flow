@@ -464,19 +464,19 @@ function buildSummary(
 
 	if (counts.error === 0) {
 		// All success
-		parts.push(`✓ ${totalOps} operations: ${successParts.join(", ")}`);
+		parts.push(`✔ ${totalOps} operations: ${successParts.join(", ")}`);
 	} else {
 		// Mixed success/failure
 		parts.push(
-			`✗ ${counts.error} failed${counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}`,
+			`✖ ${counts.error} failed${counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}`,
 		);
 		if (totalSuccess > 0) {
-			parts.push(`  ✓ ${successParts.join(", ")} ok`);
+			parts.push(`  ✔ ${successParts.join(", ")} ok`);
 		}
 		for (const err of errors) {
 			const hint = err.hint ?? "";
 			const hintSuffix = hint ? ` — ${hint}` : "";
-			parts.push(`  ✗ ${err.op} ${err.path}: ${err.message}${hintSuffix}`);
+			parts.push(`  ✖ ${err.op} ${err.path}: ${err.message}${hintSuffix}`);
 		}
 	}
 
