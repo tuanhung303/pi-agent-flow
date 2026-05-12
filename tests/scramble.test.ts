@@ -2081,16 +2081,16 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 	it('spawns ripple on cooldown commit after suppressed rewrite', () => {
 		const base = 1_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
-		// Suppress a rewrite while cooling down (100ms < 500ms cooldown)
+		// Suppress rewrites while old ripple is active / cooling down
 		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 100, false, undefined, true);
 		// Old text stays frozen on screen during suppression (ripple still active).
 		const frozen = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 300, false, undefined, true);
 		// Content is the OLD text with active scramble chars — definitely not the new text.
 		expect(stripAnsi(frozen.content)).not.toBe('Brand new text here.');
-		// After cooldown passes, text change is committed and a new ripple spawns.
-		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 600, false, undefined, true);
+		// Wait for old ripple + afterglow to fully expire and cooldown to pass
+		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 1800, false, undefined, true);
 		// Let new ripple expand enough to scramble chars.
-		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 900, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 2100, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Ripple should scramble at least one character
 		expect(result.content).not.toBe('Brand new text here.');
