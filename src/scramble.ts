@@ -623,14 +623,14 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 			b = lerp(210, 250, t);
 		} else if (intensity < 0.96) {
 			const t = smoothstep(0.88, 0.96, intensity);
-			r = lerp(152, 255, t);
-			g = lerp(203, 255, t);
-			b = lerp(250, 255, t);
+			r = lerp(152, 0, t);
+			g = lerp(203, 230, t);
+			b = lerp(250, 220, t);
 		} else {
 			const t = smoothstep(0.96, 1.0, intensity);
-			r = lerp(255, 255, t);
-			g = lerp(255, 255, t);
-			b = lerp(255, 255, t);
+			r = lerp(0, 0, t);
+			g = lerp(230, 230, t);
+			b = lerp(220, 220, t);
 		}
 
 		// Interference boost: overlapping ripples create prismatic refraction
@@ -644,11 +644,11 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 			b = Math.min(255, Math.max(0, Math.round(b + interferenceBoost * (targetB - b))));
 		}
 
-		// Soft prefix thresholds: dim at very low intensity, bold at very high
+		// Soft prefix thresholds: dim at very low intensity, no bold at high
 		let prefix = '';
-		if (interferenceBoost > 0.3) prefix = BOLD_ON;  // Interference overrides to bold
+		if (interferenceBoost > 0.3) prefix = '';  // No interference bold override
 		else if (intensity < 0.25) prefix = DIM_ON;
-		else if (intensity > 0.75) prefix = BOLD_ON;
+		else if (intensity > 0.75) prefix = '';
 
 		return `${prefix}\x1b[38;2;${r};${g};${b}m`;
 	}
@@ -772,7 +772,12 @@ export function applyRipples(
 				let prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 				const crestDepth = radii[bestIdx] - bestDist;
 				if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-					prefix = BOLD_ON + '\x1b[38;2;255;255;255m';
+					// Alternate cyan/orange at crest based on character position, no bold
+					if (bestDist % 2 === 0) {
+						prefix = '\x1b[38;2;0;230;220m';  // cyan
+					} else {
+						prefix = '\x1b[38;2;255;165;50m';  // orange
+					}
 				}
 				if (!inColor || currentPrefix !== prefix) {
 					if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
@@ -837,18 +842,13 @@ export function applyRipples(
 				currentPrefix = '';
 			}
 			if (pulseIntensity !== undefined) {
-				if (pulseIntensity < 0.3) {
-					if (!inColor) {
-						segments[segCount++] = DIM_ON;
-						inColor = true;
-						currentPrefix = DIM_ON;
-					}
-				} else if (pulseIntensity > 0.75) {
-					if (!inColor) {
-						segments[segCount++] = BOLD_ON + '\x1b[38;2;255;255;255m';
-						inColor = true;
-						currentPrefix = BOLD_ON + '\x1b[38;2;255;255;255m';
-					}
+				// Steady ambient cyan/orange on settled chars, no intensity flashing
+				const settlePrefix = (idx % 2 === 0) ? '\x1b[38;2;0;200;195m' : '\x1b[38;2;230;140;40m';
+				if (!inColor || currentPrefix !== settlePrefix) {
+					if (inColor) segments[segCount++] = config ? ILLUMINATE_CLOSE : (RESET_COLOR + DIM_OFF);
+					segments[segCount++] = settlePrefix;
+					inColor = true;
+					currentPrefix = settlePrefix;
 				}
 			}
 			segments[segCount++] = origChar;
@@ -1014,7 +1014,7 @@ function computePulseIntensity(state: LineState, now: number): number | undefine
 	if (state.lastRippleEndTime > 0) {
 		const timeSinceEnd = now - state.lastRippleEndTime;
 		if (timeSinceEnd < PULSE_WINDOW_MS) {
-			return 0.5 + 0.3 * Math.sin(timeSinceEnd / PULSE_CYCLE_MS * Math.PI * 2);
+			return 0.5;  // Steady constant — no intensity oscillation
 		}
 		state.lastRippleEndTime = 0;
 	}
