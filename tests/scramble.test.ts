@@ -567,9 +567,9 @@ describe('applyRipples', () => {
 	});
 
 	it('restores characters after ripple expires', () => {
-		const spawnTime = Date.now() - 700;
+		const spawnTime = Date.now() - 1400;
 		const ripple = { pos: 3, time: spawnTime, dur: 666, spread: 1 };
-		const now = spawnTime + 700;
+		const now = spawnTime + 1400;
 		const result = applyRipples('hello world', [ripple], now);
 		expect(stripAnsi(result)).toBe('hello world');
 		expect(hasDimAnsi(result)).toBe(false);
@@ -1995,7 +1995,7 @@ describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => 
 		expect(drainRipple.isAnimating).toBe(true);
 
 		// Ripple finishes, text still stable — no re-ripple on unchanged text
-		const stable = manager.updateMsg(TEST_ID, 'running... done', base + 2300, false, undefined, true);
+		const stable = manager.updateMsg(TEST_ID, 'running... done', base + 2600, false, undefined, true);
 		expect(stable.isAnimating).toBe(false);
 		expect(stripAnsi(stable.content)).toBe('running... done');
 
