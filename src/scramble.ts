@@ -174,7 +174,7 @@ const MIN_RIPPLE_INTERVAL = 600;
 const DEPTH_BAND_MAX = 13;
 const TPS_FLASH_DUR = 150;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 700;
+const AFTERGLOW_MS = 3500;
 const FLASH_AFTERGLOW_MS = 195; // shorter afterglow for TPS/KPI value flashes
 const PULSE_WINDOW_MS = 2550;
 const PULSE_CYCLE_MS = 1425;
@@ -802,18 +802,25 @@ export function applyRipples(
 			const popGap = 160;
 			const inPopWindow = (timeSinceExpiry >= 0 && timeSinceExpiry < popWidth)
 			    || (timeSinceExpiry >= popWidth + popGap && timeSinceExpiry < 2 * popWidth + popGap)
-			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 3 * (popWidth + popGap));
-			const agTick = Math.floor(now / 80);
+			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 3 * (popWidth + popGap))
+		    || (timeSinceExpiry >= 1560 && timeSinceExpiry < 1560 + 80)
+		    || (timeSinceExpiry >= 2140 && timeSinceExpiry < 2140 + 80)
+		    || (timeSinceExpiry >= 3220 && timeSinceExpiry < 3220 + 80);
+			const isEchoPop = timeSinceExpiry >= 1560;
+		const agTick = Math.floor(now / 80);
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
-			const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500 && glitchRoll < 0.045;
+			const echoTarget = Math.min(0.045, 4 / Math.max(1, text.length));
+		const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500 && glitchRoll < (isEchoPop ? echoTarget : 0.045);
 			if (shouldScramble) {
 				if (config) {
 					let agPrefix: string;
 					if (config.color === 'dynamic') {
 						// Cooling ember: warm at start, fading to dim cool
-						const emberR = Math.round(180 + 71 * afterglowIntensity);
-						const emberG = Math.round(155 + 21 * afterglowIntensity);
-						const emberB = Math.round(155 + 14 * afterglowIntensity);
+						// Echo pops get minimum intensity so chars stay visible long after ripple
+						const effectiveIntensity = isEchoPop ? Math.max(afterglowIntensity, 0.3) : afterglowIntensity;
+						const emberR = Math.round(180 + 71 * effectiveIntensity);
+						const emberG = Math.round(155 + 21 * effectiveIntensity);
+						const emberB = Math.round(155 + 14 * effectiveIntensity);
 						agPrefix = DIM_ON + `\x1b[38;2;${emberR};${emberG};${emberB}m`;
 					} else {
 						agPrefix = DIM_ON + config.color;
