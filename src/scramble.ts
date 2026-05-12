@@ -805,8 +805,8 @@ export function applyRipples(
 			const inPopWindow = inInitialPopWindow || inEchoPopWindow;
 			const agTick = Math.floor(now / 80);
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
-			const echoTarget = Math.min(0.045, 4 / Math.max(1, text.length));
-			const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 300 && glitchRoll < (inEchoPopWindow ? echoTarget : 0.045);
+			const popTarget = Math.min(0.045, 4 / Math.max(1, text.length));
+			const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 300 && glitchRoll < popTarget;
 			if (shouldScramble) {
 				if (config) {
 					let agPrefix: string;
