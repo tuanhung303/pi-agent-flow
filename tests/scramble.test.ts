@@ -544,7 +544,7 @@ describe('applyRipples', () => {
 
 	it('returns original text when all ripples have expired', () => {
 		const now = Date.now();
-		const expiredRipple = { pos: 5, time: now - 1500, dur: 500, spread: 1 };
+		const expiredRipple = { pos: 5, time: now - 4500, dur: 500, spread: 1 };
 		const result = applyRipples('hello world', [expiredRipple], now);
 		expect(stripAnsi(result)).toBe('hello world');
 	});
@@ -749,8 +749,8 @@ describe('ScrambleStateManager (ripple mode)', () => {
 		// First call creates ripple — still active at t+300ms
 		const during = manager.updateMsg(TEST_ID, 'same text', now + 300);
 		expect(during.isAnimating).toBe(true);
-		// After ripple expires (dur scaled to 1400ms for 9-char text) and afterglow ends at 1750ms, plain text
-		const done = manager.updateMsg(TEST_ID, 'same text', now + 2000);
+		// After ripple expires (dur scaled to 645ms for 9-char text) and afterglow ends at 4145ms, plain text
+		const done = manager.updateMsg(TEST_ID, 'same text', now + 4500);
 		expect(done.isAnimating).toBe(false);
 		expect(stripAnsi(done.content)).toBe('same text');
 	});
@@ -768,10 +768,10 @@ describe('ScrambleStateManager (ripple mode)', () => {
 		manager.updateMsg(TEST_ID, 'init', base);
 		// First call creates ripple animation
 		expect(manager.hasAnyActiveAnimations(base)).toBe(true);
-		expect(manager.hasAnyActiveAnimations(base + 2200)).toBe(false);
+		expect(manager.hasAnyActiveAnimations(base + 5000)).toBe(false);
 		manager.updateMsg(TEST_ID, 'changed', base + 300);
 		expect(manager.hasAnyActiveAnimations(base + 300)).toBe(true);
-		expect(manager.hasAnyActiveAnimations(base + 300 + 2200)).toBe(false);
+		expect(manager.hasAnyActiveAnimations(base + 300 + 5000)).toBe(false);
 	});
 });
 
@@ -1565,12 +1565,12 @@ describe('ScrambleStateManager — staticLine behavior', () => {
 	it('staticLine overlap guard suppresses re-flash on minor stat updates', () => {
 		manager.setMode('ripple');
 		const base = 1000000;
-		// First call triggers initial flash (ripple dur = 900ms)
+		// First call triggers initial flash (ripple dur = 400ms)
 		manager.updateText('id-1', 'header', 'scout - [↑ 0.11M]', base, false, true);
 		// Minor digit change (>50% overlap) should NOT spawn a new ripple
 		manager.updateText('id-1', 'header', 'scout - [↑ 0.12M]', base + 50, false, true);
-		// Old ripple expires at base+1200; afterglow ends at base+1550
-		expect(manager.hasAnyActiveAnimations(base + 1800)).toBe(false);
+		// Old ripple expires at base+400; afterglow ends at base+3900
+		expect(manager.hasAnyActiveAnimations(base + 4500)).toBe(false);
 	});
 
 	it('staticLine minor-mutation guard suppresses re-flash beyond cooldown', () => {
@@ -1580,8 +1580,8 @@ describe('ScrambleStateManager — staticLine behavior', () => {
 		manager.updateText('id-1', 'header', 'scout - lite - tps: 12', base, false, true);
 		// Minor trailing-digit change within cooldown (300ms < 500ms) should NOT spawn a new ripple
 		manager.updateText('id-1', 'header', 'scout - lite - tps: 15', base + 300, false, true);
-		// Initial ripple expires at base+1200; afterglow ends at base+1550
-		expect(manager.hasActiveAnimations('id-1', base + 1800)).toBe(false);
+		// Initial ripple expires at base+530; afterglow ends at base+4030
+		expect(manager.hasActiveAnimations('id-1', base + 4500)).toBe(false);
 	});
 
 	it('staticLine still flashes on major rewrite beyond cooldown', () => {
@@ -1924,11 +1924,11 @@ describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', ()
 		const base = 3000000;
 		const text = 'First sentence. Second sentence. Third here.';
 		manager.updateMsg(TEST_ID, text, base, false, undefined, true);
-		// Warm-up call triggers hadRipples cleanup + cooldown reset after expiry
-		manager.updateMsg(TEST_ID, text, base + 1300, false, undefined, true);
-		// Wait for cooldown (1200ms) after reset, then change text — ensures a fresh ripple
+		// Warm-up call after afterglow expiry
+		manager.updateMsg(TEST_ID, text, base + 4500, false, undefined, true);
+		// Wait for afterglow + cooldown, then change text — ensures a fresh ripple
 		const changed = 'First sentence. Second changed. Third here.';
-		const result = manager.updateMsg(TEST_ID, changed, base + 2600, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, changed, base + 6000, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// The ripple position should be a sentence start (0, 16, or 32)
 		// We verify by checking the scramble is not concentrated at center
@@ -1995,17 +1995,17 @@ describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => 
 		expect(drainRipple.isAnimating).toBe(true);
 
 		// Ripple finishes, text still stable — no re-ripple on unchanged text
-		const stable = manager.updateMsg(TEST_ID, 'running... done', base + 2600, false, undefined, true);
+		const stable = manager.updateMsg(TEST_ID, 'running... done', base + 5000, false, undefined, true);
 		expect(stable.isAnimating).toBe(false);
 		expect(stripAnsi(stable.content)).toBe('running... done');
 
 		// Text changes with sentence boundary — chunk threshold met, ripple fires
 		const longText = 'running... done. Now we are processing the data and analyzing the results carefully.';
-		const chunkRipple = manager.updateMsg(TEST_ID, longText, base + 3000, false, undefined, true);
+		const chunkRipple = manager.updateMsg(TEST_ID, longText, base + 5500, false, undefined, true);
 		expect(chunkRipple.isAnimating).toBe(true);
 
 		// Ripple finishes, text still stable — no re-ripple
-		const later = manager.updateMsg(TEST_ID, longText, base + 5000, false, undefined, true);
+		const later = manager.updateMsg(TEST_ID, longText, base + 10000, false, undefined, true);
 		expect(later.isAnimating).toBe(false);
 		expect(stripAnsi(later.content)).toBe(longText);
 	});
@@ -2088,9 +2088,9 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 		// Content is the OLD text with active scramble chars — definitely not the new text.
 		expect(stripAnsi(frozen.content)).not.toBe('Brand new text here.');
 		// Wait for old ripple + afterglow to fully expire and cooldown to pass
-		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 1800, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 4500, false, undefined, true);
 		// Let new ripple expand enough to scramble chars.
-		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 2100, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 4800, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Ripple should scramble at least one character
 		expect(result.content).not.toBe('Brand new text here.');
