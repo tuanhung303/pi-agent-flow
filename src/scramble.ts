@@ -790,7 +790,10 @@ export function applyRipples(
 				segments[segCount++] = char;
 			}
 		} else if (afterglowIntensity > 0) {
-			const shouldScramble = afterglowIntensity > 0.25 && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500;
+			const agRipple = afterglowRipples[bestAgIdx];
+			const agTick = Math.floor(now / 200);
+			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
+			const shouldScramble = afterglowIntensity > 0.25 && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 500 && glitchRoll < 0.045;
 			if (shouldScramble) {
 				if (config) {
 					let agPrefix: string;
@@ -814,7 +817,6 @@ export function applyRipples(
 					inColor = true;
 					currentPrefix = DIM_ON;
 				}
-				const agRipple = afterglowRipples[bestAgIdx];
 				const agDepth = afterglowIntensity * 4.5;
 				const agElapsed = now - agRipple.time - agRipple.dur;
 				const char = selectScrambleChar(agDepth, 0, agElapsed, agRipple.seed, text.length);

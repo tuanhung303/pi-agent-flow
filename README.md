@@ -120,12 +120,12 @@ The child's `<context-seal>` prompt tells it: *"The conversation above is sealed
 
 | Flow | Purpose | Tools | Tier |
 |------|---------|-------|------|
-| `[scout]` | Discover files, trace code paths, map architecture | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
-| `[debug]` | Investigate logs, errors, stack traces, root causes | `batch`, `bash`, `find`, `grep`, `ls` | `lite` |
-| `[build]` | Implement features, fix bugs, write tests, update docs, ship | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
-| `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls` | `full` |
-| `[audit]` | Audit security, quality, correctness; fix safe issues autonomously | `batch`, `bash`, `find`, `grep`, `ls` | `flash` |
-| `[ideas]` | Generate ideas and explore possibilities with inherited context | `batch`, `bash` | `full` |
+| `[scout]` | Discover files, trace code paths, map architecture | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
+| `[debug]` | Investigate logs, errors, stack traces, root causes | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
+| `[build]` | Implement features, fix bugs, write tests, update docs, ship | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
+| `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
+| `[audit]` | Audit security, quality, correctness; fix safe issues autonomously | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
+| `[ideas]` | Generate ideas and explore possibilities with inherited context | `batch`, `bash`, `web` | `full` |
 
 > **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
 
