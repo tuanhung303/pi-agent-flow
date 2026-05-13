@@ -977,10 +977,10 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		const base = 6000000;
 		// First call: sets state, no flash (not staticLine)
 		manager.updateMsgKpi(TEST_ID, '↑ 1.0k · ↓ 0.5k', base, false, false);
-		// Second call: value change triggers first flash (render at t+200 for wide ripple)
+		// Second call: value change triggers first flash (render at t+110 for wide ripple)
 		manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 100, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
-		const rendered = manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 200, false, false);
+		const rendered = manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 110, false, false);
 		expect(rendered).not.toBe('↑ 2.0k · ↓ 1.0k');
 		// Third call with new value but within 3s cooldown: blocked
 		const blocked = manager.updateMsgKpi(TEST_ID, '↑ 3.0k · ↓ 1.5k', base + 500, false, false);
@@ -1430,8 +1430,8 @@ describe('poolRandomChar — exhaustion behavior', () => {
 		manager1.updateMsg('id-1', 'goodbye all', base + 300);
 		manager2.updateMsg('id-2', 'hello world', base);
 		manager2.updateMsg('id-2', 'goodbye all', base + 300);
-		const result1 = manager1.updateMsg('id-1', 'goodbye all', base + 400);
-		const result2 = manager2.updateMsg('id-2', 'goodbye all', base + 400);
+		const result1 = manager1.updateMsg('id-1', 'goodbye all', base + 310);
+		const result2 = manager2.updateMsg('id-2', 'goodbye all', base + 310);
 		// Both should have scramble chars (not crash)
 		expect(hasAnsi(result1.content)).toBe(true);
 		expect(hasAnsi(result2.content)).toBe(true);

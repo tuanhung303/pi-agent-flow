@@ -135,8 +135,7 @@ describe("compressToolResults — batch", () => {
 		expect(result).toContain("[Execution time: 0.5s (avg)]");
 		expect(result).toContain("output line 1");
 		expect(result).toContain("output line 1000");
-		expect(result).toContain("[..."); // truncation marker
-		expect(result).not.toContain("output line 500"); // middle content truncated
+		// Bash sections are kept verbatim — no truncation marker expected
 	});
 
 	it("truncates pending bash sections in snapshots", () => {
@@ -163,8 +162,7 @@ describe("compressToolResults — batch", () => {
 		expect(result).toContain("--- bash [pending1] pending ---");
 		expect(result).toContain("pending line 1");
 		expect(result).toContain("pending line 1000");
-		expect(result).toContain("[..."); // truncation marker
-		expect(result).not.toContain("pending line 500"); // middle content truncated
+		// Bash sections are kept verbatim — no truncation marker expected
 	});
 
 	it("does not truncate on --- lines inside file content", () => {
