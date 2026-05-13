@@ -9,7 +9,7 @@ import {
 	isJsonEqual,
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
-} from "../src/steering-hint.js";
+} from "../src/sliding-prompt.js";
 
 describe("STEERING_HINT constants", () => {
 	it("OPEN and CLOSE tags are defined", () => {

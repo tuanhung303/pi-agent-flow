@@ -162,7 +162,7 @@ export function generateCommandsFromHistory(messages: Message[]): CommandEntry[]
 	// Map toolCallId → concatenated text from tool result messages
 	const toolResultTexts = new Map<string, string>();
 	for (const msg of messages) {
-		if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
+		if ((msg.role !== "tool" && msg.role !== "toolResult") || !Array.isArray(msg.content)) continue;
 		const id =
 			(msg as unknown as { toolCallId?: string }).toolCallId ||
 			(msg as unknown as { tool_call_id?: string }).tool_call_id ||
