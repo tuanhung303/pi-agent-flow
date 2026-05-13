@@ -209,6 +209,10 @@ const MIN_PHRASE_LENGTH = 60;
 // during active streaming but short enough to feel responsive when tool calls pause.
 const MSG_CHUNK_DRAIN_MS = 245;
 
+// Resume gap: after a long pause (e.g. tool call), treat resumed chunks as a
+// fresh stream and force a ripple effect.
+const STREAMING_RESUME_GAP_MS = 2000;
+
 // TPS hysteresis
 const SECONDARY_RIPPLE_DELAY_MS = 84;
 const SECONDARY_RIPPLE_STRENGTH = 0.75;
@@ -1128,6 +1132,7 @@ function processLine(
 			state.ripples.length = keep;
 
 			const hasActiveRipples = state.ripples.some(r => now - r.time < r.dur);
+			const gap = now - state.lastTextChangeTime;
 
 			if (textChanged) {
 				state.lastText = newText;
@@ -1146,6 +1151,13 @@ function processLine(
 			} else if (!hasActiveRipples && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
 				// ripple it out so it doesn't sit plain indefinitely.
+				state.displayedText = newText;
+				state.lastFlushTime = now;
+				state.lastAnimTime = now;
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
+			} else if (!hasActiveRipples && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
+				// Streaming resumed after a long pause (e.g., tool call) —
+				// force a fresh ripple on the accumulated content.
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
@@ -1718,6 +1730,7 @@ export class ScrambleStateManager {
 				state.queue = [];
 
 				const hasActiveRipples = state.ripples.some(r => now - r.time < r.dur);
+				const gap = now - state.lastTextChangeTime;
 
 				if (textChanged) {
 					state.lastText = visibleText;
@@ -1734,6 +1747,13 @@ export class ScrambleStateManager {
 				} else if (!hasActiveRipples && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
 					// ripple it out so it doesn't sit plain indefinitely.
+					state.displayedText = visibleText;
+					state.lastFlushTime = now;
+					state.lastAnimTime = now;
+					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
+				} else if (!hasActiveRipples && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
+					// Streaming resumed after a long pause (e.g., tool call) —
+					// force a fresh ripple on the accumulated content.
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
