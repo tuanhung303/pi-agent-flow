@@ -844,6 +844,72 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 		expect(result).toContain("Read files");
 	});
 
+	it("drops tool results with empty/whitespace toolCallId to prevent API rejections", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", id: "tc-normal", name: "bash", arguments: { command: "ls" } },
+					],
+					timestamp: 1,
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc-normal",
+					content: [{ type: "text", text: "normal result" }],
+					timestamp: 2,
+				},
+			},
+			// Tool result with EMPTY toolCallId — should be dropped
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "",
+					content: [{ type: "text", text: "empty id result" }],
+					timestamp: 3,
+				},
+			},
+			// Tool result with WHITESPACE toolCallId — should be dropped
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "   ",
+					content: [{ type: "text", text: "whitespace id result" }],
+					timestamp: 4,
+				},
+			},
+			// Tool result with content-level empty toolCallId — should be dropped
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					content: [
+						{ type: "toolResult", toolCallId: "", content: "content-level empty" },
+					],
+					timestamp: 5,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+
+		// Normal result preserved
+		expect(result).toContain("tc-normal");
+		expect(result).toContain("normal result");
+
+		// Empty/whitespace ID results dropped
+		expect(result).not.toContain("empty id result");
+		expect(result).not.toContain("whitespace id result");
+		expect(result).not.toContain("content-level empty");
+	});
+
 	it("handles assistant message with both batch_read and non-batch_read toolCalls using `id` field", () => {
 		const snapshot = makeSnapshot([
 			{ version: 1 },
