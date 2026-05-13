@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import registerExtension, { compressToolResults, stripBatchReadToolCalls } from "../src/index.js";
+import registerExtension, { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "../src/index.js";
 import { runFlow, mapFlowConcurrent } from "../src/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
@@ -38,7 +38,6 @@ function createMockPi() {
 		getFlag: vi.fn((name: string) => flags[name]),
 		setFlag: (name: string, value: unknown) => { flags[name] = value; },
 		emit: vi.fn(),
-		registerCommand: vi.fn(),
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
 		getTool: (name: string) => tools.find((t) => t.name === name),
@@ -120,7 +119,7 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const steeringHint = "<pi-flow-steering-hint>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, delegate to [build].\n</pi-flow-steering-hint>";
+		const steeringHint = "<pi-flow-sliding-system>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, delegate to [build].\n</pi-flow-sliding-system>";
 		const sessionBranch = [
 			{ type: "message", message: { role: "system", content: steeringHint, timestamp: 0 } },
 			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
@@ -139,9 +138,9 @@ describe("flow tool execute", () => {
 				},
 			},
 			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash", toolCallId: "bash-call-1", arguments: { command: "echo normal" } }], timestamp: 3 } },
-			{ type: "message", message: { role: "tool", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Prior flow" }] } }], timestamp: 5 } },
-			{ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "prior flow result should be inherited" }], timestamp: 6 } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "prior flow result should be inherited" }], timestamp: 6 } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation" }], timestamp: 7 } },
 			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 8 } },
 		];
@@ -176,8 +175,8 @@ describe("flow tool execute", () => {
 		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
 		expect(snapshot).not.toContain("SECRET_THINKING_PART");
 		expect(snapshot).not.toContain("SECRET_REASONING_PART");
-		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
-		expect(snapshot).not.toContain("</pi-flow-steering-hint>");
+		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
+		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
 	});
 
 	it("preserves unmodified fork snapshot lines exactly", async () => {
@@ -203,13 +202,13 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const steeringHint = "<pi-flow-steering-hint>old routing prompt</pi-flow-steering-hint>";
+		const steeringHint = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
 		const header = { version: 1, meta: { keep: "header formatting" } };
 		const unchangedUser = { type: "message", message: { role: "user", content: "Unchanged requirement", timestamp: 1 } };
 		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }], timestamp: 2 } };
 		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
 		const droppedSystem = { type: "message", message: { role: "system", content: steeringHint, timestamp: 4 } };
-		const unchangedTool = { type: "message", message: { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
+		const unchangedTool = { type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
 		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
 
 		const tool = pi.getTool("flow");
@@ -238,10 +237,10 @@ describe("flow tool execute", () => {
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");
 		expect(snapshot).not.toContain("SECRET_REASONING");
-		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
+		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
 	});
 
-	it("drops steering hint system messages with array content in fork snapshot", async () => {
+	it("drops sliding system messages with array content in fork snapshot", async () => {
 		setupFlowsDir([
 			{
 				fileName: "scout.md",
@@ -264,7 +263,7 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const steeringHint = "<pi-flow-steering-hint>old routing prompt</pi-flow-steering-hint>";
+		const steeringHint = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
 		const droppedSystemArray = { type: "message", message: { role: "system", content: [{ type: "text", text: steeringHint }], timestamp: 4 } };
 		const sessionBranch = [droppedSystemArray];
 
@@ -285,7 +284,7 @@ describe("flow tool execute", () => {
 
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).not.toContain(JSON.stringify(droppedSystemArray));
-		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
+		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
 	});
 
 	it("preserves flow calls/results in mixed assistant messages", async () => {
@@ -325,7 +324,7 @@ describe("flow tool execute", () => {
 					timestamp: 2,
 				},
 			},
-			{ type: "message", message: { role: "tool", content: [{ type: "toolResult", toolCallId: "flow-call-2", content: "FLOW_RESULT_PAYLOAD" }], timestamp: 3 } },
+			{ type: "message", message: { role: "toolResult", content: [{ type: "toolResult", toolCallId: "flow-call-2", content: "FLOW_RESULT_PAYLOAD" }], timestamp: 3 } },
 			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 4 } },
 		];
 
@@ -537,7 +536,7 @@ describe("flow tool execute", () => {
 	});
 
 	describe("context event handler", () => {
-		it("inserts steering hint before latest user message unconditionally", async () => {
+		it("inserts sliding system prompt before latest user message unconditionally", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -553,12 +552,12 @@ describe("flow tool execute", () => {
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).content[0].text).toBe("ok");
 			expect((modified[2] as any).role).toBe("system");
-			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
-			expect((modified[2] as any).content).toContain("spec-driven planning mode");
+			expect((modified[2] as any).content).toMatch(/<pi-flow-sliding-system\b/);
+			expect((modified[2] as any).content).toContain("The flow code:");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
-		it("inserts steering hint even when toolOptimize is disabled", async () => {
+		it("inserts sliding system prompt even when toolOptimize is disabled", async () => {
 			process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 			const pi = createMockPi();
 			registerExtension(pi as any);
@@ -573,8 +572,8 @@ describe("flow tool execute", () => {
 			const modified = results[0]?.messages ?? messages;
 
 			expect((modified[2] as any).role).toBe("system");
-			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
-			expect((modified[2] as any).content).toContain("spec-driven planning mode");
+			expect((modified[2] as any).content).toMatch(/<pi-flow-sliding-system\b/);
+			expect((modified[2] as any).content).toContain("The flow code:");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
@@ -603,9 +602,9 @@ describe("flow tool execute", () => {
 
 			// First user message unchanged
 			expect((modified[0] as any).content[0].text).toBe("first prompt");
-			// Steering hint inserted before latest user message
+			// Sliding system prompt inserted before latest user message
 			expect((modified[1] as any).role).toBe("system");
-			expect((modified[1] as any).content).toMatch(/<pi-flow-steering-hint\b/);
+			expect((modified[1] as any).content).toMatch(/<pi-flow-sliding-system\b/);
 			// Latest user message preserved
 			expect((modified[2] as any).content[0].text).toBe("second prompt");
 			expect((modified[2] as any).content[1].type).toBe("image");
@@ -626,13 +625,13 @@ describe("flow tool execute", () => {
 			expect((modified[0] as any).role).toBe("assistant");
 		});
 
-		it("drops previous steering hint system messages with array content", async () => {
+		it("drops previous sliding system messages with array content", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
 			const messages = [
 				{ role: "user" as const, content: "first prompt", timestamp: 1 },
-				{ role: "system" as const, content: [{ type: "text" as const, text: "<pi-flow-steering-hint>\nold prompt\n</pi-flow-steering-hint>" }], timestamp: 2 },
+				{ role: "system" as const, content: [{ type: "text" as const, text: "<pi-flow-sliding-system>\nold prompt\n</pi-flow-sliding-system>" }], timestamp: 2 },
 				{ role: "user" as const, content: "second prompt", timestamp: 3 },
 			];
 
@@ -642,7 +641,7 @@ describe("flow tool execute", () => {
 			expect(modified).toHaveLength(3);
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).role).toBe("system");
-			expect((modified[1] as any).content).toMatch(/<pi-flow-steering-hint\b/);
+			expect((modified[1] as any).content).toMatch(/<pi-flow-sliding-system\b/);
 			expect((modified[2] as any).content).toBe("second prompt");
 		});
 	});
@@ -1460,8 +1459,8 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("fetch");
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
-		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).toContain("The flow code:");
 	});
 
 	it("adds search steering when prompt looks like a web search and toolOptimize is false", async () => {
@@ -1479,8 +1478,8 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("search");
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
-		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).toContain("The flow code:");
 	});
 
 	it("does not add web steering when toolOptimize is true", async () => {
@@ -1496,11 +1495,11 @@ describe("web tool integration", () => {
 
 		const modified = result[0];
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
-		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).toContain("The flow code:");
 	});
 
-	it("does not append steering hint to static systemPrompt; only context hook injects it", async () => {
+	it("appends sliding prompt and flows to systemPrompt unconditionally", async () => {
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1512,9 +1511,9 @@ describe("web tool integration", () => {
 		});
 
 		const modified = result[0];
-		// Steering hint is NOT in static systemPrompt — context hook injects it dynamically
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
-		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
+		// Sliding prompt is always appended
+		expect(modified.systemPrompt).toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).toContain("The flow code:");
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");
 		expect(modified.systemPrompt).toContain("inherited context as background");
@@ -1523,7 +1522,7 @@ describe("web tool integration", () => {
 	});
 });
 
-describe("compressToolResults", () => {
+describe("compressFlowToolResults", () => {
 	const flowCache = new Map<string, import("../src/types.js").CompressedFlowResult[]>();
 
 	beforeEach(() => {
@@ -1553,13 +1552,13 @@ describe("compressToolResults", () => {
 				{ type: "text", text: "Delegating to scout" },
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Find auth" }] } },
 			], timestamp: 2 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Flow: 1/1 completed\n\nflow [scout] accomplished\n\nFull verbose flow output that should be compressed..." },
 			], timestamp: 3 } }),
 			JSON.stringify({ type: "message", message: { role: "user", content: "Next step", timestamp: 4 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 		// Should contain compressed format
 		expect(result).toContain("[Flow: scout accomplished]");
@@ -1584,12 +1583,12 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "bash", toolCallId: "bash-call-1", arguments: { command: "echo hello" } },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "bash-call-1", name: "bash", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "bash-call-1", name: "bash", content: [
 				{ type: "text", text: "hello\n" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 		// Should be unchanged
 		expect(result).toContain("hello");
@@ -1600,12 +1599,12 @@ describe("compressToolResults", () => {
 		
 
 		const snapshot = [
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Full flow output" },
 			], timestamp: 1 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, new Map());
+		const result = compressFlowToolResults(snapshot, new Map());
 
 		// Should be unchanged (cache empty)
 		expect(result).toContain("Full flow output");
@@ -1625,12 +1624,12 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Prior flow output not in cache" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 		// Should preserve the prior flow output (cache miss)
 		expect(result).toContain("Prior flow output not in cache");
@@ -1649,12 +1648,12 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Flow: 0/1 completed\n\nflow [build] failed\n\nError output..." },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 		expect(result).toContain("[Flow: build failed]");
 		expect(result).toContain("Error: Build failed: missing dependency @types/node");
@@ -1677,12 +1676,12 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: {} },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", content: [
 				{ type: "toolResult", toolCallId: "flow-call-2", content: "Full verbose debug output" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 		expect(result).toContain("[Flow: debug accomplished]");
 		expect(result).toContain("grep: grep -r 'TODO' src/");
@@ -1707,18 +1706,18 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Full scout output" },
 			], timestamp: 2 } }),
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: {} },
 			], timestamp: 3 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-2", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-2", name: "flow", content: [
 				{ type: "text", text: "Full build output" },
 			], timestamp: 4 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 		// Both flows compressed
 		expect(result).toContain("[Flow: scout accomplished]");
@@ -1741,12 +1740,12 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Full verbose ideas output" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
 
-		const result = compressToolResults(snapshot, flowCache);
+		const result = compressFlowToolResults(snapshot, flowCache);
 
 			expect(result).toContain("[Flow: ideas accomplished]");
 		expect(result).not.toContain("Full verbose ideas output");
@@ -1768,13 +1767,13 @@ describe("compressToolResults", () => {
 					{ o: "read", p: "src/index.ts" },
 				] } },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "br-call-1", name: "batch_read", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-call-1", name: "batch_read", content: [
 				{ type: "text", text: "Full content of flow.ts...\n\nFull content of snapshot.ts...\n\nFull content of index.ts..." },
 			], timestamp: 2 } }),
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: {} },
 			], timestamp: 3 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "flow-call-1", name: "flow", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
 				{ type: "text", text: "Full verbose flow output" },
 			], timestamp: 4 } }),
 		].join("\n") + "\n";
@@ -1802,7 +1801,7 @@ describe("compressToolResults", () => {
 					{ o: "read", p: "src/b.ts" },
 				] } },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "br-call-1", name: "batch_read", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-call-1", name: "batch_read", content: [
 				{ type: "text", text: "Huge file content of a.ts and b.ts..." },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
@@ -1820,7 +1819,7 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-call-2", arguments: { o: [{ o: "read", p: "src/x.ts" }] } },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", content: [
 				{ type: "toolResult", toolCallId: "br-call-2", content: "Full content of x.ts" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
@@ -1837,7 +1836,7 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-call-3", arguments: { o: ops } },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "br-call-3", name: "batch_read", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-call-3", name: "batch_read", content: [
 				{ type: "text", text: "Full content of all 15 files" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
@@ -1856,7 +1855,7 @@ describe("compressToolResults", () => {
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-call-4", arguments: {} },
 			], timestamp: 1 } }),
-			JSON.stringify({ type: "message", message: { role: "tool", toolCallId: "br-call-4", name: "batch_read", content: [
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-call-4", name: "batch_read", content: [
 				{ type: "text", text: "Full content without args" },
 			], timestamp: 2 } }),
 		].join("\n") + "\n";
@@ -1936,5 +1935,133 @@ describe("stripBatchReadToolCalls", () => {
 		const parsed = result.trim().split("\n").map((l: string) => JSON.parse(l));
 		const assistantMsg = parsed.find((e: any) => e.message?.role === "assistant");
 		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
+	});
+
+	it("removes orphaned tool result messages for batch_read tool calls", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-1", name: "batch_read", content: [
+				{ type: "text", text: "--- src/a.ts (10 lines) ---" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "user", content: "Thanks", timestamp: 3 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-1");
+		expect(result).not.toContain("--- src/a.ts");
+		expect(result).toContain("Thanks");
+	});
+
+	it("removes orphaned tool result with content-level toolCallId", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "batch_read", toolCallId: "br-2", arguments: { o: [{ o: "read", p: "src/b.ts" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", content: [
+				{ type: "toolResult", toolCallId: "br-2", content: [{ type: "text", text: "--- src/b.ts (5 lines) ---" }] },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-2");
+	});
+
+	it("preserves non-batch_read tool results while removing batch_read results", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+				{ type: "toolCall", name: "web", toolCallId: "web-1", arguments: { op: [{ o: "search", q: "test" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-1", name: "batch_read", content: [
+				{ type: "text", text: "--- src/a.ts (10 lines) ---" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "web-1", name: "web", content: [
+				{ type: "text", text: "Search results..." },
+			], timestamp: 3 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-1");
+		expect(result).toContain("web-1");
+		expect(result).toContain("Search results...");
+	});
+
+	// --- Production JSONL format: id field + role: "toolResult" ---
+
+	it("strips batch_read calls with id field (production JSONL format)", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "br-id-1", name: "batch_read", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+			], timestamp: 1 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+		expect(result).not.toContain("batch_read");
+		expect(result).not.toContain("br-id-1");
+	});
+
+	it("strips orphaned toolResult messages with id field", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "br-id-2", name: "batch_read", arguments: { o: [{ o: "read", p: "src/x.ts" }] } },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-id-2", content: [
+				{ type: "text", text: "file content here" },
+			], timestamp: 2 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+		expect(result).not.toContain("br-id-2");
+		expect(result).not.toContain("file content here");
+	});
+
+	it("preserves non-batch_read toolResult messages with id field", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "br-id-3", name: "batch_read", arguments: {} },
+				{ type: "toolCall", id: "flow-id-1", name: "flow", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-id-3", content: [
+				{ type: "text", text: "batch_read result" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-id-1", content: [
+				{ type: "text", text: "flow result" },
+			], timestamp: 3 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+		expect(result).not.toContain("br-id-3");
+		expect(result).not.toContain("batch_read result");
+		expect(result).toContain("flow-id-1");
+		expect(result).toContain("flow result");
+	});
+
+	it("handles mixed id and toolCallId fields in same assistant message", () => {
+		const snapshot = [
+			JSON.stringify({ type: "message", message: { role: "assistant", content: [
+				{ type: "toolCall", id: "br-mixed-1", name: "batch_read", arguments: {} },
+				{ type: "toolCall", toolCallId: "br-mixed-2", name: "batch_read", arguments: {} },
+			], timestamp: 1 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-mixed-1", content: [
+				{ type: "text", text: "result 1" },
+			], timestamp: 2 } }),
+			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "br-mixed-2", content: [
+				{ type: "text", text: "result 2" },
+			], timestamp: 3 } }),
+		].join("\n") + "\n";
+
+		const result = stripBatchReadToolCalls(snapshot);
+		expect(result).not.toContain("br-mixed-1");
+		expect(result).not.toContain("br-mixed-2");
+		expect(result).not.toContain("result 1");
+		expect(result).not.toContain("result 2");
 	});
 });

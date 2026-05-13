@@ -47,7 +47,7 @@ describe("compressToolResults — batch", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "✔ 2 operations: 1 read, 1 bash\n\n--- src/file.ts (42 lines) ---\nline 1\nline 2\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.5s (avg)]\noutput",
 				},
@@ -75,7 +75,7 @@ describe("compressToolResults — batch", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "✔ 1 operation: 1 read\n\n--- src/file.ts context map ---\nTotal lines: 100\nUse targeted reads...",
 				},
@@ -99,7 +99,7 @@ describe("compressToolResults — batch", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "✔ 1 operation: 1 edit\n\n--- edit: src/index.ts (2 blocks) ---",
 				},
@@ -179,7 +179,7 @@ describe("compressToolResults — batch", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "✔ 1 operation: 1 read\n\n--- README.md (10 lines) ---\n# Title\n\n---\n\nSome content after horizontal rule\n\n--- bash [abc] exit 0 ---\n[Execution time: 0.1s]\noutput",
 				},
@@ -208,7 +208,7 @@ describe("compressToolResults — web", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "1. Node.js Streams\n   https://nodejs.org/api/stream.html\n   Everything you need to know about streams\n\n2. Stream Handbook\n   https://github.com/substack/stream-handbook\n   How to use streams",
 				},
@@ -217,7 +217,7 @@ describe("compressToolResults — web", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		const lines = result.trimEnd().split("\n");
-		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain('[web:search] "node.js streams" · 2 results · first: Node.js Streams');
@@ -236,7 +236,7 @@ describe("compressToolResults — web", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "File: /tmp/session/abc.md\nTitle: Example Page\nContent length: 4200 chars\n\nPreview:\nSome preview text here",
 				},
@@ -245,7 +245,7 @@ describe("compressToolResults — web", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		const lines = result.trimEnd().split("\n");
-		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain("[web:fetch] https://example.com · \"Example Page\" · 4200 chars");
@@ -266,7 +266,7 @@ describe("compressToolResults — ask_user", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "User answered: Yes",
 				},
@@ -275,7 +275,7 @@ describe("compressToolResults — ask_user", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		const lines = result.trimEnd().split("\n");
-		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain('[ask_user] "Should we use Docker?" → "Yes"');
@@ -293,7 +293,7 @@ describe("compressToolResults — ask_user", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "User cancelled",
 				},
@@ -302,7 +302,7 @@ describe("compressToolResults — ask_user", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		const lines = result.trimEnd().split("\n");
-		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain('[ask_user] "Confirm deletion?" → cancelled');
@@ -320,7 +320,7 @@ describe("compressToolResults — ask_user", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "User answered: Yes\nAlso update the README",
 				},
@@ -329,7 +329,7 @@ describe("compressToolResults — ask_user", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		const lines = result.trimEnd().split("\n");
-		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain('[ask_user] "Any concerns?" → "Yes\nAlso update the README"');

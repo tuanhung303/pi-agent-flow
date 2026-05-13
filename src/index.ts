@@ -27,7 +27,7 @@ import {
 	stripSteeringHintText,
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
-} from "./steering-hint.js";
+} from "./sliding-prompt.js";
 import { setupSpecMode } from "./spec-mode.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {

@@ -392,7 +392,7 @@ interface ToolMessage {
 }
 
 function addFlowToolMessage(result: FlowResult, message: ToolMessage): boolean {
-	if (!message || message.role !== "tool") return false;
+	if (!message || (message.role !== "tool" && message.role !== "toolResult")) return false;
 
 	const signature = getMessageSignature(message);
 	const seen = getSeenFlowMessageSignatures(result);
@@ -407,7 +407,7 @@ function addFlowMessages(result: FlowResult, messages: unknown[]): boolean {
 	if (!Array.isArray(messages)) return false;
 	let changed = false;
 	for (const message of messages) {
-		if (message && (message as Record<string, unknown>).role === "tool") {
+		if (message && (message as Record<string, unknown>).role === "tool" || (message as Record<string, unknown>).role === "toolResult") {
 			if (addFlowToolMessage(result, message as ToolMessage)) changed = true;
 		} else if (message && (message as Record<string, unknown>).role === "assistant") {
 			if (addFlowAssistantMessage(result, message as AssistantMessage)) changed = true;
@@ -568,7 +568,7 @@ function matchToolCallsWithResults(messages: Message[], maxPairs: number): ToolP
 	// Build a map of toolCallId -> tool result output
 	const resultMap = new Map<string, string>();
 	for (const msg of messages) {
-		if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
+		if ((msg.role !== "tool" && msg.role !== "toolResult") || !Array.isArray(msg.content)) continue;
 		const id = (msg as unknown as { toolCallId?: string }).toolCallId || (msg as unknown as { tool_call_id?: string }).tool_call_id || "";
 		if (!id) continue;
 		const text = msg.content

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ReplacedSessionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
-import { isSpecModeActive, setSpecModeActive } from "./steering-hint.js";
+import { isSpecModeActive, setSpecModeActive } from "./sliding-prompt.js";
 
 let _pendingSpecDeactivation = false;
 let _pendingNewSession: ExtensionCommandContext["newSession"] | null = null;
