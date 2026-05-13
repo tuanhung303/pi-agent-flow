@@ -332,20 +332,26 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			continue;
 		}
 
-		// Extract toolCallId — either from message-level or content-level toolResult
+		// Extract toolCallId — either from message-level or content-level toolResult.
+		// Drop empty/whitespace IDs to prevent kimi/DeepSeek rejections.
 		let toolCallId: string | undefined;
-		if (typeof entry.message.toolCallId === "string") {
+		if (typeof entry.message.toolCallId === "string" && entry.message.toolCallId.trim()) {
 			toolCallId = entry.message.toolCallId;
 		} else if (Array.isArray(entry.message.content)) {
 			for (const part of entry.message.content) {
-				if (part.type === "toolResult" && part.toolCallId) {
+				if (part.type === "toolResult" && typeof part.toolCallId === "string" && part.toolCallId.trim()) {
 					toolCallId = part.toolCallId;
 					break;
 				}
 			}
 		}
 
-		if (!toolCallId) { result.push(line); continue; }
+		if (!toolCallId) {
+			// Drop tool results with empty/whitespace toolCallId.
+			// Passing them through causes strict API providers to reject with
+			// "tool_call_id is not found".
+			continue;
+		}
 
 		const toolName = toolCallIdToName.get(toolCallId);
 		let rendered: string | undefined;
