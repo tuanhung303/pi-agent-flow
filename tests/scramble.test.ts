@@ -826,7 +826,7 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns mid glitch chars for depth 3', () => {
-		const midChars = 'abcdefghijklmnopqrstuvwxyzᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
+		const midChars = '·∘∙⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋~?+-*';
 		const c = selectScrambleChar(3, 0, 0);
 		expect(midChars).toContain(c);
 	});
@@ -1954,8 +1954,10 @@ describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', ()
 		// Second call with changed text while old ripple still active — should SUPPRESS
 		const result2 = manager.updateMsg(TEST_ID, 'Hello world. Second changed.', base + 600, false, undefined, true);
 		expect(result2.isAnimating).toBe(true);
-		// Content should NOT show the new text since change was suppressed during animation
-		expect(stripAnsi(result2.content)).not.toBe('Hello world. Second changed.');
+		// New text is now visible during ripple — wavefront scrambles what it hits,
+		// content outside shows as plain. state.displayedText stays frozen only for
+		// chunk-detection, not rendering.
+		expect(stripAnsi(result2.content).length).toBe('Hello world. Second changed.'.length);
 	});
 
 	it('new ripple spawns at a sentence start, not always center', () => {

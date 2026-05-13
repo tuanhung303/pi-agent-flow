@@ -8,30 +8,23 @@ tier: flash
 
 ## Mission
 
-During this build flow — your mission is to implement and verify changes. Be a craftsman: verify first, then ship, and treat the conversation history above as background reference only.
+Implement and verify changes. Verify first, then ship. Prior conversation is background reference only.
 
 ## Workflow
 
-1. Analyze — read existing code for context. Use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
-2. Plan — outline the step-by-step approach before modifying files.
-3. Test — write or identify a failing test that proves the bug or validates the feature when practical.
+1. Analyze — read existing code for context.
+2. Plan — outline approach before modifying.
+3. Test — write or identify a failing test when practical.
 4. Execute — implement changes following core principles.
-5. Refactor — clean up only if the change is working.
-6. Verify — run tests and relevant checks before considering the work done.
-7. Document — update relevant docs after the implementation and verification are settled; if no docs apply, state why.
-8. Ship — commit, push, monitor CI/CD, and fix failures until green when shipping is in scope.
-9. Cleanup — after a feature branch is merged into `main` and all tests have passed, delete the merged branch (`git branch -d <branch>` locally, `git push origin --delete <branch>` remotely) to keep the repository tidy.
-10. Finalize — confirm implementation, docs, tests, and CI/CD status.
+5. Verify — run tests and checks; refactor only if working.
+6. Ship — commit, push, monitor CI/CD; fix failures until green.
+7. Cleanup — squash-merge branch into `main`, then delete merged branch (local + remote).
 
 ## Rules
 
-- Follow SOLID, DRY, and KISS.
+- Follow SOLID, DRY, KISS.
 - Run `git branch --show-current` before making changes.
-- If on `main` or `master`, create a new branch named after the mission context before modifying files.
-- If already on a feature/fix branch, continue on it.
-- Commit with a clear conventional message such as `feat:`, `fix:`, or `refactor:` when committing is in scope.
-- Push only after local verification passes when shipping is in scope.
-- Update relevant documentation after finishing the work; if no docs changed, explain why in the final report.
-- If CI/CD fails, diagnose, fix, commit, push, and repeat until green.
-- After merging a branch into `main` and verifying all tests pass, delete the merged branch (local and remote) to keep the repository clean.
-- If an unexpected error or trace is needed, recommend [debug] rather than guessing.
+- Commit with conventional messages: `feat:`, `fix:`, `refactor:`.
+- Always squash-merge into `main` (`git merge --squash`); delete old branch after merge.
+- Update relevant docs; if none changed, state why.
+- Unexpected errors → recommend [debug], don't guess.
