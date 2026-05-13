@@ -81,9 +81,12 @@ const DEEP_GLITCH = '·∘∙+*~!?⟐⟑✧✦⠁⠂⠃⠄⠅⠆⠇ᚠᚢᚦᚨ�
 /** Mid glitch: lowercase alphabet + braille/runic + geometric shapes for mid depth (3) */
 const MID_GLITCH = 'ᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
 /** Shallow glitch: numbers/brackets + shade blocks + light box-drawing for outer depths (4+) */
-const SHALLOW_GLITCH = '0123456789\\/[]{}|░▚▞⠁⠂⠃';
+const SHALLOW_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
 /** Classic ASCII-safe set for stream/cascade/ripple fallback */
 const SCRAMBLE_CHARS = '·∘∙~?+-*/[]{}<>_○◎';
+
+/** Thin braille spark: single-dot and sparse two-dot patterns for afterglow "pop" */
+const THIN_BRAILLE_SPARK = '⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
 
 function selectScrambleChar(depth: number, dist: number, elapsed: number, seed?: number, textLen?: number): string {
 	const tickMs = (textLen !== undefined && textLen < 20) ? 300 : 150;
@@ -123,6 +126,12 @@ function selectScrambleChar(depth: number, dist: number, elapsed: number, seed?:
 	}
 }
 
+function selectSparkChar(seed: number, charIndex: number, tick: number): string {
+	const n = hashNoise(seed, charIndex, tick, 88);
+	const idx = Math.floor(n * THIN_BRAILLE_SPARK.length);
+	return THIN_BRAILLE_SPARK[idx < 0 ? idx + THIN_BRAILLE_SPARK.length : idx];
+}
+
 // ---------------------------------------------------------------------------
 // ANSI truecolor neon glow constants (illuminate mode)
 // ---------------------------------------------------------------------------
@@ -154,48 +163,50 @@ interface IlluminateConfig {
 	spread: number;
 	glowIntensity: 'high' | 'medium' | 'low' | 'variable';
 	initialTimeOffset?: number;
+	crestOnly?: boolean;
+	spark?: boolean;
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
-	aimLabel: { color: CYAN_GLOW, duration: 400, spread: 1.0, glowIntensity: 'high' },
-	actLabel: { color: WARM_GLOW, duration: 400, spread: 1.0, glowIntensity: 'high' },
-	msgLabel: { color: PEACH_GLOW, duration: 400, spread: 1.0, glowIntensity: 'high' },
-	msgContent: { color: 'dynamic', duration: 675, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
-	tps: { color: ORANGE_GLOW, duration: 120, spread: 0.5, glowIntensity: 'medium' },
+	aimLabel: { color: CYAN_GLOW, duration: 280, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	actLabel: { color: WARM_GLOW, duration: 280, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	msgLabel: { color: PEACH_GLOW, duration: 280, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	msgContent: { color: 'dynamic', duration: 473, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
+	tps: { color: ORANGE_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
 };
 
 // ---------------------------------------------------------------------------
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 530;
+const RIPPLE_DUR_DEFAULT = 371;
 const RIPPLE_SPREAD_DEFAULT = 1;
-const MIN_RIPPLE_INTERVAL = 600;
-const DEPTH_BAND_MAX = 13;
-const TPS_FLASH_DUR = 150;
+const MIN_RIPPLE_INTERVAL = 420;
+const DEPTH_BAND_MAX = 7;
+const TPS_FLASH_DUR = 105;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 700;
-const ECHO_AFTERGLOW_MS = 3500;
-const FLASH_AFTERGLOW_MS = 195; // shorter afterglow for TPS/KPI value flashes
-const PULSE_WINDOW_MS = 2550;
-const PULSE_CYCLE_MS = 1425;
-const CASCADE_FRAME_MS = 16;
-const CASCADE_MAX_START = 40;
-const CASCADE_MAX_LENGTH = 40;
-const CASCADE_FLASH_MAX_START = 5;
-const CASCADE_FLASH_MAX_LENGTH = 8;
+const AFTERGLOW_MS = 300;
+const ECHO_AFTERGLOW_MS = 500;
+const FLASH_AFTERGLOW_MS = 137; // shorter afterglow for TPS/KPI value flashes
+const PULSE_WINDOW_MS = 600;
+const PULSE_CYCLE_MS = 998;
+const CASCADE_FRAME_MS = 11;
+const CASCADE_MAX_START = 28;
+const CASCADE_MAX_LENGTH = 28;
+const CASCADE_FLASH_MAX_START = 4;
+const CASCADE_FLASH_MAX_LENGTH = 6;
 
 // Illuminate phrase buffering
-const MAX_PHRASE_BUFFER_TIME = 800;
+const MAX_PHRASE_BUFFER_TIME = 560;
 const MIN_PHRASE_LENGTH = 60;
 
 // Drain timeout: partial chunk ripples when text stops changing for this long.
 // Tokens arrive ~200ms apart at 196 TPS; 350ms is long enough to avoid firing
 // during active streaming but short enough to feel responsive when tool calls pause.
-const MSG_CHUNK_DRAIN_MS = 350;
+const MSG_CHUNK_DRAIN_MS = 245;
 
 // TPS hysteresis
-const SECONDARY_RIPPLE_DELAY_MS = 120;
+const SECONDARY_RIPPLE_DELAY_MS = 84;
 const SECONDARY_RIPPLE_STRENGTH = 0.75;
 
 // TPS hysteresis
@@ -249,6 +260,8 @@ function easeOutQuad(t: number): number {
 export type ScrambleMode = 'stream' | 'cascade' | 'ripple' | 'illuminate';
 
 export { selectScrambleChar };
+export { selectSparkChar };
+export { THIN_BRAILLE_SPARK };
 export { ILLUMINATE_CONFIGS };
 export type { IlluminateConfig };
 export { CYAN_GLOW, WARM_GLOW, PEACH_GLOW, ORANGE_GLOW, SKY_GLOW, WHITE_GLOW, BOLD_ON, BOLD_OFF, RESET_COLOR };
@@ -723,7 +736,7 @@ export function applyRipples(
 			const dist = Math.abs(idx - activeRipples[i].pos);
 			const depth = radii[i] - dist;
 			if (depth > 0) {
-				const fade = 1 - smoothstep(DEPTH_BAND_MAX - 1, DEPTH_BAND_MAX + 2, depth);
+				const fade = 1 - smoothstep(DEPTH_BAND_MAX - 0.5, DEPTH_BAND_MAX + 0.5, depth);
 				if (fade > 0) {
 					const cappedDepth = Math.min(depth, DEPTH_BAND_MAX);
 					combinedDepth += cappedDepth * fade; // Additive for interference
@@ -746,7 +759,7 @@ export function applyRipples(
 			for (let i = 0; i < afterglowCount; i++) {
 				const dist = Math.abs(idx - afterglowData[i].pos);
 				if (dist < afterglowData[i].maxReach) {
-					const primaryAg = 1 - Math.min(1, afterglowData[i].timeSinceExpiry / 500);
+					const primaryAg = 1 - Math.min(1, afterglowData[i].timeSinceExpiry / 350);
 					const secondaryAg = 0.4 * (1 - Math.min(1, afterglowData[i].timeSinceExpiry / AFTERGLOW_MS));
 					if (primaryAg > afterglowIntensity || secondaryAg > afterglowIntensity) {
 						bestAgIdx = i;
@@ -758,26 +771,36 @@ export function applyRipples(
 
 		if (maxDepth > 0) {
 			const seed = activeRipples[bestIdx].seed ?? 0;
-			const jitterTick = Math.floor(now / 60);
-			const depthJitter = (hashNoise(seed, bestDist, jitterTick, 99) * 2 - 1) * 0.35;
+			const jitterTick = Math.floor(now / 42);
+			const depthJitter = (hashNoise(seed, bestDist, jitterTick, 99) * 2 - 1) * 0.15;
 			const jitteredDepth = Math.max(0.1, maxDepth + depthJitter);
 			const char = selectScrambleChar(jitteredDepth, bestDist, bestElapsed, seed, text.length);
 			if (config) {
-				let prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 				const crestDepth = radii[bestIdx] - bestDist;
-				if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-					// Alternate cyan/orange at crest based on character position, no bold
-					if (bestDist % 2 === 0) {
-						prefix = '\x1b[38;2;0;230;220m';  // cyan
-					} else {
-						prefix = '\x1b[38;2;255;165;50m';  // orange
+				const isCrest = !config.crestOnly || (crestDepth > 0 && crestDepth < 2.0);
+				let prefix = '';
+				if (isCrest) {
+					prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
+					if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
+						// Alternate cyan/orange at crest based on character position, no bold
+						if (bestDist % 2 === 0) {
+							prefix = '\x1b[38;2;0;230;220m';  // cyan
+						} else {
+							prefix = '\x1b[38;2;255;165;50m';  // orange
+						}
 					}
 				}
-				if (!inColor || currentPrefix !== prefix) {
-					if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
-					segments[segCount++] = prefix;
-					inColor = true;
-					currentPrefix = prefix;
+				if (prefix) {
+					if (!inColor || currentPrefix !== prefix) {
+						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
+						segments[segCount++] = prefix;
+						inColor = true;
+						currentPrefix = prefix;
+					}
+				} else if (inColor) {
+					segments[segCount++] = ILLUMINATE_CLOSE;
+					inColor = false;
+					currentPrefix = '';
 				}
 				segments[segCount++] = char;
 			} else {
@@ -792,28 +815,22 @@ export function applyRipples(
 			const agRipple = afterglowRipples[bestAgIdx];
 			const timeSinceExpiry = now - agRipple.time - agRipple.dur;
 			// Discrete post-ripple glitch pops: 3 brief bursts after ripple expires
-			const popWidth = 80;
-			const popGap = 160;
+			const popWidth = 40;
+			const popGap = 60;
 			const inInitialPopWindow = (timeSinceExpiry >= 0 && timeSinceExpiry < popWidth)
 			    || (timeSinceExpiry >= popWidth + popGap && timeSinceExpiry < 2 * popWidth + popGap)
-			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 3 * (popWidth + popGap));
-			const inEchoPopWindow = agRipple.contentChange !== false && (
-			    (timeSinceExpiry >= 1560 && timeSinceExpiry < 1560 + 80)
-			    || (timeSinceExpiry >= 2140 && timeSinceExpiry < 2140 + 80)
-			    || (timeSinceExpiry >= 3220 && timeSinceExpiry < 3220 + 80)
-			);
-			const inPopWindow = inInitialPopWindow || inEchoPopWindow;
-			const agTick = Math.floor(now / 80);
+			    || (timeSinceExpiry >= 2 * (popWidth + popGap) && timeSinceExpiry < 2 * (popWidth + popGap) + popWidth);
+			const agTick = Math.floor(now / 40);
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
 			const popTarget = Math.min(0.045, 4 / Math.max(1, text.length));
-			const shouldScramble = inPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 300 && glitchRoll < popTarget;
+			const shouldScramble = inInitialPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 210 && glitchRoll < popTarget;
 			if (shouldScramble) {
 				if (config) {
 					let agPrefix: string;
 					if (config.color === 'dynamic') {
 						// Cooling ember: warm at start, fading to dim cool
 						// Echo pops get minimum intensity so chars stay visible long after ripple
-						const effectiveIntensity = inEchoPopWindow ? Math.max(afterglowIntensity, 0.3) : afterglowIntensity;
+						const effectiveIntensity = afterglowIntensity;
 						const emberR = Math.round(200 + 55 * effectiveIntensity);
 						const emberG = Math.round(100 + 60 * effectiveIntensity);
 						const emberB = Math.round(40 + 20 * effectiveIntensity);
@@ -830,7 +847,10 @@ export function applyRipples(
 				}
 				const agDepth = afterglowIntensity * 4.5;
 				const agElapsed = now - agRipple.time - agRipple.dur;
-				const char = selectScrambleChar(agDepth, 0, agElapsed, agRipple.seed, text.length);
+				const useSpark = config?.spark !== false;
+				const char = useSpark
+					? selectSparkChar(agRipple.seed ?? 0, idx, agTick)
+					: selectScrambleChar(agDepth, 0, agElapsed, agRipple.seed, text.length);
 				segments[segCount++] = char;
 			} else {
 				// Plain afterglow — close any open styling and render origChar
@@ -848,7 +868,7 @@ export function applyRipples(
 				currentPrefix = '';
 			}
 			if (pulseIntensity !== undefined) {
-				const settleTick = Math.floor(now / 250);
+				const settleTick = Math.floor(now / 175);
 				const settleRoll = hashNoise(42, idx, settleTick, 33);
 				if (settleRoll < 0.05) {
 					const settlePrefix = (hashNoise(42, idx, settleTick, 55) < 0.5)
@@ -901,7 +921,7 @@ function spawnSecondaryRipple(primary: Ripple): Ripple {
 	return {
 		...primary,
 		time: primary.time + delay,
-		dur: primary.dur * 0.85,
+		dur: primary.dur * 0.6,
 		spread: primary.spread * SECONDARY_RIPPLE_STRENGTH,
 		seed: (primary.seed ?? 0) + 1,
 		contentChange: primary.contentChange,

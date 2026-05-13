@@ -57,8 +57,8 @@ pi install .
 - **Flow-mode notification** — concise (`mode: name | lite: model - flash: model - full: model`) or verbose (with per-tier flow-name labels) startup message
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
 - **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
-- **Sliding system prompt** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); switches between spec-driven planning and implement modes based on the `/spec` toggle, stripped from child snapshots to avoid duplication
-- **Session snapshot sanitization** — removes sliding prompts, reasoning/thinking artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
+- **Steering hint** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); switches between spec-driven planning and implement modes based on the `/spec` toggle, stripped from child snapshots to avoid duplication
+- **Session snapshot sanitization** — removes steering hints, reasoning/thinking artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
 - **Shared context inheritance** — child flows receive the parent's sanitized session automatically; write forward-looking intents and let the child pick up context from its inherited snapshot
 - **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
 - **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, live countdowns, scramble-animated act/msg/tps lines, and expanded view with full reports and tool traces
@@ -92,7 +92,7 @@ When you delegate to a flow, the child agent receives an automatic **sanitized f
 ### How it works
 
 1. **Snapshot serialized** — your conversation (files read, commands run, prior flow results) is serialized into a JSONL snapshot.
-2. **Sanitized** — sliding prompts, reasoning/thinking artifacts, and other non-inheritable content are stripped.
+2. **Sanitized** — steering hints, reasoning/thinking artifacts, and other non-inheritable content are stripped.
 3. **Compressed** — prior flow tool results are compacted into short summaries: files touched, commands used, outcome status.
 4. **Forked** — the child agent loads this snapshot via `--session` at startup.
 
@@ -175,12 +175,12 @@ Flows are aware of their deadline from the moment they start:
 
 ## `/spec` Command
 
-Toggle spec-driven planning mode with the `/spec` command. When active, the sliding system prompt instructs the orchestrator to follow a four-phase workflow:
+Toggle spec-driven planning mode with the `/spec` command. When active, the steering hint instructs the orchestrator to follow a four-phase workflow:
 
 1. **Investigate** — read package files, tests, and config directly; delegate broad discovery to `[scout]`
 2. **Discuss** — ask 2–3 targeted, evidence-based questions via `ask_user`, marking the recommended choice with `[preferred]`
-3. **Plan** — delegate to `[build]` to write a structured spec to `.specs/{slug}/spec.md`
-4. **Delegate** — once the spec is confirmed, proceed with implementation flows
+3. **Recommend Exit** — prompt the user to type `/spec` when ready to proceed; do not initiate builds yourself
+4. **Synthesize** — on `/spec` deactivation, a plan is auto-generated from the conversation and placed in the editor for review
 
 Run `/spec` with a prompt to activate immediately and start investigating:
 

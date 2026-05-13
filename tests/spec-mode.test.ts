@@ -11,10 +11,10 @@ import { setupSpecMode, resetSpecDeactivation } from "../src/spec-mode.js";
 import {
 	isSpecModeActive,
 	setSpecModeActive,
-	makeSlidingPromptMessage,
-	SLIDING_PROMPT,
+	makeSteeringHintMessage,
+	STEERING_HINT,
 	IMPLEMENT_PROMPT,
-} from "../src/sliding-prompt.js";
+} from "../src/steering-hint.js";
 
 function createMockPi(): ExtensionAPI & { emitTurnEnd(event: TurnEndEvent, ctx: ExtensionContext): void; emitSessionStart(event: SessionStartEvent, ctx: ExtensionContext): void } {
 	const handlers: Record<string, Function[]> = {};
@@ -384,20 +384,20 @@ describe("setupSpecMode", () => {
 	});
 });
 
-describe("makeSlidingPromptMessage mode switching", () => {
+describe("makeSteeringHintMessage mode switching", () => {
 	beforeEach(() => {
 		setSpecModeActive(true);
 	});
 
 	it("returns spec prompt when spec mode is active", () => {
 		setSpecModeActive(true);
-		const msg = makeSlidingPromptMessage();
-		expect(msg.content).toBe(SLIDING_PROMPT);
+		const msg = makeSteeringHintMessage();
+		expect(msg.content).toBe(STEERING_HINT);
 	});
 
 	it("returns implement prompt when spec mode is inactive", () => {
 		setSpecModeActive(false);
-		const msg = makeSlidingPromptMessage();
+		const msg = makeSteeringHintMessage();
 		expect(msg.content).toBe(IMPLEMENT_PROMPT);
 	});
 });

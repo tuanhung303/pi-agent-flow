@@ -120,9 +120,9 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const slidingPrompt = "<pi-flow-sliding-system>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, delegate to [build].\n</pi-flow-sliding-system>";
+		const steeringHint = "<pi-flow-steering-hint>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, delegate to [build].\n</pi-flow-steering-hint>";
 		const sessionBranch = [
-			{ type: "message", message: { role: "system", content: slidingPrompt, timestamp: 0 } },
+			{ type: "message", message: { role: "system", content: steeringHint, timestamp: 0 } },
 			{ type: "message", message: { role: "user", content: "Keep this product requirement", timestamp: 1 } },
 			{
 				type: "message",
@@ -133,7 +133,7 @@ describe("flow tool execute", () => {
 					content: [
 						{ type: "thinking", text: "SECRET_THINKING_PART" },
 						{ type: "reasoning", text: "SECRET_REASONING_PART" },
-						{ type: "text", text: `Normal assistant context${slidingPrompt}` },
+						{ type: "text", text: `Normal assistant context${steeringHint}` },
 					],
 					timestamp: 2,
 				},
@@ -176,8 +176,8 @@ describe("flow tool execute", () => {
 		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
 		expect(snapshot).not.toContain("SECRET_THINKING_PART");
 		expect(snapshot).not.toContain("SECRET_REASONING_PART");
-		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
-		expect(snapshot).not.toContain("</pi-flow-sliding-system>");
+		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
+		expect(snapshot).not.toContain("</pi-flow-steering-hint>");
 	});
 
 	it("preserves unmodified fork snapshot lines exactly", async () => {
@@ -203,12 +203,12 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const slidingPrompt = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
+		const steeringHint = "<pi-flow-steering-hint>old routing prompt</pi-flow-steering-hint>";
 		const header = { version: 1, meta: { keep: "header formatting" } };
 		const unchangedUser = { type: "message", message: { role: "user", content: "Unchanged requirement", timestamp: 1 } };
 		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }], timestamp: 2 } };
 		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
-		const droppedSystem = { type: "message", message: { role: "system", content: slidingPrompt, timestamp: 4 } };
+		const droppedSystem = { type: "message", message: { role: "system", content: steeringHint, timestamp: 4 } };
 		const unchangedTool = { type: "message", message: { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
 		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
 
@@ -238,10 +238,10 @@ describe("flow tool execute", () => {
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");
 		expect(snapshot).not.toContain("SECRET_REASONING");
-		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
+		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
 	});
 
-	it("drops sliding system messages with array content in fork snapshot", async () => {
+	it("drops steering hint system messages with array content in fork snapshot", async () => {
 		setupFlowsDir([
 			{
 				fileName: "scout.md",
@@ -264,8 +264,8 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const slidingPrompt = "<pi-flow-sliding-system>old routing prompt</pi-flow-sliding-system>";
-		const droppedSystemArray = { type: "message", message: { role: "system", content: [{ type: "text", text: slidingPrompt }], timestamp: 4 } };
+		const steeringHint = "<pi-flow-steering-hint>old routing prompt</pi-flow-steering-hint>";
+		const droppedSystemArray = { type: "message", message: { role: "system", content: [{ type: "text", text: steeringHint }], timestamp: 4 } };
 		const sessionBranch = [droppedSystemArray];
 
 		const tool = pi.getTool("flow");
@@ -285,7 +285,7 @@ describe("flow tool execute", () => {
 
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).not.toContain(JSON.stringify(droppedSystemArray));
-		expect(snapshot).not.toMatch(/<pi-flow-sliding-system\b/);
+		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
 	});
 
 	it("preserves flow calls/results in mixed assistant messages", async () => {
@@ -537,7 +537,7 @@ describe("flow tool execute", () => {
 	});
 
 	describe("context event handler", () => {
-		it("inserts sliding system prompt before latest user message unconditionally", async () => {
+		it("inserts steering hint before latest user message unconditionally", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
@@ -553,12 +553,12 @@ describe("flow tool execute", () => {
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).content[0].text).toBe("ok");
 			expect((modified[2] as any).role).toBe("system");
-			expect((modified[2] as any).content).toMatch(/<pi-flow-sliding-system\b/);
+			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
 			expect((modified[2] as any).content).toContain("spec-driven planning mode");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
-		it("inserts sliding system prompt even when toolOptimize is disabled", async () => {
+		it("inserts steering hint even when toolOptimize is disabled", async () => {
 			process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 			const pi = createMockPi();
 			registerExtension(pi as any);
@@ -573,7 +573,7 @@ describe("flow tool execute", () => {
 			const modified = results[0]?.messages ?? messages;
 
 			expect((modified[2] as any).role).toBe("system");
-			expect((modified[2] as any).content).toMatch(/<pi-flow-sliding-system\b/);
+			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
 			expect((modified[2] as any).content).toContain("spec-driven planning mode");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
@@ -603,9 +603,9 @@ describe("flow tool execute", () => {
 
 			// First user message unchanged
 			expect((modified[0] as any).content[0].text).toBe("first prompt");
-			// Sliding system prompt inserted before latest user message
+			// Steering hint inserted before latest user message
 			expect((modified[1] as any).role).toBe("system");
-			expect((modified[1] as any).content).toMatch(/<pi-flow-sliding-system\b/);
+			expect((modified[1] as any).content).toMatch(/<pi-flow-steering-hint\b/);
 			// Latest user message preserved
 			expect((modified[2] as any).content[0].text).toBe("second prompt");
 			expect((modified[2] as any).content[1].type).toBe("image");
@@ -626,13 +626,13 @@ describe("flow tool execute", () => {
 			expect((modified[0] as any).role).toBe("assistant");
 		});
 
-		it("drops previous sliding system messages with array content", async () => {
+		it("drops previous steering hint system messages with array content", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
 
 			const messages = [
 				{ role: "user" as const, content: "first prompt", timestamp: 1 },
-				{ role: "system" as const, content: [{ type: "text" as const, text: "<pi-flow-sliding-system>\nold prompt\n</pi-flow-sliding-system>" }], timestamp: 2 },
+				{ role: "system" as const, content: [{ type: "text" as const, text: "<pi-flow-steering-hint>\nold prompt\n</pi-flow-steering-hint>" }], timestamp: 2 },
 				{ role: "user" as const, content: "second prompt", timestamp: 3 },
 			];
 
@@ -642,7 +642,7 @@ describe("flow tool execute", () => {
 			expect(modified).toHaveLength(3);
 			expect((modified[0] as any).content).toBe("first prompt");
 			expect((modified[1] as any).role).toBe("system");
-			expect((modified[1] as any).content).toMatch(/<pi-flow-sliding-system\b/);
+			expect((modified[1] as any).content).toMatch(/<pi-flow-steering-hint\b/);
 			expect((modified[2] as any).content).toBe("second prompt");
 		});
 	});
@@ -1460,7 +1460,7 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("fetch");
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
 		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
 	});
 
@@ -1479,7 +1479,7 @@ describe("web tool integration", () => {
 		const modified = result[0];
 		expect(modified.systemPrompt).toContain("pi-web steering");
 		expect(modified.systemPrompt).toContain("search");
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
 		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
 	});
 
@@ -1496,11 +1496,11 @@ describe("web tool integration", () => {
 
 		const modified = result[0];
 		expect(modified.systemPrompt).not.toContain("pi-web steering");
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-sliding-system\b/);
+		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
 		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
 	});
 
-	it("does not append sliding prompt to static systemPrompt; only context hook injects it", async () => {
+	it("does not append steering hint to static systemPrompt; only context hook injects it", async () => {
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
@@ -1512,8 +1512,8 @@ describe("web tool integration", () => {
 		});
 
 		const modified = result[0];
-		// Sliding prompt is NOT in static systemPrompt — context hook injects it dynamically
-		expect(modified.systemPrompt).not.toMatch(/<pi-flow-sliding-system\b/);
+		// Steering hint is NOT in static systemPrompt — context hook injects it dynamically
+		expect(modified.systemPrompt).not.toMatch(/<pi-flow-steering-hint\b/);
 		expect(modified.systemPrompt).not.toContain("spec-driven planning mode");
 		// Bundled flows are always discovered, so flow instructions are injected
 		expect(modified.systemPrompt).toContain("## Flows");

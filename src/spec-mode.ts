@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ReplacedSessionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
-import { isSpecModeActive, setSpecModeActive } from "./sliding-prompt.js";
+import { isSpecModeActive, setSpecModeActive } from "./steering-hint.js";
 
 let _pendingSpecDeactivation = false;
 let _pendingNewSession: ExtensionCommandContext["newSession"] | null = null;
@@ -23,7 +23,7 @@ function extractTextFromContent(content: string | Array<{ type: string; text?: s
  * (investigate → discuss → plan → delegate) and implement mode
  * (lean orchestrator, investigate first then delegate).
  *
- * The sliding prompt in index.ts reads the active flag and injects
+ * The steering hint in index.ts reads the active flag and injects
  * the appropriate prompt content each turn.
  */
 export function setupSpecMode(pi: ExtensionAPI): void {
