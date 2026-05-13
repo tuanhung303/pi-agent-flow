@@ -159,7 +159,7 @@ describe("generateCommandsFromHistory", () => {
 
 	function makeToolResultMessage(toolCallId: string, text: string): Message {
 		return {
-			role: "tool",
+			role: "toolResult",
 			toolCallId,
 			content: [{ type: "text", text }],
 		} as unknown as Message;

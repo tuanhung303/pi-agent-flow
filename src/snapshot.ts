@@ -14,8 +14,9 @@ import {
 	stripSteeringHintText,
 	contentContainsSteeringHintTag,
 	isJsonEqual,
-} from "./steering-hint.js";
+} from "./sliding-prompt.js";
 import { stripStrategicHints, stripStrategicHintsFromContent } from "./tool-utils.js";
+import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -122,7 +123,7 @@ function logCompress(toolName: string, before: number, after: number) {
 const KNOWN_SECTION_HEADERS = [
 	/^--- (.+) \((\d+) lines\) ---$/,
 	/^--- (.+) (context map|file summary) ---$/,
-	/^--- bash \[.+\] (exit \d+|pending|error) ---$/,
+	/^--- bash \[.+\] exit (\d+) ---$/,
 	/^--- edit: .+ ---$/,
 	/^--- write: .+ ---$/,
 	/^--- delete: .+ ---$/,
@@ -177,38 +178,7 @@ function compressBatchResult(text: string): string {
 			continue;
 		}
 
-		// Bash section — keep but truncate if oversized
-		const bashMatch = line.match(/^--- bash \[.+\] (exit \d+|pending|error) ---$/);
-		if (bashMatch) {
-			const bashSection: string[] = [line];
-			i++;
-			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
-				bashSection.push(lines[i]);
-				i++;
-			}
-
-			const sectionText = bashSection.join("\n");
-			const sectionBytes = Buffer.byteLength(sectionText, "utf-8");
-			const sectionLines = bashSection.length;
-
-			const MAX_BASH_SNAPSHOT_BYTES = 50 * 1024;
-			const MAX_BASH_SNAPSHOT_LINES = 500;
-
-			if (sectionBytes > MAX_BASH_SNAPSHOT_BYTES || sectionLines > MAX_BASH_SNAPSHOT_LINES) {
-				const keepHead = 25;
-				const keepTail = 25;
-				const head = bashSection.slice(0, keepHead);
-				const tail = bashSection.slice(-keepTail);
-				const truncated = sectionLines - head.length - tail.length;
-				const marker = `[... ${truncated} lines truncated, ${sectionBytes} bytes total ...]`;
-				out.push(...head, marker, ...tail);
-			} else {
-				out.push(...bashSection);
-			}
-			continue;
-		}
-
-		// Everything else (edit, write, delete, error, summary) — keep as-is
+		// Everything else (bash, edit, write, delete, error, summary) — keep as-is
 		out.push(line);
 		i++;
 	}
@@ -292,8 +262,8 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (part.type === "toolCall" && part.toolCallId && part.name) {
-				map.set(part.toolCallId, part.name);
+			if (part.type === "toolCall" && (part.id || part.toolCallId) && part.name) {
+				map.set(part.id ?? part.toolCallId, part.name);
 			}
 		}
 	}
@@ -344,8 +314,8 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (part.type === "toolCall" && part.toolCallId && part.arguments) {
-				toolCallIdToArgs.set(part.toolCallId, part.arguments);
+			if (part.type === "toolCall" && (part.id || part.toolCallId) && part.arguments) {
+				toolCallIdToArgs.set(part.id ?? part.toolCallId, part.arguments);
 			}
 		}
 	}
@@ -357,7 +327,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
 
-		if (entry?.type !== "message" || entry.message?.role !== "tool") {
+		if (entry?.type !== "message" || (entry.message?.role !== "tool" && entry.message?.role !== "toolResult")) {
 			result.push(line);
 			continue;
 		}
@@ -468,6 +438,14 @@ function extractToolResultText(entry: any): string | undefined {
 	return undefined;
 }
 
+/**
+ * Backward-compatible alias for compressToolResults.
+ * @deprecated Use compressToolResults instead.
+ */
+export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
+	return compressToolResults(snapshot, cache);
+}
+
 // ---------------------------------------------------------------------------
 // batch_read tool call stripping
 // ---------------------------------------------------------------------------
@@ -477,37 +455,67 @@ function extractToolResultText(entry: any): string | undefined {
  *
  * Children don't have batch_read in their active tools, so seeing calls to it
  * could confuse the model. This removes toolCall parts where name === "batch_read"
- * from assistant messages, while keeping the rest of the message intact.
+ * from assistant messages AND drops the corresponding toolResult messages
+ * whose toolCallId references a stripped batch_read call. Keeping orphaned tool
+ * results causes strict API providers (e.g. kimi-coding, DeepSeek) to reject
+ * the request with `tool_call_id is not found`.
  */
 export function stripBatchReadToolCalls(snapshot: string): string {
 	const lines = snapshot.trimEnd().split("\n");
+
+	// Pass 1: Collect all batch_read toolCallIds from assistant messages.
+	const batchReadToolCallIds = new Set<string>();
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { continue; }
+
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+		const content = entry.message.content;
+		if (!Array.isArray(content)) continue;
+
+		for (const part of content) {
+			if (part.type === "toolCall" && part.name === "batch_read" && (part.id || part.toolCallId)) {
+				batchReadToolCallIds.add(part.id ?? part.toolCallId);
+			}
+		}
+	}
+
+	// Pass 2: Strip batch_read toolCall parts from assistant messages,
+	// and remove orphaned tool result messages.
 	const result: string[] = [];
 
 	for (const line of lines) {
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
 
-		if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+		if (entry?.type !== "message") {
 			result.push(line);
 			continue;
 		}
 
+		// Tool result message — skip if it's a batch_read result
+		if (entry.message.role === "tool" || entry.message.role === "toolResult") {
+			const toolCallId = entry.message.toolCallId ??
+				(Array.isArray(entry.message.content) ? entry.message.content.find((p: any) => p.type === "toolResult")?.toolCallId : undefined);
+			if (toolCallId && batchReadToolCallIds.has(toolCallId)) continue;
+			result.push(line);
+			continue;
+		}
+
+		if (entry.message.role !== "assistant") { result.push(line); continue; }
+
 		const content = entry.message.content;
 		if (!Array.isArray(content)) { result.push(line); continue; }
 
-		// Check if any toolCall parts reference batch_read
 		const hasBatchReadCall = content.some(
 			(part: any) => part.type === "toolCall" && part.name === "batch_read",
 		);
 		if (!hasBatchReadCall) { result.push(line); continue; }
 
-		// Filter out batch_read toolCall parts
 		const filteredContent = content.filter(
 			(part: any) => !(part.type === "toolCall" && part.name === "batch_read"),
 		);
 
-		// If all content was batch_read calls, keep at least an empty text part
-		// to avoid an empty content array
 		if (filteredContent.length === 0) {
 			filteredContent.push({ type: "text", text: "" });
 		}
@@ -531,7 +539,7 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 /**
  * Sanitize a fork session snapshot JSONL to remove non-inheritable
  * artifacts before passing parent context to child flows:
- * steering hints, assistant reasoning/thinking,
+ * sliding system prompts, assistant reasoning/thinking,
  * batch_read tool calls, and compress flow/batch_read tool results.
  */
 export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, CompressedFlowResult[]> = new Map()): string | null {
@@ -553,7 +561,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 
 		let changed = false;
 
-		// Strip steering hint from header systemPrompt (first line is header)
+		// Strip sliding prompt from header systemPrompt (first line is header)
 		if (i === 0 && entry && typeof entry === "object" && entry.systemPrompt && typeof entry.systemPrompt === "string") {
 			const stripped = stripSteeringHintText(entry.systemPrompt);
 			if (stripped !== entry.systemPrompt) {
@@ -562,7 +570,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 			}
 		}
 
-		// Drop steering hint messages entirely.
+		// Drop sliding system prompt messages entirely.
 		if (
 			entry?.type === "message" &&
 			entry.message?.role === "system" &&
@@ -583,7 +591,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 			if ("content" in message) {
 				let modifiedContent = message.content;
 
-				// Strip steering hints
+				// Strip sliding prompts
 				const afterSliding = stripSteeringHintFromContent(modifiedContent);
 				if (!isJsonEqual(afterSliding, modifiedContent)) {
 					modifiedContent = afterSliding;
@@ -591,7 +599,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 				}
 
 				// Strip strategic hints from tool results
-				if (message.role === "tool") {
+				if (message.role === "tool" || message.role === "toolResult") {
 					const afterHints = stripStrategicHintsFromContent(modifiedContent);
 					if (!isJsonEqual(afterHints, modifiedContent)) {
 						modifiedContent = afterHints;

@@ -73,7 +73,7 @@ describe("processFlowJsonLine", () => {
   it("handles agent_end event — stores tool messages alongside assistant", () => {
     const r = makeResult();
     const toolMsg = {
-      role: "tool",
+      role: "toolResult",
       toolCallId: "tc1",
       content: [{ type: "text", text: "bash output here" }],
     };
@@ -85,14 +85,14 @@ describe("processFlowJsonLine", () => {
     expect(r.sawAgentEnd).toBe(true);
     expect(r.messages).toHaveLength(2);
     expect(r.messages[0].role).toBe("assistant");
-    expect(r.messages[1].role).toBe("tool");
+    expect(r.messages[1].role).toBe("toolResult");
     expect(r.messages[1].content[0].text).toBe("bash output here");
   });
 
   it("handles agent_end event — deduplicates tool messages", () => {
     const r = makeResult();
     const toolMsg = {
-      role: "tool",
+      role: "toolResult",
       toolCallId: "tc1",
       content: [{ type: "text", text: "same output" }],
     };
@@ -104,7 +104,7 @@ describe("processFlowJsonLine", () => {
   it("getFlowFinalText still skips tool messages", () => {
     const r = makeResult();
     const toolMsg = {
-      role: "tool",
+      role: "toolResult",
       toolCallId: "tc1",
       content: [{ type: "text", text: "tool output" }],
     };
@@ -946,7 +946,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
           ],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc1",
           content: [{ type: "text", text: "total 48\ndrwxr-xr-x  8 user staff  256 Apr 30 03:20 .\n-rw-r--r--  1 user staff 1141 Apr 30 02:02 index.ts" }],
         },
@@ -976,7 +976,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
           ],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc2",
           content: [{ type: "text", text: "export default function main() { return 42; }" }],
         },
@@ -1007,7 +1007,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
           ],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc3",
           content: [{ type: "text", text: bigOutput }],
         },
@@ -1057,7 +1057,7 @@ describe("getFlowSummaryText — tool result pairing", () => {
           ],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc5",
           content: [{ type: "text", text: "hello" }],
         },
@@ -1081,12 +1081,12 @@ describe("getFlowSummaryText — tool result pairing", () => {
           ],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc6",
           content: [{ type: "text", text: "abc1234 fix: something\ndef5678 feat: other" }],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc7",
           content: [{ type: "text", text: "diff --git a/foo.ts b/foo.ts" }],
         },
@@ -1173,7 +1173,7 @@ describe("formatToolCallShort — empty path", () => {
           ],
         },
         {
-          role: "tool",
+          role: "toolResult",
           toolCallId: "tc1",
           content: [{ type: "text", text: "content" }],
         },

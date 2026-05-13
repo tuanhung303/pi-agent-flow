@@ -18,7 +18,7 @@ describe("compressToolResults — file summary", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "✔ 1 operation: 1 read\n\n--- README.md file summary ---\nThis is a plain text file.\nIt has multiple lines.\nSome more content here.",
 				},
@@ -45,7 +45,7 @@ describe("compressToolResults — reads without line count", () => {
 			{
 				type: "message",
 					message: {
-						role: "tool",
+						role: "toolResult",
 						toolCallId: "tc1",
 						content: "✔ 1 operation: 1 read\n\n--- data.csv ---\nheader1,header2\nvalue1,value2\nvalue3,value4",
 					},
@@ -70,7 +70,7 @@ describe("compressToolResults — reads without line count", () => {
 			{
 				type: "message",
 					message: {
-						role: "tool",
+						role: "toolResult",
 						toolCallId: "tc1",
 						content: "✔ 1 operation: 1 read\n\n--- src/file.ts (42 lines) ---\nline 1\nline 2",
 					},
@@ -97,7 +97,7 @@ describe("compressToolResults — error sections preserved", () => {
 			{
 				type: "message",
 				message: {
-					role: "tool",
+					role: "toolResult",
 					toolCallId: "tc1",
 					content: "✖ 1 error: read missing.txt: No such file\n\n--- read: missing.txt ---\nError: ENOENT: no such file or directory",
 				},
@@ -118,7 +118,7 @@ describe("context handler — strategic hints not stripped", () => {
 
 	it("sanitizeForkSnapshot still strips hints (children don't need them)", async () => {
 		const { sanitizeForkSnapshot } = await import("../src/snapshot.js");
-		const snapshot = JSON.stringify({ type: "message", message: { role: "tool", content: "Result\n\n[Hint: Plan next step.]" } }) + "\n";
+		const snapshot = JSON.stringify({ type: "message", message: { role: "toolResult", content: "Result\n\n[Hint: Plan next step.]" } }) + "\n";
 		const result = sanitizeForkSnapshot(snapshot);
 		expect(result).not.toContain("[Hint:");
 		expect(result).toContain("Result");
