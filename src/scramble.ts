@@ -168,12 +168,12 @@ interface IlluminateConfig {
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
-	aimLabel: { color: CYAN_GLOW, duration: 200, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	actLabel: { color: WARM_GLOW, duration: 200, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	msgLabel: { color: PEACH_GLOW, duration: 200, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	aimLabel: { color: CYAN_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	actLabel: { color: WARM_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	msgLabel: { color: PEACH_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
 
-	msgContent: { color: 'dynamic', duration: 350, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
-	flowMeta: { color: WARM_GLOW, duration: 200, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
+	msgContent: { color: 'dynamic', duration: 400, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
+	flowMeta: { color: WARM_GLOW, duration: 250, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
 
 	tps: { color: ORANGE_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
 
@@ -183,7 +183,7 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 300;
+const RIPPLE_DUR_DEFAULT = 340;
 const RIPPLE_SPREAD_DEFAULT = 1;
 const MIN_RIPPLE_INTERVAL = 420;
 const DEPTH_BAND_MAX = 7;
