@@ -11,6 +11,8 @@ import {
 	ScrambleStateManager,
 	DEFAULT_MODE,
 	selectScrambleChar,
+	selectSparkChar,
+	THIN_BRAILLE_SPARK,
 	CYAN_GLOW,
 	WARM_GLOW,
 	PEACH_GLOW,
@@ -830,7 +832,7 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns shallow glitch chars for depth 4+', () => {
-		const shallowChars = '0123456789\\/[]{}|░▒▓▄▀▌▐▚▞⠁⠂⠃';
+		const shallowChars = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
 		for (let d = 4; d <= 6; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(shallowChars).toContain(c);
@@ -1045,6 +1047,49 @@ describe('applyRipples with illuminate config', () => {
 		const ripple = { pos: 4, time: now - 100, dur: 666, spread: 1 };
 		const result = applyRipples('hello world', [ripple], now);
 		expect(stripAnsi(result)).not.toBe('hello world');
+	});
+});
+
+describe('applyRipples afterglow spark with thin braille', () => {
+	it('uses thin braille sparks when spark config is enabled (default)', () => {
+		// Deterministic setup: seed=0, now=155 gives agTick=3 with 40ms tick
+		// hashNoise(0, 0, 3, 77)=0.0436 < 0.045 → index 0 pops
+		// hashNoise(0, 7, 3, 77)=0.0006 < 0.045 → index 7 pops
+		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
+		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true };
+		const result = applyRipples('0123456789', [ripple], 155, config);
+		const plain = stripAnsi(result);
+		// Index 0 and 7 should have thin braille spark chars
+		expect(THIN_BRAILLE_SPARK).toContain(plain[0]);
+		expect(THIN_BRAILLE_SPARK).toContain(plain[7]);
+		// Known deterministic outputs for these indices
+		expect(plain[0]).toBe('⠘');
+		expect(plain[7]).toBe('⠈');
+	});
+
+	it('falls back to generic glitch chars when spark is disabled', () => {
+		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
+		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: false };
+		const result = applyRipples('0123456789', [ripple], 155, config);
+		const plain = stripAnsi(result);
+		// Index 7 should pop with generic glitch char (deterministically '·')
+		expect(plain[7]).toBe('·');
+		expect(THIN_BRAILLE_SPARK).not.toContain(plain[7]);
+	});
+
+	it('preserves spaces in afterglow spark output', () => {
+		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
+		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true };
+		const result = applyRipples('0 1 2 3 4 5 6 7 8 9', [ripple], 155, config);
+		const plain = stripAnsi(result);
+		// Spaces should remain intact (index 1, 3, 5, etc. are spaces)
+		expect(plain[1]).toBe(' ');
+		expect(plain[3]).toBe(' ');
+		// Index 0 is not a space and deterministically pops → thin braille
+		expect(THIN_BRAILLE_SPARK).toContain(plain[0]);
+		expect(plain[0]).toBe('⠘');
+		// Index 7 in spaced text is a space, so it's preserved
+		expect(plain[7]).toBe(' ');
 	});
 });
 
@@ -1756,7 +1801,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 	});
 
 	it('returns shallow glitch chars at deep depth (5.0)', () => {
-		const shallowChars = '0123456789\\/[]{}|';
+		const shallowChars = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
 		const c = selectScrambleChar(5, 0, 0, 12345);
 		expect(shallowChars).toContain(c);
 	});
@@ -1786,7 +1831,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 			results.add(selectScrambleChar(3, seed, 0, seed));
 		}
 		const midChars = 'abcdefghijklmnopqrstuvwxyzᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
-		const shallowChars = '0123456789\\/[]{}|░▒▓▄▀▌▐▚▞⠁⠂⠃';
+		const shallowChars = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
 		let midCount = 0;
 		let shallowCount = 0;
 		for (const c of results) {
@@ -1797,13 +1842,13 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 	});
 });
 
-describe('applyRipples — wider depth band (DEPTH_BAND_MAX=6)', () => {
+describe('applyRipples — depth band (DEPTH_BAND_MAX=7)', () => {
 	it('scrambles more characters with wider band at same elapsed time', () => {
 		const now = Date.now();
 		const ripple = { pos: 5, time: now - 100, dur: 666, spread: 1 };
 		const result = applyRipples('abcdefghijklmnopqrstuvwxyz', [ripple], now);
 		const stripped = stripAnsi(result);
-		// With DEPTH_BAND_MAX=6, at 100ms the ripple should scramble more chars
+		// With DEPTH_BAND_MAX=7, at 100ms the ripple should scramble more chars
 		// than it would have with DEPTH_BAND_MAX=4
 		const scrambled = stripped.split('').filter(c => !'abcdefghijklmnopqrstuvwxyz'.includes(c)).length;
 		expect(scrambled).toBeGreaterThanOrEqual(3);
@@ -1918,10 +1963,10 @@ describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', ()
 		const text = 'First sentence. Second sentence. Third here.';
 		manager.updateMsg(TEST_ID, text, base, false, undefined, true);
 		// Warm-up call after afterglow expiry
-		manager.updateMsg(TEST_ID, text, base + 4500, false, undefined, true);
+		manager.updateMsg(TEST_ID, text, base + 1200, false, undefined, true);
 		// Wait for afterglow + cooldown, then change text — ensures a fresh ripple
 		const changed = 'First sentence. Second changed. Third here.';
-		const result = manager.updateMsg(TEST_ID, changed, base + 6000, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, changed, base + 2000, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// The ripple position should be a sentence start (0, 16, or 32)
 		// We verify by checking the scramble is not concentrated at center
@@ -2080,9 +2125,9 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 		// Content is the OLD text with active scramble chars — definitely not the new text.
 		expect(stripAnsi(frozen.content)).not.toBe('Brand new text here.');
 		// Wait for old ripple + afterglow to fully expire and cooldown to pass
-		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 4500, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 1200, false, undefined, true);
 		// Let new ripple expand enough to scramble chars.
-		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 4800, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 1500, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Ripple should scramble at least one character
 		expect(stripAnsi(result.content)).not.toBe('Brand new text here.');

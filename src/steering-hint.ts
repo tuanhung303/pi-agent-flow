@@ -1,9 +1,9 @@
 /**
- * Sliding system prompt utilities.
+ * Steering hint utilities.
  *
- * Manages the sliding prompt tag that is injected before the latest user
+ * Manages the steering hint tag that is injected before the latest user
  * message each turn. Provides helpers for stripping, detecting, and building
- * the prompt so they can be tested independently.
+ * the hint so they can be tested independently.
  */
 
 import { randomUUID } from "node:crypto";
@@ -12,10 +12,10 @@ import { randomUUID } from "node:crypto";
 // Tag constants
 // ---------------------------------------------------------------------------
 
-const SLIDING_PROMPT_UUID = randomUUID();
+const STEERING_HINT_UUID = randomUUID();
 
-export const SLIDING_PROMPT_OPEN_TAG = `<pi-flow-sliding-system id="${SLIDING_PROMPT_UUID}">`;
-export const SLIDING_PROMPT_CLOSE_TAG = `</pi-flow-sliding-system id="${SLIDING_PROMPT_UUID}">`;
+export const STEERING_HINT_OPEN_TAG = `<pi-flow-steering-hint id="${STEERING_HINT_UUID}">`;
+export const STEERING_HINT_CLOSE_TAG = `</pi-flow-steering-hint id="${STEERING_HINT_UUID}">`;
 
 // ---------------------------------------------------------------------------
 // Mode state — toggled by /spec command
@@ -33,10 +33,10 @@ export function setSpecModeActive(active: boolean): void {
 	_specModeActive = active;
 }
 
-export const SLIDING_PROMPT =
-	`${SLIDING_PROMPT_OPEN_TAG}\n` +
+export const STEERING_HINT =
+	`${STEERING_HINT_OPEN_TAG}\n` +
 	`You are in spec-driven planning mode.\n\n` +
-	`Your goal: Investigate the codebase, discuss with the user, and produce a structured spec file.\n\n` +
+	`Your goal: Investigate the codebase, discuss with the user, and guide them to type /spec when ready to proceed to implementation.\n\n` +
 	`IMPORTANT: You are the orchestrator. You have batch_read, flow, web, and ask_user.\n` +
 	`You do NOT have bash or write. Delegate bash/write operations to flows.\n\n` +
 	`## Phase 1: Investigate\n\n` +
@@ -60,12 +60,10 @@ export const SLIDING_PROMPT =
 	`- Mark recommended option with [preferred], place it first\n` +
 	`- 2-4 options per question with clear trade-off descriptions\n` +
 	`- Questions must be codebase-specific, not generic\n` +
-	`## Phase 3: Write Spec (delegate to build flow)\n\n` +
-	`flow [build] intent:\n` +
-	`"Write the following spec to .specs/{slug}/spec.md. Create directory if needed.\n\n` +
-	`Spec content:\n` +
-	`{complete spec}"\n\n` +
-	`### Spec template:\n` +
+	`## Phase 3: Recommend Exit\n\n` +
+	`Tell the user:\n` +
+	`"When you're ready to implement, type /spec to exit planning mode. A plan will be synthesized from our discussion and placed in the editor for review."\n\n` +
+	`### Keep the summary concise:\n` +
 	`- Investigation Findings (current state + evidence)\n` +
 	`- User Alignment (Q&A record with impact)\n` +
 	`- Technical Context (stack, deps, testing)\n` +
@@ -73,9 +71,8 @@ export const SLIDING_PROMPT =
 	`- Implementation Plan (phased)\n` +
 	`- Risks & Mitigations\n` +
 	`- Assumptions\n\n` +
-	`## Phase 4: Report\n\n` +
-	`After build flow confirms write, tell user:\n` +
-	`"Spec written to .specs/{slug}/spec.md"\n\n` +
+	`## Phase 4: Hand-off\n\n` +
+	`After the user types /spec, the system synthesizes a plan and switches to implement mode. Do not initiate builds yourself.\n\n` +
 	`## Anti-patterns:\n` +
 	`- ❌ Asking without investigating first\n` +
 	`- ❌ Skipping investigation\n` +
@@ -83,10 +80,12 @@ export const SLIDING_PROMPT =
 	`- ❌ Not marking [preferred]\n` +
 	`- ❌ Writing spec without Q&A record\n` +
 	`- ❌ Using bash/write directly (delegate to flows)\n` +
-	`${SLIDING_PROMPT_CLOSE_TAG}`;
+	`- ❌ Using the build flow (use scout, ideas, or craft for investigation and planning)\n` +
+	`- ❌ Recommending to build or implement right away instead of guiding the user to type /spec\n` +
+	`${STEERING_HINT_CLOSE_TAG}`;
 
 export const IMPLEMENT_PROMPT =
-	`${SLIDING_PROMPT_OPEN_TAG}\n` +
+	`${STEERING_HINT_OPEN_TAG}\n` +
 	`You are the orchestrator. You have batch_read, flow, web, and ask_user.\n` +
 	`You do NOT have bash or write. Delegate all implementation to flows.\n\n` +
 	`- Context: Answer directly if possible; otherwise, investigate first, then delegate.\n` +
@@ -95,17 +94,17 @@ export const IMPLEMENT_PROMPT =
 	`- Spec: If a spec exists in \`.specs/\`, read it first and use it to guide implementation.\n` +
 	`- Anti-patterns: [Never implement directly, Never ask what you can discover with tools, Never skip investigation]\n` +
 	`Note: Context is inherited automatically for child flow; write intents focusing only on new work.\n` +
-	`${SLIDING_PROMPT_CLOSE_TAG}`;
+	`${STEERING_HINT_CLOSE_TAG}`;
 
-const SLIDING_PROMPT_RE = new RegExp(
-	SLIDING_PROMPT_OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+const STEERING_HINT_RE = new RegExp(
+	STEERING_HINT_OPEN_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
 	"[\\s\\S]*?" +
-	SLIDING_PROMPT_CLOSE_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+	STEERING_HINT_CLOSE_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
 	"g",
 );
 
-/** Legacy regex to strip old bare sliding system prompt tags (no id attribute). */
-const LEGACY_SLIDING_PROMPT_RE = /<pi-flow-sliding-system(?:\s[^>]*)?>[\s\S]*?<\/pi-flow-sliding-system(?:\s[^>]*)?>/g;
+/** Legacy regex to strip old bare steering hint tags (no id attribute). */
+const LEGACY_STEERING_HINT_RE = /<pi-flow-steering-hint(?:\s[^>]*)?>[\s\S]*?<\/pi-flow-steering-hint(?:\s[^>]*)?>/g;
 
 // ---------------------------------------------------------------------------
 // Content types
@@ -130,30 +129,30 @@ function isTextPart(part: unknown): part is { type: "text"; text: string } {
 // Public helpers
 // ---------------------------------------------------------------------------
 
-/** Strip any old sliding system prompt tags from a string. */
-export function stripSlidingPromptText(text: string): string {
-	return text.replace(SLIDING_PROMPT_RE, "").replace(LEGACY_SLIDING_PROMPT_RE, "");
+/** Strip any old steering hint tags from a string. */
+export function stripSteeringHintText(text: string): string {
+	return text.replace(STEERING_HINT_RE, "").replace(LEGACY_STEERING_HINT_RE, "");
 }
 
-/** Strip sliding prompt tags from content (string or text-part array). */
-export function stripSlidingPromptFromContent(
+/** Strip steering hint tags from content (string or text-part array). */
+export function stripSteeringHintFromContent(
 	content: string | { type: string; text?: string }[],
 ): string | { type: string; text?: string }[] {
 	if (typeof content === "string") {
-		return stripSlidingPromptText(content);
+		return stripSteeringHintText(content);
 	}
 	return content.map((c) => {
 		if (c.type === "text" && typeof c.text === "string") {
-			return { ...c, text: stripSlidingPromptText(c.text) };
+			return { ...c, text: stripSteeringHintText(c.text) };
 		}
 		return c;
 	});
 }
 
-/** Check whether content (string or text-part array) contains the sliding tag. */
-export function contentContainsSlidingTag(content: MessageContent): boolean {
-	const hasCurrent = (text: string) => text.includes(SLIDING_PROMPT_OPEN_TAG);
-	const hasLegacy = (text: string) => text.includes("<pi-flow-sliding-system>");
+/** Check whether content (string or text-part array) contains the steering hint tag. */
+export function contentContainsSteeringHintTag(content: MessageContent): boolean {
+	const hasCurrent = (text: string) => text.includes(STEERING_HINT_OPEN_TAG);
+	const hasLegacy = (text: string) => text.includes("<pi-flow-steering-hint>");
 	const check = (text: string) => hasCurrent(text) || hasLegacy(text);
 	if (typeof content === "string") {
 		return check(content);
@@ -181,15 +180,15 @@ export function isJsonEqual(a: unknown, b: unknown): boolean {
 	return true;
 }
 
-/** Remove any existing sliding-system-prompt system messages and strip tags from user messages.
+/** Remove any existing steering-hint system messages and strip tags from user messages.
  *  Returns the sanitized messages and a flag indicating whether anything changed.
  */
-export function stripSlidingPromptsFromMessages(messages: any[]): { messages: any[]; changed: boolean } {
+export function stripSteeringHintsFromMessages(messages: any[]): { messages: any[]; changed: boolean } {
 	let changed = false;
 	const result = messages
 		.filter((msg) => {
-			// Remove dedicated sliding system prompt messages
-			if (msg.role === "system" && contentContainsSlidingTag(msg.content)) {
+			// Remove dedicated steering hint system messages
+			if (msg.role === "system" && contentContainsSteeringHintTag(msg.content)) {
 				changed = true;
 				return false;
 			}
@@ -198,7 +197,7 @@ export function stripSlidingPromptsFromMessages(messages: any[]): { messages: an
 		.map((msg) => {
 			// Also strip stray tags embedded in user/assistant messages
 			if (!("content" in msg)) return msg;
-			const stripped = stripSlidingPromptFromContent(msg.content);
+			const stripped = stripSteeringHintFromContent(msg.content);
 			if (isJsonEqual(stripped, msg.content)) return msg;
 			changed = true;
 			return { ...msg, content: stripped };
@@ -206,11 +205,11 @@ export function stripSlidingPromptsFromMessages(messages: any[]): { messages: an
 	return { messages: result, changed };
 }
 
-/** Build a system message containing the sliding prompt. */
-export function makeSlidingPromptMessage(referenceMessage?: any): any {
+/** Build a system message containing the steering hint. */
+export function makeSteeringHintMessage(referenceMessage?: any): any {
 	return {
 		role: "system",
-		content: _specModeActive ? SLIDING_PROMPT : IMPLEMENT_PROMPT,
+		content: _specModeActive ? STEERING_HINT : IMPLEMENT_PROMPT,
 		timestamp: referenceMessage?.timestamp,
 	};
 }

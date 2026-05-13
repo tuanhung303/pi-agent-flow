@@ -38,7 +38,7 @@ export function computeActiveTools(optimize: boolean): string[] {
  * Build the before_agent_start system prompt augmentation.
  *
  * Adds web steering (when tool optimize is off) and the flow delegation
- * guide with guard info. The sliding prompt is NOT included here — it
+ * guide with guard info. The steering hint is NOT included here — it
  * is injected dynamically by the context hook in index.ts.
  *
  * Returns the augmented systemPrompt, or undefined if the child flow

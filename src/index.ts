@@ -24,10 +24,10 @@ import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBa
 import { createWebTool } from "./web-tool.js";
 import { createAskUserTool } from "./ask-user.js";
 import {
-	stripSlidingPromptText,
-	stripSlidingPromptsFromMessages,
-	makeSlidingPromptMessage,
-} from "./sliding-prompt.js";
+	stripSteeringHintText,
+	stripSteeringHintsFromMessages,
+	makeSteeringHintMessage,
+} from "./steering-hint.js";
 import { setupSpecMode } from "./spec-mode.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {
@@ -244,17 +244,17 @@ export default function (pi: ExtensionAPI) {
 		return { systemPrompt: augmented };
 	});
 
-	// Sliding system prompt: insert as a separate system message immediately
-	// before the latest user message each turn. The sliding prompt is never
+	// Steering hint: insert as a separate system message immediately
+	// before the latest user message each turn. The steering hint is never
 	// part of the static systemPrompt — it is injected dynamically here only.
-	// We strip any stray sliding prompt content from systemPrompt as a safety
-	// net, then insert the fresh prompt as a separate message.
+	// We strip any stray steering hint content from systemPrompt as a safety
+	// net, then insert the fresh hint as a separate message.
 	// Skipped for child flows (depth > 0) — they have explicit <mission> directives.
 	pi.on("context", async (event) => {
 		if (currentDepth > 0) return undefined;
 
-		// Always strip old sliding prompt messages to prevent accumulation
-		const { messages, changed: messagesChanged } = stripSlidingPromptsFromMessages(event.messages);
+		// Always strip old steering hint messages to prevent accumulation
+		const { messages, changed: messagesChanged } = stripSteeringHintsFromMessages(event.messages);
 
 		// Find latest user message
 		const userIndices = messages
@@ -262,13 +262,13 @@ export default function (pi: ExtensionAPI) {
 			.filter((i: number) => i !== -1);
 
 		if (userIndices.length === 0) {
-			// No user message yet: strip any stray sliding text from systemPrompt
+			// No user message yet: strip any stray steering hint text from systemPrompt
 			// (safety net for /new or early-session), but don't inject a new one —
 			// it will appear on the first user message.
 			let systemPrompt = event.systemPrompt;
 			let systemPromptChanged = false;
 			if (typeof systemPrompt === "string") {
-				const stripped = stripSlidingPromptText(systemPrompt);
+				const stripped = stripSteeringHintText(systemPrompt);
 				if (stripped !== systemPrompt) {
 					systemPrompt = stripped;
 					systemPromptChanged = true;
@@ -280,12 +280,12 @@ export default function (pi: ExtensionAPI) {
 			return (messagesChanged || systemPromptChanged) ? result : undefined;
 		}
 
-		// Strip sliding from the static systemPrompt so it only appears once,
+		// Strip steering hint from the static systemPrompt so it only appears once,
 		// as a separate message right before the latest user message.
 		let systemPrompt = event.systemPrompt;
 		let systemPromptChanged = false;
 		if (typeof systemPrompt === "string") {
-			const stripped = stripSlidingPromptText(systemPrompt);
+			const stripped = stripSteeringHintText(systemPrompt);
 			if (stripped !== systemPrompt) {
 				systemPrompt = stripped;
 				systemPromptChanged = true;
@@ -295,7 +295,7 @@ export default function (pi: ExtensionAPI) {
 		const lastUserIndex = userIndices[userIndices.length - 1];
 		const modified = [
 			...messages.slice(0, lastUserIndex),
-			makeSlidingPromptMessage(messages[lastUserIndex]),
+			makeSteeringHintMessage(messages[lastUserIndex]),
 			...messages.slice(lastUserIndex),
 		];
 
