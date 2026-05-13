@@ -14,7 +14,7 @@ import {
 	makeSteeringHintMessage,
 	STEERING_HINT,
 	IMPLEMENT_PROMPT,
-} from "../src/steering-hint.js";
+} from "../src/sliding-prompt.js";
 
 function createMockPi(): ExtensionAPI & { emitTurnEnd(event: TurnEndEvent, ctx: ExtensionContext): void; emitSessionStart(event: SessionStartEvent, ctx: ExtensionContext): void } {
 	const handlers: Record<string, Function[]> = {};

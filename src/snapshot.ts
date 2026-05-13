@@ -10,9 +10,9 @@ import {
 } from "./types.js";
 import { stripReasoningFromAssistantMessage } from "./reasoning-strip.js";
 import {
-	stripSlidingPromptFromContent,
-	stripSlidingPromptText,
-	contentContainsSlidingTag,
+	stripSteeringHintFromContent,
+	stripSteeringHintText,
+	contentContainsSteeringHintTag,
 	isJsonEqual,
 } from "./sliding-prompt.js";
 import { stripStrategicHints, stripStrategicHintsFromContent } from "./tool-utils.js";
@@ -563,7 +563,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 
 		// Strip sliding prompt from header systemPrompt (first line is header)
 		if (i === 0 && entry && typeof entry === "object" && entry.systemPrompt && typeof entry.systemPrompt === "string") {
-			const stripped = stripSlidingPromptText(entry.systemPrompt);
+			const stripped = stripSteeringHintText(entry.systemPrompt);
 			if (stripped !== entry.systemPrompt) {
 				entry = { ...entry, systemPrompt: stripped };
 				changed = true;
@@ -574,7 +574,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 		if (
 			entry?.type === "message" &&
 			entry.message?.role === "system" &&
-			contentContainsSlidingTag(entry.message?.content)
+			contentContainsSteeringHintTag(entry.message?.content)
 		) {
 			continue;
 		}
@@ -592,7 +592,7 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 				let modifiedContent = message.content;
 
 				// Strip sliding prompts
-				const afterSliding = stripSlidingPromptFromContent(modifiedContent);
+				const afterSliding = stripSteeringHintFromContent(modifiedContent);
 				if (!isJsonEqual(afterSliding, modifiedContent)) {
 					modifiedContent = afterSliding;
 					changed = true;
