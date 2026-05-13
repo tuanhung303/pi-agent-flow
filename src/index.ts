@@ -118,7 +118,7 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 }
 
 // Re-export compressToolResults and stripBatchReadToolCalls for tests
-export { compressToolResults, stripBatchReadToolCalls } from "./snapshot.js";
+export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot.js";
 
 // ---------------------------------------------------------------------------
 // Extension entry point
