@@ -76,10 +76,10 @@ export function hashNoise(seed: number, charIndex: number, tick: number, depth: 
 // Character sets — depth-based esoteric scramble symbols (illuminate mode)
 // ---------------------------------------------------------------------------
 
-/** Deep glitch: esoteric Unicode + ASCII + braille/runic for inner ripple depths (1–2) */
-const DEEP_GLITCH = '·∘∙+*~!?⟐⟑✧✦⠁⠂⠃⠄⠅⠆⠇ᚠᚢᚦᚨᚻᛟᛝ⣄⣆';
-/** Mid glitch: lowercase alphabet + braille/runic + geometric shapes for mid depth (3) */
-const MID_GLITCH = 'ᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
+/** Deep glitch: fine dots, braille, ASCII punctuation for inner ripple depths (1–2) */
+const DEEP_GLITCH = '·∘∙+*~!?⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+/** Mid glitch: dots, braille, light ASCII for mid depth (3) */
+const MID_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋~?+-*';
 /** Shallow glitch: numbers/brackets + shade blocks + light box-drawing for outer depths (4+) */
 const SHALLOW_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
 /** Classic ASCII-safe set for stream/cascade/ripple fallback */
@@ -1793,9 +1793,10 @@ export class ScrambleStateManager {
 			processLine(state, visibleText, now, this.mode, 'msg');
 		}
 		const hasActiveRipple = this.isLineAnimating(state, now);
-		const displayText = this.mode === 'stream'
-			? visibleText
-			: (hasActiveRipple ? (state.displayedText || visibleText) : visibleText);
+		// Always render visibleText — ripple wavefront scrambles whatever it hits,
+		// and new content outside the wavefront shows as plain. state.displayedText
+		// stays frozen for chunk-detection (shouldFlushPhrase), not for rendering.
+		const displayText = visibleText;
 		const content = applyScramble(displayText, state, now, this.mode, 'msg', () => this.poolRandomChar());
 		const isAnimating = this.isLineAnimating(state, now);
 		return { label: 'msg:', content, isAnimating };
