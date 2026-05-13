@@ -15,6 +15,7 @@ on:
           - patch
           - minor
           - major
+          - prerelease
 
 permissions:
   contents: write
@@ -44,7 +45,12 @@ jobs:
         run: |
           CURRENT=$(node -p "require('./package.json').version")
           echo "Current: $CURRENT"
-          NEW_VERSION=$(npx semver $CURRENT -i ${{ github.event.inputs.bump_type }})
+          BUMP_TYPE=${{ github.event.inputs.bump_type }}
+          if [ "$BUMP_TYPE" = "prerelease" ]; then
+            NEW_VERSION=$(npx semver $CURRENT -i prerelease --preid alpha)
+          else
+            NEW_VERSION=$(npx semver $CURRENT -i $BUMP_TYPE)
+          fi
           echo "New: $NEW_VERSION"
           npm version $NEW_VERSION --no-git-tag-version
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -52,7 +58,12 @@ jobs:
       - name: Commit and tag
         run: |
           git add package.json package-lock.json
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }} [skip ci]"
+          BUMP_TYPE=${{ github.event.inputs.bump_type }}
+          if [ "$BUMP_TYPE" = "prerelease" ]; then
+            git commit -m "chore: bump alpha version to ${{ steps.bump.outputs.version }} [skip ci]"
+          else
+            git commit -m "chore: bump version to ${{ steps.bump.outputs.version }} [skip ci]"
+          fi
           git tag v${{ steps.bump.outputs.version }}
           git push origin main
           git push origin v${{ steps.bump.outputs.version }}
