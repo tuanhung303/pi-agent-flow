@@ -25,6 +25,11 @@ When the user asks to publish:
    ```bash
    gh workflow run bump-version.yml -f bump_type=patch
    ```
+   
+   For an alpha prerelease:
+   ```bash
+   gh workflow run bump-version.yml -f bump_type=prerelease
+   ```
 3. The workflow bumps `package.json`, commits, tags `v*`, and pushes. The tag push automatically triggers `publish.yml` (via `push: tags: v*`) if a PAT secret is configured.
 4. **Manual fallback** — if the tag-trigger did not fire (e.g. PAT secret missing), run:
    ```bash
@@ -37,8 +42,8 @@ When the user asks to publish:
 | File | Trigger | Purpose |
 |------|---------|---------|
 | `ci.yml` | PR / push to `main` | Runs `lint` + `test` |
-| `bump-version.yml` | `workflow_dispatch` (patch/minor/major) | Bumps version → commits → tags → pushes |
-| `publish.yml` | `workflow_dispatch` or push `v*` tag | Publishes to npm with provenance |
+| `bump-version.yml` | `workflow_dispatch` (patch/minor/major/prerelease) | Bumps version → commits → tags → pushes |
+| `publish.yml` | `workflow_dispatch` or push `v*` tag | Publishes to npm with provenance; alpha versions use `--tag alpha` |
 
 ## Local Development
 
