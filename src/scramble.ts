@@ -168,18 +168,22 @@ interface IlluminateConfig {
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
-	aimLabel: { color: CYAN_GLOW, duration: 280, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	actLabel: { color: WARM_GLOW, duration: 280, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	msgLabel: { color: PEACH_GLOW, duration: 280, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	msgContent: { color: 'dynamic', duration: 473, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
+	aimLabel: { color: CYAN_GLOW, duration: 200, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	actLabel: { color: WARM_GLOW, duration: 200, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	msgLabel: { color: PEACH_GLOW, duration: 200, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+
+	msgContent: { color: 'dynamic', duration: 350, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
+	flowMeta: { color: WARM_GLOW, duration: 200, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
+
 	tps: { color: ORANGE_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
+
 };
 
 // ---------------------------------------------------------------------------
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 371;
+const RIPPLE_DUR_DEFAULT = 300;
 const RIPPLE_SPREAD_DEFAULT = 1;
 const MIN_RIPPLE_INTERVAL = 420;
 const DEPTH_BAND_MAX = 7;
@@ -1443,7 +1447,8 @@ export class ScrambleStateManager {
 				state.startTime = now;
 				state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 			} else if (this.mode === 'illuminate') {
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.msgContent, text.length, undefined, true));
+				const updateConfig = key === 'result' ? ILLUMINATE_CONFIGS.msgContent : ILLUMINATE_CONFIGS.flowMeta;
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, updateConfig, text.length, undefined, true));
 			} else {
 				state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, true));
 			}
@@ -1466,7 +1471,8 @@ export class ScrambleStateManager {
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 					} else if (this.mode === 'illuminate') {
 						state.ripples = [];
-						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, ILLUMINATE_CONFIGS.msgContent, text.length, undefined, true));
+						const updateConfig = key === 'result' ? ILLUMINATE_CONFIGS.msgContent : ILLUMINATE_CONFIGS.flowMeta;
+						state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(text.length), now, updateConfig, text.length, undefined, true));
 					} else {
 						state.ripples = [];
 						state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, true));
