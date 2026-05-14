@@ -230,6 +230,9 @@ const STREAM_SPEED_ACT = 25;       // ms per char for act: (~40 chars/sec)
 const STREAM_SCRAMBLE_WIDTH = 5;   // scramble chars at cursor position
 const STREAM_RERANDOMIZE_RATE = 0.28; // 28% chance to re-randomize (CodePen style)
 const MSG_ZONE_SIZE = 30; // chars per parallel zone for long msg: content
+const GLITCH_RERANDOMIZE = 0.28;
+const GLITCH_MAX_START = 40;
+const GLITCH_MAX_LENGTH = 40;
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers
@@ -325,6 +328,9 @@ interface LineState {
 	lastRippleEndTime: number;
 	// Accumulated chars since last flush (forces periodic ripples during dense streaming)
 	charsSinceLastFlush: number;
+	// Glitch effect queue (msg: in illuminate mode)
+	glitchQueue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>;
+	glitchFrame: number;
 }
 
 /** Phrase boundary detection for illuminate msg: streaming */
@@ -596,6 +602,50 @@ export function computeCascadeFrame(queue: QueueItem[], frame: number, rng?: () 
 	}
 	if (inDim) result += DIM_OFF;
 	return result;
+}
+
+// ---------------------------------------------------------------------------
+// Pure algorithm: GLITCH (TextScramble faithful port with Unicode braille)
+// ---------------------------------------------------------------------------
+
+export function buildGlitchQueue(oldText: string, newText: string): Array<{ from: string; to: string; start: number; end: number; char: string | null }> {
+	const queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }> = [];
+	const length = Math.max(oldText.length, newText.length);
+	for (let i = 0; i < length; i++) {
+		const from = oldText[i] || '';
+		const to = newText[i] || '';
+		const start = Math.floor(Math.random() * GLITCH_MAX_START);
+		const end = start + Math.floor(Math.random() * GLITCH_MAX_LENGTH);
+		queue.push({ from, to, start, end, char: null });
+	}
+	return queue;
+}
+
+export function computeGlitchFrame(
+	queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>,
+	frame: number,
+	rng: () => string
+): string {
+	let output = '';
+	for (let i = 0; i < queue.length; i++) {
+		const entry = queue[i];
+		if (frame >= entry.end) {
+			output += entry.to;
+		} else if (frame >= entry.start) {
+			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
+				entry.char = rng();
+			}
+			output += entry.char;
+		} else {
+			output += entry.from;
+		}
+	}
+	return output;
+}
+
+export function isGlitchComplete(queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>, frame: number): boolean {
+	if (queue.length === 0) return true;
+	return frame >= Math.max(...queue.map(e => e.end));
 }
 
 function isCascadeComplete(queue: QueueItem[], frame: number, maxEnd?: number): boolean {
@@ -1073,6 +1123,15 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 		}
 		return computeCascadeFrame(state.queue, frame, rng);
 	} else if (mode === 'illuminate') {
+		if (lineKey === 'msg' && state.glitchQueue.length > 0) {
+			const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+			if (isGlitchComplete(state.glitchQueue, frame)) {
+				state.glitchQueue = [];
+				state.glitchFrame = 0;
+				return state.displayedText || text;
+			}
+			return computeGlitchFrame(state.glitchQueue, frame, rng ?? poolRandomChar);
+		}
 		const config = lineKey === 'msg'
 			? ILLUMINATE_CONFIGS.msgContent
 			: lineKey === 'act'
@@ -1144,33 +1203,49 @@ function processLine(
 
 			// F1: accumulator — periodic ripples during dense streaming
 			if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && state.charsSinceLastFlush >= 20 && newText !== state.displayedText) {
+				const oldDisplayed = state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				state.ripples = [];
+				state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
+				state.startTime = now;
+				state.glitchFrame = 0;
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
+				const oldDisplayed = state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				state.ripples = [];
+				state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
+				state.startTime = now;
+				state.glitchFrame = 0;
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
-				// ripple it out so it doesn't sit plain indefinitely.
+				// glitch it out so it doesn't sit plain indefinitely.
+				const oldDisplayed = state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				state.ripples = [];
+				state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
+				state.startTime = now;
+				state.glitchFrame = 0;
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 				// Streaming resumed after a long pause (e.g., tool call) —
-				// force a fresh ripple on the accumulated content.
+				// force a fresh glitch on the accumulated content.
+				const oldDisplayed = state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				state.ripples = [];
+				state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
+				state.startTime = now;
+				state.glitchFrame = 0;
 			}
 			return;
 		}
@@ -1288,6 +1363,8 @@ function createLineState(): LineState {
 		lastTextChangeTime: 0,
 		lastRippleEndTime: 0,
 		charsSinceLastFlush: 0,
+		glitchQueue: [],
+		glitchFrame: 0,
 	};
 }
 
@@ -1453,11 +1530,15 @@ export class ScrambleStateManager {
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
 			state.charsSinceLastFlush = 0;
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
 			state.queue = [];
 			state.ripples = [];
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (state.completed) return { label: key, content: text, isAnimating: false };
 		// Trigger initial reveal animation for static text (non-stream modes)
@@ -1533,11 +1614,15 @@ export class ScrambleStateManager {
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
 			state.charsSinceLastFlush = 0;
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
 			state.queue = [];
 			state.ripples = [];
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (state.completed) return { label: 'aim:', content: text, isAnimating: false };
 		// Stream mode: aim is static text, no typewriter animation
@@ -1586,6 +1671,8 @@ export class ScrambleStateManager {
 			} else if (!this.isLineAnimating(state, now)) {
 				state.queue = [];
 				state.ripples = [];
+				state.glitchQueue = [];
+				state.glitchFrame = 0;
 			}
 		} else {
 			processLine(state, text, now, this.mode);
@@ -1618,11 +1705,15 @@ export class ScrambleStateManager {
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
 			state.charsSinceLastFlush = 0;
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
 			state.queue = [];
 			state.ripples = [];
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (state.completed) return { label: 'act:', content: text, isAnimating: false };
 		if (!state.initialized) {
@@ -1667,6 +1758,8 @@ export class ScrambleStateManager {
 			} else if (!this.isLineAnimating(state, now)) {
 				state.queue = [];
 				state.ripples = [];
+				state.glitchQueue = [];
+				state.glitchFrame = 0;
 			}
 		} else {
 			processLine(state, text, now, this.mode, 'act');
@@ -1700,11 +1793,15 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
 			state.queue = [];
 			state.ripples = [];
+			state.glitchQueue = [];
+			state.glitchFrame = 0;
 		}
 		if (state.completed) return { label: 'msg:', content: visibleText, isAnimating: false };
 		if (!state.initialized) {
@@ -1755,33 +1852,49 @@ export class ScrambleStateManager {
 
 				// F1: accumulator — periodic ripples during dense streaming
 				if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && state.charsSinceLastFlush >= 20 && visibleText !== state.displayedText) {
+					const oldDisplayed = state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+					state.ripples = [];
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
+					state.startTime = now;
+					state.glitchFrame = 0;
 				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
+					const oldDisplayed = state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+					state.ripples = [];
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
+					state.startTime = now;
+					state.glitchFrame = 0;
 				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
-					// ripple it out so it doesn't sit plain indefinitely.
+					// glitch it out so it doesn't sit plain indefinitely.
+					const oldDisplayed = state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+					state.ripples = [];
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
+					state.startTime = now;
+					state.glitchFrame = 0;
 				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 					// Streaming resumed after a long pause (e.g., tool call) —
-					// force a fresh ripple on the accumulated content.
+					// force a fresh glitch on the accumulated content.
+					const oldDisplayed = state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+					state.ripples = [];
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
+					state.startTime = now;
+					state.glitchFrame = 0;
 				}
 			} else {
 				// Existing behavior for cascade and ripple modes
@@ -1796,6 +1909,8 @@ export class ScrambleStateManager {
 					const hadActiveRipplesBefore = state.ripples.some(r => now - r.time < r.dur);
 					state.ripples = state.ripples.filter(r => now - r.time < r.dur + (r.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS));
 					state.queue = [];
+					state.glitchQueue = [];
+					state.glitchFrame = 0;
 					const justExpired = hadRipples && !hadActiveRipplesBefore;
 
 					if (!textChanged) {
@@ -2215,6 +2330,10 @@ export class ScrambleStateManager {
 			const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 			return !isCascadeComplete(state.queue, frame, state.queueMaxEnd);
 		} else {
+			if (state.glitchQueue.length > 0) {
+				const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+				return !isGlitchComplete(state.glitchQueue, frame);
+			}
 			return state.ripples.some((rp) => rp.time + rp.dur + (rp.contentChange ? ECHO_AFTERGLOW_MS : AFTERGLOW_MS) > now);
 		}
 	}
@@ -2368,6 +2487,8 @@ export class ScrambleStateManager {
 				record[key].pendingText = '';
 				record[key].lastFlushTime = 0;
 				record[key].lastRippleEndTime = 0;
+				record[key].glitchQueue = [];
+				record[key].glitchFrame = 0;
 			}
 		}
 		const tpsState = this.tpsState.get(id);
@@ -2403,6 +2524,8 @@ export class ScrambleStateManager {
 				state.completed = true;
 				state.queue = [];
 				state.ripples = [];
+				state.glitchQueue = [];
+				state.glitchFrame = 0;
 				state.lastRippleEndTime = 0;
 			}
 		}
