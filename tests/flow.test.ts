@@ -145,6 +145,76 @@ describe("runFlow case-insensitive lookup", () => {
 		await promise;
 	});
 
+	it("omits structured output directive for Mimo / Xiaomi models", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Hello",
+			aim: "Hello",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			structuredOutput: true,
+			model: "xiaomi/mimo-v2.5-pro",
+			makeDetails: (results) => ({
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+		expect(prompt).not.toContain("## Structured Output");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("includes structured output directive for other models when structuredOutput is on", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Hello",
+			aim: "Hello",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			structuredOutput: true,
+			model: "wafer/glm-5.1",
+			makeDetails: (results) => ({
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+		expect(prompt).toContain("## Structured Output");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
 	it("passes --thinking only when set on flow frontmatter", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);

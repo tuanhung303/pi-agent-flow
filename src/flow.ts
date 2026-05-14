@@ -250,6 +250,11 @@ function buildFlowArgs(
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	if (resolvedModel) args.push("--model", resolvedModel);
 
+	const modelLc = (resolvedModel ?? "").toLowerCase();
+	// Mimo / Xiaomi OpenAPI has rejected requests when the mission prompt insists on
+	// a trailing ```json schema block alongside native tools (HTTP 400 Param Incorrect).
+	const skipStructuredDirective = modelLc.includes("mimo") || modelLc.includes("xiaomi");
+
 	// Do not inherit the parent CLI `--thinking` level. Child flows often use a
 	// different tier/model (e.g. flow "lite" vs orchestrator); forwarding
 	// `--thinking high` has caused strict providers (e.g. Mimo) to reject the
@@ -321,8 +326,8 @@ function buildFlowArgs(
 	// Phase 3: Directive — the flow's system prompt (renamed from <system-directive>)
 	let directiveBody = flow.systemPrompt.trim();
 
-	// Append structured output instructions when enabled
-	if (structuredOutput && directiveBody) {
+	// Append structured output instructions when enabled (unless provider is known brittle)
+	if (structuredOutput && directiveBody && !skipStructuredDirective) {
 		directiveBody +=
 			`\n\n## Structured Output\n` +
 			`End with a \`\`\`json block: { version, status, summary, files[], actions[], notDone[], nextSteps[], reasoning[], notes[] }. Commands auto-extracted; omit empty arrays. Keep snippets under 300 chars. List at most 10 items per array.`;
