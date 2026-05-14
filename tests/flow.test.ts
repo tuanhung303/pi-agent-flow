@@ -113,6 +113,77 @@ describe("runFlow case-insensitive lookup", () => {
 		await promise;
 	});
 
+	it("does not pass --thinking to child when flow has no thinking frontmatter", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		expect(args).not.toContain("--thinking");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("passes --thinking only when set on flow frontmatter", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const flowWithThinking: FlowConfig = {
+			...mockFlow,
+			thinking: "medium",
+		};
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [flowWithThinking],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 0,
+			parentFlowStack: [],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const ti = args.indexOf("--thinking");
+		expect(ti).not.toBe(-1);
+		expect(args[ti + 1]).toBe("medium");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
 	it("streams cumulative text to onUpdate", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);

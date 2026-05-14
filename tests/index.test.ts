@@ -211,6 +211,10 @@ describe("flow tool execute", () => {
 		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
 		const droppedSystem = { type: "message", message: { role: "system", content: steeringHint, timestamp: 4 } };
 		const unchangedTool = { type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
+		const normalizedToolLine = JSON.stringify({
+			...unchangedTool,
+			message: { ...unchangedTool.message, role: "tool" },
+		});
 		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
 
 		const tool = pi.getTool("flow");
@@ -234,7 +238,7 @@ describe("flow tool execute", () => {
 		expect(lines).toContain(JSON.stringify(header));
 		expect(lines).toContain(JSON.stringify(unchangedUser));
 		expect(lines).toContain(JSON.stringify(unchangedAssistant));
-		expect(lines).toContain(JSON.stringify(unchangedTool));
+		expect(lines).toContain(normalizedToolLine);
 		expect(lines).not.toContain(JSON.stringify(changedAssistant));
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");

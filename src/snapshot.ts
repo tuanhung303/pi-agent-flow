@@ -262,8 +262,11 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (part.type === "toolCall" && (part.id || part.toolCallId) && part.name) {
-				map.set(part.id ?? part.toolCallId, part.name);
+			if (part.type === "toolCall" && part.name) {
+				const tcId = part.id ?? part.toolCallId;
+				if (typeof tcId === "string" && tcId.trim()) {
+					map.set(tcId, part.name);
+				}
 			}
 		}
 	}
@@ -299,7 +302,16 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					);
 			} catch { return false; }
 		});
-		if (!hasCompressible) return snapshot;
+		const hasToolResultMessages = lines.some((line) => {
+			try {
+				const entry = JSON.parse(line);
+				return entry?.type === "message" &&
+					(entry.message?.role === "tool" || entry.message?.role === "toolResult");
+			} catch { return false; }
+		});
+		// Must run the pass whenever tool results exist: we drop empty/whitespace
+		// toolCallIds and pass through bash/flow/etc. even when the cache is empty.
+		if (!hasCompressible && !hasToolResultMessages) return snapshot;
 	}
 
 	// Build toolCallId → toolName mapping
@@ -332,24 +344,33 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			continue;
 		}
 
-		// Extract toolCallId — either from message-level or content-level toolResult.
-		// Drop empty/whitespace IDs to prevent kimi/DeepSeek rejections.
+		// Extract toolCallId — message-level or content-level toolResult.
+		// Drop only *explicit* empty/whitespace IDs (APIs reject those). Missing
+		// toolCallId is treated as legacy shape and passes through unchanged.
 		let toolCallId: string | undefined;
-		if (typeof entry.message.toolCallId === "string" && entry.message.toolCallId.trim()) {
-			toolCallId = entry.message.toolCallId;
+		let invalidEmptyId = false;
+
+		if (typeof entry.message.toolCallId === "string") {
+			const v = entry.message.toolCallId;
+			if (!v.trim()) invalidEmptyId = true;
+			else toolCallId = v;
 		} else if (Array.isArray(entry.message.content)) {
 			for (const part of entry.message.content) {
-				if (part.type === "toolResult" && typeof part.toolCallId === "string" && part.toolCallId.trim()) {
+				if (part.type === "toolResult" && typeof part.toolCallId === "string") {
+					if (!part.toolCallId.trim()) {
+						invalidEmptyId = true;
+						break;
+					}
 					toolCallId = part.toolCallId;
 					break;
 				}
 			}
 		}
 
+		if (invalidEmptyId) continue;
+
 		if (!toolCallId) {
-			// Drop tool results with empty/whitespace toolCallId.
-			// Passing them through causes strict API providers to reject with
-			// "tool_call_id is not found".
+			result.push(line);
 			continue;
 		}
 
