@@ -157,10 +157,10 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 
 ### What a snapshot dump looks like
 
-When `PI_FLOW_DUMP_SNAPSHOT` is set, every time a flow spawns the agent writes two files:
+When `PI_FLOW_DUMP_SNAPSHOT` is set, every time a flow spawns the agent writes two files **per flow** (the base path gets a unique suffix so parallel flows don't overwrite each other):
 
-1. `<path>.jsonl` — a JSON Lines stream with one object per message (system prompt, user prompt, tool calls, tool results, assistant replies).
-2. `<path>.txt` — the reconstructed raw prompt as the model actually saw it.
+1. `<path>.<flowName>.<timestamp>.jsonl` — a JSON Lines stream with one object per message (system prompt, user prompt, tool calls, tool results, assistant replies).
+2. `<path>.<flowName>.<timestamp>.txt` — the reconstructed raw prompt as the model actually saw it.
 
 Example:
 
@@ -181,7 +181,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 
 | Variable | Effect |
 |----------|--------|
-| `PI_FLOW_DUMP_SNAPSHOT` | Path to write a verbatim snapshot dump (JSONL + prompt) before a flow spawns. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
+| `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |

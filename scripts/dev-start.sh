@@ -12,9 +12,11 @@ DEFAULT_DUMP="${REPO_ROOT}/.pi-snapshot.jsonl"
 
 if [[ -z "${PI_FLOW_DUMP_SNAPSHOT:-}" ]]; then
     export PI_FLOW_DUMP_SNAPSHOT="${DEFAULT_DUMP}"
-    echo "💾  PI_FLOW_DUMP_SNAPSHOT set to: ${PI_FLOW_DUMP_SNAPSHOT}"
+    echo "💾  PI_FLOW_DUMP_SNAPSHOT base path: ${PI_FLOW_DUMP_SNAPSHOT}"
+    echo "     Each flow writes to a unique file (e.g. .scout.1234567890.jsonl)."
 else
-    echo "💾  Using existing PI_FLOW_DUMP_SNAPSHOT: ${PI_FLOW_DUMP_SNAPSHOT}"
+    echo "💾  Using existing PI_FLOW_DUMP_SNAPSHOT base path: ${PI_FLOW_DUMP_SNAPSHOT}"
+    echo "     Each flow writes to a unique file."
 fi
 
 echo "🚀  Starting pi…"

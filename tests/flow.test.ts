@@ -1314,7 +1314,8 @@ describe("acceptance field propagation", () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 
-		const dumpFile = path.join(os.tmpdir(), `pi-flow-dump-test-${Date.now()}.md`);
+		const baseDumpFile = path.join(os.tmpdir(), `pi-flow-dump-test-${Date.now()}`);
+		const dumpFile = `${baseDumpFile}.md`;
 		const prev = process.env.PI_FLOW_DUMP_SNAPSHOT;
 		process.env.PI_FLOW_DUMP_SNAPSHOT = dumpFile;
 		try {
@@ -1345,11 +1346,17 @@ describe("acceptance field propagation", () => {
 			}, 10);
 
 			await promise;
-			const dumped = fs.readFileSync(dumpFile, "utf-8");
+			// Each flow writes to a unique path; find the actual file.
+			const baseName = path.basename(baseDumpFile);
+			const files = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith(baseName));
+			expect(files.length).toBeGreaterThanOrEqual(1);
+			const actualDumpFile = path.join(os.tmpdir(), files[0]);
+			const dumped = fs.readFileSync(actualDumpFile, "utf-8");
 			expect(dumped).toContain("## Session Snapshot (JSONL)");
 			expect(dumped).toContain("## Activation Prompt (-p)");
 			expect(dumped).toContain('"type":"header"');
 			expect(dumped).toContain("<activation flow=\"scout\"");
+			try { fs.unlinkSync(actualDumpFile); } catch { /* ignore */ }
 		} finally {
 			if (prev === undefined) delete process.env.PI_FLOW_DUMP_SNAPSHOT;
 			else process.env.PI_FLOW_DUMP_SNAPSHOT = prev;
@@ -1430,6 +1437,95 @@ describe("acceptance field propagation", () => {
 
 		expect(prompt).toContain("<mission>");
 		expect(prompt).not.toContain("Acceptance:");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("injects available flows and guards into child activation prompt", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const buildFlow: FlowConfig = {
+			name: "build",
+			description: "Implement, test, verify, ship.",
+			systemPrompt: "You are build.",
+			source: "bundled",
+			filePath: "/agents/build.md",
+		};
+		const auditFlow: FlowConfig = {
+			name: "audit",
+			description: "Audit security, quality, correctness; fix safe issues.",
+			systemPrompt: "You are audit.",
+			source: "project",
+			filePath: "/agents/audit.md",
+		};
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow, buildFlow, auditFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 1,
+			parentFlowStack: ["orchestrator"],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+
+		expect(prompt).toContain("Available flows:");
+		expect(prompt).toContain("- [scout] — Discovery flow");
+		expect(prompt).toContain("- [build] — Implement, test, verify, ship.");
+		expect(prompt).toContain("- [audit] 🔒 — Audit security, quality, correctness; fix safe issues.");
+		expect(prompt).toContain("You may delegate to sub-flows (depth 2/3 | cycles: blocked | stack: orchestrator).");
+		expect(prompt).toContain("<activation flow=\"scout\"");
+
+		mockProc.emit("close", 0);
+		await promise;
+	});
+
+	it("omits flow list when delegation is disallowed", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const opts: RunFlowOptions = {
+			cwd: "/tmp",
+			flows: [mockFlow],
+			flowName: "scout",
+			intent: "Test intent",
+			aim: "Test aim",
+			forkSessionSnapshotJsonl: null,
+			parentDepth: 2,
+			parentFlowStack: ["orchestrator", "scout"],
+			maxDepth: 3,
+			preventCycles: true,
+			makeDetails: (results) => ({
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results,
+			}),
+		};
+
+		const promise = runFlow(opts);
+		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+		const args = spawnCall[1] as string[];
+		const prompt = args[args.indexOf("-p") + 1];
+
+		expect(prompt).not.toContain("Available flows:");
+		expect(prompt).toContain("You may NOT delegate to sub-flows (depth 3/3 | cycles: blocked | stack: orchestrator -> scout).");
 
 		mockProc.emit("close", 0);
 		await promise;

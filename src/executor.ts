@@ -423,8 +423,16 @@ export async function executeFlows(
 			type: result.type,
 			status: isFlowError(result) ? "failed" : "accomplished",
 		};
+		if (result.intent) compressed.intent = result.intent;
+		if (result.aim) compressed.aim = result.aim;
+		if (so.summary) compressed.summary = so.summary;
 		if (so.files.length > 0) compressed.files = so.files;
+		if (so.actions.length > 0) compressed.actions = so.actions;
 		if (so.commands.length > 0) compressed.commands = so.commands;
+		if (so.notDone.length > 0) compressed.notDone = so.notDone;
+		if (so.nextSteps.length > 0) compressed.nextSteps = so.nextSteps;
+		if (so.reasoning.length > 0) compressed.reasoning = so.reasoning;
+		if (so.notes.length > 0) compressed.notes = so.notes;
 		if (result.errorMessage) compressed.error = result.errorMessage;
 		const existing = flowResultCache.get(toolCallId) ?? [];
 		existing.push(compressed);
