@@ -3,7 +3,7 @@ import { runFlow, type RunFlowOptions } from "./flow.js";
 import type { FlowRunner, FlowRunContext } from "./flow-runner.js";
 import type { FlowConfig } from "./agents.js";
 import type { AgentSessionMode } from "./session-mode.js";
-import type { FlowDetails, SingleResult } from "./types.js";
+import { emptyFlowUsage, type FlowDetails, type SingleResult } from "./types.js";
 
 /**
  * Hatchet task name used by the parent runner and worker entrypoint.
@@ -28,7 +28,7 @@ export const DEFAULT_HATCHET_MAX_PAYLOAD_BYTES = 1_000_000;
  * All fields originate from the local parent executor; consumers must treat queued payloads as sensitive.
  */
 export interface HatchetFlowPayload {
-	/** Working directory used by the worker to execute the flow. */
+	/** Working directory used by the worker the flow. */
 	cwd: string;
 	/** Resolved flow definitions selected by the parent process. */
 	flows: FlowConfig[];
@@ -138,7 +138,7 @@ export function validateHatchetWorkerPayload(payload: HatchetFlowPayload): void 
 /**
  * Resolves and validates the worker child-process spawn command.
  * @param env Environment map to inspect; reads PI_FLOW_SPAWN_COMMAND and defaults to process.env.
- * @returns Trimmed spawn command, defaulting to pi; throws when the value contains control-line separators.
+ * @returns Trimmed spawn command, defaulting to pi; throws when contains control-line separators.
  */
 export function resolveHatchetSpawnCommand(env: NodeJS.ProcessEnv = process.env): string {
 	const command = env.PI_FLOW_SPAWN_COMMAND?.trim() || "pi";
@@ -246,6 +246,34 @@ async function defaultSubmitHatchetTask(taskName: string, payload: HatchetFlowPa
 	throw new Error("Hatchet SDK loaded, but no supported task submission method was found. Expected client.run, client.workflows.run, or client.tasks.run.");
 }
 
+function makeHatchetLifecycleResult(options: RunFlowOptions, status: string, errorMessage?: string): SingleResult {
+	return {
+		type: options.flowName.toLowerCase(),
+		agentSource: "unknown",
+		intent: options.intent,
+		aim: options.aim,
+		acceptance: options.acceptance,
+		exitCode: -1,
+		messages: [],
+		stderr: `Hatchet flow ${status}.`,
+		usage: emptyFlowUsage(),
+		model: options.model,
+		startedAtMs: Date.now(),
+		errorMessage,
+	};
+}
+
+function makeHatchetFailureLifecycleResult(options: RunFlowOptions): SingleResult {
+	return makeHatchetLifecycleResult(options, "failed", "Hatchet submission failed.");
+}
+
+function emitHatchetLifecycleUpdate(options: RunFlowOptions, projectFlowsDir: string | null, text: string, result: SingleResult): void {
+	options.onUpdate?.({
+		content: [{ type: "text", text }],
+		details: makeFlowDetails(projectFlowsDir)([result]),
+	});
+}
+
 /**
  * FlowRunner implementation that submits final-result-only flow attempts to Hatchet.
  * Constructor injection is used by tests; the default submitter loads the optional Hatchet SDK lazily.
@@ -264,9 +292,18 @@ export class HatchetFlowRunner implements FlowRunner {
 	 * @returns The final result returned by the Hatchet task.
 	 */
 	async run(options: RunFlowOptions, context?: FlowRunContext): Promise<SingleResult> {
-		const payload = serializeHatchetFlowPayload(options, context?.projectFlowsDir ?? null);
+		const projectFlowsDir = context?.projectFlowsDir ?? null;
+		const payload = serializeHatchetFlowPayload(options, projectFlowsDir);
 		validateHatchetFlowPayloadSize(payload);
-		return this.submitTask(HATCHET_FLOW_TASK_NAME, payload);
+		emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet queued/running flow ${payload.flowName}.`, makeHatchetLifecycleResult(options, "queued/running"));
+		try {
+			const result = await this.submitTask(HATCHET_FLOW_TASK_NAME, payload);
+			emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet completed flow ${payload.flowName}.`, result);
+			return result;
+		} catch (error) {
+			emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet failed flow ${payload.flowName}.`, makeHatchetFailureLifecycleResult(options));
+			throw error;
+		}
 	}
 }
 

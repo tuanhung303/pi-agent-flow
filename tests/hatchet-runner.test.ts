@@ -70,18 +70,9 @@ describe("Hatchet runner", () => {
 
 	it("serializes only plain JSON runFlow payload fields", () => {
 		const controller = new AbortController();
-		const payload = serializeHatchetFlowPayload(options({
-			signal: controller.signal,
-			onUpdate: vi.fn(),
-		}), "/repo/.pi/agents");
-
+		const payload = serializeHatchetFlowPayload(options({ signal: controller.signal, onUpdate: vi.fn() }), "/repo/.pi/agents");
 		expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
-		expect(payload).toMatchObject({
-			cwd: "/repo",
-			flowName: "build",
-			parentFlowStack: ["craft"],
-			projectFlowsDir: "/repo/.pi/agents",
-		});
+		expect(payload).toMatchObject({ cwd: "/repo", flowName: "build", parentFlowStack: ["craft"], projectFlowsDir: "/repo/.pi/agents" });
 		expect("signal" in payload).toBe(false);
 		expect("onUpdate" in payload).toBe(false);
 		expect("makeDetails" in payload).toBe(false);
@@ -91,20 +82,9 @@ describe("Hatchet runner", () => {
 		const submitted: Array<{ taskName: string; payload: HatchetFlowPayload }> = [];
 		const runner = new HatchetFlowRunner(async (taskName, payload) => {
 			submitted.push({ taskName, payload });
-			return {
-				type: payload.flowName,
-				agentSource: "project",
-				intent: payload.intent,
-				aim: payload.aim,
-				exitCode: 0,
-				messages: [],
-				stderr: "from hatchet",
-				usage: emptyFlowUsage(),
-			};
+			return { type: payload.flowName, agentSource: "project", intent: payload.intent, aim: payload.aim, exitCode: 0, messages: [], stderr: "from hatchet", usage: emptyFlowUsage() };
 		});
-
 		const result = await runner.run(options({ onUpdate: vi.fn() }), { projectFlowsDir: "/repo/.pi/agents" });
-
 		expect(result.stderr).toBe("from hatchet");
 		expect(submitted).toHaveLength(1);
 		expect(submitted[0].taskName).toBe(HATCHET_FLOW_TASK_NAME);
@@ -118,10 +98,40 @@ describe("Hatchet runner", () => {
 		expect(createFlowRunnerFromEnv({ PI_FLOW_RUNNER: "hatchet" } as NodeJS.ProcessEnv)).toBeInstanceOf(HatchetFlowRunner);
 	});
 
+	it("emits Hatchet lifecycle updates around final-result submission", async () => {
+		const updates: any[] = [];
+		const runner = new HatchetFlowRunner(async (_taskName, payload) => ({
+			type: payload.flowName,
+			agentSource: "project",
+			intent: payload.intent,
+			aim: payload.aim,
+			exitCode: 0,
+			messages: [],
+			stderr: "done",
+			usage: emptyFlowUsage(),
+		}));
+		await runner.run(options({ onUpdate: (update) => updates.push(update) }), { projectFlowsDir: "/repo/.pi/agents" });
+		expect(updates.map((update) => update.content[0].text)).toEqual(["Hatchet queued/running flow build.", "Hatchet completed flow build."]);
+		expect(updates[0].details.results[0]).toMatchObject({ type: "build", agentSource: "unknown", exitCode: -1 });
+		expect(updates[0].details.projectAgentsDir).toBe("/repo/.pi/agents");
+		expect(updates[1].details.results[0]).toMatchObject({ type: "build", stderr: "done", exitCode: 0 });
+	});
+
+	it("sanitizes failed Hatchet lifecycle updates while rethrowing the original error", async () => {
+		const updates: any[] = [];
+		const secret = "token=secret-submission-error";
+		const runner = new HatchetFlowRunner(async () => {
+			throw new Error(secret);
+		});
+		await expect(runner.run(options({ onUpdate: (update) => updates.push(update) }), { projectFlowsDir: "/repo/.pi/agents" })).rejects.toThrow(secret);
+		expect(updates.map((update) => update.content[0].text)).toEqual(["Hatchet queued/running flow build.", "Hatchet failed flow build."]);
+		expect(updates[1].details.results[0]).toMatchObject({ type: "build", stderr: "Hatchet flow failed.", errorMessage: "Hatchet submission failed.", exitCode: -1 });
+		expect(JSON.stringify(updates)).not.toContain(secret);
+	});
+
 	it("worker entrypoint reconstructs runFlow options and defaults child spawn command to pi", async () => {
 		const payload = serializeHatchetFlowPayload(options({ acceptance: "Done", cwd: process.cwd() }), "/repo/.pi/agents");
 		await runHatchetFlowTask(payload);
-
 		expect(process.env.PI_FLOW_SPAWN_COMMAND).toBe("pi");
 		expect(runFlow).toHaveBeenCalledTimes(1);
 		const calledWith = vi.mocked(runFlow).mock.calls[0][0];
@@ -129,70 +139,45 @@ describe("Hatchet runner", () => {
 		expect(calledWith.acceptance).toBe("Done");
 		expect(calledWith.signal).toBeUndefined();
 		expect(calledWith.onUpdate).toBeUndefined();
-		expect(calledWith.makeDetails([{
-			type: "build",
-			agentSource: "project",
-			intent: "i",
-			aim: "a",
-			exitCode: 0,
-			messages: [],
-			stderr: "",
-			usage: emptyFlowUsage(),
-		}]).projectAgentsDir).toBe("/repo/.pi/agents");
+		expect(calledWith.makeDetails([{ type: "build", agentSource: "project", intent: "i", aim: "a", exitCode: 0, messages: [], stderr: "", usage: emptyFlowUsage() }]).projectAgentsDir).toBe("/repo/.pi/agents");
 	});
 
 	it("preserves an explicit worker spawn command", async () => {
 		process.env.PI_FLOW_SPAWN_COMMAND = " /custom/pi ";
 		const payload = serializeHatchetFlowPayload(options({ cwd: process.cwd() }));
-
 		await runHatchetFlowTask(payload);
-
 		expect(process.env.PI_FLOW_SPAWN_COMMAND).toBe("/custom/pi");
 	});
 
 	it("rejects invalid worker spawn commands before running", async () => {
 		process.env.PI_FLOW_SPAWN_COMMAND = "pi\nworker";
 		const payload = serializeHatchetFlowPayload(options({ cwd: process.cwd() }));
-
 		await expect(runHatchetFlowTask(payload)).rejects.toThrow("PI_FLOW_SPAWN_COMMAND must be a single command");
 		expect(runFlow).not.toHaveBeenCalled();
 	});
 
 	it("rejects missing worker workspaces before running", async () => {
 		const payload = serializeHatchetFlowPayload(options({ cwd: "/definitely/missing/pi-agent-flow" }));
-
 		await expect(runHatchetFlowTask(payload)).rejects.toThrow("current checkout/workspace");
 		expect(runFlow).not.toHaveBeenCalled();
 	});
 
 	it("rejects oversized Hatchet payloads before submission", async () => {
 		process.env.PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES = "10";
-		const submit = vi.fn(async () => ({
-			type: "build",
-			agentSource: "project",
-			intent: "i",
-			aim: "a",
-			exitCode: 0,
-			messages: [],
-			stderr: "",
-			usage: emptyFlowUsage(),
-		}) satisfies SingleResult);
+		const submit = vi.fn(async () => ({ type: "build", agentSource: "project", intent: "i", aim: "a", exitCode: 0, messages: [], stderr: "", usage: emptyFlowUsage() }) satisfies SingleResult);
 		const runner = new HatchetFlowRunner(submit);
-
 		await expect(runner.run(options({ cwd: process.cwd(), forkSessionSnapshotJsonl: "x".repeat(100) }))).rejects.toThrow("exceeding limit");
 		expect(submit).not.toHaveBeenCalled();
 	});
 
 	it("validates explicit payload size limits", () => {
 		const payload = serializeHatchetFlowPayload(options({ forkSessionSnapshotJsonl: "x".repeat(100) }));
-
 		expect(() => validateHatchetFlowPayloadSize(payload, 10)).toThrow("exceeding limit");
 	});
 
 	it("deserializes payload without streaming or cancellation callbacks", () => {
 		const payload = serializeHatchetFlowPayload(options({ onUpdate: vi.fn() }));
 		const restored = deserializeHatchetFlowPayload(payload);
-
 		expect(restored.onUpdate).toBeUndefined();
 		expect(restored.signal).toBeUndefined();
 		expect(restored.flowName).toBe("build");
@@ -201,7 +186,6 @@ describe("Hatchet runner", () => {
 	it("documents the Hatchet payload trust boundary", () => {
 		const readme = readFileSync("README.md", "utf8");
 		const adr = readFileSync("doc/adr/0003-phase-2-basic-hatchet-backend.md", "utf8");
-
 		expect(readme).toContain("Hatchet payload trust boundary");
 		expect(readme).toContain("trusted infrastructure");
 		expect(adr).toContain("Hatchet payload trust boundary");
