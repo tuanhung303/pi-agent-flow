@@ -53,6 +53,23 @@ npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow  # Restore publis
 npm ls -g pi-agent-flow     # Verify link status
 ```
 
+## Quick Switch (Local ↔ Remote)
+
+Use the toggle script to instantly swap between your **local dev build** (for testing
+changes) and the **published npm version** (for stable daily usage).
+
+| Mode | Command | When to use |
+|------|---------|-------------|
+| **Toggle** | `./scripts/switch.sh` | One-command flip between local ↔ remote |
+| **Local** | `npm run switch:local` | Force link to this repo (testing new code) |
+| **Remote** | `npm run switch:remote` | Force install from npm (stable daily work) |
+
+```bash
+./scripts/switch.sh        # Detects current state and flips to the other side
+```
+
+> ⚠️ **Always restart `pi` after switching** so the extension loader picks up the change.
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
