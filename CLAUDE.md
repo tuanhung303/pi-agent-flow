@@ -180,6 +180,8 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 
 ## Key Implementation Details
 
+## Key Implementation Details
+
 - **Flow runner seam**: `executeFlows()` dispatches each resolved flow attempt through a `FlowRunner`; the default `LocalFlowRunner` preserves fork-only execution by calling `runFlow()`.
 - **Optional Hatchet backend**: `PI_FLOW_RUNNER=hatchet` selects a final-result-only `HatchetFlowRunner` with a plain-JSON `pi-agent-flow.runFlow` payload and `runHatchetFlowTask` worker entrypoint. The SDK is dynamically imported; streaming and cancellation propagation are deferred. Phase 3 hardening validates worker spawn/workspace assumptions and bounds payload size with `PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES`.
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
@@ -202,13 +204,31 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 - **Spawn override**: `PI_FLOW_SPAWN_COMMAND` env var overrides the child spawn command for exotic runtime environments (e.g. bundled with pkg/nexe).
 - **Strategic hints**: `PI_FLOW_NO_STRATEGIC_HINT=1` suppresses the strategic planning hints appended after tool calls.
 
+When `PI_FLOW_DUMP_SNAPSHOT` is set, every time a flow spawns the agent writes two files **per flow** (the base path gets a unique suffix so parallel flows don't overwrite each other):
+
+1. `<path>.<flowName>.<timestamp>.jsonl` — a JSON Lines stream with one object per message (system prompt, user prompt, tool calls, tool results, assistant replies).
+2. `<path>.<flowName>.<timestamp>.txt` — the reconstructed raw prompt as the model actually saw it.
+
+Example:
+
+```bash
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot.jsonl
+pi
+# After running a flow:
+ls -lh /tmp/pi-snapshot.*
+# → pi-snapshot.jsonl (structured, machine-readable)
+# → pi-snapshot.txt (human-readable prompt transcript)
+```
+
+> 💡 **When to use it:** You need to inspect exactly what was sent to the model, reproduce a bug offline, or share a verbatim trace with another developer. The dump is written **before** the model call, so even if the flow crashes you still have the prompt.
+
 ## Environment Variables
 
 Key env vars that control flow behavior. All are read from the `pi` process environment and propagated to child flows.
 
 | Variable | Effect |
 |----------|--------|
-| `PI_FLOW_DUMP_SNAPSHOT` | Path to write a verbatim snapshot dump (JSONL + prompt) before a flow spawns. Must be exported before `pi` starts. |
+| `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode. |

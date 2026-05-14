@@ -171,17 +171,13 @@ function makeUniqueDumpPath(basePath: string, flowName: string): string {
 	const base = ext ? basePath.slice(0, -ext.length) : basePath;
 	const timestamp = Date.now();
 	const safeFlowName = flowName.replace(/[^\w.-]+/g, "_");
-	return `${base}.${safeFlowName}.${timestamp}.md`;
-}
-
-function makeUniqueDumpTxtPath(mdPath: string): string {
-	return mdPath.replace(/\.md$/, ".txt");
+	return `${base}.${safeFlowName}.${timestamp}${ext}`;
 }
 
 function atomicWriteFileSync(targetPath: string, data: string): void {
 	const dir = path.dirname(targetPath);
 	const tmpPath = path.join(dir, `.tmp-${path.basename(targetPath)}.${Date.now()}`);
-	fs.writeFileSync(tmpPath, data, { encoding: "utf-8", mode: 0o600 });
+	fs.writeFileSync(tmpPath, data, { encoding: "utf-8" });
 	fs.renameSync(tmpPath, targetPath);
 }
 
@@ -560,29 +556,11 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		);
 
 		// Dump verbatim child payload to disk for debugging when requested.
-		const dumpPath = process.env[FLOW_DUMP_SNAPSHOT_ENV] || inheritedCliArgs.dumpPath;
+		const dumpPath = process.env[FLOW_DUMP_SNAPSHOT_ENV];
 		if (dumpPath) {
 			const promptIndex = piArgs.indexOf("-p");
 			const prompt = promptIndex >= 0 ? piArgs[promptIndex + 1] : "";
-
-			// Extract compression stats from the trailing JSONL entry if present.
-			let compressionStats = "";
-			if (forkSessionSnapshotJsonl) {
-				const lines = forkSessionSnapshotJsonl.trimEnd().split("\n");
-				const lastLine = lines[lines.length - 1];
-				try {
-					const lastEntry = JSON.parse(lastLine);
-					if (lastEntry?.type === "compression-stats") {
-						compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${lastEntry.preBytes} bytes\n- Post-sanitization: ${lastEntry.postBytes} bytes\n- Reduction: ${lastEntry.reductionPercent}%`;
-					}
-				} catch { /* ignore */ }
-			}
-
-			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: stripSteeringHints, stripReasoning, stripBatchRead, compressToolResults, reparentOrphans | Flow: ${flow.name} | Generated: ${new Date().toISOString()} -->`;
-
 			const markdown = [
-				sanitizationHeader,
-				``,
 				`## Session Snapshot (JSONL)`,
 				``,
 				...(forkSessionSnapshotJsonl ? forkSessionSnapshotJsonl.split("\n") : ["(none)"]),
@@ -590,16 +568,13 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				`## Activation Prompt (-p)`,
 				``,
 				prompt,
-				compressionStats,
 			].join("\n");
 			const uniqueDumpPath = makeUniqueDumpPath(dumpPath, flow.name);
-			const uniqueTxtPath = makeUniqueDumpTxtPath(uniqueDumpPath);
 			try {
 				atomicWriteFileSync(uniqueDumpPath, markdown);
-				atomicWriteFileSync(uniqueTxtPath, prompt);
 				console.error(`[pi-agent-flow] Snapshot dumped to ${uniqueDumpPath}`);
-			} catch (err) {
-				console.error("[pi-agent-flow] Snapshot dump FAILED:", err);
+			} catch {
+				/* best-effort */
 			}
 		}
 

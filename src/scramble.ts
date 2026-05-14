@@ -79,11 +79,11 @@ export function hashNoise(seed: number, charIndex: number, tick: number, depth: 
 /** Deep glitch: fine dots, sparse sparkle, dense braille for inner ripple depths (1–2) */
 const DEEP_GLITCH = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
 /** Mid glitch: dots, light sparkles, medium braille for depth (3) */
-const MID_GLITCH = '·∘∙~⋆˚｡+✳◇✩✲⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+const MID_GLITCH = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
 /** Shallow glitch: heavy sparkles + light braille for outer depths (4+) — the wavefront crest */
-const SHALLOW_GLITCH = '·∘∙~✦°✧✶✹✮✩⠌⠡⠜';
+const SHALLOW_GLITCH = '·∘∙~×°+⠌⠡⠜';
 /** Classic scramble set for stream/cascade/ripple fallback — balanced braille + sparkle mix */
-const SCRAMBLE_CHARS = '·∘∙~⋆˚｡+✳◇✩✦°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+const SCRAMBLE_CHARS = '·∘∙~⋆˚｡+×◇°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
 /** Sparkle and thin braille mix for afterglow "pop" */
 const SPARK_CHARS = '·∘∙⋆˚｡⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
 /** Backward-compat alias */
