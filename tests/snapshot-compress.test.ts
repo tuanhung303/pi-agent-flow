@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { compressToolResults } from "../src/snapshot.js";
+import { evictCacheOverflow } from "../src/executor.js";
 import { stripStrategicHints } from "../src/tool-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -337,6 +338,34 @@ describe("compressToolResults — ask_user", () => {
 // ---------------------------------------------------------------------------
 // compressToolResults — flow cache miss fallback
 // ---------------------------------------------------------------------------
+describe("evictCacheOverflow", () => {
+	it("evicts oldest entries when cache exceeds the cap", () => {
+		const cache = new Map();
+		for (let i = 0; i < 105; i++) {
+			cache.set(`key-${i}`, [{ type: "scout", status: "accomplished" }]);
+		}
+		expect(cache.size).toBe(105);
+		evictCacheOverflow(cache);
+		expect(cache.size).toBe(100);
+		// Oldest entries (key-0 through key-4) should be gone
+		expect(cache.has("key-0")).toBe(false);
+		expect(cache.has("key-4")).toBe(false);
+		// Newest entries should remain
+		expect(cache.has("key-99")).toBe(true);
+		expect(cache.has("key-104")).toBe(true);
+	});
+
+	it("does nothing when cache is under the cap", () => {
+		const cache = new Map();
+		for (let i = 0; i < 50; i++) {
+			cache.set(`key-${i}`, [{ type: "scout", status: "accomplished" }]);
+		}
+		evictCacheOverflow(cache);
+		expect(cache.size).toBe(50);
+		expect(cache.has("key-0")).toBe(true);
+	});
+});
+
 describe("compressToolResults — flow cache miss", () => {
 	it("renders a placeholder when flow result is not in cache instead of passing bulky output verbatim", () => {
 		const bulkyContent = "Flow: 1/1 completed\n\n".repeat(5000); // ~100KB of raw flow output
@@ -365,7 +394,7 @@ describe("compressToolResults — flow cache miss", () => {
 		const text = parsed.message.content[0].text;
 		// Must be the compact placeholder, NOT the bulky original
 		expect(text).toContain("[flow] prior result");
-		expect(text).toContain("cache expired");
+		expect(text).toContain("output unavailable");
 		expect(text.length).toBeLessThan(200);
 		expect(text).not.toContain("Flow: 1/1 completed");
 	});

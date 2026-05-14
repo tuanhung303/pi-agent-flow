@@ -385,8 +385,12 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				// Cache miss (evicted or corrupted) — do NOT pass megabytes of raw
 				// flow output verbatim into child context. Render a minimal placeholder.
 				originalText = extractToolResultText(entry) ?? "";
-				const size = originalText.length || line.length;
-				rendered = `[flow] prior result · ${size} chars (cache expired — see parent session for full output)`;
+				const rawContent = entry.message?.content;
+				const contentSize = rawContent
+					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
+					: 0;
+				const size = originalText.length || contentSize || line.length;
+				rendered = `[flow] prior result · ${size} chars (cache expired — output unavailable)`;
 			} else {
 				rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
 			}

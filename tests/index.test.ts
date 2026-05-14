@@ -174,7 +174,7 @@ describe("flow tool execute", () => {
 		// Flow results without cache entry are compressed to a placeholder instead of
 		// passing the bulky raw output verbatim (protects child context window).
 		expect(snapshot).toContain("[flow] prior result");
-		expect(snapshot).toContain("cache expired");
+		expect(snapshot).toContain("output unavailable");
 		expect(snapshot).toContain("Current request should be inherited");
 		expect(snapshot).not.toContain("SECRET_THINKING_FIELD");
 		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
@@ -358,7 +358,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Text after delegation.");
 		// Flow results without cache entry are compressed to a placeholder.
 		expect(snapshot).toContain("[flow] prior result");
-		expect(snapshot).toContain("cache expired");
+		expect(snapshot).toContain("output unavailable");
 		expect(snapshot).toContain("flow-call-2");
 		expect(snapshot).toContain('"name":"flow"');
 		expect(snapshot).toContain("Current request should be inherited");
@@ -1637,7 +1637,7 @@ describe("compressFlowToolResults", () => {
 
 		// Cache miss: must NOT pass bulky raw output verbatim; render a compact placeholder.
 		expect(result).toContain("[flow] prior result");
-		expect(result).toContain("cache expired");
+		expect(result).toContain("output unavailable");
 		expect(result).not.toContain("Prior flow output not in cache");
 	});
 
