@@ -458,7 +458,7 @@ You can also set flow runtime defaults under `flowSettings`:
 
 ### Optional Hatchet backend
 
-Local forked execution remains the default. Set `PI_FLOW_RUNNER=hatchet` to route resolved flow attempts through the optional Hatchet backend. The Hatchet runner submits a plain-JSON `pi-agent-flow.runFlow` task and returns final results only; live streaming and cancellation propagation are deferred. Workers can import `runHatchetFlowTask` from `pi-agent-flow/dist/hatchet-worker.js`. The worker entrypoint reconstructs local helpers, calls `runFlow()`, and defaults `PI_FLOW_SPAWN_COMMAND` to `pi` so child flow spawns do not re-enter the worker.
+Local forked execution remains the default. Set `PI_FLOW_RUNNER=hatchet` to route resolved flow attempts through the optional Hatchet backend. The Hatchet runner submits a plain-JSON `pi-agent-flow.runFlow` task and returns final results from the worker. The parent emits Hatchet lifecycle updates (`queued/running`, `completed`, or `failed`) through the normal flow progress path so users can see queue-level progress; child-process token streaming and cancellation propagation are still deferred. Workers can import `runHatchetFlowTask` from `pi-agent-flow/dist/hatchet-worker.js`. The worker entrypoint reconstructs local helpers, calls `runFlow()`, and defaults `PI_FLOW_SPAWN_COMMAND` to `pi` so child flow spawns do not re-enter the worker.
 
 The Hatchet SDK is dynamically imported and is not required for local-only users. Install and configure `@hatchet-dev/typescript-sdk` only where `PI_FLOW_RUNNER=hatchet` is used.
 
