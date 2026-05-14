@@ -183,6 +183,8 @@ function evictCacheOverflow(cache: Map<string, CompressedFlowResult[]>): void {
   if (oldestKey !== undefined) cache.delete(oldestKey);
 }
 
+const DEFAULT_LOCAL_FLOW_RUNNER = new LocalFlowRunner();
+
 // ---------------------------------------------------------------------------
 // Main API
 // ---------------------------------------------------------------------------
@@ -218,7 +220,7 @@ export async function executeFlows(
     uiConfirm,
     onFlowMetrics,
     confirmProjectFlows,
-    flowRunner = new LocalFlowRunner(),
+    flowRunner = DEFAULT_LOCAL_FLOW_RUNNER,
   } = deps;
 
   const requested = new Set(params.map((p) => p.type.toLowerCase()));
