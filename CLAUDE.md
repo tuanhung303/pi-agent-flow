@@ -64,7 +64,7 @@ ADR lifecycle policy:
 
 Current Hatchet integration plan:
 - ADR 2: phase 1 runner seam (proposed; implemented in PR #1, pending criteria-based acceptance)
-- ADR 3: phase 2 basic Hatchet backend (proposed)
+- ADR 3: phase 2 basic Hatchet backend (proposed; implemented in follow-up PR, pending criteria-based acceptance)
 - ADR 4: phase 3 operational hardening (proposed)
 - ADR 5: phase 4 advanced Hatchet UX (proposed)
 
@@ -109,6 +109,7 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 ## Key Implementation Details
 
 - **Flow runner seam**: `executeFlows()` dispatches each resolved flow attempt through a `FlowRunner`; the default `LocalFlowRunner` preserves fork-only execution by calling `runFlow()`.
+- **Optional Hatchet backend**: `PI_FLOW_RUNNER=hatchet` selects a final-result-only `HatchetFlowRunner` with a plain-JSON `pi-agent-flow.runFlow` payload and `runHatchetFlowTask` worker entrypoint. The SDK is dynamically imported; streaming and cancellation propagation are deferred.
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
 - **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`. Tags avoid CLI parsing conflicts (none start with `-`).
 - **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.

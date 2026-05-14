@@ -463,6 +463,14 @@ You can also set flow runtime defaults under `flowSettings`:
 | `toolOptimize` | `true` | Use unified `batch`/`batch_read` instead of separate read/write/edit |
 | `structuredOutput` | `true` | Inject JSON structured-output instructions into flow prompts |
 
+### Optional Hatchet backend
+
+Local forked execution remains the default. Set `PI_FLOW_RUNNER=hatchet` to route resolved flow attempts through the optional Hatchet backend. The Hatchet runner submits a plain-JSON `pi-agent-flow.runFlow` task and returns final results only; live streaming and cancellation propagation are deferred. Workers can import `runHatchetFlowTask` from `pi-agent-flow/dist/hatchet-worker.js`. The worker entrypoint reconstructs local helpers, calls `runFlow()`, and defaults `PI_FLOW_SPAWN_COMMAND` to `pi` so child flow spawns do not re-enter the worker.
+
+The Hatchet SDK is dynamically imported and is not required for local-only users. Install and configure `@hatchet-dev/typescript-sdk` only where `PI_FLOW_RUNNER=hatchet` is used.
+
+**Hatchet payload trust boundary:** Hatchet task payloads include the selected flow configuration, prompt text, inherited session snapshot, working directory, and project flow directory path. Treat the queue and workers as trusted infrastructure: do not route these payloads through untrusted tenants, logs, or retention policies, and configure Hatchet access controls accordingly.
+
 Session mode precedence is:
 
 ```txt
@@ -496,6 +504,7 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_TOOL_OPTIMIZE` | `"1"` or `"0"` (overrides default tool optimization) |
 | `PI_FLOW_SESSION_MODE` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
 | `PI_FLOW_MAX_CONCURRENCY` | Maximum parallel flows |
+| `PI_FLOW_RUNNER` | Flow execution backend: unset/`local` for local forked children, or `hatchet` for the optional final-result-only Hatchet backend |
 | `PI_FLOW_SPAWN_COMMAND` | Override the spawn command for exotic runtime environments (e.g. bundled with pkg/nexe) |
 | `PI_FLOW_DEADLINE_MS` | Absolute deadline timestamp (ms) propagated to child flows for timeout awareness |
 | `PI_FLOW_TOOL_SUMMARY_GRACE_MS` | Time before hard timeout when the agent should stop tool use and summarize (ms) |

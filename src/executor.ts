@@ -17,7 +17,7 @@ import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsa
 import { extractStructuredOutput } from "./structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent } from "./flow.js";
-import { LocalFlowRunner, type FlowRunner } from "./flow-runner.js";
+import { DEFAULT_LOCAL_FLOW_RUNNER, type FlowRunner } from "./flow-runner.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
@@ -151,7 +151,6 @@ async function confirmProjectFlowsIfNeeded(
 // ---------------------------------------------------------------------------
 
 const FLOW_RESULT_CACHE_MAX_ENTRIES = 50;
-const DEFAULT_LOCAL_FLOW_RUNNER = new LocalFlowRunner();
 
 /** Evict oldest entries from the cache when it exceeds the cap. */
 function evictCacheOverflow(cache: Map<string, unknown>): void {
@@ -358,7 +357,7 @@ export async function executeFlows(
 					}
 				},
 				makeDetails,
-			});
+			}, { projectFlowsDir });
 			allResults[index] = result;
 			emitProgress();
 			if (isFlowSuccess(result) || signal?.aborted) break;
