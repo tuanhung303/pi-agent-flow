@@ -11,8 +11,6 @@
 Publishing is **fully automated** via GitHub Actions.
 
 ### Strict Rules
-
-- **Never edit `package.json` version manually.** The Release workflow handles bumping.
 - **Never run `npm publish` locally.** Always use CI.
 - **Never run `npm version` locally.** The Release workflow handles tagging.
 
@@ -47,11 +45,53 @@ When the user asks to publish:
 
 ## Local Development
 
+### One-time setup
 ```bash
-npm link                     # Symlink local checkout — restart `pi` after editing
-npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow  # Restore published version
-npm ls -g pi-agent-flow     # Verify link status
+./scripts/switch.sh         # Link local checkout (or `npm run switch:local`)
+npm ls -g pi-agent-flow     # Verify link status — should show "-> /path/to/repo"
 ```
+
+### Daily dev loop
+You do **not** need to switch between every edit. Once linked, just rebuild and restart `pi`:
+```bash
+npm run build               # Compile TypeScript → dist/
+# Quit pi (Ctrl+C), then start it again — it picks up the new dist/ via the symlink
+```
+
+### Going back to published
+```bash
+./scripts/switch.sh         # Toggle back to REMOTE (or `npm run switch:remote`)
+npm ls -g pi-agent-flow     # Should show a version number, not "->"
+```
+
+## Quick Switch (Local ↔ Remote)
+
+Use the toggle script to swap between your **local dev build** (for testing
+changes) and the **published npm version** (for stable daily usage).
+
+| Mode | Command | When to use |
+|------|---------|-------------|
+| **Toggle** | `./scripts/switch.sh` | One-command flip between local ↔ remote |
+| **Local** | `npm run switch:local` | Force link to this repo (testing new code) |
+| **Remote** | `npm run switch:remote` | Force install from npm (stable daily work) |
+
+```bash
+./scripts/switch.sh        # Detects current state and flips to the other side
+```
+
+> ⚠️ **Always restart `pi` after switching** so the extension loader picks up the change.
+
+### Dev loop after switching
+Switching is only needed when changing **modes** (local ↔ remote), not between every edit.
+Once linked locally, your daily loop is just:
+1. Edit code
+2. `npm run build`
+3. Quit `pi` and restart it
+
+### `pi update` danger
+> 🚫 **Never run `pi update` while linked locally.** It installs the published npm package
+> globally, which **overwrites and destroys your local symlink**. To get published updates,
+> run `./scripts/switch.sh` first to toggle to REMOTE, then run `pi update`.
 
 ## Flow Taxonomy
 
@@ -90,25 +130,3 @@ The Orchestrator is the agent you're talking to right now (when not inside a flo
 - **Never implements directly** — it routes and coordinates.
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
-
-## Key Implementation Details
-
-- **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
-- **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`. Tags avoid CLI parsing conflicts (none start with `-`).
-- **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.
-- **Cycle prevention**: Blocks re-entering flows already in the ancestor stack.
-- **Session modes**: `fast` (300s), `default` (600s), `long` (900s), `extreme_long` (1200s). Defined in `session-mode.ts`.
-- **Two-stage timeout**: Parent-side warning at `effectiveTimeout - 2min`, final urge at `effectiveTimeout - 2m15s`, hard timeout + 90s reporting grace before SIGKILL. Deadline and grace env vars are propagated to children (`PI_FLOW_DEADLINE_MS`, `PI_FLOW_TOOL_SUMMARY_GRACE_MS`).
-- **Timeout reminder injection**: A reminder file (`PI_FLOW_REMINDER_FILE`) is written by the parent and read by the timed-bash wrapper so the child sees warnings before its next tool call.
-- **Graceful shutdown**: `SIGINT`/`SIGTERM` handlers on the parent first abort pending bash operations via `bashTracker.abortAll()`, then propagate to all registered child process groups via `terminateAllChildGroups()`. `process.prependListener` is used so our handler runs before the host's cleanup.
-- **Structured output**: JSON schema injected at the end of the flow prompt when `structuredOutput` is true. Parsed by `extractStructuredOutput()` and mechanically enriched by `generateCommandsFromHistory()` which replaces paraphrased bash commands with verbatim tool-call args and attaches `executionTime` from the timed-bash wrapper.
-- **Flow-mode persistence**: `--flow-mode` writes `flowModelConfig` to global `settings.json` via atomic rename (`writeGlobalFlowMode`). Startup prints either concise (`mode: name | lite: model - flash: model - full: model`) or verbose format with per-tier flow-name labels.
-- **Transition matrix**: Data-driven post-flow routing in `transitions.ts`. Declarative transition matrix maps source flow + outcome to follow-up recommendations.
-- **Tool optimization**: When enabled, `getOptimizedTools()` strips legacy `read`/`write`/`edit` and injects `batch`. The parent sets active tools to `["batch_read", "flow", "web", "ask_user"]`; children get `["batch", "bash", "web"]` (or plus `flow` if they can delegate); `batch_bash_poll` is registered separately by the extension for polling pending bash ops. Override with `PI_FLOW_TOOL_OPTIMIZE`.
-- **Session snapshot sanitization**: `sanitizeForkSnapshot()` strips steering hints, reasoning artifacts, strategic hints, and `batch_read` tool calls from assistant messages, and compresses prior flow tool results into compact `CompressedFlowResult` context maps before forking.
-- **Context compression**: Tool results from `batch`, `batch_read`, `web`, and `ask_user` are selectively compressed for child snapshots — bash sections are kept verbatim, read content is truncated, and context-map/file-summary sections are collapsed; web, ask_user, and batch_read results are replaced with compact metadata. Set `PI_FLOW_DEBUG_CONTEXT=1` to emit telemetry to `stderr`.
-- **Compact structured output**: When `structuredOutput` is enabled, the JSON schema is injected as a compact single-line reference (not a verbose essay) to reduce token bloat.
-- **Skip structured appendix**: `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` (or `true` / `yes`) omits the `## Structured Output` block appended to the child prompt when a provider rejects that shape.
-- **Max concurrency**: `PI_FLOW_MAX_CONCURRENCY` env var overrides the default maximum parallel flows.
-- **Spawn override**: `PI_FLOW_SPAWN_COMMAND` env var overrides the child spawn command for exotic runtime environments (e.g. bundled with pkg/nexe).
-- **Strategic hints**: `PI_FLOW_NO_STRATEGIC_HINT=1` suppresses the strategic planning hints appended after tool calls.

@@ -32,6 +32,8 @@
     "build": "tsc",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "switch:local": "npm link",
+    "switch:remote": "npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
