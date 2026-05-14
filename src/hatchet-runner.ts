@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { runFlow, type RunFlowOptions } from "./flow.js";
 import type { FlowRunner, FlowRunContext } from "./flow-runner.js";
 import type { FlowConfig } from "./agents.js";
@@ -9,6 +10,18 @@ import type { FlowDetails, SingleResult } from "./types.js";
  * Payloads cross the Hatchet queue trust boundary and may contain sensitive session context.
  */
 export const HATCHET_FLOW_TASK_NAME = "pi-agent-flow.runFlow";
+
+/**
+ * Environment variable that overrides the maximum serialized Hatchet task payload size in bytes.
+ * Raising this limit should only be done for trusted private queues with appropriate retention controls.
+ */
+export const PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV = "PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES";
+
+/**
+ * Default maximum serialized Hatchet task payload size.
+ * The limit bounds session-snapshot exposure and catches accidental oversized queue messages early.
+ */
+export const DEFAULT_HATCHET_MAX_PAYLOAD_BYTES = 1_000_000;
 
 /**
  * JSON-safe payload submitted to Hatchet for one flow attempt.
@@ -66,8 +79,71 @@ function makeFlowDetails(projectFlowsDir: string | null): (results: SingleResult
 	});
 }
 
+function stringifyHatchetPayload(payload: HatchetFlowPayload): string {
+	return JSON.stringify(payload);
+}
+
 function assertJsonSerializable(payload: HatchetFlowPayload): void {
-	JSON.parse(JSON.stringify(payload));
+	JSON.parse(stringifyHatchetPayload(payload));
+}
+
+/**
+ * Resolves the maximum Hatchet payload size from environment configuration.
+ * @param env Environment map to inspect; reads PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES and defaults to process.env.
+ * @returns Positive byte limit, or the built-in default when unset; throws for invalid configured values.
+ */
+export function resolveHatchetMaxPayloadBytes(env: NodeJS.ProcessEnv = process.env): number {
+	const raw = env[PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV]?.trim();
+	if (!raw) return DEFAULT_HATCHET_MAX_PAYLOAD_BYTES;
+	if (!/^\d+$/.test(raw)) throw new Error(`${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} must be a positive integer byte limit.`);
+	const value = Number(raw);
+	if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} must be a positive integer byte limit.`);
+	return value;
+}
+
+/**
+ * Validates the serialized Hatchet payload size before crossing the queue trust boundary.
+ * @param payload JSON-safe flow task payload.
+ * @param maxBytes Maximum allowed serialized UTF-8 size in bytes.
+ * @returns Nothing when the payload is within bounds; throws with remediation guidance when too large.
+ */
+export function validateHatchetFlowPayloadSize(payload: HatchetFlowPayload, maxBytes = resolveHatchetMaxPayloadBytes()): void {
+	const sizeBytes = Buffer.byteLength(stringifyHatchetPayload(payload), "utf8");
+	if (sizeBytes > maxBytes) {
+		throw new Error(`Hatchet flow payload is ${sizeBytes} bytes, exceeding limit ${maxBytes}. Reduce inherited context or raise ${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} only for trusted private queues with suitable retention controls.`);
+	}
+}
+
+function assertWorkerDirectory(label: string, dir: string): void {
+	try {
+		const stat = statSync(dir);
+		if (stat.isDirectory()) return;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`Hatchet worker ${label} "${dir}" is not accessible. Ensure the worker has a current checkout/workspace before running queued flows. (${message})`);
+	}
+	throw new Error(`Hatchet worker ${label} "${dir}" is not a directory. Ensure the worker has a current checkout/workspace before running queued flows.`);
+}
+
+/**
+ * Validates worker-local filesystem assumptions before executing a queued flow.
+ * @param payload JSON-safe flow task payload received from Hatchet.
+ * @returns Nothing when required directories are available; throws actionable diagnostics otherwise.
+ */
+export function validateHatchetWorkerPayload(payload: HatchetFlowPayload): void {
+	assertWorkerDirectory("cwd", payload.cwd);
+	if (payload.taskCwd !== undefined) assertWorkerDirectory("taskCwd", payload.taskCwd);
+}
+
+/**
+ * Resolves and validates the worker child-process spawn command.
+ * @param env Environment map to inspect; reads PI_FLOW_SPAWN_COMMAND and defaults to process.env.
+ * @returns Trimmed spawn command, defaulting to pi; throws when the value contains control-line separators.
+ */
+export function resolveHatchetSpawnCommand(env: NodeJS.ProcessEnv = process.env): string {
+	const command = env.PI_FLOW_SPAWN_COMMAND?.trim() || "pi";
+	if (/[\0\r\n]/.test(command)) throw new Error("PI_FLOW_SPAWN_COMMAND must be a single command without NUL or newline characters.");
+	return command;
 }
 
 /**
@@ -189,6 +265,7 @@ export class HatchetFlowRunner implements FlowRunner {
 	 */
 	async run(options: RunFlowOptions, context?: FlowRunContext): Promise<SingleResult> {
 		const payload = serializeHatchetFlowPayload(options, context?.projectFlowsDir ?? null);
+		validateHatchetFlowPayloadSize(payload);
 		return this.submitTask(HATCHET_FLOW_TASK_NAME, payload);
 	}
 }
@@ -199,6 +276,7 @@ export class HatchetFlowRunner implements FlowRunner {
  * @returns The SingleResult produced by runFlow after restoring worker-local options.
  */
 export async function runHatchetFlowTask(payload: HatchetFlowPayload): Promise<SingleResult> {
-	process.env.PI_FLOW_SPAWN_COMMAND = process.env.PI_FLOW_SPAWN_COMMAND?.trim() || "pi";
+	process.env.PI_FLOW_SPAWN_COMMAND = resolveHatchetSpawnCommand(process.env);
+	validateHatchetWorkerPayload(payload);
 	return runFlow(deserializeHatchetFlowPayload(payload));
 }
