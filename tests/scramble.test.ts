@@ -987,7 +987,7 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		expect(blocked).toBe('↑30k↓15k');
 		// Fourth call after 3s cooldown: flash allowed
 		manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3100, false, false);
-		const afterCooldown = manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3200, false, false);
+		const afterCooldown = manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3140, false, false);
 		expect(afterCooldown).not.toBe('↑40k↓20k');
 	});
 });
@@ -1283,18 +1283,18 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 
 	it('updateMsg does not force ripple on short gap (processLine path)', () => {
 		const base = 2000000;
-		manager.updateMsg(TEST_ID, 'Hello world', base);
+		manager.updateMsg(TEST_ID, 'Helloworld!!', base);
 		// Small text change after 500ms — gap < STREAMING_RESUME_GAP_MS, no ripple
-		const result = manager.updateMsg(TEST_ID, 'Hello world!', base + 500);
+		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 500);
 		expect(result.isAnimating).toBe(false);
-		expect(stripAnsi(result.content)).toBe('Hello world!');
+		expect(stripAnsi(result.content)).toBe('Helloworld!!!');
 	});
 
 	it('updateMsg forces ripple after long pause (processLine path)', () => {
 		const base = 2000000;
-		manager.updateMsg(TEST_ID, 'Hello world', base);
+		manager.updateMsg(TEST_ID, 'Helloworld!!', base);
 		// Long tool-call pause (3000ms), then small new chunk arrives
-		const result = manager.updateMsg(TEST_ID, 'Hello world!', base + 3000);
+		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 3000);
 		// Should animate because gap > STREAMING_RESUME_GAP_MS
 		expect(result.isAnimating).toBe(true);
 		expect(result.content).toContain('\x1b[38;2;');
@@ -1302,18 +1302,18 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 
 	it('updateMsg staticLine does not force ripple on short gap', () => {
 		const base = 2000000;
-		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Helloworld!!', base, false, undefined, true);
 		// Small text change after 500ms — gap < STREAMING_RESUME_GAP_MS, no ripple
-		const result = manager.updateMsg(TEST_ID, 'Hello world!', base + 500, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 500, false, undefined, true);
 		expect(result.isAnimating).toBe(false);
-		expect(stripAnsi(result.content)).toBe('Hello world!');
+		expect(stripAnsi(result.content)).toBe('Helloworld!!!');
 	});
 
 	it('updateMsg staticLine forces ripple after long pause', () => {
 		const base = 2000000;
-		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Helloworld!!', base, false, undefined, true);
 		// Long tool-call pause (3000ms), then small new chunk arrives
-		const result = manager.updateMsg(TEST_ID, 'Hello world!', base + 3000, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 3000, false, undefined, true);
 		// Should animate because gap > STREAMING_RESUME_GAP_MS
 		expect(result.isAnimating).toBe(true);
 		expect(result.content).toContain('\x1b[38;2;');
