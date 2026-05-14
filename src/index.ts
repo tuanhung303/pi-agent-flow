@@ -63,7 +63,7 @@ const FlowItem = Type.Object({
 		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as scout, debug, build, craft, audit, or ideas.",
 	}),
 	intent: Type.String({
-		description: "Clear, specific mission for this flow.",
+		description: "Specific mission for this flow — target concrete files, folders, or code patterns. Be precise in final outcome/expectation and common sense, but avoid over-specifying implementation details or assuming current state that may have shifted.",
 	}),
 	aim: Type.String({
 		description: "Extreme short intent — one sentence, 5-7 words, headline-style summary of what this flow does.",
@@ -84,14 +84,20 @@ const FlowItem = Type.Object({
 			description: "Agent session budget for this flow: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
 		}),
 	),
+}, {
+	title: "FlowTask",
+	description: "A single flow task — must be a JSON object, NOT a string.",
 });
 
 const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			"Optional sessionMode selects the child-agent budget: fast=300s, default=600s, long=900s, extreme_long=1200s. " +
-			'Example: { flow: [{ type: "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "sessionMode": "fast" }, { type: "build", "intent": "Fix the bug in user registration", "aim": "Fix registration bug", "sessionMode": "long" }] }',
+			"Optional sessionMode selects the child-agent budget: fast=300s, default=600s, long=900s, extreme_long=1200s.",
+		examples: [
+			{ type: "scout", intent: "Map auth module files and trace JWT validation path", aim: "Map auth and trace JWT" },
+			{ type: "audit", intent: "Audit input validation and SQL injection risks in user routes", aim: "Audit user route security" },
+		],
 		minItems: 1,
 	}),
 	confirmProjectFlows: Type.Optional(

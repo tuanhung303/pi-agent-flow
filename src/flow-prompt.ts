@@ -106,7 +106,7 @@ ${flowList}
 
 Multiple independent flows? Batch them into one call:
 
-✅ { "flow": [{ "type": "scout", "intent": "..." }, { "type": "audit", "intent": "..." }] }
+✅ { "flow": [{ "type": "scout", "intent": "Map auth and trace JWT", "aim": "Map auth and trace JWT" }, { "type": "audit", "intent": "Audit user route security", "aim": "Audit user route security" }] }
 ❌ Two separate calls — wastes time
 
 Each call renders as:
