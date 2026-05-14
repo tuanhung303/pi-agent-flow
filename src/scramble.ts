@@ -81,9 +81,9 @@ const DEEP_GLITCH = '·∘∙+*~!?⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏�
 /** Mid glitch: dots, braille, light ASCII for mid depth (3) */
 const MID_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋~?+-*';
 /** Shallow glitch: numbers/brackets + shade blocks + light box-drawing for outer depths (4+) */
-const SHALLOW_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
+const SHALLOW_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆~⠌⠡⠜';
 /** Classic ASCII-safe set for stream/cascade/ripple fallback */
-const SCRAMBLE_CHARS = '·∘∙~?+-*/[]{}<>_○◎';
+const SCRAMBLE_CHARS = '·∘∙~⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
 
 /** Thin braille spark: single-dot and sparse two-dot patterns for afterglow "pop" */
 const THIN_BRAILLE_SPARK = '⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';

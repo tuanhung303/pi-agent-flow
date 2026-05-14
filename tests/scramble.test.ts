@@ -43,7 +43,7 @@ function hasAnsi(s: string): boolean {
 }
 
 const TEST_ID = 'test-id';
-const SCRAMBLE_CHAR_SET = '·∘∙~?+-*/[]{}<>_○◎';
+const SCRAMBLE_CHAR_SET = '·∘∙~⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
 
 // ---------------------------------------------------------------------------
 // Stream mode tests
@@ -976,19 +976,19 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		manager.setMode('ripple');
 		const base = 6000000;
 		// First call: sets state, no flash (not staticLine)
-		manager.updateMsgKpi(TEST_ID, '↑ 1.0k · ↓ 0.5k', base, false, false);
+		manager.updateMsgKpi(TEST_ID, '↑10k↓5k', base, false, false);
 		// Second call: value change triggers first flash (render at t+110 for wide ripple)
-		manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 100, false, false);
+		manager.updateMsgKpi(TEST_ID, '↑20k↓10k', base + 100, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
-		const rendered = manager.updateMsgKpi(TEST_ID, '↑ 2.0k · ↓ 1.0k', base + 110, false, false);
-		expect(rendered).not.toBe('↑ 2.0k · ↓ 1.0k');
+		const rendered = manager.updateMsgKpi(TEST_ID, '↑20k↓10k', base + 110, false, false);
+		expect(rendered).not.toBe('↑20k↓10k');
 		// Third call with new value but within 3s cooldown: blocked
-		const blocked = manager.updateMsgKpi(TEST_ID, '↑ 3.0k · ↓ 1.5k', base + 500, false, false);
-		expect(blocked).toBe('↑ 3.0k · ↓ 1.5k');
+		const blocked = manager.updateMsgKpi(TEST_ID, '↑30k↓15k', base + 500, false, false);
+		expect(blocked).toBe('↑30k↓15k');
 		// Fourth call after 3s cooldown: flash allowed
-		manager.updateMsgKpi(TEST_ID, '↑ 4.0k · ↓ 2.0k', base + 3100, false, false);
-		const afterCooldown = manager.updateMsgKpi(TEST_ID, '↑ 4.0k · ↓ 2.0k', base + 3200, false, false);
-		expect(afterCooldown).not.toBe('↑ 4.0k · ↓ 1.5k');
+		manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3100, false, false);
+		const afterCooldown = manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3200, false, false);
+		expect(afterCooldown).not.toBe('↑40k↓20k');
 	});
 });
 
@@ -1056,7 +1056,7 @@ describe('applyRipples afterglow spark with thin braille', () => {
 		// hashNoise(0, 0, 3, 77)=0.0436 < 0.045 → index 0 pops
 		// hashNoise(0, 7, 3, 77)=0.0006 < 0.045 → index 7 pops
 		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
-		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true };
+		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true, scramble: true };
 		const result = applyRipples('0123456789', [ripple], 155, config);
 		const plain = stripAnsi(result);
 		// Index 0 and 7 should have thin braille spark chars
@@ -1069,7 +1069,7 @@ describe('applyRipples afterglow spark with thin braille', () => {
 
 	it('falls back to generic glitch chars when spark is disabled', () => {
 		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
-		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: false };
+		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: false, scramble: true };
 		const result = applyRipples('0123456789', [ripple], 155, config);
 		const plain = stripAnsi(result);
 		// Index 7 should pop with generic glitch char (deterministically '·')
@@ -1079,7 +1079,7 @@ describe('applyRipples afterglow spark with thin braille', () => {
 
 	it('preserves spaces in afterglow spark output', () => {
 		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
-		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true };
+		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true, scramble: true };
 		const result = applyRipples('0 1 2 3 4 5 6 7 8 9', [ripple], 155, config);
 		const plain = stripAnsi(result);
 		// Spaces should remain intact (index 1, 3, 5, etc. are spaces)
@@ -1139,16 +1139,16 @@ describe('illuminatePrefix — 12-zone SGR transition', () => {
 		const colorMatches = result.match(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g);
 		expect(colorMatches).not.toBeNull();
 		if (colorMatches) {
-			const hasMagenta = colorMatches.some((code) => {
+			const hasColor = colorMatches.some((code) => {
 				const match = code.match(/\x1b\[38;2;(\d+);(\d+);(\d+)m/);
 				if (!match) return false;
 				const r = parseInt(match[1], 10);
 				const g = parseInt(match[2], 10);
 				const b = parseInt(match[3], 10);
-				// Magenta / violet: high red, low green, medium-high blue
-				return (r > 200 && g > 50 && g < 100 && b > 120 && b < 180);
+				// Dynamic mid-intensity produces warm/peach/pink hues
+				return (r > 180 && g > 120 && b > 100);
 			});
-			expect(hasMagenta).toBe(true);
+			expect(hasColor).toBe(true);
 		}
 	});
 });
@@ -1239,7 +1239,7 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		// TPS text is short (4 chars) so ripple expands past it quickly;
 		// verify at an early time when wavefront is still within text
 		const result = manager.updateTps(TEST_ID, '55.0', base + 110);
-		expect(result).toContain(ORANGE_GLOW);
+		expect(result).toContain(WARM_GLOW);
 	});
 
 	it('hasAnyActiveAnimations works for illuminate', () => {
