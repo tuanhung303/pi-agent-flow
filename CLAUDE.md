@@ -22,7 +22,7 @@ Publishing is **fully automated** via GitHub Actions.
    ```bash
    gh workflow run bump-version.yml -f bump_type=patch
    ```
-3. For alpha prerelease:
+3. For an alpha prerelease:
    ```bash
    gh workflow run bump-version.yml -f bump_type=prerelease
    ```
@@ -118,6 +118,9 @@ Agent work is organized into two tiers. **Access is not the boundary — intent 
 
 ### Tier 1 — Intent-Driven Workers
 
+**Question:** "Do the thing, but stay in your lane."
+**Mutations:** Yes — reads, writes, edits, tests, ships. Each flow has a strict mission profile. No mission drift.
+
 | Flow | Tools | maxDepth | Tier | Notes |
 |------|-------|----------|------|-------|
 | `scout` | batch, bash, find, grep, ls, web | 0 | lite | Explore and map |
@@ -128,6 +131,10 @@ Agent work is organized into two tiers. **Access is not the boundary — intent 
 | `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design |
 
 ### Tier 2 — Orchestrator: Main Agent
+
+**Question:** "What should we do, and who should do it?"
+**Mutations:** No direct code edits.
+**Role:** The router, synthesizer, and user-facing coordinator.
 
 The orchestrator decides whether to delegate, chooses the matching flow, crafts the mission, and synthesizes results. It does not implement directly.
 

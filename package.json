@@ -1,80 +1,80 @@
 {
-    "name": "pi-agent-flow",
-    "version": "1.8.39",
-    "description": "Flow-state delegation extension for Pi coding agent.",
-    "type": "module",
-    "main": "dist/index.js",
-    "bin": {
-        "pi-agent-flow-hatchet-worker": "dist/hatchet-worker-cli.js"
+  "name": "pi-agent-flow",
+  "version": "1.8.39",
+  "description": "Flow-state delegation extension for Pi coding agent.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "pi-agent-flow-hatchet-worker": "dist/hatchet-worker-cli.js"
+  },
+  "files": [
+    "dist/",
+    "agents/",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "keywords": [
+    "pi",
+    "flow",
+    "fork",
+    "pi-package"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuanhung303/pi-agent-flow"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit",
+    "test": "PI_FLOW_RUNNER=local vitest run",
+    "hatchet-worker": "node dist/hatchet-worker-cli.js",
+    "switch:local": "npm link",
+    "switch:remote": "npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4",
+    "@types/jsdom": "^28.0.1",
+    "@types/turndown": "^5.0.6"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": ">=0.37.0",
+    "@mariozechner/pi-ai": ">=0.37.0",
+    "@mariozechner/pi-coding-agent": ">=0.37.0",
+    "@mariozechner/pi-tui": ">=0.37.0",
+    "@sinclair/typebox": ">=0.34.0"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-agent-core": {
+      "optional": true
     },
-    "files": [
-        "dist/",
-        "agents/",
-        "README.md"
-    ],
-    "pi": {
-        "extensions": [
-            "./dist/index.js"
-        ]
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
     },
-    "keywords": [
-        "pi",
-        "flow",
-        "fork",
-        "pi-package"
-    ],
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/tuanhung303/pi-agent-flow"
+    "@mariozechner/pi-tui": {
+      "optional": true
     },
-    "engines": {
-        "node": ">=20.19.0"
+    "@mariozechner/pi-ai": {
+      "optional": true
     },
-    "scripts": {
-        "build": "tsc",
-        "lint": "tsc --noEmit",
-        "test": "PI_FLOW_RUNNER=local vitest run",
-        "hatchet-worker": "node dist/hatchet-worker-cli.js",
-        "switch:local": "npm link",
-        "switch:remote": "npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow",
-        "prepublishOnly": "npm run build"
-    },
-    "devDependencies": {
-        "typescript": "^5.0.0",
-        "vitest": "^3.2.4",
-        "@types/jsdom": "^28.0.1",
-        "@types/turndown": "^5.0.6"
-    },
-    "peerDependencies": {
-        "@mariozechner/pi-agent-core": ">=0.37.0",
-        "@mariozechner/pi-ai": ">=0.37.0",
-        "@mariozechner/pi-coding-agent": ">=0.37.0",
-        "@mariozechner/pi-tui": ">=0.37.0",
-        "@sinclair/typebox": ">=0.34.0"
-    },
-    "peerDependenciesMeta": {
-        "@mariozechner/pi-agent-core": {
-            "optional": true
-        },
-        "@mariozechner/pi-coding-agent": {
-            "optional": true
-        },
-        "@mariozechner/pi-tui": {
-            "optional": true
-        },
-        "@mariozechner/pi-ai": {
-            "optional": true
-        },
-        "@sinclair/typebox": {
-            "optional": true
-        }
-    },
-    "dependencies": {
-        "jsdom": "^29.1.0",
-        "turndown": "^7.2.4"
-    },
-    "optionalDependencies": {
-        "@hatchet-dev/typescript-sdk": "^1.22.2"
+    "@sinclair/typebox": {
+      "optional": true
     }
+  },
+  "dependencies": {
+    "jsdom": "^29.1.0",
+    "turndown": "^7.2.4"
+  },
+  "optionalDependencies": {
+    "@hatchet-dev/typescript-sdk": "^1.22.2"
+  }
 }
