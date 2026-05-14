@@ -127,6 +127,16 @@ eval "$(./scripts/switch.sh)"   # when switching to LOCAL the script prints an e
 
 > ⚠️ The variable **must** be exported in the same shell that starts `pi`. Running `export` inside a subshell (e.g. `bash -c 'export …'`) will **not** work because child-process environment variables do not propagate upward to the parent.
 
+## Architecture Decision Records
+
+ADRs live in `doc/adr/`. Use `adr init doc/adr` for initialization and `adr new "Decision title"` for new records. Regenerate the index with `adr generate toc > doc/adr/README.md`.
+
+Current Hatchet integration plan:
+- ADR 2: phase 1 runner seam (accepted; implemented in PR #1)
+- ADR 3: phase 2 basic Hatchet backend (proposed)
+- ADR 4: phase 3 operational hardening (proposed)
+- ADR 5: phase 4 advanced Hatchet UX (proposed)
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
