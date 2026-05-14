@@ -18,12 +18,15 @@ Add an optional Hatchet runner selected by configuration such as `PI_FLOW_RUNNER
 
 The first Hatchet backend returns final results only. Live streaming and cancellation propagation are deferred.
 
+Hatchet payload trust boundary: task payloads include flow configuration, prompts, inherited session snapshots, working directories, and the project flow directory path. The Hatchet queue, workers, logs, and retention layer are therefore trusted infrastructure and must not be exposed to untrusted tenants or operators.
+
 ## Acceptance Criteria
 
 This ADR may move to Accepted when:
 
 - `PI_FLOW_RUNNER=hatchet` selects a Hatchet-backed runner while local remains the default.
-- Hatchet task input is plain JSON and excludes non-serializable runtime objects.
+- Hatchet task input is plain JSON and excludes non-serializable runtime objects while preserving the discovered project flow directory path.
+- README and this ADR document the Hatchet payload trust boundary and trusted infrastructure assumption.
 - A worker entrypoint can execute a flow attempt by calling `runFlow()`.
 - The backend returns final results and documents that streaming/cancellation are deferred.
 - The Hatchet SDK does not become mandatory for local-only users.

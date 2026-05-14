@@ -127,6 +127,14 @@ declare module "@mariozechner/pi-coding-agent" {
 	export function __resetBashToolMock(): void;
 }
 
+declare module "@hatchet-dev/typescript-sdk" {
+	export const HatchetClient: any;
+	export const Hatchet: any;
+	export const hatchet: any;
+	const defaultExport: any;
+	export default defaultExport;
+}
+
 declare module "@mariozechner/pi-tui" {
 	export interface Component {
 		invalidate(): void;

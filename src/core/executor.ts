@@ -18,7 +18,7 @@ import {
 import { extractStructuredOutput } from "../snapshot/structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent } from "./flow.js";
-import { LocalFlowRunner, type FlowRunner } from "../flow-runner.js";
+import { DEFAULT_LOCAL_FLOW_RUNNER, type FlowRunner } from "../flow-runner.js";
 import { getFlowSummaryText } from "../snapshot/runner-events.js";
 import {
   normalizeFlowModeName,
@@ -183,7 +183,6 @@ function evictCacheOverflow(cache: Map<string, CompressedFlowResult[]>): void {
   if (oldestKey !== undefined) cache.delete(oldestKey);
 }
 
-const DEFAULT_LOCAL_FLOW_RUNNER = new LocalFlowRunner();
 
 // ---------------------------------------------------------------------------
 // Main API
@@ -399,6 +398,8 @@ export async function executeFlows(
           }
         },
         makeDetails,
+      }, {
+        projectFlowsDir,
       });
 
       allResults[index] = result;

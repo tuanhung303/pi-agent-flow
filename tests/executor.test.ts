@@ -72,11 +72,12 @@ function makeDeps(overrides: Partial<FlowExecutorDeps> = {}): FlowExecutorDeps {
 
 describe("executeFlows runner abstraction", () => {
   it("uses an injected flow runner while preserving resolved runFlow options", async () => {
-    const run = vi.fn(async (opts: any) => {
+    const run = vi.fn(async (opts: any, context: any) => {
       expect(opts.flowName).toBe("build");
       expect(opts.parentDepth).toBe(0);
       expect(opts.maxDepth).toBe(3);
       expect(opts.sessionMode).toBe("default");
+      expect(context.projectFlowsDir).toBe("/repo/.pi/agents");
       return result({ stderr: "from injected runner" });
     });
 
