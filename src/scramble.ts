@@ -207,7 +207,7 @@ const MIN_PHRASE_LENGTH = 60;
 // Drain timeout: partial chunk ripples when text stops changing for this long.
 // Tokens arrive ~200ms apart at 196 TPS; 350ms is long enough to avoid firing
 // during active streaming but short enough to feel responsive when tool calls pause.
-const MSG_CHUNK_DRAIN_MS = 340;
+const MSG_CHUNK_DRAIN_MS = 200;
 
 // Resume gap: after a long pause (e.g. tool call), treat resumed chunks as a
 // fresh stream and force a ripple effect.
@@ -320,6 +320,8 @@ interface LineState {
 	lastTextChangeTime: number;
 	// Ambient pulse: when last ripple expired
 	lastRippleEndTime: number;
+	// Accumulated chars since last flush (forces periodic ripples during dense streaming)
+	charsSinceLastFlush: number;
 }
 
 /** Phrase boundary detection for illuminate msg: streaming */
@@ -366,7 +368,11 @@ function shouldFlushPhrase(text: string, displayed: string, lastFlushTime: numbe
 		newContent = text;
 	}
 	const boundaryPos = findPhraseBoundary(newContent);
-	return boundaryPos >= 0;
+	if (boundaryPos >= 0) return true;
+	// Force flush: if enough new content accumulated, flush regardless of boundary
+	const newContentLen = text.startsWith(displayed) ? text.length - displayed.length : text.length;
+	if (newContentLen >= 40) return true;
+	return false;
 }
 
 type LineKey = 'aim' | 'act' | 'msg';
@@ -1115,18 +1121,27 @@ function processLine(
 			const gap = now - state.lastTextChangeTime;
 
 			if (textChanged) {
+				const delta = Math.max(0, newText.length - state.lastText.length);
 				state.lastText = newText;
 				state.phraseBuffer = newText;
 				state.lastTextChangeTime = now;
+				state.charsSinceLastFlush += delta;
 				// During active ripple, keep displayedText frozen (text being scrambled)
 				// Between ripples, displayedText stays as last rippled text for chunk detection
 			}
 
-			// If no active ripple and accumulated content meets chunk threshold → fire ripple
-			if (!hasActiveRipples && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
+			// F1: accumulator — periodic ripples during dense streaming
+			if (!hasActiveRipples && state.charsSinceLastFlush >= 40 && newText !== state.displayedText) {
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
+			} else if (!hasActiveRipples && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
+				state.displayedText = newText;
+				state.lastFlushTime = now;
+				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
 				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
 			} else if (!hasActiveRipples && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
@@ -1134,6 +1149,7 @@ function processLine(
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
 				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
 			} else if (!hasActiveRipples && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 				// Streaming resumed after a long pause (e.g., tool call) —
@@ -1141,6 +1157,7 @@ function processLine(
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
 				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
 			}
 			return;
@@ -1258,6 +1275,7 @@ function createLineState(): LineState {
 		lastAccessTime: Date.now(),
 		lastTextChangeTime: 0,
 		lastRippleEndTime: 0,
+		charsSinceLastFlush: 0,
 	};
 }
 
@@ -1422,6 +1440,7 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.charsSinceLastFlush = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
@@ -1501,6 +1520,7 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.charsSinceLastFlush = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
@@ -1585,6 +1605,7 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.charsSinceLastFlush = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
@@ -1713,16 +1734,25 @@ export class ScrambleStateManager {
 				const gap = now - state.lastTextChangeTime;
 
 				if (textChanged) {
+					const delta = Math.max(0, visibleText.length - state.lastText.length);
 					state.lastText = visibleText;
 					state.phraseBuffer = visibleText;
 					state.lastTextChangeTime = now;
+					state.charsSinceLastFlush += delta;
 				}
 
-				// If no active ripple and accumulated content meets chunk threshold → fire ripple
-				if (!hasActiveRipples && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
+				// F1: accumulator — periodic ripples during dense streaming
+				if (!hasActiveRipples && state.charsSinceLastFlush >= 40 && visibleText !== state.displayedText) {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
+					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
+				} else if (!hasActiveRipples && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
+					state.displayedText = visibleText;
+					state.lastFlushTime = now;
+					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
 					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
 				} else if (!hasActiveRipples && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
@@ -1730,6 +1760,7 @@ export class ScrambleStateManager {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
 					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
 				} else if (!hasActiveRipples && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 					// Streaming resumed after a long pause (e.g., tool call) —
@@ -1737,6 +1768,7 @@ export class ScrambleStateManager {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
 					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
 				}
 			} else {
