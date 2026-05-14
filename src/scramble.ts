@@ -150,9 +150,9 @@ const BOLD_OFF = '\x1b[22m';
 const DIM_ON = '\x1b[2m';
 const DIM_OFF = '\x1b[22m';
 
-/** Illuminate close: turns off bold (SGR 22 also kills dim), then re-applies
- *  dim (SGR 2) so enclosing dim context survives scramble transitions. */
-const ILLUMINATE_CLOSE = '\x1b[22m\x1b[39m\x1b[49m';
+/** Illuminate close: resets foreground color only. No bg or bold/dim resets
+ *  needed — bold is never applied, and enclosing dim context is preserved. */
+const ILLUMINATE_CLOSE = '\x1b[39m';
 
 // ---------------------------------------------------------------------------
 // Illuminate per-target effect configs
@@ -660,7 +660,7 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 
 		return `\x1b[38;2;${r};${g};${b}m`;
 	}
-	return BOLD_ON + config.color;
+	return config.color;
 }
 
 export function applyRipples(
@@ -780,15 +780,12 @@ export function applyRipples(
 				if (isCrest) {
 					prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 					if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-						// Gradient peak: vivid salmon → warm white, with complementary bg halo
+						// Gradient peak: vivid salmon → warm white
 						const t = Math.min(1, crestDepth / 1.5);
 						const cr = Math.round(lerp(255, 255, t));
 						const cg = Math.round(lerp(90, 240, t));
 						const cb = Math.round(lerp(70, 230, t));
-						const bgr = Math.round(lerp(20, 60, t));
-						const bgg = Math.round(lerp(30, 20, t));
-						const bgb = Math.round(lerp(60, 30, t));
-						prefix = `\x1b[1m\x1b[48;2;${bgr};${bgg};${bgb}m\x1b[38;2;${cr};${cg};${cb}m`;
+						prefix = `\x1b[38;2;${cr};${cg};${cb}m`;
 					}
 				}
 				if (prefix) {
