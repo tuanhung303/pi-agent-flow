@@ -15,7 +15,7 @@
  *
  * Mode 4 — ILLUMINATE: Neon glow ripple with depth-based esoteric char sets,
  *   ANSI truecolor, phrase-chunked msg streaming, and TPS hysteresis.
- *   Per-target color configs (cyan aim, purple act, gold TPS, etc.).
+ *   Per-target color configs (sky aim, warm act, peach TPS, etc.).
  *
  * Line behavior (all modes):
  *   aim: — content stays still, no animation ever
@@ -168,14 +168,14 @@ interface IlluminateConfig {
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
-	aimLabel: { color: CYAN_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	actLabel: { color: WARM_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	msgLabel: { color: PEACH_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	aimLabel: { color: SKY_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	actLabel: { color: WARM_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	msgLabel: { color: PEACH_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
 
-	msgContent: { color: 'dynamic', duration: 400, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
-	flowMeta: { color: WARM_GLOW, duration: 250, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
+	msgContent: { color: 'dynamic', duration: 600, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
+	flowMeta: { color: WARM_GLOW, duration: 380, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
 
-	tps: { color: ORANGE_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
+	tps: { color: WARM_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
 
 };
 
@@ -183,14 +183,14 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 340;
+const RIPPLE_DUR_DEFAULT = 520;
 const RIPPLE_SPREAD_DEFAULT = 1;
-const MIN_RIPPLE_INTERVAL = 420;
+const MIN_RIPPLE_INTERVAL = 640;
 const DEPTH_BAND_MAX = 7;
 const TPS_FLASH_DUR = 105;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 300;
-const ECHO_AFTERGLOW_MS = 500;
+const AFTERGLOW_MS = 420;
+const ECHO_AFTERGLOW_MS = 650;
 const FLASH_AFTERGLOW_MS = 137; // shorter afterglow for TPS/KPI value flashes
 const PULSE_WINDOW_MS = 600;
 const PULSE_CYCLE_MS = 998;
@@ -207,7 +207,7 @@ const MIN_PHRASE_LENGTH = 60;
 // Drain timeout: partial chunk ripples when text stops changing for this long.
 // Tokens arrive ~200ms apart at 196 TPS; 350ms is long enough to avoid firing
 // during active streaming but short enough to feel responsive when tool calls pause.
-const MSG_CHUNK_DRAIN_MS = 245;
+const MSG_CHUNK_DRAIN_MS = 340;
 
 // Resume gap: after a long pause (e.g. tool call), treat resumed chunks as a
 // fresh stream and force a ripple effect.
@@ -611,63 +611,45 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 		const life = 1 - progress;
 		const intensity = heat * life * (1 - 0.25 * heat);
 
-		// 8-zone continuous truecolor gradient: cyan → magenta → warm → peach → sky → white
-		// with smooth sub-zone blends for liquid, band-free transitions
+		// 5-zone continuous truecolor gradient: deep sky → bright sky → sky-peach bridge → soft peach → rich salmon → warm white peak
 		let r: number, g: number, b: number;
-		if (intensity < 0.18) {
-			const t = smoothstep(0, 0.18, intensity);
-			r = lerp(0, 125, t);
-			g = lerp(230, 177, t);
-			b = lerp(220, 172, t);
-		} else if (intensity < 0.30) {
-			const t = smoothstep(0.18, 0.30, intensity);
-			r = lerp(125, 236, t);
-			g = lerp(177, 72, t);
-			b = lerp(172, 153, t);
-		} else if (intensity < 0.42) {
-			const t = smoothstep(0.30, 0.42, intensity);
-			r = lerp(236, 251, t);
-			g = lerp(72, 176, t);
-			b = lerp(153, 169, t);
-		} else if (intensity < 0.58) {
-			const t = smoothstep(0.42, 0.58, intensity);
-			r = lerp(251, 250, t);
-			g = lerp(176, 190, t);
-			b = lerp(169, 183, t);
-		} else if (intensity < 0.74) {
-			const t = smoothstep(0.58, 0.74, intensity);
-			r = lerp(250, 200, t);
-			g = lerp(190, 200, t);
-			b = lerp(183, 210, t);
-		} else if (intensity < 0.88) {
-			const t = smoothstep(0.74, 0.88, intensity);
-			r = lerp(200, 152, t);
-			g = lerp(200, 203, t);
-			b = lerp(210, 250, t);
-		} else if (intensity < 0.96) {
-			const t = smoothstep(0.88, 0.96, intensity);
-			r = lerp(152, 0, t);
-			g = lerp(203, 230, t);
+		if (intensity < 0.20) {
+			const t = smoothstep(0, 0.20, intensity);
+			r = lerp(120, 152, t);
+			g = lerp(170, 203, t);
+			b = lerp(230, 250, t);
+		} else if (intensity < 0.40) {
+			const t = smoothstep(0.20, 0.40, intensity);
+			r = lerp(152, 200, t);
+			g = lerp(203, 210, t);
 			b = lerp(250, 220, t);
+		} else if (intensity < 0.60) {
+			const t = smoothstep(0.40, 0.60, intensity);
+			r = lerp(200, 251, t);
+			g = lerp(210, 200, t);
+			b = lerp(220, 193, t);
+		} else if (intensity < 0.80) {
+			const t = smoothstep(0.60, 0.80, intensity);
+			r = lerp(251, 251, t);
+			g = lerp(200, 176, t);
+			b = lerp(193, 169, t);
 		} else {
-			const t = smoothstep(0.96, 1.0, intensity);
-			r = lerp(0, 0, t);
-			g = lerp(230, 230, t);
-			b = lerp(220, 220, t);
+			const t = smoothstep(0.80, 1.0, intensity);
+			r = lerp(251, 255, t);
+			g = lerp(176, 245, t);
+			b = lerp(169, 240, t);
 		}
 
-		// Interference boost: overlapping ripples create prismatic refraction
+		// Interference boost: overlapping ripples warm-white flash
 		const effectiveCombined = combinedDepth ?? depth;
 		const interferenceBoost = Math.max(0, (effectiveCombined - DEPTH_BAND_MAX * 0.6) / DEPTH_BAND_MAX);
 		if (interferenceBoost > 0) {
-			// Warm→cool cyan flash for prismatic refraction
-			const targetR = 50, targetG = 255, targetB = 255;
+			const targetR = 255, targetG = 245, targetB = 240;
 			r = Math.min(255, Math.max(0, Math.round(r + interferenceBoost * (targetR - r))));
 			g = Math.min(255, Math.max(0, Math.round(g + interferenceBoost * (targetG - g))));
 			b = Math.min(255, Math.max(0, Math.round(b + interferenceBoost * (targetB - b))));
 		}
 
-		// No DIM/BOLD — truecolor RGB handles brightness smoothly
 		return `\x1b[38;2;${r};${g};${b}m`;
 	}
 	return config.color;
@@ -790,11 +772,11 @@ export function applyRipples(
 				if (isCrest) {
 					prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 					if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-						// Alternate cyan/orange at crest based on character position, no bold
+						// Alternate sky/warm at crest based on character position, no bold
 						if (bestDist % 2 === 0) {
-							prefix = '\x1b[38;2;0;230;220m';  // cyan
+							prefix = '\x1b[38;2;152;203;250m';  // sky
 						} else {
-							prefix = '\x1b[38;2;255;165;50m';  // orange
+							prefix = '\x1b[38;2;251;176;169m';  // warm
 						}
 					}
 				}
@@ -880,8 +862,8 @@ export function applyRipples(
 				const settleRoll = hashNoise(42, idx, settleTick, 33);
 				if (settleRoll < 0.05) {
 					const settlePrefix = (hashNoise(42, idx, settleTick, 55) < 0.5)
-						? '\x1b[38;2;0;200;195m'   // cyan
-						: '\x1b[38;2;230;140;40m';  // orange
+						? '\x1b[38;2;152;203;250m'   // sky
+						: '\x1b[38;2;251;176;169m';  // warm
 					if (!inColor || currentPrefix !== settlePrefix) {
 						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
 						segments[segCount++] = settlePrefix;
@@ -919,8 +901,8 @@ function spawnIlluminateRipple(pos: number, now: number, config: IlluminateConfi
 }
 
 function getRippleDuration(textLength: number, baseDur: number = RIPPLE_DUR_DEFAULT): number {
-	if (textLength <= 5) return Math.max(baseDur, 730);
-	if (textLength <= 10) return Math.max(baseDur, 645);
+	if (textLength <= 5) return Math.max(baseDur, 950);
+	if (textLength <= 10) return Math.max(baseDur, 850);
 	return baseDur;
 }
 
