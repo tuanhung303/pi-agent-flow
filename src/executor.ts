@@ -13,7 +13,7 @@ import type {
 	CompressedFlowResult,
 	FlowMetrics,
 } from "./types.js";
-import { isFlowSuccess, isFlowError, getFlowOutput, emptyFlowUsage } from "./types.js";
+import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsage } from "./types.js";
 import { extractStructuredOutput } from "./structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
@@ -168,7 +168,13 @@ function shouldFailover(result: SingleResult): boolean {
 	if (text.includes("permission") || text.includes("invalid tool") || text.includes("bad settings")) {
 		return false;
 	}
-	return result.exitCode > 0;
+	if (result.exitCode > 0) return true;
+	// Some providers log HTTP 400 / "Param Incorrect" to stderr while the child
+	// process still exits 0 and never completes a turn — treat as retryable.
+	if (!isFlowComplete(result) && (text.includes("400") && text.includes("param"))) {
+		return true;
+	}
+	return false;
 }
 
 // ---------------------------------------------------------------------------
