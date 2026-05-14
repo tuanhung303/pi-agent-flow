@@ -11,6 +11,7 @@
 Publishing is **fully automated** via GitHub Actions.
 
 ### Strict Rules
+
 - **Never run `npm publish` locally.** Always use CI.
 - **Never run `npm version` locally.** The Release workflow handles tagging.
 
@@ -23,7 +24,7 @@ When the user asks to publish:
    ```bash
    gh workflow run bump-version.yml -f bump_type=patch
    ```
-   
+
    For an alpha prerelease:
    ```bash
    gh workflow run bump-version.yml -f bump_type=prerelease
@@ -46,19 +47,23 @@ When the user asks to publish:
 ## Local Development
 
 ### One-time setup
+
 ```bash
 ./scripts/switch.sh         # Link local checkout (or `npm run switch:local`)
 npm ls -g pi-agent-flow     # Verify link status — should show "-> /path/to/repo"
 ```
 
 ### Daily dev loop
+
 You do **not** need to switch between every edit. Once linked, just rebuild and restart `pi`:
+
 ```bash
 npm run build               # Compile TypeScript → dist/
 # Quit pi (Ctrl+C), then start it again — it picks up the new dist/ via the symlink
 ```
 
 ### Going back to published
+
 ```bash
 ./scripts/switch.sh         # Toggle back to REMOTE (or `npm run switch:remote`)
 npm ls -g pi-agent-flow     # Should show a version number, not "->"
@@ -66,8 +71,7 @@ npm ls -g pi-agent-flow     # Should show a version number, not "->"
 
 ## Quick Switch (Local ↔ Remote)
 
-Use the toggle script to swap between your **local dev build** (for testing
-changes) and the **published npm version** (for stable daily usage).
+Use the toggle script to swap between your **local dev build** (for testing changes) and the **published npm version** (for stable daily usage).
 
 | Mode | Command | When to use |
 |------|---------|-------------|
@@ -82,27 +86,30 @@ changes) and the **published npm version** (for stable daily usage).
 > ⚠️ **Always restart `pi` after switching** so the extension loader picks up the change.
 
 ### Dev loop after switching
+
 Switching is only needed when changing **modes** (local ↔ remote), not between every edit.
 Once linked locally, your daily loop is just:
+
 1. Edit code
 2. `npm run build`
 3. Quit `pi` and restart it
 
 ### `pi update` danger
-> 🚫 **Never run `pi update` while linked locally.** It installs the published npm package
-> globally, which **overwrites and destroys your local symlink**. To get published updates,
-> run `./scripts/switch.sh` first to toggle to REMOTE, then run `pi update`.
 
-### Payload dump workflow
+> 🚫 **Never run `pi update` while linked locally.** It installs the published npm package globally, which **overwrites and destroys your local symlink**. To get published updates, run `./scripts/switch.sh` first to toggle to REMOTE, then run `pi update`.
+
+## Payload dump workflow
 
 When developing locally, you often want to capture the exact prompt stream that `pi` sends to flows so you can debug, diff, or replay it.
 
 **Quick start — using the helper script:**
+
 ```bash
 ./scripts/dev-start.sh    # exports PI_FLOW_DUMP_SNAPSHOT and starts pi
 ```
 
 **Manual — if you prefer to control the path yourself:**
+
 ```bash
 export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump
 pi
@@ -113,6 +120,7 @@ cat /tmp/pi-dump.scout.1715724000000.txt   # read the reconstructed prompt
 You can also pass `--dump <path>` on the CLI as an alternative to the env var.
 
 **Convenience — one-liner for your shell:**
+
 ```bash
 eval "$(./scripts/switch.sh)"   # when switching to LOCAL the script prints an export line
 ```
@@ -124,7 +132,8 @@ eval "$(./scripts/switch.sh)"   # when switching to LOCAL the script prints an e
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
 
 ### Tier 1 — Intent-Driven Workers
-**Question:** "Do the thing, but stay in your lane."  
+
+**Question:** "Do the thing, but stay in your lane."
 **Mutations:** Yes — reads, writes, edits, tests, ships. Each flow has a strict mission profile. No mission drift.
 
 | Flow | Tools | maxDepth | Tier | Notes |
@@ -143,11 +152,13 @@ Agent work is organized into two tiers. **Access is not the boundary — intent 
 > **Tier** (lite / flash / full) only affects **model selection** — which LLM candidate to use. It does **not** restrict tools or access.
 
 ### Tier 2 — Orchestrator: Main Agent
-**Question:** "What should we do, and who should do it?"  
-**Mutations:** No direct code edits.  
+
+**Question:** "What should we do, and who should we do it?"
+**Mutations:** No direct code edits.
 **Role:** The router, synthesizer, and user-facing coordinator.
 
 The Orchestrator is the agent you're talking to right now (when not inside a flow). It:
+
 - Understands the user's goal.
 - Decides **whether** to delegate to a flow.
 - Chooses **which** flow matches the task.
@@ -157,11 +168,31 @@ The Orchestrator is the agent you're talking to right now (when not inside a flo
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 
+## Key Implementation Details
+
+- **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
+- **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`.
+- **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` are propagated to children.
+- **Cycle prevention**: Re-entering flows already in the ancestor stack is blocked.
+- **Session modes**: `fast` (300s), `default` (600s), `long` (900s), `extreme_long` (1200s). Defined in `session-mode.ts`.
+- **Two-stage timeout**: Warning and hard-timeout logic propagates `PI_FLOW_DEADLINE_MS` and `PI_FLOW_TOOL_SUMMARY_GRACE_MS` to children.
+- **Timeout reminder injection**: Parent writes `PI_FLOW_REMINDER_FILE` so timed bash can warn the child before the next tool call.
+- **Graceful shutdown**: Parent aborts pending bash operations, then terminates registered child process groups.
+- **Structured output**: JSON schema can be injected and later parsed/enriched from tool history.
+- **Flow-mode persistence**: `--flow-mode` persists `flowModelConfig` to global `settings.json` via atomic rename.
+- **Transition matrix**: Post-flow routing is data-driven in `transitions.ts`.
+- **Tool optimization**: Legacy file tools can be replaced with `batch`; override with `PI_FLOW_TOOL_OPTIMIZE`.
+- **Session snapshot sanitization**: Prior flow context is sanitized and compressed before forking.
+- **Context compression**: Tool results are selectively compressed for child snapshots.
+- **Compact structured output**: Structured schema can be injected in compact form to reduce token bloat.
+- **Skip structured appendix**: `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` omits the structured appendix when needed.
+- **Max concurrency**: `PI_FLOW_MAX_CONCURRENCY` overrides default parallel flow limits.
+- **Spawn override**: `PI_FLOW_SPAWN_COMMAND` overrides child spawn command for exotic runtimes.
+- **Strategic hints**: `PI_FLOW_NO_STRATEGIC_HINT=1` suppresses appended planning hints.
+
 ### What a snapshot dump looks like
 
-When `PI_FLOW_DUMP_SNAPSHOT` is set (or `--dump <path>` is passed), every time a
-flow spawns the agent writes two files **per flow** (the base path gets a unique
-suffix so parallel flows don't overwrite each other):
+When `PI_FLOW_DUMP_SNAPSHOT` is set (or `--dump <path>` is passed), every time a flow spawns the agent writes two files **per flow** (the base path gets a unique suffix so parallel flows don't overwrite each other):
 
 1. `<base>.<flowName>.<timestamp>.md` — a markdown file containing:
    - A `<!-- pi-agent-flow dump -->` header with sanitization metadata
@@ -178,7 +209,7 @@ pi
 # After running a flow:
 ls -lh /tmp/pi-snapshot.*
 # → pi-snapshot.scout.1715724000000.md   (structured + human-readable)
-# → pi-snapshot.scout.1715724000000.txt   (prompt transcript only)
+# → pi-snapshot.scout.1715724000000.txt  (prompt transcript only)
 ```
 
 > 💡 **When to use it:** You need to inspect exactly what was sent to the model, reproduce a bug offline, or share a verbatim trace with another developer. The dump is written **before** the model call, so even if the flow crashes you still have the prompt.
@@ -189,7 +220,36 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 
 | Variable | Effect |
 |----------|--------|
-| `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
+| `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** before `pi` starts. |
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
-| `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
+| `PI_FLOW_SESSION_MODE` | Override the session mode. |
+
+## Workflow Learning with Git Notes
+
+After a successful workflow and commit, add a structured Git note to the commit documenting how the solution was reached. Use this for future workflow optimization and autoresearch learning.
+
+Prefer concise YAML-style notes with:
+
+- `problem`: what was being solved
+- `approach`: the successful strategy
+- `failed_paths`: dead ends or incorrect hypotheses
+- `verification`: commands/checks that proved success
+- `workflow_learning`: reusable lesson for future tasks
+- `related_files`: key files touched or studied
+
+Example:
+
+```bash
+git notes add -m "problem: Fix failing cache invalidation
+approach: Compared cache key inputs and added missing parameter
+failed_paths:
+  - Suspected stale filesystem cache first
+verification:
+  - pytest tests/optimize/test_backtesting.py
+workflow_learning: For cache bugs, inspect key composition before invalidation logic
+related_files:
+  - tests/optimize/test_backtesting.py"
+```
+
+Show notes with `git log --show-notes`. Share them explicitly when needed with `git push origin refs/notes/commits`.
