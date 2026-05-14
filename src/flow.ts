@@ -250,15 +250,15 @@ function buildFlowArgs(
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	if (resolvedModel) args.push("--model", resolvedModel);
 
-	const modelLc = (resolvedModel ?? "").toLowerCase();
-	// Mimo / Xiaomi OpenAPI has rejected requests when the mission prompt insists on
-	// a trailing ```json schema block alongside native tools (HTTP 400 Param Incorrect).
-	const skipStructuredDirective = modelLc.includes("mimo") || modelLc.includes("xiaomi");
+	// Opt out of appending the structured JSON appendix to the child `-p` mission.
+	// Set `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` if a provider rejects that prompt shape.
+	const rawSkipSo = process.env["PI_FLOW_SKIP_STRUCTURED_DIRECTIVE"];
+	const skipStructuredDirective =
+		rawSkipSo !== undefined && ["1", "true", "yes"].includes(rawSkipSo.trim().toLowerCase());
 
 	// Do not inherit the parent CLI `--thinking` level. Child flows often use a
-	// different tier/model (e.g. flow "lite" vs orchestrator); forwarding
-	// `--thinking high` has caused strict providers (e.g. Mimo) to reject the
-	// first completion with HTTP 400 "Param Incorrect".
+	// different tier/model than the orchestrator; inheriting `--thinking high` can
+	// be incompatible with the child model.
 	const thinking = flow.thinking;
 	if (thinking) args.push("--thinking", thinking);
 
@@ -326,7 +326,7 @@ function buildFlowArgs(
 	// Phase 3: Directive — the flow's system prompt (renamed from <system-directive>)
 	let directiveBody = flow.systemPrompt.trim();
 
-	// Append structured output instructions when enabled (unless provider is known brittle)
+	// Append structured output instructions when enabled (unless opted out via env).
 	if (structuredOutput && directiveBody && !skipStructuredDirective) {
 		directiveBody +=
 			`\n\n## Structured Output\n` +

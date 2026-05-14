@@ -108,6 +108,7 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 - **Session snapshot sanitization**: `sanitizeForkSnapshot()` strips steering hints, reasoning artifacts, strategic hints, and `batch_read` tool calls from assistant messages, and compresses prior flow tool results into compact `CompressedFlowResult` context maps before forking.
 - **Context compression**: Tool results from `batch`, `batch_read`, `web`, and `ask_user` are selectively compressed for child snapshots — bash sections are kept verbatim, read content is truncated, and context-map/file-summary sections are collapsed; web, ask_user, and batch_read results are replaced with compact metadata. Set `PI_FLOW_DEBUG_CONTEXT=1` to emit telemetry to `stderr`.
 - **Compact structured output**: When `structuredOutput` is enabled, the JSON schema is injected as a compact single-line reference (not a verbose essay) to reduce token bloat.
+- **Skip structured appendix**: `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` (or `true` / `yes`) omits the `## Structured Output` block appended to the child prompt when a provider rejects that shape.
 - **Max concurrency**: `PI_FLOW_MAX_CONCURRENCY` env var overrides the default maximum parallel flows.
 - **Spawn override**: `PI_FLOW_SPAWN_COMMAND` env var overrides the child spawn command for exotic runtime environments (e.g. bundled with pkg/nexe).
 - **Strategic hints**: `PI_FLOW_NO_STRATEGIC_HINT=1` suppresses the strategic planning hints appended after tool calls.

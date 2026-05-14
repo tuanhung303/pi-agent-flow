@@ -169,8 +169,8 @@ function shouldFailover(result: SingleResult): boolean {
 		return false;
 	}
 	if (result.exitCode > 0) return true;
-	// Some providers log HTTP 400 / "Param Incorrect" to stderr while the child
-	// process still exits 0 and never completes a turn — treat as retryable.
+	// Some child runs log HTTP 400 / "Param Incorrect" to stderr while exiting 0
+	// without completing a turn — treat as retryable for model failover.
 	if (!isFlowComplete(result) && (text.includes("400") && text.includes("param"))) {
 		return true;
 	}

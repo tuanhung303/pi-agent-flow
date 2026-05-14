@@ -145,74 +145,88 @@ describe("runFlow case-insensitive lookup", () => {
 		await promise;
 	});
 
-	it("omits structured output directive for Mimo / Xiaomi models", async () => {
+	it("omits structured output appendix when PI_FLOW_SKIP_STRUCTURED_DIRECTIVE is set", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 
-		const opts: RunFlowOptions = {
-			cwd: "/tmp",
-			flows: [mockFlow],
-			flowName: "scout",
-			intent: "Hello",
-			aim: "Hello",
-			forkSessionSnapshotJsonl: null,
-			parentDepth: 0,
-			parentFlowStack: [],
-			maxDepth: 3,
-			preventCycles: true,
-			structuredOutput: true,
-			model: "xiaomi/mimo-v2.5-pro",
-			makeDetails: (results) => ({
-				mode: "flow",
-				flowStyle: "fork",
-				projectAgentsDir: null,
-				results,
-			}),
-		};
+		const prev = process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE;
+		process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE = "1";
+		try {
+			const opts: RunFlowOptions = {
+				cwd: "/tmp",
+				flows: [mockFlow],
+				flowName: "scout",
+				intent: "Hello",
+				aim: "Hello",
+				forkSessionSnapshotJsonl: null,
+				parentDepth: 0,
+				parentFlowStack: [],
+				maxDepth: 3,
+				preventCycles: true,
+				structuredOutput: true,
+				model: "some-provider/some-model",
+				makeDetails: (results) => ({
+					mode: "flow",
+					flowStyle: "fork",
+					projectAgentsDir: null,
+					results,
+				}),
+			};
 
-		const promise = runFlow(opts);
-		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
-		const args = spawnCall[1] as string[];
-		const prompt = args[args.indexOf("-p") + 1];
-		expect(prompt).not.toContain("## Structured Output");
+			const promise = runFlow(opts);
+			const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+			const args = spawnCall[1] as string[];
+			const prompt = args[args.indexOf("-p") + 1];
+			expect(prompt).not.toContain("## Structured Output");
 
-		mockProc.emit("close", 0);
-		await promise;
+			mockProc.emit("close", 0);
+			await promise;
+		} finally {
+			if (prev === undefined) delete process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE;
+			else process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE = prev;
+		}
 	});
 
-	it("includes structured output directive for other models when structuredOutput is on", async () => {
+	it("includes structured output appendix when structuredOutput is on and env is unset", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 
-		const opts: RunFlowOptions = {
-			cwd: "/tmp",
-			flows: [mockFlow],
-			flowName: "scout",
-			intent: "Hello",
-			aim: "Hello",
-			forkSessionSnapshotJsonl: null,
-			parentDepth: 0,
-			parentFlowStack: [],
-			maxDepth: 3,
-			preventCycles: true,
-			structuredOutput: true,
-			model: "wafer/glm-5.1",
-			makeDetails: (results) => ({
-				mode: "flow",
-				flowStyle: "fork",
-				projectAgentsDir: null,
-				results,
-			}),
-		};
+		const prev = process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE;
+		delete process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE;
+		try {
+			const opts: RunFlowOptions = {
+				cwd: "/tmp",
+				flows: [mockFlow],
+				flowName: "scout",
+				intent: "Hello",
+				aim: "Hello",
+				forkSessionSnapshotJsonl: null,
+				parentDepth: 0,
+				parentFlowStack: [],
+				maxDepth: 3,
+				preventCycles: true,
+				structuredOutput: true,
+				model: "some-provider/some-model",
+				makeDetails: (results) => ({
+					mode: "flow",
+					flowStyle: "fork",
+					projectAgentsDir: null,
+					results,
+				}),
+			};
 
-		const promise = runFlow(opts);
-		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
-		const args = spawnCall[1] as string[];
-		const prompt = args[args.indexOf("-p") + 1];
-		expect(prompt).toContain("## Structured Output");
+			const promise = runFlow(opts);
+			const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
+			const args = spawnCall[1] as string[];
+			const prompt = args[args.indexOf("-p") + 1];
+			expect(prompt).toContain("## Structured Output");
 
-		mockProc.emit("close", 0);
-		await promise;
+			mockProc.emit("close", 0);
+			await promise;
+		} finally {
+			if (prev === undefined) delete process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE;
+			else process.env.PI_FLOW_SKIP_STRUCTURED_DIRECTIVE = prev;
+		}
 	});
 
 	it("passes --thinking only when set on flow frontmatter", async () => {
