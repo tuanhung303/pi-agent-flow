@@ -603,6 +603,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			let timeoutFired = false;
 			let semanticCompletionTimer: NodeJS.Timeout | undefined;
 			let countdownTimer: NodeJS.Timeout | undefined;
+			let renderTimer: NodeJS.Timeout | undefined;
 			let finishKillTimer: NodeJS.Timeout | undefined;
 
 			const clearSemanticCompletionTimer = () => {
@@ -616,6 +617,13 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				if (countdownTimer) {
 					clearInterval(countdownTimer);
 					countdownTimer = undefined;
+				}
+			};
+
+			const clearRenderTimer = () => {
+				if (renderTimer) {
+					clearInterval(renderTimer);
+					renderTimer = undefined;
 				}
 			};
 
@@ -654,6 +662,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				endStdin();
 				clearSemanticCompletionTimer();
 				clearCountdownTimer();
+				clearRenderTimer();
 				if (signal && abortHandler) {
 					signal.removeEventListener("abort", abortHandler);
 				}
@@ -709,12 +718,19 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			proc.stdout.on("data", onStdoutData);
 			proc.stderr.on("data", onStderrData);
 
-			if (onUpdate && effectiveTimeout > 0) {
-				countdownTimer = setInterval(() => {
+			if (onUpdate) {
+				renderTimer = setInterval(() => {
 					if (didClose || settled) return;
 					emitUpdate();
-				}, 1000);
-				countdownTimer.unref();
+				}, 200);
+				renderTimer.unref();
+				if (effectiveTimeout > 0) {
+					countdownTimer = setInterval(() => {
+						if (didClose || settled) return;
+						emitUpdate();
+					}, 1000);
+					countdownTimer.unref();
+				}
 			}
 
 			proc.on("close", (code) => {
