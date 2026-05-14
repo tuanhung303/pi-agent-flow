@@ -588,6 +588,12 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 		if (entry?.type === "message" && entry.message) {
 			let message = entry.message;
 
+			// Normalize internal "toolResult" role to "tool" for API compatibility.
+			if (message.role === "toolResult") {
+				message = { ...message, role: "tool" };
+				changed = true;
+			}
+
 			if (message.role === "assistant") {
 				const stripped = stripReasoningFromAssistantMessage(message);
 				message = stripped.message;
