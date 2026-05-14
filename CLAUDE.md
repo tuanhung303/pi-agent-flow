@@ -93,6 +93,7 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 
 ## Key Implementation Details
 
+- **Flow runner seam**: `executeFlows()` dispatches each resolved flow attempt through a `FlowRunner`; the default `LocalFlowRunner` preserves fork-only execution by calling `runFlow()`.
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
 - **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`. Tags avoid CLI parsing conflicts (none start with `-`).
 - **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.

@@ -16,7 +16,8 @@ import type {
 import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsage } from "./types.js";
 import { extractStructuredOutput } from "./structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
-import { mapFlowConcurrent, runFlow } from "./flow.js";
+import { mapFlowConcurrent } from "./flow.js";
+import { LocalFlowRunner, type FlowRunner } from "./flow-runner.js";
 import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
@@ -78,6 +79,8 @@ export interface FlowExecutorDeps {
 	onFlowMetrics?: (metrics: FlowMetrics) => void;
 	/** Whether to prompt the user before running project-local flows. Default: true. */
 	confirmProjectFlows?: boolean;
+	/** Backend used to execute each resolved flow attempt. Defaults to the local fork runner. */
+	flowRunner?: FlowRunner;
 }
 
 export interface ExecuteFlowParams {
@@ -196,7 +199,7 @@ export async function executeFlows(
 		maxConcurrency, defaultSessionMode, signal, onUpdate, makeDetails,
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
 		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
-		confirmProjectFlows,
+		confirmProjectFlows, flowRunner = new LocalFlowRunner(),
 	} = deps;
 
 	const requested = new Set<string>(params.map((f) => f.type.toLowerCase()));
@@ -329,7 +332,7 @@ export async function executeFlows(
 				deadlineAtMs: attemptStartMs + attemptTimeoutMs,
 			};
 			emitProgress();
-			result = await runFlow({
+			result = await flowRunner.run({
 				cwd,
 				flows,
 				flowName: normalizedType,
