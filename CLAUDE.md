@@ -233,6 +233,29 @@ At depth ≥ 2, the sanitized JSONL snapshot embeds the **parent flow's full act
 
 Child flows should treat any `<context-seal>`, `<activation>`, or `<directive>` blocks appearing inside JSONL `user` messages as **sealed parent context**, not as their own instructions. The child's own activation prompt is delivered separately in the `-p` argument.
 
+## Key Implementation Details
+
+- **Flow runner seam**: `executeFlows()` dispatches each resolved flow attempt through a `FlowRunner`; the default `LocalFlowRunner` preserves fork-only execution by calling `runFlow()`.
+- **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
+- **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`.
+- **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` are propagated to children.
+- **Cycle prevention**: Re-entering flows already in the ancestor stack is blocked.
+- **Session modes**: `fast` (300s), `default` (600s), `long` (900s), `extreme_long` (1200s). Defined in `session-mode.ts`.
+- **Two-stage timeout**: Warning and hard-timeout logic propagates `PI_FLOW_DEADLINE_MS` and `PI_FLOW_TOOL_SUMMARY_GRACE_MS` to children.
+- **Timeout reminder injection**: Parent writes `PI_FLOW_REMINDER_FILE` so timed bash can warn the child before the next tool call.
+- **Graceful shutdown**: Parent aborts pending bash operations, then terminates registered child process groups.
+- **Structured output**: JSON schema can be injected and later parsed/enriched from tool history.
+- **Flow-mode persistence**: `--flow-mode` persists `flowModelConfig` to global `settings.json` via atomic rename.
+- **Transition matrix**: Post-flow routing is data-driven in `transitions.ts`.
+- **Tool optimization**: Legacy file tools can be replaced with `batch`; override with `PI_FLOW_TOOL_OPTIMIZE`.
+- **Session snapshot sanitization**: Prior flow context is sanitized and compressed before forking.
+- **Context compression**: Tool results are selectively compressed for child snapshots.
+- **Compact structured output**: Structured schema can be injected in compact form to reduce token bloat.
+- **Skip structured appendix**: `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` omits the structured appendix when needed.
+- **Max concurrency**: `PI_FLOW_MAX_CONCURRENCY` overrides default parallel flow limits.
+- **Spawn override**: `PI_FLOW_SPAWN_COMMAND` overrides child spawn command for exotic runtimes.
+- **Strategic hints**: `PI_FLOW_NO_STRATEGIC_HINT=1` suppresses appended planning hints.
+
 ### What a snapshot dump looks like
 
 When `PI_FLOW_DUMP_SNAPSHOT` is set (or `--dump <path>` is passed), every time a
