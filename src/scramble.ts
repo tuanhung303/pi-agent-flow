@@ -15,7 +15,7 @@
  *
  * Mode 4 — ILLUMINATE: Neon glow ripple with depth-based esoteric char sets,
  *   ANSI truecolor, phrase-chunked msg streaming, and TPS hysteresis.
- *   Per-target color configs (cyan aim, purple act, gold TPS, etc.).
+ *   Per-target color configs (sky aim, warm act, peach TPS, etc.).
  *
  * Line behavior (all modes):
  *   aim: — content stays still, no animation ever
@@ -76,17 +76,18 @@ export function hashNoise(seed: number, charIndex: number, tick: number, depth: 
 // Character sets — depth-based esoteric scramble symbols (illuminate mode)
 // ---------------------------------------------------------------------------
 
-/** Deep glitch: fine dots, braille, ASCII punctuation for inner ripple depths (1–2) */
-const DEEP_GLITCH = '·∘∙+*~!?⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
-/** Mid glitch: dots, braille, light ASCII for mid depth (3) */
-const MID_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋~?+-*';
-/** Shallow glitch: numbers/brackets + shade blocks + light box-drawing for outer depths (4+) */
-const SHALLOW_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
-/** Classic ASCII-safe set for stream/cascade/ripple fallback */
-const SCRAMBLE_CHARS = '·∘∙~?+-*/[]{}<>_○◎';
-
-/** Thin braille spark: single-dot and sparse two-dot patterns for afterglow "pop" */
-const THIN_BRAILLE_SPARK = '⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
+/** Deep glitch: fine dots, sparse sparkle, dense braille for inner ripple depths (1–2) */
+const DEEP_GLITCH = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+/** Mid glitch: dots, light sparkles, medium braille for depth (3) */
+const MID_GLITCH = '·∘∙~⋆˚｡+✳◇✩✲⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+/** Shallow glitch: heavy sparkles + light braille for outer depths (4+) — the wavefront crest */
+const SHALLOW_GLITCH = '·∘∙~✦°✧✶✹✮✩⠌⠡⠜';
+/** Classic scramble set for stream/cascade/ripple fallback — balanced braille + sparkle mix */
+const SCRAMBLE_CHARS = '·∘∙~⋆˚｡+✳◇✩✦°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+/** Sparkle and thin braille mix for afterglow "pop" */
+const SPARK_CHARS = '·∘∙⋆˚｡⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
+/** Backward-compat alias */
+const THIN_BRAILLE_SPARK = SPARK_CHARS;
 
 function selectScrambleChar(depth: number, dist: number, elapsed: number, seed?: number, textLen?: number): string {
 	const tickMs = (textLen !== undefined && textLen < 20) ? 300 : 150;
@@ -137,10 +138,10 @@ function selectSparkChar(seed: number, charIndex: number, tick: number): string 
 // ---------------------------------------------------------------------------
 
 const CYAN_GLOW = '\x1b[38;2;0;255;204m';
-const WARM_GLOW = '\x1b[38;2;251;176;169m';
-const PEACH_GLOW = '\x1b[38;2;251;200;193m';
+const WARM_GLOW = '\x1b[38;2;255;140;120m';
+const PEACH_GLOW = '\x1b[38;2;255;160;140m';
 const ORANGE_GLOW = '\x1b[38;2;255;190;130m';
-const SKY_GLOW = '\x1b[38;2;152;203;250m';
+const SKY_GLOW = '\x1b[38;2;80;170;255m';
 const WHITE_GLOW = '\x1b[38;2;255;255;255m';
 const RESET_COLOR = '\x1b[39m';
 const BOLD_ON = '\x1b[1m';
@@ -149,8 +150,8 @@ const BOLD_OFF = '\x1b[22m';
 const DIM_ON = '\x1b[2m';
 const DIM_OFF = '\x1b[22m';
 
-/** Illuminate close: turns off bold (SGR 22 also kills dim), then re-applies
- *  dim (SGR 2) so enclosing dim context survives scramble transitions. */
+/** Illuminate close: resets foreground color only. No bg or bold/dim resets
+ *  needed — bold is never applied, and enclosing dim context is preserved. */
 const ILLUMINATE_CLOSE = '\x1b[39m';
 
 // ---------------------------------------------------------------------------
@@ -165,17 +166,18 @@ interface IlluminateConfig {
 	initialTimeOffset?: number;
 	crestOnly?: boolean;
 	spark?: boolean;
+	scramble?: boolean; // default true; when false, keep original text during ripple (no garble)
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
-	aimLabel: { color: CYAN_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	actLabel: { color: WARM_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	msgLabel: { color: PEACH_GLOW, duration: 240, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	aimLabel: { color: SKY_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
+	actLabel: { color: WARM_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
+	msgLabel: { color: PEACH_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
 
-	msgContent: { color: 'dynamic', duration: 400, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
-	flowMeta: { color: WARM_GLOW, duration: 250, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
+	msgContent: { color: 'dynamic', duration: 600, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30, scramble: false },
+	flowMeta: { color: WARM_GLOW, duration: 380, spread: 0.8, glowIntensity: 'medium', crestOnly: false, spark: false },
 
-	tps: { color: ORANGE_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
+	tps: { color: WARM_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
 
 };
 
@@ -183,14 +185,14 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 // Timing constants
 // ---------------------------------------------------------------------------
 
-const RIPPLE_DUR_DEFAULT = 340;
+const RIPPLE_DUR_DEFAULT = 520;
 const RIPPLE_SPREAD_DEFAULT = 1;
-const MIN_RIPPLE_INTERVAL = 420;
+const MIN_RIPPLE_INTERVAL = 300;
 const DEPTH_BAND_MAX = 7;
 const TPS_FLASH_DUR = 105;
 const TPS_FLASH_SPREAD = 0.5;
-const AFTERGLOW_MS = 300;
-const ECHO_AFTERGLOW_MS = 500;
+const AFTERGLOW_MS = 420;
+const ECHO_AFTERGLOW_MS = 650;
 const FLASH_AFTERGLOW_MS = 137; // shorter afterglow for TPS/KPI value flashes
 const PULSE_WINDOW_MS = 600;
 const PULSE_CYCLE_MS = 998;
@@ -208,7 +210,7 @@ const MIN_PHRASE_LENGTH = 60;
 // Drain timeout: partial chunk ripples when text stops changing for this long.
 // Tokens arrive ~200ms apart at 196 TPS; 350ms is long enough to avoid firing
 // during active streaming but short enough to feel responsive when tool calls pause.
-const MSG_CHUNK_DRAIN_MS = 245;
+const MSG_CHUNK_DRAIN_MS = 120;
 
 // Resume gap: after a long pause (e.g. tool call), treat resumed chunks as a
 // fresh stream and force a ripple effect.
@@ -321,6 +323,8 @@ interface LineState {
 	lastTextChangeTime: number;
 	// Ambient pulse: when last ripple expired
 	lastRippleEndTime: number;
+	// Accumulated chars since last flush (forces periodic ripples during dense streaming)
+	charsSinceLastFlush: number;
 }
 
 /** Phrase boundary detection for illuminate msg: streaming */
@@ -367,7 +371,11 @@ function shouldFlushPhrase(text: string, displayed: string, lastFlushTime: numbe
 		newContent = text;
 	}
 	const boundaryPos = findPhraseBoundary(newContent);
-	return boundaryPos >= 0;
+	if (boundaryPos >= 0) return true;
+	// Force flush: if enough new content accumulated, flush regardless of boundary
+	const newContentLen = text.startsWith(displayed) ? text.length - displayed.length : text.length;
+	if (newContentLen >= 40) return true;
+	return false;
 }
 
 type LineKey = 'aim' | 'act' | 'msg';
@@ -612,63 +620,45 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 		const life = 1 - progress;
 		const intensity = heat * life * (1 - 0.25 * heat);
 
-		// 8-zone continuous truecolor gradient: cyan → magenta → warm → peach → sky → white
-		// with smooth sub-zone blends for liquid, band-free transitions
+		// 5-zone continuous truecolor gradient: deep sky → bright sky → sky-peach bridge → vivid peach → rich salmon → warm white peak
 		let r: number, g: number, b: number;
-		if (intensity < 0.18) {
-			const t = smoothstep(0, 0.18, intensity);
-			r = lerp(0, 125, t);
-			g = lerp(230, 177, t);
-			b = lerp(220, 172, t);
-		} else if (intensity < 0.30) {
-			const t = smoothstep(0.18, 0.30, intensity);
-			r = lerp(125, 236, t);
-			g = lerp(177, 72, t);
-			b = lerp(172, 153, t);
-		} else if (intensity < 0.42) {
-			const t = smoothstep(0.30, 0.42, intensity);
-			r = lerp(236, 251, t);
-			g = lerp(72, 176, t);
-			b = lerp(153, 169, t);
-		} else if (intensity < 0.58) {
-			const t = smoothstep(0.42, 0.58, intensity);
-			r = lerp(251, 250, t);
-			g = lerp(176, 190, t);
-			b = lerp(169, 183, t);
-		} else if (intensity < 0.74) {
-			const t = smoothstep(0.58, 0.74, intensity);
-			r = lerp(250, 200, t);
-			g = lerp(190, 200, t);
-			b = lerp(183, 210, t);
-		} else if (intensity < 0.88) {
-			const t = smoothstep(0.74, 0.88, intensity);
-			r = lerp(200, 152, t);
-			g = lerp(200, 203, t);
-			b = lerp(210, 250, t);
-		} else if (intensity < 0.96) {
-			const t = smoothstep(0.88, 0.96, intensity);
-			r = lerp(152, 0, t);
-			g = lerp(203, 230, t);
-			b = lerp(250, 220, t);
+		if (intensity < 0.20) {
+			const t = smoothstep(0, 0.20, intensity);
+			r = lerp(0, 80, t);
+			g = lerp(80, 170, t);
+			b = lerp(255, 255, t);
+		} else if (intensity < 0.40) {
+			const t = smoothstep(0.20, 0.40, intensity);
+			r = lerp(80, 180, t);
+			g = lerp(170, 170, t);
+			b = lerp(255, 210, t);
+		} else if (intensity < 0.60) {
+			const t = smoothstep(0.40, 0.60, intensity);
+			r = lerp(180, 255, t);
+			g = lerp(170, 140, t);
+			b = lerp(210, 120, t);
+		} else if (intensity < 0.80) {
+			const t = smoothstep(0.60, 0.80, intensity);
+			r = lerp(255, 255, t);
+			g = lerp(140, 90, t);
+			b = lerp(120, 70, t);
 		} else {
-			const t = smoothstep(0.96, 1.0, intensity);
-			r = lerp(0, 0, t);
-			g = lerp(230, 230, t);
-			b = lerp(220, 220, t);
+			const t = smoothstep(0.80, 1.0, intensity);
+			r = lerp(255, 255, t);
+			g = lerp(90, 240, t);
+			b = lerp(70, 230, t);
 		}
 
-		// Interference boost: overlapping ripples create prismatic refraction
+		// Interference boost: overlapping ripples warm-white flash
 		const effectiveCombined = combinedDepth ?? depth;
 		const interferenceBoost = Math.max(0, (effectiveCombined - DEPTH_BAND_MAX * 0.6) / DEPTH_BAND_MAX);
 		if (interferenceBoost > 0) {
-			// Warm→cool cyan flash for prismatic refraction
-			const targetR = 50, targetG = 255, targetB = 255;
+			const targetR = 255, targetG = 245, targetB = 240;
 			r = Math.min(255, Math.max(0, Math.round(r + interferenceBoost * (targetR - r))));
 			g = Math.min(255, Math.max(0, Math.round(g + interferenceBoost * (targetG - g))));
 			b = Math.min(255, Math.max(0, Math.round(b + interferenceBoost * (targetB - b))));
 		}
 
-		// No DIM/BOLD — truecolor RGB handles brightness smoothly
 		return `\x1b[38;2;${r};${g};${b}m`;
 	}
 	return config.color;
@@ -783,7 +773,7 @@ export function applyRipples(
 			const jitterTick = Math.floor(now / 42);
 			const depthJitter = (hashNoise(seed, bestDist, jitterTick, 99) * 2 - 1) * 0.15;
 			const jitteredDepth = Math.max(0.1, maxDepth + depthJitter);
-			const char = selectScrambleChar(jitteredDepth, bestDist, bestElapsed, seed, text.length);
+			const char = (config?.scramble === false) ? origChar : selectScrambleChar(jitteredDepth, bestDist, bestElapsed, seed, text.length);
 			if (config) {
 				const crestDepth = radii[bestIdx] - bestDist;
 				const isCrest = !config.crestOnly || (crestDepth > 0 && crestDepth < 2.0);
@@ -791,12 +781,12 @@ export function applyRipples(
 				if (isCrest) {
 					prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 					if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-						// Alternate cyan/orange at crest based on character position, no bold
-						if (bestDist % 2 === 0) {
-							prefix = '\x1b[38;2;0;230;220m';  // cyan
-						} else {
-							prefix = '\x1b[38;2;255;165;50m';  // orange
-						}
+						// Gradient peak: vivid salmon → warm white
+						const t = Math.min(1, crestDepth / 1.5);
+						const cr = Math.round(lerp(255, 255, t));
+						const cg = Math.round(lerp(90, 240, t));
+						const cb = Math.round(lerp(70, 230, t));
+						prefix = `\x1b[38;2;${cr};${cg};${cb}m`;
 					}
 				}
 				if (prefix) {
@@ -833,7 +823,7 @@ export function applyRipples(
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
 			const popTarget = Math.min(0.045, 4 / Math.max(1, text.length));
 			const shouldScramble = inInitialPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 210 && glitchRoll < popTarget;
-			if (shouldScramble) {
+			if (shouldScramble && config?.scramble !== false) {
 				if (config) {
 					let agPrefix: string;
 					if (config.color === 'dynamic') {
@@ -841,8 +831,8 @@ export function applyRipples(
 						// Echo pops get minimum intensity so chars stay visible long after ripple
 						const effectiveIntensity = afterglowIntensity;
 						const emberR = Math.round(200 + 55 * effectiveIntensity);
-						const emberG = Math.round(100 + 60 * effectiveIntensity);
-						const emberB = Math.round(40 + 20 * effectiveIntensity);
+						const emberG = Math.round(130 + 80 * effectiveIntensity);
+						const emberB = Math.round(140 + 70 * effectiveIntensity);
 						agPrefix = `\x1b[38;2;${emberR};${emberG};${emberB}m`;
 					} else {
 						agPrefix = config.color;
@@ -881,8 +871,8 @@ export function applyRipples(
 				const settleRoll = hashNoise(42, idx, settleTick, 33);
 				if (settleRoll < 0.05) {
 					const settlePrefix = (hashNoise(42, idx, settleTick, 55) < 0.5)
-						? '\x1b[38;2;0;200;195m'   // cyan
-						: '\x1b[38;2;230;140;40m';  // orange
+						? '\x1b[38;2;80;170;255m'   // sky
+						: '\x1b[38;2;255;140;120m';  // warm
 					if (!inColor || currentPrefix !== settlePrefix) {
 						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
 						segments[segCount++] = settlePrefix;
@@ -920,8 +910,8 @@ function spawnIlluminateRipple(pos: number, now: number, config: IlluminateConfi
 }
 
 function getRippleDuration(textLength: number, baseDur: number = RIPPLE_DUR_DEFAULT): number {
-	if (textLength <= 5) return Math.max(baseDur, 730);
-	if (textLength <= 10) return Math.max(baseDur, 645);
+	if (textLength <= 5) return Math.max(baseDur, 950);
+	if (textLength <= 10) return Math.max(baseDur, 850);
 	return baseDur;
 }
 
@@ -1149,32 +1139,43 @@ function processLine(
 			const gap = now - state.lastTextChangeTime;
 
 			if (textChanged) {
+				const delta = Math.max(0, newText.length - state.lastText.length);
 				state.lastText = newText;
 				state.phraseBuffer = newText;
 				state.lastTextChangeTime = now;
+				state.charsSinceLastFlush += delta;
 				// During active ripple, keep displayedText frozen (text being scrambled)
 				// Between ripples, displayedText stays as last rippled text for chunk detection
 			}
 
-			// If no active ripple and accumulated content meets chunk threshold → fire ripple
-			if (!hasActiveRipples && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
+			// F1: accumulator — periodic ripples during dense streaming
+			if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && state.charsSinceLastFlush >= 20 && newText !== state.displayedText) {
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
 				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
-			} else if (!hasActiveRipples && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
+			} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
+				state.displayedText = newText;
+				state.lastFlushTime = now;
+				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
+				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
+			} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
 				// ripple it out so it doesn't sit plain indefinitely.
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
 				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
-			} else if (!hasActiveRipples && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
+			} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 				// Streaming resumed after a long pause (e.g., tool call) —
 				// force a fresh ripple on the accumulated content.
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
+				state.charsSinceLastFlush = 0;
 				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
 			}
 			return;
@@ -1292,6 +1293,7 @@ function createLineState(): LineState {
 		lastAccessTime: Date.now(),
 		lastTextChangeTime: 0,
 		lastRippleEndTime: 0,
+		charsSinceLastFlush: 0,
 	};
 }
 
@@ -1456,6 +1458,7 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.charsSinceLastFlush = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
@@ -1535,6 +1538,7 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.charsSinceLastFlush = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
@@ -1619,6 +1623,7 @@ export class ScrambleStateManager {
 			state.pendingText = '';
 			state.lastFlushTime = 0;
 			state.lastRippleEndTime = 0;
+			state.charsSinceLastFlush = 0;
 		}
 		if (isComplete) {
 			state.completed = true;
@@ -1747,30 +1752,41 @@ export class ScrambleStateManager {
 				const gap = now - state.lastTextChangeTime;
 
 				if (textChanged) {
+					const delta = Math.max(0, visibleText.length - state.lastText.length);
 					state.lastText = visibleText;
 					state.phraseBuffer = visibleText;
 					state.lastTextChangeTime = now;
+					state.charsSinceLastFlush += delta;
 				}
 
-				// If no active ripple and accumulated content meets chunk threshold → fire ripple
-				if (!hasActiveRipples && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
+				// F1: accumulator — periodic ripples during dense streaming
+				if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && state.charsSinceLastFlush >= 20 && visibleText !== state.displayedText) {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
 					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
-				} else if (!hasActiveRipples && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
+				} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
+					state.displayedText = visibleText;
+					state.lastFlushTime = now;
+					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
+					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
+				} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
 					// ripple it out so it doesn't sit plain indefinitely.
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
 					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
-				} else if (!hasActiveRipples && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
+				} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 					// Streaming resumed after a long pause (e.g., tool call) —
 					// force a fresh ripple on the accumulated content.
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
+					state.charsSinceLastFlush = 0;
 					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
 				}
 			} else {
