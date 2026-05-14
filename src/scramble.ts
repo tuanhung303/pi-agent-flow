@@ -165,6 +165,7 @@ interface IlluminateConfig {
 	initialTimeOffset?: number;
 	crestOnly?: boolean;
 	spark?: boolean;
+	scramble?: boolean; // default true; when false, keep original text during ripple (no garble)
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
@@ -172,7 +173,7 @@ const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
 	actLabel: { color: WARM_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
 	msgLabel: { color: PEACH_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
 
-	msgContent: { color: 'dynamic', duration: 600, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
+	msgContent: { color: 'dynamic', duration: 600, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30, scramble: false },
 	flowMeta: { color: WARM_GLOW, duration: 380, spread: 0.8, glowIntensity: 'medium', crestOnly: false, spark: false },
 
 	tps: { color: WARM_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
@@ -770,7 +771,7 @@ export function applyRipples(
 			const jitterTick = Math.floor(now / 42);
 			const depthJitter = (hashNoise(seed, bestDist, jitterTick, 99) * 2 - 1) * 0.15;
 			const jitteredDepth = Math.max(0.1, maxDepth + depthJitter);
-			const char = selectScrambleChar(jitteredDepth, bestDist, bestElapsed, seed, text.length);
+			const char = (config?.scramble === false) ? origChar : selectScrambleChar(jitteredDepth, bestDist, bestElapsed, seed, text.length);
 			if (config) {
 				const crestDepth = radii[bestIdx] - bestDist;
 				const isCrest = !config.crestOnly || (crestDepth > 0 && crestDepth < 2.0);
@@ -823,7 +824,7 @@ export function applyRipples(
 			const glitchRoll = bestAgIdx >= 0 ? hashNoise(agRipple.seed ?? 0, idx, agTick, 77) : 1;
 			const popTarget = Math.min(0.045, 4 / Math.max(1, text.length));
 			const shouldScramble = inInitialPopWindow && bestAgIdx >= 0 && afterglowRipples[bestAgIdx].dur >= 210 && glitchRoll < popTarget;
-			if (shouldScramble) {
+			if (shouldScramble && config?.scramble !== false) {
 				if (config) {
 					let agPrefix: string;
 					if (config.color === 'dynamic') {
