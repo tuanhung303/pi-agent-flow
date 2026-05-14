@@ -4,6 +4,9 @@ import type { FlowConfig } from "../src/agents.js";
 import type { FlowDetails } from "../src/types.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 // Mock spawn to avoid real process execution
 vi.mock("node:child_process", async (importOriginal) => {
@@ -1305,6 +1308,95 @@ describe("acceptance field propagation", () => {
 
 		mockProc.emit("close", 0);
 		await promise;
+	});
+
+	it("dumps snapshot and prompt to file when PI_FLOW_DUMP_SNAPSHOT is set", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const dumpFile = path.join(os.tmpdir(), `pi-flow-dump-test-${Date.now()}.md`);
+		const prev = process.env.PI_FLOW_DUMP_SNAPSHOT;
+		process.env.PI_FLOW_DUMP_SNAPSHOT = dumpFile;
+		try {
+			const jsonl = '{"type":"header","systemPrompt":"test"}\n{"type":"message","message":{"role":"user","content":"hello"}}\n';
+			const opts: RunFlowOptions = {
+				cwd: "/tmp",
+				flows: [mockFlow],
+				flowName: "scout",
+				intent: "Test intent",
+				aim: "Test aim",
+				forkSessionSnapshotJsonl: jsonl,
+				parentDepth: 0,
+				parentFlowStack: [],
+				maxDepth: 3,
+				preventCycles: true,
+				makeDetails: (results) => ({
+					mode: "flow",
+					flowStyle: "fork",
+					projectAgentsDir: null,
+					results,
+				}),
+			};
+
+			const promise = runFlow(opts);
+			setTimeout(() => {
+				mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+				mockProc.emit("close", 0);
+			}, 10);
+
+			await promise;
+			const dumped = fs.readFileSync(dumpFile, "utf-8");
+			expect(dumped).toContain("## Session Snapshot (JSONL)");
+			expect(dumped).toContain("## Activation Prompt (-p)");
+			expect(dumped).toContain('"type":"header"');
+			expect(dumped).toContain("<activation flow=\"scout\"");
+		} finally {
+			if (prev === undefined) delete process.env.PI_FLOW_DUMP_SNAPSHOT;
+			else process.env.PI_FLOW_DUMP_SNAPSHOT = prev;
+			try { fs.unlinkSync(dumpFile); } catch { /* ignore */ }
+		}
+	});
+
+	it("does not dump when PI_FLOW_DUMP_SNAPSHOT is unset", async () => {
+		const mockProc = makeMockProcess();
+		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
+
+		const dumpFile = path.join(os.tmpdir(), `pi-flow-dump-test-missing-${Date.now()}.md`);
+		const prev = process.env.PI_FLOW_DUMP_SNAPSHOT;
+		delete process.env.PI_FLOW_DUMP_SNAPSHOT;
+		try {
+			const jsonl = '{"type":"header","systemPrompt":"test"}\n';
+			const opts: RunFlowOptions = {
+				cwd: "/tmp",
+				flows: [mockFlow],
+				flowName: "scout",
+				intent: "Test intent",
+				aim: "Test aim",
+				forkSessionSnapshotJsonl: jsonl,
+				parentDepth: 0,
+				parentFlowStack: [],
+				maxDepth: 3,
+				preventCycles: true,
+				makeDetails: (results) => ({
+					mode: "flow",
+					flowStyle: "fork",
+					projectAgentsDir: null,
+					results,
+				}),
+			};
+
+			const promise = runFlow(opts);
+			setTimeout(() => {
+				mockProc.stdout.emit("data", Buffer.from('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'));
+				mockProc.emit("close", 0);
+			}, 10);
+
+			await promise;
+			expect(fs.existsSync(dumpFile)).toBe(false);
+		} finally {
+			if (prev === undefined) delete process.env.PI_FLOW_DUMP_SNAPSHOT;
+			else process.env.PI_FLOW_DUMP_SNAPSHOT = prev;
+		}
 	});
 
 	it("omits Acceptance line when acceptance is empty string", async () => {
