@@ -151,6 +151,7 @@ async function confirmProjectFlowsIfNeeded(
 // ---------------------------------------------------------------------------
 
 const FLOW_RESULT_CACHE_MAX_ENTRIES = 50;
+const DEFAULT_LOCAL_FLOW_RUNNER = new LocalFlowRunner();
 
 /** Evict oldest entries from the cache when it exceeds the cap. */
 function evictCacheOverflow(cache: Map<string, unknown>): void {
@@ -199,7 +200,7 @@ export async function executeFlows(
 		maxConcurrency, defaultSessionMode, signal, onUpdate, makeDetails,
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
 		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
-		confirmProjectFlows, flowRunner = new LocalFlowRunner(),
+		confirmProjectFlows, flowRunner = DEFAULT_LOCAL_FLOW_RUNNER,
 	} = deps;
 
 	const requested = new Set<string>(params.map((f) => f.type.toLowerCase()));
