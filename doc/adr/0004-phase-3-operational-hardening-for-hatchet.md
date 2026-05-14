@@ -4,19 +4,17 @@ Date: 2026-05-14
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
-A basic Hatchet backend introduces operational concerns that local execution does not have: worker environment drift, workspace assumptions, queue retries, payload sizes, secrets, and spawn-command correctness.
-
-These checks should be addressed before treating Hatchet execution as production-ready.
+A basic Hatchet backend introduces operational concerns that local execution does not have: worker environment drift, workspace assumptions, queue retries, payload sizes, secrets, and spawn-command correctness. These checks should be addressed before treating Hatchet execution as production-ready.
 
 ## Decision
 
-Add hardening around the Hatchet backend before expanding user-facing features. Required guardrails include spawn-command validation, workspace and package-version checks, explicit environment propagation rules, payload-size limits, retry/failover boundaries, and documentation for local and remote workers.
+Add hardening around the Hatchet backend before expanding user-facing features. Required guardrails include spawn-command validation, workspace and package-version checks, explicit environment propagation rules, payload-size limits, retry/failover boundaries, and documentation for local and remote workers. Model failover remains owned by `executeFlows()`; Hatchet retries must not blindly repeat an entire failover sequence unless explicitly configured.
 
-Model failover remains owned by `executeFlows()`; Hatchet retries must not blindly repeat an entire failover sequence unless explicitly configured.
+Phase 3 implements worker-side validation for `PI_FLOW_SPAWN_COMMAND` and queued `cwd`/`taskCwd`, adds a default 1,000,000-byte serialized payload limit configurable by `PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES`, and documents package-version alignment, explicit secret/environment provisioning, and bounded/disabled Hatchet retries for local and remote workers.
 
 ## Acceptance Criteria
 

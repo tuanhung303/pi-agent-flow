@@ -464,6 +464,8 @@ The Hatchet SDK is dynamically imported and is not required for local-only users
 
 **Hatchet payload trust boundary:** Hatchet task payloads include the selected flow configuration, prompt text, inherited session snapshot, working directory, and project flow directory path. Treat the queue and workers as trusted infrastructure: do not route these payloads through untrusted tenants, logs, or retention policies, and configure Hatchet access controls accordingly.
 
+Operational hardening: workers validate `PI_FLOW_SPAWN_COMMAND` and the queued `cwd`/`taskCwd` workspace before calling `runFlow()`. Worker checkouts should run the same `pi-agent-flow` package version as the parent, provide required Pi/provider/Hatchet secrets explicitly, and avoid inheriting unrelated worker secrets into child `pi` processes. Payloads are limited to 1,000,000 serialized bytes by default; set `PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES` only for trusted private queues with appropriate retention. Keep Hatchet task retries disabled or bounded so a queue retry does not duplicate `executeFlows()` model failover attempts.
+
 Session mode precedence is:
 
 ```txt
@@ -498,6 +500,7 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_SESSION_MODE` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
 | `PI_FLOW_MAX_CONCURRENCY` | Maximum parallel flows |
 | `PI_FLOW_RUNNER` | Flow execution backend: unset/`local` for local forked children, or `hatchet` for the optional final-result-only Hatchet backend |
+| `PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES` | Maximum serialized Hatchet task payload size in bytes; defaults to `1000000` |
 | `PI_FLOW_SPAWN_COMMAND` | Override the spawn command for exotic runtime environments (e.g. bundled with pkg/nexe) |
 | `PI_FLOW_DEADLINE_MS` | Absolute deadline timestamp (ms) propagated to child flows for timeout awareness |
 | `PI_FLOW_TOOL_SUMMARY_GRACE_MS` | Time before hard timeout when the agent should stop tool use and summarize (ms) |
