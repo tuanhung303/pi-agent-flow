@@ -43,7 +43,7 @@ function hasAnsi(s: string): boolean {
 }
 
 const TEST_ID = 'test-id';
-const SCRAMBLE_CHAR_SET = '·∘∙~⋆˚｡₊⊹⟡✩✦°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+const SCRAMBLE_CHAR_SET = '·∘∙~⋆˚｡+✳◇✩✦°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
 
 // ---------------------------------------------------------------------------
 // Stream mode tests
@@ -826,13 +826,13 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns mid glitch chars for depth 3', () => {
-		const midChars = '·∘∙~⋆˚｡₊⊹⟡✩˖⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const midChars = '·∘∙~⋆˚｡+✳◇✩✲⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
 		const c = selectScrambleChar(3, 0, 0);
 		expect(midChars).toContain(c);
 	});
 
 	it('returns shallow glitch chars for depth 4+', () => {
-		const shallowChars = '·∘∙~✦°⭒✶𖦹✮✩⠌⠡⠜';
+		const shallowChars = '·∘∙~✦°✧✶✹✮✩⠌⠡⠜';
 		for (let d = 4; d <= 6; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(shallowChars).toContain(c);
@@ -1825,8 +1825,8 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 
 	it('returns mid or shallow glitch chars at blend depth (3.0)', () => {
 		// At depth 3.0 we are in the mid→shallow blend zone [2.5, 3.5]
-		const midChars = '·∘∙~⋆˚｡₊⊹⟡✩˖⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
-		const shallowChars = '·∘∙~✦°⭒✶𖦹✮✩⠌⠡⠜';
+		const midChars = '·∘∙~⋆˚｡+✳◇✩✲⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const shallowChars = '·∘∙~✦°✧✶✹✮✩⠌⠡⠜';
 		const c = selectScrambleChar(3, 0, 0, 12345);
 		const isMid = midChars.includes(c);
 		const isShallow = shallowChars.includes(c);
@@ -1834,7 +1834,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 	});
 
 	it('returns shallow glitch chars at deep depth (5.0)', () => {
-		const shallowChars = '·∘∙~✦°⭒✶𖦹✮✩⠌⠡⠜';
+		const shallowChars = '·∘∙~✦°✧✶✹✮✩⠌⠡⠜';
 		const c = selectScrambleChar(5, 0, 0, 12345);
 		expect(shallowChars).toContain(c);
 	});
@@ -1847,7 +1847,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 			results.add(selectScrambleChar(2, seed, 0, seed));
 		}
 		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
-		const midChars = '·∘∙~⋆˚｡₊⊹⟡✩˖⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const midChars = '·∘∙~⋆˚｡+✳◇✩✲⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
 		let deepCount = 0;
 		let midCount = 0;
 		for (const c of results) {
