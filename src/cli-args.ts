@@ -62,7 +62,8 @@ export interface ParsedFlowCliArgs {
  *
  * - extensionArgs: forwarded with path resolution
  * - alwaysProxy: forwarded verbatim to every child
- * - fallbackModel/thinking/tools: used only when the flow file does not set them
+ * - fallbackModel / fallbackTools: used when the flow file does not set them
+ * - fallbackThinking: parsed from argv; not forwarded to child flows (see flow.ts)
  */
 let _cachedArgs: ParsedFlowCliArgs | undefined;
 

@@ -250,7 +250,11 @@ function buildFlowArgs(
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	if (resolvedModel) args.push("--model", resolvedModel);
 
-	const thinking = flow.thinking ?? inheritedCliArgs.fallbackThinking;
+	// Do not inherit the parent CLI `--thinking` level. Child flows often use a
+	// different tier/model (e.g. flow "lite" vs orchestrator); forwarding
+	// `--thinking high` has caused strict providers (e.g. Mimo) to reject the
+	// first completion with HTTP 400 "Param Incorrect".
+	const thinking = flow.thinking;
 	if (thinking) args.push("--thinking", thinking);
 
 	// Compute delegation depth before building tool list — children that can
