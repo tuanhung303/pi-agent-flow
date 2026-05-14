@@ -89,6 +89,11 @@ const SPARK_CHARS = '·∘∙⋆˚｡⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂'
 /** Backward-compat alias */
 const THIN_BRAILLE_SPARK = SPARK_CHARS;
 
+const DECORATIVE_ICON_RE = /[✔✅✖❌◐✓]/g;
+function stripDecorativeIcons(text: string): string {
+	return text.replace(DECORATIVE_ICON_RE, '');
+}
+
 function selectScrambleChar(depth: number, dist: number, elapsed: number, seed?: number, textLen?: number): string {
 	const tickMs = (textLen !== undefined && textLen < 20) ? 300 : 150;
 	const tick = Math.floor(elapsed / tickMs);
@@ -563,7 +568,9 @@ export function buildQueue(
 	rng?: FastRNG,
 ): QueueItem[] {
 	const queue: QueueItem[] = [];
-	const length = Math.max(oldText.length, newText.length);
+	const cleanOld = stripDecorativeIcons(oldText);
+	const cleanNew = stripDecorativeIcons(newText);
+	const length = Math.max(cleanOld.length, cleanNew.length);
 	const useRng = rng ?? new FastRNG(makeAnimationSeed(newText, Date.now()));
 	for (let i = 0; i < length; i++) {
 		const from = oldText[i] || '';
@@ -617,10 +624,12 @@ export function computeCascadeFrame(queue: QueueItem[], frame: number, rng?: () 
 
 export function buildGlitchQueue(oldText: string, newText: string, maxStart: number = GLITCH_MAX_START, maxLength: number = GLITCH_MAX_LENGTH): Array<{ from: string; to: string; start: number; end: number; char: string | null }> {
 	const queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }> = [];
-	const length = Math.max(oldText.length, newText.length);
+	const cleanOld = stripDecorativeIcons(oldText);
+	const cleanNew = stripDecorativeIcons(newText);
+	const length = Math.max(cleanOld.length, cleanNew.length);
 	for (let i = 0; i < length; i++) {
-		const from = oldText[i] || '';
-		const to = newText[i] || '';
+		const from = cleanOld[i] || '';
+		const to = cleanNew[i] || '';
 		const start = Math.floor(Math.random() * maxStart);
 		const end = start + Math.floor(Math.random() * maxLength);
 		queue.push({ from, to, start, end, char: null });

@@ -37,7 +37,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 1 operations: 1 read");
+			expect(result.content[0].text).toContain("1 operations: 1 read");
     expect(result.content[0].text).toContain("--- test.txt (2 lines) ---");
     expect(result.content[0].text).toContain("hello world");
 			expect(result.details.results[0]).toMatchObject({
@@ -67,7 +67,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 2 operations: 2 reads");
+			expect(result.content[0].text).toContain("2 operations: 2 reads");
     expect(result.content[0].text).toContain("--- a.txt (2 lines) ---");
     expect(result.content[0].text).toContain("content a");
     expect(result.content[0].text).toContain("--- b.txt (2 lines) ---");
@@ -105,7 +105,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✖ 1 failed");
+			expect(result.content[0].text).toContain("1 failed");
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				status: "error",
@@ -305,7 +305,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 1 operations: 1 write");
+			expect(result.content[0].text).toContain("1 operations: 1 write");
     expect(result.content[0].text).toContain("write: new.txt");
     expect(result.content[0].text).toContain("12 bytes");
 			expect(result.details.results[0]).toMatchObject({
@@ -372,7 +372,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 2 operations: 2 writes");
+			expect(result.content[0].text).toContain("2 operations: 2 writes");
     expect(result.content[0].text).toContain("write: x.txt");
     expect(result.content[0].text).toContain("write: y.txt");
 			expect(fs.readFileSync(path.join(tmpDir, "x.txt"), "utf-8")).toBe("x\n");
@@ -401,7 +401,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 1 operations: 1 edit");
+			expect(result.content[0].text).toContain("1 operations: 1 edit");
     expect(result.content[0].text).toContain("edit: edit.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "edit",
@@ -472,7 +472,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 2 operations: 2 edits");
+			expect(result.content[0].text).toContain("2 operations: 2 edits");
     expect(result.content[0].text).toContain("edit: a.txt");
     expect(result.content[0].text).toContain("edit: b.txt");
 			expect(fs.readFileSync(path.join(tmpDir, "a.txt"), "utf-8")).toBe("ALPHA\n");
@@ -722,7 +722,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 1 operations: 1 delete");
+			expect(result.content[0].text).toContain("1 operations: 1 delete");
 			expect(result.content[0].text).toContain("delete: delete-me.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "delete",
@@ -773,7 +773,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 3 operations: 1 read, 1 write, 1 edit");
+			expect(result.content[0].text).toContain("3 operations: 1 read, 1 write, 1 edit");
     expect(result.content[0].text).toContain("--- existing.txt");
     expect(result.content[0].text).toContain("write: new.txt");
     expect(result.content[0].text).toContain("edit: existing.txt");
@@ -846,8 +846,8 @@ describe("batch tool", () => {
 			expect(fs.existsSync(path.join(tmpDir, "skipped.txt"))).toBe(false);
 
 			// Summary should show the failure with hint
-			expect(result.content[0].text).toContain("✖ 1 failed, 1 skipped");
-			expect(result.content[0].text).toContain("✔ 1 read ok");
+			expect(result.content[0].text).toContain("1 failed, 1 skipped");
+			expect(result.content[0].text).toContain("1 read ok");
 		});
 
 		it("continues after skipped operations are not executed", async () => {
@@ -1347,8 +1347,8 @@ describe("batch tool", () => {
 			);
 
 			const text = result.content[0].text;
-			expect(text).toContain("✖ 1 failed, 1 skipped");
-			expect(text).toContain("✖ read missing.txt:");
+			expect(text).toContain("1 failed, 1 skipped");
+			expect(text).toContain("read missing.txt:");
 			expect(text).toContain("— Verify the path exists.");
 		});
 	});
@@ -2204,24 +2204,24 @@ describe("edge cases", () => {
 		it("collapsed shows only summary line", () => {
 			const tool = createTool();
 			const result = {
-				content: [{ type: "text", text: "✔ 3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
+				content: [{ type: "text", text: "3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
 				details: { results: [] },
 			};
 			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
 			const text = rendered.toString();
-			expect(text).toContain("✔ 3 operations");
+			expect(text).toContain("3 operations");
 			expect(text).not.toContain("--- file.ts ---");
 		});
 
 		it("expanded shows full content", () => {
 			const tool = createTool();
 			const result = {
-				content: [{ type: "text", text: "✔ 3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
+				content: [{ type: "text", text: "3 operations: 2 reads, 1 edit\n\n--- file.ts ---\ncontent" }],
 				details: { results: [] },
 			};
 			const rendered = tool.renderResult!(result, { expanded: true }, makeTheme(), undefined);
 			const text = rendered.toString();
-			expect(text).toContain("✔ 3 operations");
+			expect(text).toContain("3 operations");
 			expect(text).toContain("--- file.ts ---");
 			expect(text).toContain("content");
 		});
@@ -2269,7 +2269,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 1 operations: 1 read");
+			expect(result.content[0].text).toContain("1 operations: 1 read");
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				path: "test.txt",
@@ -2295,7 +2295,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("✔ 2 operations: 2 reads");
+			expect(result.content[0].text).toContain("2 operations: 2 reads");
 			expect(result.details.results).toHaveLength(2);
 		});
 
@@ -2737,24 +2737,24 @@ describe("batch_read tool", () => {
 		it("collapsed shows only summary line", () => {
 			const tool = createTool();
 			const result = {
-				content: [{ type: "text", text: "✔ 2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
+				content: [{ type: "text", text: "2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
 				details: { results: [] },
 			};
 			const rendered = tool.renderResult!(result, { expanded: false }, makeTheme(), undefined);
 			const text = rendered.toString();
-			expect(text).toContain("✔ 2 operations");
+			expect(text).toContain("2 operations");
 			expect(text).not.toContain("--- file.ts ---");
 		});
 
 		it("expanded shows full content", () => {
 			const tool = createTool();
 			const result = {
-				content: [{ type: "text", text: "✔ 2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
+				content: [{ type: "text", text: "2 operations: 2 reads\n\n--- file.ts ---\ncontent" }],
 				details: { results: [] },
 			};
 			const rendered = tool.renderResult!(result, { expanded: true }, makeTheme(), undefined);
 			const text = rendered.toString();
-			expect(text).toContain("✔ 2 operations");
+			expect(text).toContain("2 operations");
 			expect(text).toContain("--- file.ts ---");
 		});
 	});

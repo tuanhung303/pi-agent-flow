@@ -114,8 +114,8 @@ function renderFlowReport(
 }
 
 function flowStatusIcon(r: SingleResult, theme: { fg: ThemeFg }): string {
-	if (r.exitCode === -1) return theme.fg("warning", "⏳");
-	return isFlowError(r) ? theme.fg("error", "✖") : theme.fg("success", "✔");
+	if (r.exitCode === -1) return theme.fg("warning", "(pending)");
+	return isFlowError(r) ? theme.fg("error", "(error)") : theme.fg("success", "(done)");
 }
 
 /** Center a label in a fixed-width header using em-dashes. Total width = 20. */
@@ -489,7 +489,7 @@ function renderMultiFlowResult(
 	const results = details.results;
 	const successCount = results.filter((r) => isFlowSuccess(r)).length;
 	const failCount = results.filter((r) => isFlowError(r)).length;
-	const icon = failCount > 0 ? theme.fg("warning", "◐") : theme.fg("success", "✔");
+	const icon = failCount > 0 ? theme.fg("warning", "(!)") : theme.fg("success", "(ok)");
 	const now = Date.now();
 
 	if (expanded) {
