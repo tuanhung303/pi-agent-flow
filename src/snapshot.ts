@@ -52,6 +52,9 @@ export function buildForkSessionSnapshotJsonl(
  */
 export function renderCompressedFlowResult(r: CompressedFlowResult): string {
 	const parts: string[] = [`[Flow: ${r.type} ${r.status}]`];
+	if (r.intent) parts.push(`Intent: ${r.intent}`);
+	if (r.aim) parts.push(`Aim: ${r.aim}`);
+	if (r.summary) parts.push(`Summary: ${r.summary}`);
 	if (r.files?.length) {
 		const fileLines = r.files.map((f) => {
 			const role = f.role ? ` (${f.role})` : "";
@@ -60,9 +63,33 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string {
 		});
 		parts.push(`Files:\n${fileLines.join("\n")}`);
 	}
+	if (r.actions?.length) {
+		const actionLines = r.actions.map((a) => {
+			const result = a.result ? ` → ${a.result}` : "";
+			const target = a.target ? ` (${a.target})` : "";
+			return `  [${a.type}] ${a.description}${target}${result}`;
+		});
+		parts.push(`Actions:\n${actionLines.join("\n")}`);
+	}
 	if (r.commands?.length) {
 		const cmdLines = r.commands.map((c) => `  ${c.tool ?? "cmd"}: ${c.command}`);
 		parts.push(`Commands:\n${cmdLines.join("\n")}`);
+	}
+	if (r.notDone?.length) {
+		const ndLines = r.notDone.map((n) => {
+			const reason = n.reason ? ` — ${n.reason}` : "";
+			return `  ${n.item}${reason}`;
+		});
+		parts.push(`Not done:\n${ndLines.join("\n")}`);
+	}
+	if (r.nextSteps?.length) {
+		parts.push(`Next steps:\n${r.nextSteps.map((s) => `  ${s}`).join("\n")}`);
+	}
+	if (r.reasoning?.length) {
+		parts.push(`Reasoning:\n${r.reasoning.map((s) => `  ${s}`).join("\n")}`);
+	}
+	if (r.notes?.length) {
+		parts.push(`Notes:\n${r.notes.map((s) => `  ${s}`).join("\n")}`);
 	}
 	if (r.error) parts.push(`Error: ${r.error}`);
 	return parts.join("\n");
@@ -382,7 +409,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		if (toolName === "flow") {
 			const compressed = cache.get(toolCallId);
 			if (!compressed || compressed.length === 0) {
-				// Cache miss (evicted or corrupted) — do NOT pass megabytes of raw
+				// Cache miss (never populated or evicted) — do NOT pass megabytes of raw
 				// flow output verbatim into child context. Render a minimal placeholder.
 				originalText = extractToolResultText(entry) ?? "";
 				const rawContent = entry.message?.content;
@@ -390,19 +417,17 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
 					: 0;
 				const size = originalText.length || contentSize || line.length;
-				rendered = `[flow] prior result · ${size} chars (cache expired — output unavailable)`;
+				rendered = `[flow] prior result · ${size} chars (not cached or evicted)`;
 			} else {
 				rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
 			}
 		}
 
-		// --- Compress batch_read tool results ---
+		// Note: batch_read tool results are now compressed in stripBatchReadToolCalls
+		// before compressToolResults runs, so this branch is no longer needed.
+		// Kept as a no-op safety net for any edge cases.
 		else if (toolName === "batch_read") {
-			const args = toolCallIdToArgs.get(toolCallId);
-			const paths = extractBatchReadPaths(args);
-			rendered = paths.length > 0
-				? renderCompressedBatchReadResult(paths)
-				: "[batch_read] result compressed";
+			rendered = undefined; // handled upstream
 		}
 
 		// --- Compress batch tool results (selective: keep bash, truncate reads) ---
@@ -428,11 +453,15 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		if (rendered !== undefined) {
 			logCompress(toolName ?? "unknown", originalText.length || line.length, rendered.length);
 
+			// Strip the 'details' field which carries UI metadata that children don't need.
+			// This eliminates ~98% of payload bloat from flow tool results.
+			const { details, ...messageWithoutDetails } = entry.message;
+
 			if (typeof entry.message.toolCallId === "string") {
 				entry = {
 					...entry,
 					message: {
-						...entry.message,
+						...messageWithoutDetails,
 						content: [{ type: "text", text: rendered }],
 					},
 				};
@@ -440,7 +469,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				entry = {
 					...entry,
 					message: {
-						...entry.message,
+						...messageWithoutDetails,
 						content: entry.message.content.map((part: any) =>
 							part.type === "toolResult" && part.toolCallId === toolCallId
 								? { ...part, content: rendered }

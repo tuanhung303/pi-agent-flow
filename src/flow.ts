@@ -163,6 +163,25 @@ function cleanupFlowTempDir(dir: string | null): void {
 }
 
 // ---------------------------------------------------------------------------
+// Dump path helpers
+// ---------------------------------------------------------------------------
+
+function makeUniqueDumpPath(basePath: string, flowName: string): string {
+	const ext = path.extname(basePath);
+	const base = ext ? basePath.slice(0, -ext.length) : basePath;
+	const timestamp = Date.now();
+	const safeFlowName = flowName.replace(/[^\w.-]+/g, "_");
+	return `${base}.${safeFlowName}.${timestamp}${ext}`;
+}
+
+function atomicWriteFileSync(targetPath: string, data: string): void {
+	const dir = path.dirname(targetPath);
+	const tmpPath = path.join(dir, `.tmp-${path.basename(targetPath)}.${Date.now()}`);
+	fs.writeFileSync(tmpPath, data, { encoding: "utf-8" });
+	fs.renameSync(tmpPath, targetPath);
+}
+
+// ---------------------------------------------------------------------------
 // Reminder file helpers
 // ---------------------------------------------------------------------------
 
@@ -219,6 +238,9 @@ function buildFlowArgs(
 	sessionMode: AgentSessionMode = DEFAULT_AGENT_SESSION_MODE,
 	sessionTimeoutMs: number = getAgentSessionTimeoutMs(sessionMode),
 	acceptance?: string,
+	discoveredFlows: FlowConfig[] = [],
+	parentFlowStack: string[] = [],
+	preventCycles: boolean = true,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -306,9 +328,20 @@ function buildFlowArgs(
 		`</context-seal>`;
 
 	// Phase 2: Activation — role, tools, depth, delegation rules (dynamically generated)
+	const stackLabel = parentFlowStack.length > 0 ? parentFlowStack.join(" -> ") : "(root)";
+	const guardLine = `depth ${currentDepth}/${effectiveMaxDepth} | cycles: ${preventCycles ? "blocked" : "off"} | stack: ${stackLabel}`;
 	const delegationRule = canDelegate
-		? `You may delegate to sub-flows (depth ${currentDepth}/${effectiveMaxDepth}).`
-		: `You may NOT delegate to sub-flows (depth limit reached).`;
+		? `You may delegate to sub-flows (${guardLine}).`
+		: `You may NOT delegate to sub-flows (${guardLine}).`;
+
+	const flowListSection = canDelegate && discoveredFlows.length > 0
+		? `Available flows:\n${discoveredFlows
+			.map((f) => {
+				const badge = f.source === "project" ? " 🔒" : f.source === "user" ? " ⚙" : "";
+				return `- [${f.name}]${badge} — ${f.description}`;
+			})
+			.join("\n")}\n`
+		: "";
 
 	const timeBudgetHint =
 		sessionTimeoutMs > 0
@@ -320,6 +353,7 @@ function buildFlowArgs(
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
 		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
+		`${flowListSection}` +
 		`${timeBudgetHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
@@ -516,6 +550,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			effectiveSessionMode,
 			effectiveTimeout,
 			opts.acceptance,
+			flows,
+			parentFlowStack,
+			preventCycles,
 		);
 
 		// Dump verbatim child payload to disk for debugging when requested.
@@ -532,9 +569,10 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				``,
 				prompt,
 			].join("\n");
+			const uniqueDumpPath = makeUniqueDumpPath(dumpPath, flow.name);
 			try {
-				fs.writeFileSync(dumpPath, markdown, { encoding: "utf-8" });
-				console.error(`[pi-agent-flow] Snapshot dumped to ${dumpPath}`);
+				atomicWriteFileSync(uniqueDumpPath, markdown);
+				console.error(`[pi-agent-flow] Snapshot dumped to ${uniqueDumpPath}`);
 			} catch {
 				/* best-effort */
 			}

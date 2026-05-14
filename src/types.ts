@@ -53,10 +53,26 @@ export interface CompressedFlowResult {
 	type: string;
 	/** Execution outcome. */
 	status: "accomplished" | "failed" | "aborted";
+	/** Original mission intent. */
+	intent?: string;
+	/** Short headline of what the flow aimed to do. */
+	aim?: string;
+	/** 1–3 sentence summary of what was accomplished. */
+	summary?: string;
 	/** Files touched, read, or referenced. */
 	files?: FileEntry[];
+	/** Actions performed or attempted. */
+	actions?: Action[];
 	/** Commands or tool calls executed. */
 	commands?: CommandEntry[];
+	/** Incomplete, skipped, blocked, or deferred work. */
+	notDone?: NotDoneItem[];
+	/** Recommended next steps or follow-up flows. */
+	nextSteps?: string[];
+	/** Key hypotheses or inferences made during the flow. */
+	reasoning?: string[];
+	/** Observations, warnings, caveats, side notes. */
+	notes?: string[];
 	/** Error message for failed/aborted flows. */
 	error?: string;
 }
