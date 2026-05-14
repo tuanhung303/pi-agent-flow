@@ -181,6 +181,16 @@ Instead, use the `logWarn` / `logError` functions from `src/config/log.ts`:
 
 TUI mode is detected automatically when `PI_TUI_MODE=1`, `PI_FLOW_DEPTH > 0`, or `stdout.isTTY` is true.
 
+## Architecture Decision Records
+
+ADRs live in `doc/adr/`. Use `adr init doc/adr` for initialization and `adr new "Decision title"` for new records. Regenerate the index with `adr generate toc > doc/adr/README.md`.
+
+Current Hatchet integration plan:
+- ADR 2: phase 1 runner seam (accepted; implemented in PR #1)
+- ADR 3: phase 2 basic Hatchet backend (proposed)
+- ADR 4: phase 3 operational hardening (proposed)
+- ADR 5: phase 4 advanced Hatchet UX (proposed)
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
