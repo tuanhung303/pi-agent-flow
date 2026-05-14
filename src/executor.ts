@@ -147,12 +147,16 @@ async function confirmProjectFlowsIfNeeded(
 // Cache limits
 // ---------------------------------------------------------------------------
 
-const FLOW_RESULT_CACHE_MAX_ENTRIES = 50;
+const FLOW_RESULT_CACHE_MAX_ENTRIES = 100;
 
 /** Evict oldest entries from the cache when it exceeds the cap. */
 function evictCacheOverflow(cache: Map<string, unknown>): void {
 	if (cache.size <= FLOW_RESULT_CACHE_MAX_ENTRIES) return;
 	const excess = cache.size - FLOW_RESULT_CACHE_MAX_ENTRIES;
+	console.warn(
+		`[pi-agent-flow] Flow result cache overflow: evicting ${excess} oldest entries. ` +
+		`Consider raising FLOW_RESULT_CACHE_MAX_ENTRIES if you see this often.`,
+	);
 	const keys = cache.keys();
 	for (let i = 0; i < excess; i++) {
 		const next = keys.next();
