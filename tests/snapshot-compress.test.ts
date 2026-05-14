@@ -333,3 +333,74 @@ describe("compressToolResults — ask_user", () => {
 		expect(text).toContain('[ask_user] "Any concerns?" → "Yes\nAlso update the README"');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// compressToolResults — flow cache miss fallback
+// ---------------------------------------------------------------------------
+describe("compressToolResults — flow cache miss", () => {
+	it("renders a placeholder when flow result is not in cache instead of passing bulky output verbatim", () => {
+		const bulkyContent = "Flow: 1/1 completed\n\n".repeat(5000); // ~100KB of raw flow output
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "flow", arguments: { flow: [{ type: "scout" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: bulkyContent,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		// Must be the compact placeholder, NOT the bulky original
+		expect(text).toContain("[flow] prior result");
+		expect(text).toContain("cache expired");
+		expect(text.length).toBeLessThan(200);
+		expect(text).not.toContain("Flow: 1/1 completed");
+	});
+
+	it("uses cached compressed flow result when available", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "flow", arguments: { flow: [{ type: "scout" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "Flow: 1/1 completed\n\nscout accomplished\n\nLots of raw output here...",
+				},
+			},
+		]);
+
+		const cache = new Map([[
+			"tc1",
+			[{ type: "scout", status: "accomplished", files: [{ path: "src/auth.ts" }], commands: [{ tool: "grep", command: "JWT" }] }],
+		]]);
+
+		const result = compressToolResults(snapshot, cache);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[Flow: scout accomplished]");
+		expect(text).toContain("src/auth.ts");
+		expect(text).toContain("grep: JWT");
+	});
+});

@@ -381,8 +381,15 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		// --- Compress flow tool results ---
 		if (toolName === "flow") {
 			const compressed = cache.get(toolCallId);
-			if (!compressed || compressed.length === 0) { result.push(line); continue; }
-			rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
+			if (!compressed || compressed.length === 0) {
+				// Cache miss (evicted or corrupted) — do NOT pass megabytes of raw
+				// flow output verbatim into child context. Render a minimal placeholder.
+				originalText = extractToolResultText(entry) ?? "";
+				const size = originalText.length || line.length;
+				rendered = `[flow] prior result · ${size} chars (cache expired — see parent session for full output)`;
+			} else {
+				rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
+			}
 		}
 
 		// --- Compress batch_read tool results ---
