@@ -76,17 +76,18 @@ export function hashNoise(seed: number, charIndex: number, tick: number, depth: 
 // Character sets — depth-based esoteric scramble symbols (illuminate mode)
 // ---------------------------------------------------------------------------
 
-/** Deep glitch: fine dots, braille, ASCII punctuation for inner ripple depths (1–2) */
-const DEEP_GLITCH = '·∘∙+*~!?⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
-/** Mid glitch: dots, braille, light ASCII for mid depth (3) */
-const MID_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋~?+-*';
-/** Shallow glitch: numbers/brackets + shade blocks + light box-drawing for outer depths (4+) */
-const SHALLOW_GLITCH = '·∘∙⠁⠂⠃⠄⠅⠆~⠌⠡⠜';
-/** Classic ASCII-safe set for stream/cascade/ripple fallback */
-const SCRAMBLE_CHARS = '·∘∙~⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
-
-/** Thin braille spark: single-dot and sparse two-dot patterns for afterglow "pop" */
-const THIN_BRAILLE_SPARK = '⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
+/** Deep glitch: fine dots, sparse sparkle, dense braille for inner ripple depths (1–2) */
+const DEEP_GLITCH = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+/** Mid glitch: dots, light sparkles, medium braille for depth (3) */
+const MID_GLITCH = '·∘∙~⋆˚｡₊⊹⟡✩˖⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+/** Shallow glitch: heavy sparkles + light braille for outer depths (4+) — the wavefront crest */
+const SHALLOW_GLITCH = '·∘∙~✦°⭒✶𖦹✮✩⠌⠡⠜';
+/** Classic scramble set for stream/cascade/ripple fallback — balanced braille + sparkle mix */
+const SCRAMBLE_CHARS = '·∘∙~⋆˚｡₊⊹⟡✩✦°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+/** Sparkle and thin braille mix for afterglow "pop" */
+const SPARK_CHARS = '·∘∙⋆˚｡⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
+/** Backward-compat alias */
+const THIN_BRAILLE_SPARK = SPARK_CHARS;
 
 function selectScrambleChar(depth: number, dist: number, elapsed: number, seed?: number, textLen?: number): string {
 	const tickMs = (textLen !== undefined && textLen < 20) ? 300 : 150;
