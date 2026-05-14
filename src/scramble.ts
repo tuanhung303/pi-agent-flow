@@ -946,22 +946,17 @@ function spawnTpsIlluminateRipples(pos: number, now: number): Ripple[] {
 
 /**
  * Compute a ripple spawn center with random jitter.
- * The position is anchored at the text center but randomized by up to
- * `jitterRatio` of the text length (default ±20%), clamped to [0, len-1].
+ * The position is chosen uniformly between 20% and 80% of the text
+ * length (or the center for very short strings), giving a varied
+ * but never edge-clamped ripple origin.
  */
 function randomizedCenter(length: number, jitterRatio?: number, rng?: FastRNG): number {
-	const base = Math.floor(length / 2);
-	if (length <= 1) return base;
-	const effectiveRatio = jitterRatio ?? (length < 20 ? 0.4 : 0.2);
-	// Cap jitter so center never lands at the very edge for short texts,
-	// preserving wavefront symmetry.
-	const rawJitter = Math.floor(length * effectiveRatio);
-	const maxJitter = Math.max(0, Math.min(rawJitter, base - 1, length - base - 2));
-	if (maxJitter <= 0) return base;
-	const offset = rng
-		? rng.nextInt(maxJitter * 2 + 1) - maxJitter
-		: Math.floor(Math.random() * (maxJitter * 2 + 1)) - maxJitter;
-	return base + offset;
+	const min = Math.max(0, Math.floor(length * 0.2));
+	const max = Math.min(length - 1, Math.floor(length * 0.8));
+	if (max <= min) return Math.floor(length / 2);
+	const range = max - min + 1;
+	const offset = rng ? rng.nextInt(range) : Math.floor(Math.random() * range);
+	return min + offset;
 }
 
 /**
