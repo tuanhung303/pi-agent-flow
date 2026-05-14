@@ -229,6 +229,7 @@ const STREAM_SPEED_MSG = 35;       // ms per char for msg: (~29 chars/sec)
 const STREAM_SPEED_ACT = 25;       // ms per char for act: (~40 chars/sec)
 const STREAM_SCRAMBLE_WIDTH = 5;   // scramble chars at cursor position
 const STREAM_RERANDOMIZE_RATE = 0.28; // 28% chance to re-randomize (CodePen style)
+const MSG_ZONE_SIZE = 30; // chars per parallel zone for long msg: content
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers
@@ -939,6 +940,18 @@ function spawnIlluminateRippleForText(pos: number, now: number, config: Illumina
 	return [primary, spawnSecondaryRipple(primary)];
 }
 
+function spawnZoneRipples(textLength: number, now: number, config: IlluminateConfig): Ripple[] {
+	const ripples: Ripple[] = [];
+	if (textLength <= 0) return ripples;
+	const numZones = Math.max(1, Math.ceil(textLength / MSG_ZONE_SIZE));
+	for (let i = 0; i < numZones; i++) {
+		const center = Math.floor(textLength * (i + 0.5) / numZones);
+		const zoneConfig = { ...config, duration: 360 };
+		ripples.push(...spawnIlluminateRippleForText(center, now, zoneConfig, textLength, undefined, true));
+	}
+	return ripples;
+}
+
 function spawnTpsRipples(pos: number, now: number): Ripple[] {
 	// TPS flash is intentionally brief — no secondary ripple
 	return [spawnRipple(pos, now, TPS_FLASH_DUR, TPS_FLASH_SPREAD)];
@@ -1130,34 +1143,34 @@ function processLine(
 			}
 
 			// F1: accumulator — periodic ripples during dense streaming
-			if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && state.charsSinceLastFlush >= 20 && newText !== state.displayedText) {
+			if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && state.charsSinceLastFlush >= 20 && newText !== state.displayedText) {
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
-			} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
+				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
-			} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
+				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
 				// ripple it out so it doesn't sit plain indefinitely.
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
-			} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
+				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
+			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 				// Streaming resumed after a long pause (e.g., tool call) —
 				// force a fresh ripple on the accumulated content.
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
-				state.ripples.push(...spawnIlluminateRippleForText(randomizedCenter(newText.length), now, ILLUMINATE_CONFIGS.msgContent, newText.length, undefined, true));
+				state.ripples.push(...spawnZoneRipples(newText.length, now, ILLUMINATE_CONFIGS.msgContent));
 			}
 			return;
 		}
@@ -1741,34 +1754,34 @@ export class ScrambleStateManager {
 				}
 
 				// F1: accumulator — periodic ripples during dense streaming
-				if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && state.charsSinceLastFlush >= 20 && visibleText !== state.displayedText) {
+				if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && state.charsSinceLastFlush >= 20 && visibleText !== state.displayedText) {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
-				} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
+					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
-				} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
+					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
 					// ripple it out so it doesn't sit plain indefinitely.
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
-				} else if ((state.ripples.length < 3 || state.charsSinceLastFlush >= 60) && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
+					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
+				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 					// Streaming resumed after a long pause (e.g., tool call) —
 					// force a fresh ripple on the accumulated content.
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
-					state.ripples.push(...spawnIlluminateRippleForText(randomSentenceStart(visibleText), now, ILLUMINATE_CONFIGS.msgContent, visibleText.length, undefined, true));
+					state.ripples.push(...spawnZoneRipples(visibleText.length, now, ILLUMINATE_CONFIGS.msgContent));
 				}
 			} else {
 				// Existing behavior for cascade and ripple modes
