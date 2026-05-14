@@ -93,6 +93,30 @@ Once linked locally, your daily loop is just:
 > globally, which **overwrites and destroys your local symlink**. To get published updates,
 > run `./scripts/switch.sh` first to toggle to REMOTE, then run `pi update`.
 
+### Payload dump workflow
+
+When developing locally, you often want to capture the exact prompt stream that `pi` sends to flows so you can debug, diff, or replay it.
+
+**Quick start — using the helper script:**
+```bash
+./scripts/dev-start.sh    # exports PI_FLOW_DUMP_SNAPSHOT and starts pi
+```
+
+**Manual — if you prefer to control the path yourself:**
+```bash
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump.jsonl
+pi
+# … do your work …
+cat /tmp/pi-dump.txt      # read the reconstructed prompt
+```
+
+**Convenience — one-liner for your shell:**
+```bash
+eval "$(./scripts/switch.sh)"   # when switching to LOCAL the script prints an export line
+```
+
+> ⚠️ The variable **must** be exported in the same shell that starts `pi`. Running `export` inside a subshell (e.g. `bash -c 'export …'`) will **not** work because child-process environment variables do not propagate upward to the parent.
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
@@ -130,3 +154,34 @@ The Orchestrator is the agent you're talking to right now (when not inside a flo
 - **Never implements directly** — it routes and coordinates.
 
 Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
+
+### What a snapshot dump looks like
+
+When `PI_FLOW_DUMP_SNAPSHOT` is set, every time a flow spawns the agent writes two files:
+
+1. `<path>.jsonl` — a JSON Lines stream with one object per message (system prompt, user prompt, tool calls, tool results, assistant replies).
+2. `<path>.txt` — the reconstructed raw prompt as the model actually saw it.
+
+Example:
+
+```bash
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot.jsonl
+pi
+# After running a flow:
+ls -lh /tmp/pi-snapshot.*
+# → pi-snapshot.jsonl   (structured, machine-readable)
+# → pi-snapshot.txt     (human-readable prompt transcript)
+```
+
+> 💡 **When to use it:** You need to inspect exactly what was sent to the model, reproduce a bug offline, or share a verbatim trace with another developer. The dump is written **before** the model call, so even if the flow crashes you still have the prompt.
+
+## Environment Variables
+
+Key env vars that control flow behavior. All are read from the `pi` process environment and propagated to child flows.
+
+| Variable | Effect |
+|----------|--------|
+| `PI_FLOW_DUMP_SNAPSHOT` | Path to write a verbatim snapshot dump (JSONL + prompt) before a flow spawns. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
+| `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
+| `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
+| `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |

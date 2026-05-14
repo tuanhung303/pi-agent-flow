@@ -20,6 +20,13 @@ else
     cd "${REPO_ROOT}"
     npm link
     echo "✅ Now using LOCAL linked version."
+    echo ""
+    echo "💾  To capture verbatim snapshots for debugging, start pi like this:"
+    echo ""
+    echo "      export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot.jsonl"
+    echo "      pi"
+    echo ""
+    echo "   Or use the helper: ./scripts/dev-start.sh"
 fi
 
 echo ""
