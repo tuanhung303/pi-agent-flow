@@ -43,6 +43,7 @@ const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
+const FLOW_DUMP_SNAPSHOT_ENV = "PI_FLOW_DUMP_SNAPSHOT";
 
 // ---------------------------------------------------------------------------
 // Global child process group tracking for signal propagation
@@ -516,6 +517,29 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			effectiveTimeout,
 			opts.acceptance,
 		);
+
+		// Dump verbatim child payload to disk for debugging when requested.
+		const dumpPath = process.env[FLOW_DUMP_SNAPSHOT_ENV];
+		if (dumpPath) {
+			const promptIndex = piArgs.indexOf("-p");
+			const prompt = promptIndex >= 0 ? piArgs[promptIndex + 1] : "";
+			const markdown = [
+				`## Session Snapshot (JSONL)`,
+				``,
+				...(forkSessionSnapshotJsonl ? forkSessionSnapshotJsonl.split("\n") : ["(none)"]),
+				``,
+				`## Activation Prompt (-p)`,
+				``,
+				prompt,
+			].join("\n");
+			try {
+				fs.writeFileSync(dumpPath, markdown, { encoding: "utf-8" });
+				console.error(`[pi-agent-flow] Snapshot dumped to ${dumpPath}`);
+			} catch {
+				/* best-effort */
+			}
+		}
+
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
