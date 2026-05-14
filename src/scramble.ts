@@ -137,10 +137,10 @@ function selectSparkChar(seed: number, charIndex: number, tick: number): string 
 // ---------------------------------------------------------------------------
 
 const CYAN_GLOW = '\x1b[38;2;0;255;204m';
-const WARM_GLOW = '\x1b[38;2;251;176;169m';
-const PEACH_GLOW = '\x1b[38;2;251;200;193m';
+const WARM_GLOW = '\x1b[38;2;255;140;120m';
+const PEACH_GLOW = '\x1b[38;2;255;160;140m';
 const ORANGE_GLOW = '\x1b[38;2;255;190;130m';
-const SKY_GLOW = '\x1b[38;2;152;203;250m';
+const SKY_GLOW = '\x1b[38;2;80;170;255m';
 const WHITE_GLOW = '\x1b[38;2;255;255;255m';
 const RESET_COLOR = '\x1b[39m';
 const BOLD_ON = '\x1b[1m';
@@ -151,7 +151,7 @@ const DIM_OFF = '\x1b[22m';
 
 /** Illuminate close: turns off bold (SGR 22 also kills dim), then re-applies
  *  dim (SGR 2) so enclosing dim context survives scramble transitions. */
-const ILLUMINATE_CLOSE = '\x1b[39m';
+const ILLUMINATE_CLOSE = '\x1b[22m\x1b[39m';
 
 // ---------------------------------------------------------------------------
 // Illuminate per-target effect configs
@@ -168,12 +168,12 @@ interface IlluminateConfig {
 }
 
 const ILLUMINATE_CONFIGS: Record<string, IlluminateConfig> = {
-	aimLabel: { color: SKY_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	actLabel: { color: WARM_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
-	msgLabel: { color: PEACH_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: true, spark: false },
+	aimLabel: { color: SKY_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
+	actLabel: { color: WARM_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
+	msgLabel: { color: PEACH_GLOW, duration: 360, spread: 1.0, glowIntensity: 'high', crestOnly: false, spark: false },
 
 	msgContent: { color: 'dynamic', duration: 600, spread: 1.0, glowIntensity: 'variable', initialTimeOffset: 30 },
-	flowMeta: { color: WARM_GLOW, duration: 380, spread: 0.8, glowIntensity: 'medium', crestOnly: true, spark: false },
+	flowMeta: { color: WARM_GLOW, duration: 380, spread: 0.8, glowIntensity: 'medium', crestOnly: false, spark: false },
 
 	tps: { color: WARM_GLOW, duration: 84, spread: 0.5, glowIntensity: 'medium', crestOnly: true, spark: false },
 
@@ -611,33 +611,33 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 		const life = 1 - progress;
 		const intensity = heat * life * (1 - 0.25 * heat);
 
-		// 5-zone continuous truecolor gradient: deep sky → bright sky → sky-peach bridge → soft peach → rich salmon → warm white peak
+		// 5-zone continuous truecolor gradient: deep sky → bright sky → sky-peach bridge → vivid peach → rich salmon → warm white peak
 		let r: number, g: number, b: number;
 		if (intensity < 0.20) {
 			const t = smoothstep(0, 0.20, intensity);
-			r = lerp(120, 152, t);
-			g = lerp(170, 203, t);
-			b = lerp(230, 250, t);
+			r = lerp(0, 80, t);
+			g = lerp(80, 170, t);
+			b = lerp(255, 255, t);
 		} else if (intensity < 0.40) {
 			const t = smoothstep(0.20, 0.40, intensity);
-			r = lerp(152, 200, t);
-			g = lerp(203, 210, t);
-			b = lerp(250, 220, t);
+			r = lerp(80, 180, t);
+			g = lerp(170, 170, t);
+			b = lerp(255, 210, t);
 		} else if (intensity < 0.60) {
 			const t = smoothstep(0.40, 0.60, intensity);
-			r = lerp(200, 251, t);
-			g = lerp(210, 200, t);
-			b = lerp(220, 193, t);
+			r = lerp(180, 255, t);
+			g = lerp(170, 140, t);
+			b = lerp(210, 120, t);
 		} else if (intensity < 0.80) {
 			const t = smoothstep(0.60, 0.80, intensity);
-			r = lerp(251, 251, t);
-			g = lerp(200, 176, t);
-			b = lerp(193, 169, t);
+			r = lerp(255, 255, t);
+			g = lerp(140, 90, t);
+			b = lerp(120, 70, t);
 		} else {
 			const t = smoothstep(0.80, 1.0, intensity);
-			r = lerp(251, 255, t);
-			g = lerp(176, 245, t);
-			b = lerp(169, 240, t);
+			r = lerp(255, 255, t);
+			g = lerp(90, 240, t);
+			b = lerp(70, 230, t);
 		}
 
 		// Interference boost: overlapping ripples warm-white flash
@@ -652,7 +652,7 @@ function illuminatePrefix(depth: number, elapsed: number, dur: number, config: I
 
 		return `\x1b[38;2;${r};${g};${b}m`;
 	}
-	return config.color;
+	return BOLD_ON + config.color;
 }
 
 export function applyRipples(
@@ -772,12 +772,15 @@ export function applyRipples(
 				if (isCrest) {
 					prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 					if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-						// Alternate sky/warm at crest based on character position, no bold
-						if (bestDist % 2 === 0) {
-							prefix = '\x1b[38;2;152;203;250m';  // sky
-						} else {
-							prefix = '\x1b[38;2;251;176;169m';  // warm
-						}
+						// Gradient peak: vivid salmon → warm white, with complementary bg halo
+						const t = Math.min(1, crestDepth / 1.5);
+						const cr = Math.round(lerp(255, 255, t));
+						const cg = Math.round(lerp(90, 240, t));
+						const cb = Math.round(lerp(70, 230, t));
+						const bgr = Math.round(lerp(20, 60, t));
+						const bgg = Math.round(lerp(30, 20, t));
+						const bgb = Math.round(lerp(60, 30, t));
+						prefix = `\x1b[1m\x1b[48;2;${bgr};${bgg};${bgb}m\x1b[38;2;${cr};${cg};${cb}m`;
 					}
 				}
 				if (prefix) {
@@ -822,8 +825,8 @@ export function applyRipples(
 						// Echo pops get minimum intensity so chars stay visible long after ripple
 						const effectiveIntensity = afterglowIntensity;
 						const emberR = Math.round(200 + 55 * effectiveIntensity);
-						const emberG = Math.round(100 + 60 * effectiveIntensity);
-						const emberB = Math.round(40 + 20 * effectiveIntensity);
+						const emberG = Math.round(130 + 80 * effectiveIntensity);
+						const emberB = Math.round(140 + 70 * effectiveIntensity);
 						agPrefix = `\x1b[38;2;${emberR};${emberG};${emberB}m`;
 					} else {
 						agPrefix = config.color;
@@ -862,8 +865,8 @@ export function applyRipples(
 				const settleRoll = hashNoise(42, idx, settleTick, 33);
 				if (settleRoll < 0.05) {
 					const settlePrefix = (hashNoise(42, idx, settleTick, 55) < 0.5)
-						? '\x1b[38;2;152;203;250m'   // sky
-						: '\x1b[38;2;251;176;169m';  // warm
+						? '\x1b[38;2;80;170;255m'   // sky
+						: '\x1b[38;2;255;140;120m';  // warm
 					if (!inColor || currentPrefix !== settlePrefix) {
 						if (inColor) segments[segCount++] = ILLUMINATE_CLOSE;
 						segments[segCount++] = settlePrefix;
