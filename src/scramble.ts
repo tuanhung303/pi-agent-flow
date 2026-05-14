@@ -962,24 +962,35 @@ function spawnTpsIlluminateRipples(text: string, now: number): Ripple[] {
 
 /**
  * Compute a ripple spawn center with random jitter.
- * The position is anchored at the text center but randomized by up to
- * `jitterRatio` of the text length (default ±20%), clamped to [0, len-1].
+ * The position is chosen uniformly between 20% and 80% of the text
+ * length (or the center for very short strings), giving a varied
+ * but never edge-clamped ripple origin.
  */
 function randomizedCenter(length: number, jitterRatio?: number, rng?: FastRNG): number {
-	const base = Math.floor(length / 2);
-	if (length <= 1) return base;
-	const effectiveRatio = jitterRatio ?? (length < 20 ? 0.4 : 0.2);
-	// Cap jitter so center never lands at the very edge for short texts,
-	// preserving wavefront symmetry.
-	const rawJitter = Math.floor(length * effectiveRatio);
-	const maxJitter = Math.max(0, Math.min(rawJitter, base - 1, length - base - 2));
-	if (maxJitter <= 0) return base;
-	const offset = rng
-		? rng.nextInt(maxJitter * 2 + 1) - maxJitter
-		: Math.floor(Math.random() * (maxJitter * 2 + 1)) - maxJitter;
-	return base + offset;
-} function nearestNonSpaceIndex(text: string, center: number): number { if (!text) return 0; const clampedCenter = Math.max(0, Math.min(text.length - 1, center)); if (text[clampedCenter] !== ' ') return clampedCenter; for (let distance = 1; distance < text.length; distance++) { const left = clampedCenter - distance; if (left >= 0 && text[left] !== ' ') return left; const right = clampedCenter + distance; if (right < text.length && text[right] !== ' ') return right; } return clampedCenter;
-} function randomizedCenterForText(text: string, jitterRatio?: number, rng?: FastRNG): number { return nearestNonSpaceIndex(text, randomizedCenter(text.length, jitterRatio, rng));
+	const ratio = jitterRatio ?? 0.3;
+	const halfWindow = Math.max(0, Math.min(0.3, ratio));
+	const center = 0.5;
+	const min = Math.max(0, Math.floor(length * (center - halfWindow)));
+	const max = Math.min(length - 1, Math.floor(length * (center + halfWindow)));
+	if (max <= min) return Math.floor(length / 2);
+	const range = max - min + 1;
+	const offset = rng ? rng.nextInt(range) : Math.floor(Math.random() * range);
+	return min + offset;
+}
+function nearestNonSpaceIndex(text: string, center: number): number {
+	if (!text) return 0;
+	const clampedCenter = Math.max(0, Math.min(text.length - 1, center));
+	if (text[clampedCenter] !== ' ') return clampedCenter;
+	for (let distance = 1; distance < text.length; distance++) {
+		const left = clampedCenter - distance;
+		if (left >= 0 && text[left] !== ' ') return left;
+		const right = clampedCenter + distance;
+		if (right < text.length && text[right] !== ' ') return right;
+	}
+	return clampedCenter;
+}
+function randomizedCenterForText(text: string, jitterRatio?: number, rng?: FastRNG): number {
+	return nearestNonSpaceIndex(text, randomizedCenter(text.length, jitterRatio, rng));
 }
 
 /**
