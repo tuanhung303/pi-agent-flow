@@ -355,6 +355,10 @@ export default function (pi: ExtensionAPI) {
 				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
+					{
+						forkedAt: new Date().toISOString(),
+						depth: currentDepth + 1,
+					},
 				);
 
 				const getTierOverride = (tier: "lite" | "flash" | "full"): string | undefined => {

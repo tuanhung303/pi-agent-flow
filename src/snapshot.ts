@@ -530,8 +530,9 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
 export function stripBatchReadToolCalls(snapshot: string): string {
 	const lines = snapshot.trimEnd().split("\n");
 
-	// Pass 1: Collect all batch_read toolCallIds from assistant messages.
+	// Pass 1: Collect all batch_read toolCallIds and their arguments.
 	const batchReadToolCallIds = new Set<string>();
+	const batchReadArgs = new Map<string, unknown>();
 	for (const line of lines) {
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { continue; }
@@ -542,13 +543,16 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 
 		for (const part of content) {
 			if (part.type === "toolCall" && part.name === "batch_read" && (part.id || part.toolCallId)) {
-				batchReadToolCallIds.add(part.id ?? part.toolCallId);
+				const id = part.id ?? part.toolCallId;
+				batchReadToolCallIds.add(id);
+				if (part.arguments) batchReadArgs.set(id, part.arguments);
 			}
 		}
 	}
 
 	// Pass 2: Strip batch_read toolCall parts from assistant messages,
-	// and remove orphaned tool result messages.
+	// and COMPRESS matching tool result messages (keep them so children
+	// know which files were already read — don't drop entirely).
 	const result: string[] = [];
 
 	for (const line of lines) {
@@ -560,11 +564,28 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 			continue;
 		}
 
-		// Tool result message — skip if it's a batch_read result
+		// Tool result message — compress if it's a batch_read result
 		if (entry.message.role === "tool" || entry.message.role === "toolResult") {
 			const toolCallId = entry.message.toolCallId ??
 				(Array.isArray(entry.message.content) ? entry.message.content.find((p: any) => p.type === "toolResult")?.toolCallId : undefined);
-			if (toolCallId && batchReadToolCallIds.has(toolCallId)) continue;
+			if (toolCallId && batchReadToolCallIds.has(toolCallId)) {
+				const args = batchReadArgs.get(toolCallId);
+				const paths = extractBatchReadPaths(args);
+				const rendered = paths.length > 0
+					? renderCompressedBatchReadResult(paths)
+					: "[batch_read] result compressed";
+				entry = {
+					...entry,
+					message: {
+						...entry.message,
+						// Ensure toolCallId is present at message level for API compatibility.
+						...(entry.message.toolCallId ? {} : { toolCallId }),
+						content: [{ type: "text", text: rendered }],
+					},
+				};
+				result.push(JSON.stringify(entry));
+				continue;
+			}
 			result.push(line);
 			continue;
 		}
@@ -609,7 +630,18 @@ export function stripBatchReadToolCalls(snapshot: string): string {
  * sliding system prompts, assistant reasoning/thinking,
  * batch_read tool calls, and compress flow/batch_read tool results.
  */
-export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string, CompressedFlowResult[]> = new Map()): string | null {
+export interface SanitizeForkSnapshotOptions {
+	forkedFrom?: string;
+	forkedAt?: string;
+	parentFlow?: string;
+	depth?: number;
+}
+
+export function sanitizeForkSnapshot(
+	snapshot: string | null,
+	cache: Map<string, CompressedFlowResult[]> = new Map(),
+	options?: SanitizeForkSnapshotOptions,
+): string | null {
 	if (!snapshot) return snapshot;
 
 	const preBytes = snapshot.length;
@@ -628,11 +660,24 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 
 		let changed = false;
 
-		// Strip sliding prompt from header systemPrompt (first line is header)
-		if (i === 0 && entry && typeof entry === "object" && entry.systemPrompt && typeof entry.systemPrompt === "string") {
-			const stripped = stripSteeringHintText(entry.systemPrompt);
-			if (stripped !== entry.systemPrompt) {
-				entry = { ...entry, systemPrompt: stripped };
+		// Header (first line): merge fork metadata and replace parent system prompt.
+		if (i === 0 && entry && typeof entry === "object") {
+			// Inject fork metadata so children know their lineage.
+			if (options && (options.forkedFrom || options.forkedAt || options.parentFlow || options.depth !== undefined)) {
+				entry = {
+					...entry,
+					...(options.forkedFrom !== undefined ? { forkedFrom: options.forkedFrom } : {}),
+					...(options.forkedAt !== undefined ? { forkedAt: options.forkedAt } : {}),
+					...(options.parentFlow !== undefined ? { parentFlow: options.parentFlow } : {}),
+					...(options.depth !== undefined ? { depth: options.depth } : {}),
+				};
+				changed = true;
+			}
+
+			// Replace the parent orchestrator system prompt with a brief note.
+			// Children receive their own directive in the <activation> block.
+			if (entry.systemPrompt && typeof entry.systemPrompt === "string") {
+				entry = { ...entry, systemPrompt: "[parent orchestrator system prompt stripped — child receives its own directive]" };
 				changed = true;
 			}
 		}
@@ -655,10 +700,26 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 				changed = true;
 			}
 
-			if (message.role === "assistant") {
+			// Strip reasoning/thinking from assistant messages.
+			// (Reasoning typically only appears in assistant messages, but we
+			// also check system/tool roles as a safety net for provider-specific
+			// formats. stripReasoningFromAssistantMessage is a no-op on non-assistant
+			// shapes, so calling it universally is safe.)
+			if (message.role === "assistant" || message.role === "system" || message.role === "tool") {
 				const stripped = stripReasoningFromAssistantMessage(message);
 				message = stripped.message;
 				changed ||= stripped.changed;
+			}
+
+			// Strip API metadata fields that children don't need (~5-7 KB per assistant message).
+			if (message.role === "assistant") {
+				const { api, provider, model, usage, stopReason, responseId, responseModel, ...rest } = message;
+				// Only count as changed if at least one field was actually present.
+				if (api !== undefined || provider !== undefined || model !== undefined || usage !== undefined ||
+					stopReason !== undefined || responseId !== undefined || responseModel !== undefined) {
+					message = rest;
+					changed = true;
+				}
 			}
 
 			if ("content" in message) {
@@ -694,13 +755,37 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 		sanitizedLines.push(outLine);
 	}
 
+	// Reparent orphaned parentIds after steering-hint messages were dropped.
+	// Build a set of surviving message IDs, then fix any parentId that points
+	// to a removed message.
+	const survivingIds = new Set<string>();
+	for (const line of sanitizedLines) {
+		try {
+			const entry = JSON.parse(line);
+			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
+			if (typeof id === "string" && id) survivingIds.add(id);
+		} catch { /* ignore */ }
+	}
+	for (let i = 0; i < sanitizedLines.length; i++) {
+		try {
+			const entry = JSON.parse(sanitizedLines[i]);
+			if (!entry?.message) continue;
+			const parentId = entry.message.parentId ?? entry.message.parentMessageId;
+			if (typeof parentId === "string" && parentId && !survivingIds.has(parentId)) {
+				const { parentId: _pid, parentMessageId: _pmid, ...restMessage } = entry.message;
+				entry.message = restMessage;
+				sanitizedLines[i] = JSON.stringify(entry);
+			}
+		} catch { /* ignore */ }
+	}
+
 	let sanitized = `${sanitizedLines.join("\n")}\n`;
 
 	// Strip batch_read tool calls from assistant messages.
 	// Children don't have batch_read in their active tools.
 	sanitized = stripBatchReadToolCalls(sanitized);
 
-	// Compress tool results (flow, batch_read, batch, web, ask_user).
+	// Compress tool results (flow, batch, web, ask_user).
 	sanitized = compressToolResults(sanitized, cache);
 
 	// Telemetry: measure total delta across sanitization, stripping, and compression.
@@ -708,6 +793,13 @@ export function sanitizeForkSnapshot(snapshot: string | null, cache: Map<string,
 		const postBytes = sanitized.length;
 		const reduction = preBytes > 0 ? ((1 - postBytes / preBytes) * 100).toFixed(0) : "0";
 		console.error(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
+		// Emit compression stats as a trailing metadata entry so the dump contains observability data.
+		sanitized = sanitized.trimEnd() + "\n" + JSON.stringify({
+			type: "compression-stats",
+			preBytes,
+			postBytes,
+			reductionPercent: Number(reduction),
+		}) + "\n";
 	}
 
 	return sanitized;
