@@ -4,7 +4,7 @@ Date: 2026-05-14
 
 ## Status
 
-Accepted
+Proposed
 
 ## Context
 
@@ -17,6 +17,15 @@ Phase 1 is already implemented in PR #1 as a local runner seam.
 Introduce a `FlowRunner` abstraction and a default local runner that calls `runFlow()` directly. Keep `executeFlows()` responsible for flow resolution, model failover, depth checks, and concurrency policy while routing execution through the runner seam.
 
 Do not add Hatchet dependencies or worker entrypoints in this phase.
+
+## Acceptance Criteria
+
+This ADR may move to Accepted when:
+
+- The `FlowRunner` interface exists and default execution uses a local runner.
+- Local execution still calls `runFlow()` and preserves existing flow behavior.
+- Focused tests cover the runner seam without requiring real child-process flow execution.
+- CI-relevant checks pass for the phase 1 change.
 
 ## Consequences
 

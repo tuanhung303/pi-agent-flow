@@ -18,6 +18,16 @@ Add an optional Hatchet runner selected by configuration such as `PI_FLOW_RUNNER
 
 The first Hatchet backend returns final results only. Live streaming and cancellation propagation are deferred.
 
+## Acceptance Criteria
+
+This ADR may move to Accepted when:
+
+- `PI_FLOW_RUNNER=hatchet` selects a Hatchet-backed runner while local remains the default.
+- Hatchet task input is plain JSON and excludes non-serializable runtime objects.
+- A worker entrypoint can execute a flow attempt by calling `runFlow()`.
+- The backend returns final results and documents that streaming/cancellation are deferred.
+- The Hatchet SDK does not become mandatory for local-only users.
+
 ## Consequences
 
 - Hatchet can manage queueing and worker slots while Pi keeps child-flow semantics in `runFlow()`.

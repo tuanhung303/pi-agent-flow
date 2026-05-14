@@ -18,6 +18,15 @@ Add advanced Hatchet UX features in a later phase: stream `onUpdate` events thro
 
 Do not block the basic backend on these features.
 
+## Acceptance Criteria
+
+This ADR may move to Accepted when:
+
+- Hatchet-backed runs can surface live flow updates with behavior comparable to local `onUpdate` reporting.
+- Parent cancellation propagates through Hatchet to child process-group termination.
+- Observability for queued/running/completed Hatchet flow attempts is documented.
+- Large snapshot or remote-worker payload handling is implemented or explicitly ruled out.
+
 ## Consequences
 
 - Hatchet support can ship incrementally while preserving a clear path to local-execution parity.
