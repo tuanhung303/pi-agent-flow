@@ -4,29 +4,32 @@
 > Think of it as the project's control panel — not a dry spec sheet, but an activation map. If you need to deploy, bump a version, debug a flow, or figure out which script to run, this file points you to the right door. Start here before wandering the codebase.
 >
 > 🌱 **Keep this index alive.**
-> CLAUDE.md is a living document. When flows change, scripts move, or CI/CD steps get updated, this file must reflect reality. If you just changed something structural — added a workflow, renamed a script, tweaked a flow's tools — **update this file before you wrap up**.
+> CLAUDE.md is a living document. When flows change, scripts move, or CI/CD steps get updated, this file must reflect reality. If you just changed something structural — added a workflow, renamed a script, tweaked a flow's tools — **update this file before you wrap up**. The next agent (or future you) will thank you. Don't leave them lost in the maze.
 
 ## CI/CD
 
 Publishing is **fully automated** via GitHub Actions.
 
 ### Strict Rules
-
 - **Never run `npm publish` locally.** Always use CI.
 - **Never run `npm version` locally.** The Release workflow handles tagging.
 
 ### Publish Flow
+
+When the user asks to publish:
 
 1. Merge feature branch to `main` and push.
 2. Trigger the Release workflow:
    ```bash
    gh workflow run bump-version.yml -f bump_type=patch
    ```
-3. For an alpha prerelease:
+
+   For an alpha prerelease:
    ```bash
    gh workflow run bump-version.yml -f bump_type=prerelease
    ```
-4. If the tag-trigger fallback is needed:
+3. The workflow bumps `package.json`, commits, tags `v*`, and pushes. The tag push automatically triggers `publish.yml` (via `push: tags: v*`) if a PAT secret is configured.
+4. **Manual fallback** — if the tag-trigger did not fire (e.g. PAT secret missing), run:
    ```bash
    gh workflow run publish.yml --ref v<NEW_VERSION>
    ```
@@ -37,76 +40,101 @@ Publishing is **fully automated** via GitHub Actions.
 | File | Trigger | Purpose |
 |------|---------|---------|
 | `ci.yml` | PR / push to `main` | Runs `lint` + `test` |
-| `bump-version.yml` | `workflow_dispatch` | Bumps version, commits, tags, pushes |
-| `publish.yml` | `workflow_dispatch` or push `v*` tag | Publishes to npm; alpha uses `--tag alpha` |
+| `bump-version.yml` | `workflow_dispatch` (patch/minor/major/prerelease) | Bumps version → commits → tags → pushes |
+| `publish.yml` | `workflow_dispatch` or push `v*` tag | Publishes to npm with provenance; alpha versions use `--tag alpha` |
 
 ## Local Development
 
 ### One-time setup
-
 ```bash
-./scripts/switch.sh
-npm ls -g pi-agent-flow
+./scripts/switch.sh         # Link local checkout (or `npm run switch:local`)
+npm ls -g pi-agent-flow     # Verify link status — should show "-> /path/to/repo"
 ```
 
 ### Daily dev loop
-
+You do **not** need to switch between every edit. Once linked, just rebuild and restart `pi`:
 ```bash
-npm run build
-# Restart pi after rebuilding
+npm run build               # Compile TypeScript → dist/
+# Quit pi (Ctrl+C), then start it again — it picks up the new dist/ via the symlink
 ```
 
 ### Going back to published
-
 ```bash
-./scripts/switch.sh
-npm ls -g pi-agent-flow
+./scripts/switch.sh         # Toggle back to REMOTE (or `npm run switch:remote`)
+npm ls -g pi-agent-flow     # Should show a version number, not "->"
 ```
 
 ## Quick Switch (Local ↔ Remote)
 
+Use the toggle script to swap between your **local dev build** (for testing
+changes) and the **published npm version** (for stable daily usage).
+
 | Mode | Command | When to use |
 |------|---------|-------------|
-| **Toggle** | `./scripts/switch.sh` | Flip local ↔ remote |
-| **Local** | `npm run switch:local` | Force link to this repo |
-| **Remote** | `npm run switch:remote` | Force install from npm |
+| **Toggle** | `./scripts/switch.sh` | One-command flip between local ↔ remote |
+| **Local** | `npm run switch:local` | Force link to this repo (testing new code) |
+| **Remote** | `npm run switch:remote` | Force install from npm (stable daily work) |
+
+```bash
+./scripts/switch.sh        # Detects current state and flips to the other side
+```
 
 > ⚠️ **Always restart `pi` after switching** so the extension loader picks up the change.
 
+### Dev loop after switching
+Switching is only needed when changing **modes** (local ↔ remote), not between every edit.
+Once linked locally, your daily loop is just:
+1. Edit code
+2. `npm run build`
+3. Quit `pi` and restart it
+
 ### `pi update` danger
+> 🚫 **Never run `pi update` while linked locally.** It installs the published npm package
+> globally, which **overwrites and destroys your local symlink**. To get published updates,
+> run `./scripts/switch.sh` first to toggle to REMOTE, then run `pi update`.
 
-> 🚫 **Never run `pi update` while linked locally.** It overwrites and destroys your local symlink. Switch to REMOTE first, then run `pi update`.
+### Payload dump workflow
+When developing locally, you may want to capture the exact prompt stream that `pi` sends to flows so you can debug, diff, or replay it.
 
-## Payload dump workflow
-
-Use `PI_FLOW_DUMP_SNAPSHOT` or `--dump <path>` to capture the prompt stream sent to flows.
-
+**Quick start — using the helper script:**
 ```bash
-./scripts/dev-start.sh
+./scripts/dev-start.sh      # exports PI_FLOW_DUMP_SNAPSHOT and starts pi
 ```
 
-Manual:
-
+**Manual — if you prefer to control the path yourself:**
 ```bash
-export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot.jsonl
 pi
-cat /tmp/pi-dump.scout.1715724000000.txt
+# … do your work …
+ls -lh /tmp/pi-snapshot.*
 ```
 
-> ⚠️ Export the variable in the same shell that starts `pi`.
+> ⚠️ The variable **must** be exported in the same shell that starts `pi`. Running `export` inside a subshell will not work because child-process environment variables do not propagate upward to the parent.
+
+### What a snapshot dump looks like
+When `PI_FLOW_DUMP_SNAPSHOT` is set, every time a flow spawns the agent writes two files:
+1. `<path>.jsonl` — a JSON Lines stream with one object per message.
+2. `<path>.txt` — the reconstructed raw prompt as the model actually saw it.
+
+```bash
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot.jsonl
+pi
+# After running a flow:
+ls -lh /tmp/pi-snapshot.*
+```
+
+> 💡 **When to use it:** inspect exactly what was sent to the model, reproduce a bug offline, or share a verbatim trace with another developer. The dump is written **before** the model call, so even if the flow crashes you still have the prompt.
 
 ## Architecture Decision Records
 
 ADRs live in `doc/adr/`. Use `adr init doc/adr` for initialization and `adr new "Decision title"` for new records. Regenerate the index with `adr generate toc > doc/adr/README.md`.
 
 ADR lifecycle policy:
-
-- Proposed ADRs may change while under review or implementation.
+- Proposed ADRs may change while the decision is still under review or implementation.
 - Proposed phase ADRs become Accepted only when their acceptance criteria are fulfilled.
 - Accepted ADRs are immutable; amend or supersede them with a later ADR instead of editing them in place.
 
 Current Hatchet integration plan:
-
 - ADR 2: phase 1 runner seam (accepted; implemented in PR #1)
 - ADR 3: phase 2 basic Hatchet backend (accepted; implemented in PR #4)
 - ADR 4: phase 3 operational hardening (accepted; implemented in follow-up PR)
@@ -114,61 +142,90 @@ Current Hatchet integration plan:
 
 ## Flow Taxonomy
 
-Agent work is organized into two tiers. **Access is not the boundary — intent is.**
+Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
 
 ### Tier 1 — Intent-Driven Workers
-
 **Question:** "Do the thing, but stay in your lane."
 **Mutations:** Yes — reads, writes, edits, tests, ships. Each flow has a strict mission profile. No mission drift.
 
 | Flow | Tools | maxDepth | Tier | Notes |
 |------|-------|----------|------|-------|
-| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Explore and map |
-| `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement and verify |
-| `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit and fix safe issues |
-| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Investigate root cause and fix |
-| `ideas` | batch, bash, web | 0 | full | Strategy and recommendation |
-| `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design |
+| `scout` | batch, bash, find, grep, ls, web | 0 | lite | Explore, map, discover. Full access for best exploration. The pathfinder. |
+| `build` | batch, bash, find, grep, ls, web | 0 | flash | Implement, test, verify, ship. The craftsman. |
+| `audit` | batch, bash, find, grep, ls, web | 0 | flash | Audit security, quality, correctness; fix safe issues. The watchful eye. |
+| `debug` | batch, bash, find, grep, ls, web | 0 | lite | Investigate root cause AND fix the bug. The detective + fixer. |
+| `ideas` | batch, bash, web | 0 | full | Diverge → evaluate → recommend with inherited context. The strategist. |
+| `craft` | batch, bash, find, grep, ls, web | 0 | full | Conservative design, may delegate to `[scout]`. The architect. |
+
+> **None of these flows have `ask_user`.** If user input is needed, a flow emits a `⚠️ Decision Required` block for the orchestrator to present. Only the orchestrator talks to the user.
+>
+> These flows do the heavy lifting. They do not talk to the user — they receive a mission, execute, and return structured results. Their intent is scoped: a `scout` maps the terrain; a `build` agent ships code; an `audit` agent checks it; a `debug` agent traces roots *and* fixes them; an `ideas` agent explores possibilities; a `craft` agent designs carefully.
+
+> **Tier** (lite / flash / full) only affects **model selection** — which LLM candidate to use. It does **not** restrict tools or access.
 
 ### Tier 2 — Orchestrator: Main Agent
-
 **Question:** "What should we do, and who should do it?"
 **Mutations:** No direct code edits.
 **Role:** The router, synthesizer, and user-facing coordinator.
 
-The orchestrator decides whether to delegate, chooses the matching flow, crafts the mission, and synthesizes results. It does not implement directly.
+The Orchestrator is the agent you're talking to right now (when not inside a flow). It:
+- Understands the user's goal.
+- Decides **whether** to delegate to a flow.
+- Chooses **which** flow matches the task.
+- Crafts the **intent** (mission) for that flow.
+- Synthesizes results back to the user.
+- **Never implements directly** — it routes and coordinates.
+
+Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow's `maxDepth` overrides it.
 
 ## Key Implementation Details
 
-- **Flow runner seam**: `executeFlows()` dispatches each resolved flow attempt through a `FlowRunner`.
+- **Flow runner seam**: `executeFlows()` dispatches each resolved flow attempt through a `FlowRunner`; the default `LocalFlowRunner` preserves fork-only execution by calling `runFlow()`.
+- **Optional Hatchet backend**: `PI_FLOW_RUNNER=hatchet` selects a final-result-only `HatchetFlowRunner` with a plain-JSON `pi-agent-flow.runFlow` payload and `runHatchetFlowTask` worker entrypoint. The SDK is dynamically imported; streaming and cancellation propagation are deferred. Phase 3 hardening validates worker spawn/workspace assumptions and bounds payload size with `PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES`.
 - **Fork-only delegation**: Every flow runs as an isolated `pi` child process with a session snapshot.
-- **Directive delimiters**: `buildFlowArgs` uses `<context-seal>`, `<activation>`, `<directive>`, and `<mission>`.
-- **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, and `PI_FLOW_PREVENT_CYCLES` propagate to children.
-- **Session modes**: `fast`, `default`, `long`, `extreme_long`.
-- **Tool optimization**: Parent can inject `batch`; override with `PI_FLOW_TOOL_OPTIMIZE`.
-- **Context compression**: Prior flow/tool output can be sanitized and compressed before forking.
-- **Max concurrency**: `PI_FLOW_MAX_CONCURRENCY` overrides the default.
-- **Spawn override**: `PI_FLOW_SPAWN_COMMAND` overrides child spawn command.
-
-### What a snapshot dump looks like
-
-Each flow writes:
-
-1. `<base>.<flowName>.<timestamp>.md`
-2. `<base>.<flowName>.<timestamp>.txt`
+- **Directive delimiters**: `buildFlowArgs` uses 4-part XML-style prompts: `<context-seal>`, `<activation>`, `<directive>`, `<mission>`. Tags avoid CLI parsing conflicts (none start with `-`).
+- **Depth guards**: `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars propagated to children.
+- **Cycle prevention**: Blocks re-entering flows already in the ancestor stack.
+- **Session modes**: `fast` (300s), `default` (600s), `long` (900s), `extreme_long` (1200s). Defined in `session-mode.ts`.
+- **Two-stage timeout**: Parent-side warning at `effectiveTimeout - 2min`, final urge at `effectiveTimeout - 2m15s`, hard timeout + 90s reporting grace before SIGKILL. Deadline and grace env vars are propagated to children (`PI_FLOW_DEADLINE_MS`, `PI_FLOW_TOOL_SUMMARY_GRACE_MS`).
+- **Timeout reminder injection**: A reminder file (`PI_FLOW_REMINDER_FILE`) is written by the parent and read by the timed-bash wrapper so the child sees warnings before its next tool call.
+- **Graceful shutdown**: `SIGINT`/`SIGTERM` handlers on the parent first abort pending bash operations via `bashTracker.abortAll()`, then propagate to all registered child process groups via `terminateAllChildGroups()`. `process.prependListener` is used so our handler runs before the host's cleanup.
+- **Structured output**: JSON schema injected at the end of the flow prompt when `structuredOutput` is true. Parsed by `extractStructuredOutput()` and mechanically enriched by `generateCommandsFromHistory()` which replaces paraphrased bash commands with verbatim tool-call args and attaches `executionTime` from the timed-bash wrapper.
+- **Flow-mode persistence**: `--flow-mode` writes `flowModelConfig` to global `settings.json` via atomic rename (`writeGlobalFlowMode`). Startup prints either concise (`mode: name | lite: model - flash: model - full: model`) or verbose format with per-tier flow-name labels.
+- **Transition matrix**: Data-driven post-flow routing in `transitions.ts`. Declarative transition matrix maps source flow + outcome to follow-up recommendations.
+- **Tool optimization**: When enabled, `getOptimizedTools()` strips legacy `read`/`write`/`edit` and injects `batch`. The parent sets active tools to `["batch_read", "flow", "web", "ask_user"]`; children get `["batch", "bash", "web"]` (or plus `flow` if they can delegate); `batch_bash_poll` is registered separately by the extension for polling pending bash ops. Override with `PI_FLOW_TOOL_OPTIMIZE`.
+- **Session snapshot sanitization**: `sanitizeForkSnapshot()` strips steering hints, reasoning artifacts, strategic hints, and `batch_read` tool calls from assistant messages, and compresses prior flow tool results into compact `CompressedFlowResult` context maps before forking.
+- **Context compression**: Tool results from `batch`, `batch_read`, `web`, and `ask_user` are selectively compressed for child snapshots — bash sections are kept verbatim, read content is truncated, and context-map/file-summary sections are collapsed; web, ask_user, and batch_read results are replaced with compact metadata. Set `PI_FLOW_DEBUG_CONTEXT=1` to emit telemetry to `stderr`.
+- **Compact structured output**: When `structuredOutput` is enabled, the JSON schema is injected as a compact single-line reference (not a verbose essay) to reduce token bloat.
+- **Skip structured appendix**: `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` (or `true` / `yes`) omits the `## Structured Output` block appended to the child prompt when a provider rejects that shape.
+- **Max concurrency**: `PI_FLOW_MAX_CONCURRENCY` env var overrides the default maximum parallel flows.
+- **Spawn override**: `PI_FLOW_SPAWN_COMMAND` env var overrides the child spawn command for exotic runtime environments (e.g. bundled with pkg/nexe).
+- **Strategic hints**: `PI_FLOW_NO_STRATEGIC_HINT=1` suppresses the strategic planning hints appended after tool calls.
 
 ## Environment Variables
 
+Key env vars that control flow behavior. All are read from the `pi` process environment and propagated to child flows.
+
 | Variable | Effect |
 |----------|--------|
-| `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps |
-| `PI_FLOW_MAX_DEPTH` | Override default delegation depth |
-| `PI_FLOW_TOOL_OPTIMIZE` | Enable tool-call optimization |
-| `PI_FLOW_SESSION_MODE` | Override session mode |
+| `PI_FLOW_DUMP_SNAPSHOT` | Path to write a verbatim snapshot dump (JSONL + prompt) before a flow spawns. Must be exported before `pi` starts. |
+| `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
+| `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
+| `PI_FLOW_SESSION_MODE` | Override the session mode. |
 
 ## Workflow Learning with Git Notes
 
-After a successful workflow and commit, add a structured Git note to the commit documenting how the solution was reached.
+After a successful workflow and commit, add a structured Git note to the commit documenting how the solution was reached. Use this for future workflow optimization and autoresearch learning.
+
+Prefer concise YAML-style notes with:
+- `problem`: what was being solved
+- `approach`: the successful strategy
+- `failed_paths`: dead ends or incorrect hypotheses
+- `verification`: commands/checks that proved success
+- `workflow_learning`: reusable lesson for future tasks
+- `related_files`: key files touched or studied
+
+Example:
 
 ```bash
 git notes add -m "problem: Fix failing cache invalidation
@@ -182,4 +239,4 @@ related_files:
   - tests/optimize/test_backtesting.py"
 ```
 
-Show notes with `git log --show-notes`. Share them with `git push origin refs/notes/commits`.
+Show notes with `git log --show-notes`. Share them explicitly when needed with `git push origin refs/notes/commits`.
