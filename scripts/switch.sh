@@ -24,3 +24,8 @@ fi
 
 echo ""
 echo "⚠️  Restart 'pi' to pick up the change."
+echo ""
+echo "🛡️  GUARD: While linked locally, NEVER run 'pi update' — it will overwrite"
+echo "    your symlink with the published npm version and destroy your link."
+echo "    To go back to published, run './scripts/switch.sh' first to toggle"
+echo "    to REMOTE, then run 'pi update'."
