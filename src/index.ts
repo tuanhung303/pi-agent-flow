@@ -42,6 +42,7 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./settings-resolver.js";
+import { createFlowRunnerFromEnv, type FlowRunner } from "./flow-runner.js";
 
 // ---------------------------------------------------------------------------
 // Persistent flow result cache — shared across execute() calls so historical
@@ -184,11 +185,13 @@ export default function (pi: ExtensionAPI) {
 		depthConfig;
 
 	let resolved: ResolvedSettings | undefined;
+	let flowRunner: FlowRunner | undefined;
 	let bashTracker: BashProcessTracker | undefined;
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
 		resolved = resolveSettings(pi, ctx.cwd);
+		flowRunner = createFlowRunnerFromEnv();
 
 		// Only restrict tools for the main orchestrator (depth 0).
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
@@ -401,6 +404,7 @@ export default function (pi: ExtensionAPI) {
 						hasUI: ctx.hasUI,
 						uiConfirm: (title, body) => ctx.ui.confirm(title, body),
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
+						flowRunner,
 						confirmProjectFlows: params.confirmProjectFlows,
 					},
 					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, acceptance: f.acceptance, cwd: f.cwd, sessionMode: f.sessionMode })),
