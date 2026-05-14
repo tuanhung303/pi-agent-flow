@@ -1174,7 +1174,8 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		const longText = 'Hello world. How are you doing today? The weather is nice and the sun is shining.';
 		const ripple = manager.updateMsg(TEST_ID, longText, base + 300);
 		expect(ripple.isAnimating).toBe(true);
-		expect(ripple.content).toContain('\x1b[38;2;');
+		// Glitch effect uses braille scramble chars — no ANSI color codes
+		expect(ripple.content).not.toBe(longText);
 	});
 
 	it('updateMsg does not ripple while text is actively changing', () => {
@@ -1297,7 +1298,8 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 3000);
 		// Should animate because gap > STREAMING_RESUME_GAP_MS
 		expect(result.isAnimating).toBe(true);
-		expect(result.content).toContain('\x1b[38;2;');
+		// Glitch effect uses braille scramble chars — no ANSI color codes
+		expect(result.content).not.toBe('Helloworld!!!');
 	});
 
 	it('updateMsg staticLine does not force ripple on short gap', () => {
@@ -1316,7 +1318,8 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 3000, false, undefined, true);
 		// Should animate because gap > STREAMING_RESUME_GAP_MS
 		expect(result.isAnimating).toBe(true);
-		expect(result.content).toContain('\x1b[38;2;');
+		// Glitch effect uses braille scramble chars — no ANSI color codes
+		expect(result.content).not.toBe('Helloworld!!!');
 	});
 });
 
@@ -2052,7 +2055,8 @@ describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => 
 		// Text changes with sentence boundary — chunk threshold met, ripple fires immediately
 		const result = manager.updateMsg(TEST_ID, 'Goodbye world. How is it?', base + 100, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
-		expect(result.content).toContain('\x1b[38;2;');
+		// Glitch effect uses braille scramble chars — no ANSI color codes
+		expect(result.content).not.toBe('Goodbye world. How is it?');
 	});
 
 	it('updateMsg staticLine drains partial chunk after pause', () => {
@@ -2125,10 +2129,11 @@ describe('ScrambleStateManager — lastFlushTime init', () => {
 		expect(r1.isAnimating).toBe(false);
 		expect(stripAnsi(r1.content)).toBe('Hello world. How are you today?');
 
-		// After buffer timeout (800ms) — ripple fires
+		// After buffer timeout (800ms) — drain fires on pending text change
 		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 900, false, undefined, true);
 		expect(r2.isAnimating).toBe(true);
-		expect(r2.content).toContain('\x1b[38;2;');
+		// Glitch effect uses braille scramble chars — no ANSI color codes
+		expect(r2.content).not.toBe('Hello world. How are you today?');
 	});
 });
 
