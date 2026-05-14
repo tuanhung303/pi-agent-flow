@@ -1206,14 +1206,14 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		expect(result.isAnimating).toBe(true);
 	});
 
-	it('updateAct uses illuminate config (warm glow)', () => {
+	it('updateAct uses glitch effect', () => {
 		const base = 2000000;
 		manager.updateAct(TEST_ID, 'read file.ts', base);
-		// Trigger change, then check when ripple wavefront is within text
-		manager.updateAct(TEST_ID, 'write other.ts', base + 1300);
-		const result = manager.updateAct(TEST_ID, 'write other.ts', base + 1400);
-		expect(manager.hasAnyActiveAnimations(base + 1400)).toBe(true);
-		expect(result.content).toContain(WARM_GLOW);
+		// Trigger change, then check glitch is active
+		manager.updateAct(TEST_ID, 'write other.ts', base + 100);
+		const result = manager.updateAct(TEST_ID, 'write other.ts', base + 110);
+		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('write other.ts'); // scramble chars present
 	});
 
 	it('TPS hysteresis prevents flash on tiny changes', () => {
@@ -1225,29 +1225,29 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		expect(result).toBe('43.1');
 	});
 
-	it('TPS flash triggers on large change (> 15%)', () => {
+	it('TPS glitch triggers on large change (> 15%)', () => {
 		const base = 6000000;
 		manager.updateTps(TEST_ID, '42.3', base);
-		// Large change (> 15%) triggers flash
+		// Large change (> 15%) triggers glitch
 		manager.updateTps(TEST_ID, '55.0', base + 100);
-		// Verify ripple is active
+		// Verify glitch is active
 		expect(manager.hasAnyActiveAnimations(base + 150)).toBe(true);
-		// TPS text is short (4 chars) so ripple expands past it quickly;
-		// verify at an early time when wavefront is still within text
+		// TPS text is short (4 chars) so glitch resolves quickly;
+		// verify at an early time when scramble is still active
 		const result = manager.updateTps(TEST_ID, '55.0', base + 110);
-		expect(result).toContain(WARM_GLOW);
+		expect(result).not.toBe('55.0'); // scramble chars present
 	});
 
-	it('hasAnyActiveAnimations works for illuminate', () => {
+	it('hasAnyActiveAnimations works for glitch', () => {
 		const base = 7000000;
 		manager.updateMsg(TEST_ID, 'init', base);
 		// msg: in illuminate mode initializes silently (phrase buffering)
 		expect(manager.hasAnyActiveAnimations(base)).toBe(false);
-		// Trigger a flash via act: which does animate on first render
+		// Trigger a glitch via act: which does animate on first render
 		manager.updateAct(TEST_ID, 'read file.ts', base + 10);
 		expect(manager.hasAnyActiveAnimations(base + 10)).toBe(true);
 		manager.updateAct(TEST_ID, 'write file.ts', base + 1300);
-		expect(manager.hasAnyActiveAnimations(base + 1400)).toBe(true);
+		expect(manager.hasAnyActiveAnimations(base + 1350)).toBe(true);
 	});
 
 	it('updateMsg does not flush on tail-view slide (high overlap)', () => {
