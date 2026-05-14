@@ -53,6 +53,16 @@ npm uninstall -g pi-agent-flow && npm install -g pi-agent-flow  # Restore publis
 npm ls -g pi-agent-flow     # Verify link status
 ```
 
+## Architecture Decision Records
+
+ADRs live in `doc/adr/`. Use `adr init doc/adr` for initialization and `adr new "Decision title"` for new records. Regenerate the index with `adr generate toc > doc/adr/README.md`.
+
+Current Hatchet integration plan:
+- ADR 2: phase 1 runner seam (accepted; implemented in PR #1)
+- ADR 3: phase 2 basic Hatchet backend (proposed)
+- ADR 4: phase 3 operational hardening (proposed)
+- ADR 5: phase 4 advanced Hatchet UX (proposed)
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
