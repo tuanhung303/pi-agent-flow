@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
-import { runFlow, type RunFlowOptions } from "./flow.js";
-import type { FlowRunner, FlowRunContext } from "./flow-runner.js";
 import type { FlowConfig } from "./agents.js";
+import { runFlow, type RunFlowOptions } from "./flow.js";
+import type { FlowRunContext, FlowRunner } from "./flow-runner.js";
 import type { AgentSessionMode } from "./session-mode.js";
 import { emptyFlowUsage, type FlowDetails, type SingleResult } from "./types.js";
 
@@ -95,9 +95,13 @@ function assertJsonSerializable(payload: HatchetFlowPayload): void {
 export function resolveHatchetMaxPayloadBytes(env: NodeJS.ProcessEnv = process.env): number {
 	const raw = env[PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV]?.trim();
 	if (!raw) return DEFAULT_HATCHET_MAX_PAYLOAD_BYTES;
-	if (!/^\d+$/.test(raw)) throw new Error(`${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} must be a positive integer byte limit.`);
+	if (!/^\d+$/.test(raw)) {
+		throw new Error(`${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} must be a positive integer byte limit.`);
+	}
 	const value = Number(raw);
-	if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} must be a positive integer byte limit.`);
+	if (!Number.isSafeInteger(value) || value <= 0) {
+		throw new Error(`${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} must be a positive integer byte limit.`);
+	}
 	return value;
 }
 
@@ -107,10 +111,15 @@ export function resolveHatchetMaxPayloadBytes(env: NodeJS.ProcessEnv = process.e
  * @param maxBytes Maximum allowed serialized UTF-8 size in bytes.
  * @returns Nothing when the payload is within bounds; throws with remediation guidance when too large.
  */
-export function validateHatchetFlowPayloadSize(payload: HatchetFlowPayload, maxBytes = resolveHatchetMaxPayloadBytes()): void {
+export function validateHatchetFlowPayloadSize(
+	payload: HatchetFlowPayload,
+	maxBytes = resolveHatchetMaxPayloadBytes(),
+): void {
 	const sizeBytes = Buffer.byteLength(stringifyHatchetPayload(payload), "utf8");
 	if (sizeBytes > maxBytes) {
-		throw new Error(`Hatchet flow payload is ${sizeBytes} bytes, exceeding limit ${maxBytes}. Reduce inherited context or raise ${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} only for trusted private queues with suitable retention controls.`);
+		throw new Error(
+			`Hatchet flow payload is ${sizeBytes} bytes, exceeding limit ${maxBytes}. Reduce inherited context or raise ${PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES_ENV} only for trusted private queues with suitable retention controls.`,
+		);
 	}
 }
 
@@ -120,9 +129,13 @@ function assertWorkerDirectory(label: string, dir: string): void {
 		if (stat.isDirectory()) return;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Hatchet worker ${label} "${dir}" is not accessible. Ensure the worker has a current checkout/workspace before running queued flows. (${message})`);
+		throw new Error(
+			`Hatchet worker ${label} "${dir}" is not accessible. Ensure the worker has a current checkout/workspace before running queued flows. (${message})`,
+		);
 	}
-	throw new Error(`Hatchet worker ${label} "${dir}" is not a directory. Ensure the worker has a current checkout/workspace before running queued flows.`);
+	throw new Error(
+		`Hatchet worker ${label} "${dir}" is not a directory. Ensure the worker has a current checkout/workspace before running queued flows.`,
+	);
 }
 
 /**
@@ -142,7 +155,9 @@ export function validateHatchetWorkerPayload(payload: HatchetFlowPayload): void 
  */
 export function resolveHatchetSpawnCommand(env: NodeJS.ProcessEnv = process.env): string {
 	const command = env.PI_FLOW_SPAWN_COMMAND?.trim() || "pi";
-	if (/[\0\r\n]/.test(command)) throw new Error("PI_FLOW_SPAWN_COMMAND must be a single command without NUL or newline characters.");
+	if (/[\0\r\n]/.test(command)) {
+		throw new Error("PI_FLOW_SPAWN_COMMAND must be a single command without NUL or newline characters.");
+	}
 	return command;
 }
 
@@ -152,7 +167,10 @@ export function resolveHatchetSpawnCommand(env: NodeJS.ProcessEnv = process.env)
  * @param projectFlowsDir Project-local flow directory to preserve, or null when unavailable.
  * @returns Serializable payload for HATCHET_FLOW_TASK_NAME; throws if JSON serialization fails.
  */
-export function serializeHatchetFlowPayload(options: RunFlowOptions, projectFlowsDir: string | null = null): HatchetFlowPayload {
+export function serializeHatchetFlowPayload(
+	options: RunFlowOptions,
+	projectFlowsDir: string | null = null,
+): HatchetFlowPayload {
 	const payload: HatchetFlowPayload = {
 		cwd: options.cwd,
 		flows: options.flows,
@@ -204,12 +222,120 @@ export function deserializeHatchetFlowPayload(payload: HatchetFlowPayload): RunF
 	};
 }
 
+function describeHatchetValue(value: unknown): string {
+	if (value === null) return "null";
+	if (Array.isArray(value)) return "array";
+	if (typeof value === "object") {
+		const keys = Object.keys(value as Record<string, unknown>);
+		return `object keys: ${keys.join(", ") || "(none)"}`;
+	}
+	return typeof value;
+}
+
+function assertRequiredString(record: Record<string, unknown>, key: string, context: string): void {
+	if (typeof record[key] !== "string") {
+		throw new Error(`${context} must include string field \`${key}\`.`);
+	}
+}
+
+function assertOptionalString(record: Record<string, unknown>, key: string, context: string): void {
+	if (record[key] !== undefined && typeof record[key] !== "string") {
+		throw new Error(`${context} field \`${key}\` must be a string when present.`);
+	}
+}
+
+function assertOptionalBoolean(record: Record<string, unknown>, key: string, context: string): void {
+	if (record[key] !== undefined && typeof record[key] !== "boolean") {
+		throw new Error(`${context} field \`${key}\` must be a boolean when present.`);
+	}
+}
+
+function assertOptionalNumber(record: Record<string, unknown>, key: string, context: string): void {
+	const value = record[key];
+	if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value))) {
+		throw new Error(`${context} field \`${key}\` must be a finite number when present.`);
+	}
+}
+
+function assertUsageStatsShape(value: unknown, context: string): void {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`${context} must include a usage object.`);
+	}
+	const record = value as Record<string, unknown>;
+	for (const key of [
+		"input",
+		"output",
+		"cacheRead",
+		"cacheWrite",
+		"cost",
+		"contextTokens",
+		"turns",
+		"toolCalls",
+	] as const) {
+		if (typeof record[key] !== "number" || !Number.isFinite(record[key])) {
+			throw new Error(`${context} usage field \`${key}\` must be a finite number.`);
+		}
+	}
+	if (record.smoothedTps !== undefined && (typeof record.smoothedTps !== "number" || !Number.isFinite(record.smoothedTps))) {
+		throw new Error(`${context} usage field \`smoothedTps\` must be a finite number when present.`);
+	}
+}
+
+export function assertHatchetSingleResult(
+	value: unknown,
+	context = "Hatchet result",
+): asserts value is SingleResult {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`${context} must be a final SingleResult object; received ${describeHatchetValue(value)}.`);
+	}
+	const record = value as Record<string, unknown>;
+	for (const key of ["type", "intent", "aim", "stderr"] as const) {
+		assertRequiredString(record, key, context);
+	}
+	if (
+		record.agentSource !== "user"
+		&& record.agentSource !== "project"
+		&& record.agentSource !== "bundled"
+		&& record.agentSource !== "unknown"
+	) {
+		throw new Error(`${context} field \`agentSource\` must be one of user|project|bundled|unknown.`);
+	}
+	if (typeof record.exitCode !== "number" || !Number.isFinite(record.exitCode)) {
+		throw new Error(`${context} field \`exitCode\` must be a finite number.`);
+	}
+	if (!Array.isArray(record.messages)) {
+		throw new Error(`${context} field \`messages\` must be an array.`);
+	}
+	assertUsageStatsShape(record.usage, context);
+	assertOptionalString(record, "acceptance", context);
+	assertOptionalString(record, "model", context);
+	assertOptionalString(record, "stopReason", context);
+	assertOptionalString(record, "errorMessage", context);
+	assertOptionalString(record, "streamingText", context);
+	assertOptionalBoolean(record, "sawAgentEnd", context);
+	assertOptionalNumber(record, "startedAtMs", context);
+	assertOptionalNumber(record, "deadlineAtMs", context);
+	if (
+		record.structuredOutput !== undefined
+		&& (!record.structuredOutput || typeof record.structuredOutput !== "object" || Array.isArray(record.structuredOutput))
+	) {
+		throw new Error(`${context} field \`structuredOutput\` must be an object when present.`);
+	}
+}
+
+function parseHatchetSingleResult(value: unknown, context: string): SingleResult {
+	assertHatchetSingleResult(value, context);
+	return value;
+}
+
 async function loadHatchetSdk(): Promise<HatchetSdkModule> {
 	try {
 		return await import("@hatchet-dev/typescript-sdk");
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`PI_FLOW_RUNNER=hatchet requires optional package @hatchet-dev/typescript-sdk. Install and configure Hatchet before using this backend. (${message})`);
+		throw new Error(
+			`PI_FLOW_RUNNER=hatchet requires optional package @hatchet-dev/typescript-sdk. Install and configure Hatchet before using this backend. (${message})`,
+		);
 	}
 }
 
@@ -218,7 +344,7 @@ function getProperty(obj: unknown, key: string): unknown {
 }
 
 function asAsyncFunction(value: unknown): ((...args: unknown[]) => Promise<unknown>) | undefined {
-	return typeof value === "function" ? value as (...args: unknown[]) => Promise<unknown> : undefined;
+	return typeof value === "function" ? (value as (...args: unknown[]) => Promise<unknown>) : undefined;
 }
 
 async function createHatchetClient(factory: (...args: unknown[]) => Promise<unknown>): Promise<unknown> {
@@ -229,24 +355,37 @@ async function createHatchetClient(factory: (...args: unknown[]) => Promise<unkn
 	}
 }
 
-async function defaultSubmitHatchetTask(taskName: string, payload: HatchetFlowPayload): Promise<SingleResult> {
-	const sdk = await loadHatchetSdk();
+export async function submitHatchetTaskWithSdk(
+	sdk: HatchetSdkModule,
+	taskName: string,
+	payload: HatchetFlowPayload,
+): Promise<SingleResult> {
 	const clientFactory = asAsyncFunction(getProperty(sdk, "HatchetClient"))
 		?? asAsyncFunction(getProperty(sdk, "Hatchet"))
 		?? asAsyncFunction(getProperty(sdk, "default"));
-	const client = clientFactory ? await createHatchetClient(clientFactory) : getProperty(sdk, "hatchet") ?? sdk;
+	const client = clientFactory ? await createHatchetClient(clientFactory) : (getProperty(sdk, "hatchet") ?? sdk);
 	const directRun = asAsyncFunction(getProperty(client, "run"));
-	if (directRun) return await directRun(taskName, payload) as SingleResult;
+	if (directRun) return parseHatchetSingleResult(await directRun(taskName, payload), "Hatchet SDK result");
 	const workflows = getProperty(client, "workflows") ?? getProperty(client, "workflow");
 	const workflowRun = asAsyncFunction(getProperty(workflows, "run"));
-	if (workflowRun) return await workflowRun(taskName, payload) as SingleResult;
+	if (workflowRun) return parseHatchetSingleResult(await workflowRun(taskName, payload), "Hatchet SDK result");
 	const tasks = getProperty(client, "tasks") ?? getProperty(client, "task");
 	const taskRun = asAsyncFunction(getProperty(tasks, "run")) ?? asAsyncFunction(getProperty(tasks, "execute"));
-	if (taskRun) return await taskRun(taskName, payload) as SingleResult;
-	throw new Error("Hatchet SDK loaded, but no supported task submission method was found. Expected client.run, client.workflows.run, or client.tasks.run.");
+	if (taskRun) return parseHatchetSingleResult(await taskRun(taskName, payload), "Hatchet SDK result");
+	throw new Error(
+		"Hatchet SDK loaded, but no supported task submission method was found. Expected client.run, client.workflows.run, or client.tasks.run.",
+	);
 }
 
-function makeHatchetLifecycleResult(options: RunFlowOptions, status: string, errorMessage?: string): SingleResult {
+async function defaultSubmitHatchetTask(taskName: string, payload: HatchetFlowPayload): Promise<SingleResult> {
+	return await submitHatchetTaskWithSdk(await loadHatchetSdk(), taskName, payload);
+}
+
+function makeHatchetLifecycleResult(
+	options: RunFlowOptions,
+	status: string,
+	errorMessage?: string,
+): SingleResult {
 	return {
 		type: options.flowName.toLowerCase(),
 		agentSource: "unknown",
@@ -267,7 +406,12 @@ function makeHatchetFailureLifecycleResult(options: RunFlowOptions): SingleResul
 	return makeHatchetLifecycleResult(options, "failed", "Hatchet submission failed.");
 }
 
-function emitHatchetLifecycleUpdate(options: RunFlowOptions, projectFlowsDir: string | null, text: string, result: SingleResult): void {
+function emitHatchetLifecycleUpdate(
+	options: RunFlowOptions,
+	projectFlowsDir: string | null,
+	text: string,
+	result: SingleResult,
+): void {
 	options.onUpdate?.({
 		content: [{ type: "text", text }],
 		details: makeFlowDetails(projectFlowsDir)([result]),
@@ -295,13 +439,31 @@ export class HatchetFlowRunner implements FlowRunner {
 		const projectFlowsDir = context?.projectFlowsDir ?? null;
 		const payload = serializeHatchetFlowPayload(options, projectFlowsDir);
 		validateHatchetFlowPayloadSize(payload);
-		emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet queued/running flow ${payload.flowName}.`, makeHatchetLifecycleResult(options, "queued/running"));
+		emitHatchetLifecycleUpdate(
+			options,
+			projectFlowsDir,
+			`Hatchet queued/running flow ${payload.flowName}.`,
+			makeHatchetLifecycleResult(options, "queued/running"),
+		);
 		try {
-			const result = await this.submitTask(HATCHET_FLOW_TASK_NAME, payload);
-			emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet completed flow ${payload.flowName}.`, result);
+			const result = parseHatchetSingleResult(
+				await this.submitTask(HATCHET_FLOW_TASK_NAME, payload),
+				"Hatchet runner result",
+			);
+			emitHatchetLifecycleUpdate(
+				options,
+				projectFlowsDir,
+				`Hatchet completed flow ${payload.flowName}.`,
+				result,
+			);
 			return result;
 		} catch (error) {
-			emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet failed flow ${payload.flowName}.`, makeHatchetFailureLifecycleResult(options));
+			emitHatchetLifecycleUpdate(
+				options,
+				projectFlowsDir,
+				`Hatchet failed flow ${payload.flowName}.`,
+				makeHatchetFailureLifecycleResult(options),
+			);
 			throw error;
 		}
 	}
@@ -315,5 +477,8 @@ export class HatchetFlowRunner implements FlowRunner {
 export async function runHatchetFlowTask(payload: HatchetFlowPayload): Promise<SingleResult> {
 	process.env.PI_FLOW_SPAWN_COMMAND = resolveHatchetSpawnCommand(process.env);
 	validateHatchetWorkerPayload(payload);
-	return runFlow(deserializeHatchetFlowPayload(payload));
+	return parseHatchetSingleResult(
+		await runFlow(deserializeHatchetFlowPayload(payload)),
+		"Hatchet worker result",
+	);
 }
