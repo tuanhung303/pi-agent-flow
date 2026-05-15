@@ -23,6 +23,7 @@ import {
 import { extractStructuredOutput, generateCommandsFromHistory } from "./structured-output.js";
 import { setLiveText } from './scramble.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
+import type { GoalContext } from "./flow-goal/types.js";
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
@@ -246,6 +247,7 @@ function buildFlowArgs(
 	discoveredFlows: FlowConfig[] = [],
 	parentFlowStack: string[] = [],
 	preventCycles: boolean = true,
+	goalContext?: GoalContext,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -385,8 +387,13 @@ function buildFlowArgs(
 		`Follow the output format specified in your directive.\n` +
 		`</mission>`;
 
+	// Phase 4.5: Flow goal context (optional)
+	const goalSection = goalContext?.objective
+		? `\n\n<flow-goal>\nObjective: ${goalContext.objective}\n${goalContext.acceptance ? `Acceptance: ${goalContext.acceptance}\n` : ""}${goalContext.maxFlows !== undefined ? `Progress: ${goalContext.flowCount ?? 0}/${goalContext.maxFlows} flows used.\n` : ""}</flow-goal>`
+		: "";
+
 	// -p must immediately precede the prompt so the CLI parser binds it correctly
-	args.push("-p", `${contextSeal}${activation}${directive}${mission}`);
+	args.push("-p", `${contextSeal}${activation}${directive}${mission}${goalSection}`);
 	return args;
 }
 
@@ -433,6 +440,8 @@ export interface RunFlowOptions {
 	makeDetails: (results: SingleResult[]) => FlowDetails;
 	/** Child-flow session mode. Default: "default" (600s). */
 	sessionMode?: AgentSessionMode;
+	/** Optional flow goal context to inject into the child prompt. */
+	goalContext?: GoalContext;
 }
 
 /**
@@ -559,6 +568,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			flows,
 			parentFlowStack,
 			preventCycles,
+			opts.goalContext,
 		);
 
 		// Dump verbatim child payload to disk for debugging when requested.

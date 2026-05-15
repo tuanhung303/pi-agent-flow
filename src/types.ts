@@ -344,3 +344,15 @@ export interface PiAgentFlowAPI {
 	getSettings: () => { toolOptimize: boolean; structuredOutput: boolean; maxConcurrency: number };
 }
 
+// ---------------------------------------------------------------------------
+// Flow goal re-exports
+// ---------------------------------------------------------------------------
+
+export type {
+	FlowGoalState,
+	FlowGoalEntry,
+	FlowGoalStatus,
+	GoalContext,
+	SpawnContinuation,
+} from "./flow-goal/types.js";
+

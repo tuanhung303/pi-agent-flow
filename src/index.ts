@@ -29,6 +29,7 @@ import {
 	makeSteeringHintMessage,
 } from "./sliding-prompt.js";
 import { setupSpecMode } from "./spec-mode.js";
+import { registerFlowGoal, getGoal, recordFlowCompletion, addTokens } from "./flow-goal/index.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {
 	resolveFlowDepthConfig,
@@ -178,6 +179,9 @@ export default function (pi: ExtensionAPI) {
 
 	// Wire up /spec toggle
 	setupSpecMode(pi);
+
+	// Wire up /flow-goal command and continuation hooks
+	registerFlowGoal(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
@@ -402,6 +406,14 @@ export default function (pi: ExtensionAPI) {
 						uiConfirm: (title, body) => ctx.ui.confirm(title, body),
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
+						goalContinuationCallback: async (results) => {
+							const goal = getGoal(ctx.cwd);
+							if (!goal) return;
+							for (const r of results) {
+								recordFlowCompletion(ctx.cwd, { type: r.type, intent: r.intent, aim: r.aim });
+								addTokens(ctx.cwd, r.usage.input + r.usage.output);
+							}
+						},
 					},
 					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, acceptance: f.acceptance, cwd: f.cwd, sessionMode: f.sessionMode })),
 					toolCallId,

@@ -80,6 +80,8 @@ export interface FlowExecutorDeps {
 	onFlowMetrics?: (metrics: FlowMetrics) => void;
 	/** Whether to prompt the user before running project-local flows. Default: true. */
 	confirmProjectFlows?: boolean;
+	/** Optional callback invoked after all flows complete to record goal usage. */
+	goalContinuationCallback?: (results: SingleResult[]) => Promise<void>;
 }
 
 export interface ExecuteFlowParams {
@@ -445,6 +447,11 @@ export async function executeFlows(
 			results.length - 1,
 			results.length,
 		);
+	}
+
+	// Goal continuation callback
+	if (deps.goalContinuationCallback) {
+		await deps.goalContinuationCallback(results);
 	}
 
 	// Cache flow results
