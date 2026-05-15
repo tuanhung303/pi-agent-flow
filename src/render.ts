@@ -439,7 +439,8 @@ function renderFlowCollapsed(
 		() => {
 			const result = scrambleManager.updateText(id, 'header', plainHeader, Date.now(), isComplete, true);
 			return result.isAnimating ? theme.fg("accent", result.content) : header;
-		}
+		},
+		true,
 	));
 
 	// aim: line — cascade/ripple/illuminate on text change
@@ -456,7 +457,8 @@ function renderFlowCollapsed(
 			() => {
 				const result = scrambleManager.updateAim(id, displayAim, Date.now(), isComplete, true);
 				return `${theme.fg("dim", aimPrefix)}${theme.fg("dim", italic(result.content))}`;
-			}
+			},
+			true,
 		));
 	}
 
@@ -486,7 +488,8 @@ function renderFlowCollapsed(
 				}
 				const actPrefix = `├─ act: [${actKpi}] - `;
 				return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
-			}
+			},
+			true,
 		));
 	}
 
@@ -540,7 +543,8 @@ function renderFlowCollapsed(
 					: scrambleManager.updateMsg(id, rawMsg, now, isComplete, undefined, true);
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result.content))}`;
 			}
-		}
+		},
+		true,
 	));
 
 	if (isComplete) {
@@ -728,7 +732,8 @@ function renderActivityPanel(
 			() => {
 				const result = scrambleManager.updateText(flowId, 'header', plainHeader, Date.now(), flowComplete, true);
 				return result.isAnimating ? theme.fg("accent", result.content) : headerLine;
-			}
+			},
+			true,
 		));
 
 		// Continuation indent for sub-lines
@@ -748,7 +753,8 @@ function renderActivityPanel(
 				() => {
 					const result = scrambleManager.updateAim(flowId, displayAim, Date.now(), flowComplete, true);
 					return `${theme.fg("dim", aimPrefix)}${theme.fg("dim", italic(result.content))}`;
-				}
+				},
+				true,
 			));
 		}
 
@@ -778,7 +784,8 @@ function renderActivityPanel(
 					}
 					const actPrefix = `${indent}├─ act: [${actKpi}] - `;
 					return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
-				}
+				},
+				true,
 			));
 		}
 
@@ -824,7 +831,8 @@ function renderActivityPanel(
 						: scrambleManager.updateMsg(flowId, rawMsg, now, flowComplete, undefined, true).content;
 					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result))}`;
 				}
-			}
+			},
+			true,
 		));
 
 		if (flowComplete) {

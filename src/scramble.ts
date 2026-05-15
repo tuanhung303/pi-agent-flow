@@ -27,7 +27,7 @@
 import type { UsageStats } from './types.js';
 import { stripAnsi, tailText, truncateChars } from './render-utils.js';
 import type { Component } from '@mariozechner/pi-tui';
-import { Text } from '@mariozechner/pi-tui';
+import { Text, truncateToWidth } from '@mariozechner/pi-tui';
 
 // ---------------------------------------------------------------------------
 // Fast RNG (xorshift32) + hash-based noise
@@ -2905,12 +2905,14 @@ export class DynamicScrambleText implements Component {
 	constructor(
 		initialContent: string,
 		private getScrambleContent: () => string,
+		private truncated: boolean = false,
 	) {
 		this.base = new Text(initialContent, 0, 0);
 	}
 	invalidate(): void { this.base.invalidate(); }
 	render(width: number): string[] {
-		this.base.setText(this.getScrambleContent());
+		const content = this.getScrambleContent();
+		this.base.setText(this.truncated ? truncateToWidth(content, width) : content);
 		return this.base.render(width);
 	}
 }
