@@ -6,7 +6,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
 	applyRipples,
 	buildGlitchQueue,
-	buildChunkFlipQueue,
 	buildQueue,
 	computeCascadeFrame,
 	computeGlitchFrame,
@@ -641,53 +640,6 @@ describe('computeGlitchFrame', () => {
 	});
 });
 
-
-
-describe('buildChunkFlipQueue', () => {
-	it('all items have uniform start=0', () => {
-		const queue = buildChunkFlipQueue('hello world', 'hi');
-		for (const item of queue) {
-			expect(item.start).toBe(0);
-		}
-	});
-
-	it('all items have uniform end=CHUNK_FLIP_DURATION_FRAMES', () => {
-		const queue = buildChunkFlipQueue('hello', 'world');
-		for (const item of queue) {
-			expect(item.end).toBe(32);
-		}
-	});
-
-	it('sets fadeOutEnd for removed chars', () => {
-		const queue = buildChunkFlipQueue('abcdef', 'ab');
-		for (let i = 2; i < queue.length; i++) {
-			expect(queue[i].fadeOutEnd).toBeDefined();
-			expect(queue[i].fadeOutEnd).toBe(queue[i].end + 12);
-		}
-	});
-
-	it('does not set fadeOutEnd for kept or new chars', () => {
-		const queue = buildChunkFlipQueue('hello', 'world');
-		for (const item of queue) {
-			if (item.to !== '') {
-				expect(item.fadeOutEnd).toBeUndefined();
-			}
-		}
-	});
-
-	it('computeGlitchFrame resolves all chars at the same frame', () => {
-		const queue = buildChunkFlipQueue('hello world', 'hello tests');
-		const rng = () => '~';
-		const result = computeGlitchFrame(queue, 32, rng);
-		expect(stripAnsi(result)).toBe('hello tests');
-	});
-
-	it('isGlitchComplete returns true at CHUNK_FLIP_DURATION_FRAMES + CHUNK_FLIP_FADE_OUT_FRAMES', () => {
-		const queue = buildChunkFlipQueue('abcdef', 'ab');
-		expect(isGlitchComplete(queue, 43)).toBe(false);
-		expect(isGlitchComplete(queue, 44)).toBe(true);
-	});
-});
 describe('isGlitchComplete', () => {
 	it('returns true when all entries are past end (no fadeOutEnd)', () => {
 		const queue: any[] = [
@@ -1388,9 +1340,9 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		const base = 2000000;
 		manager.updateAct(TEST_ID, 'read file.ts', base);
 		// Trigger change, then check glitch is active
-		manager.updateAct(TEST_ID, 'write other.ts', base + 50);
-		const result = manager.updateAct(TEST_ID, 'write other.ts', base + 55);
-		expect(manager.hasAnyActiveAnimations(base + 55)).toBe(true);
+		manager.updateAct(TEST_ID, 'write other.ts', base + 100);
+		const result = manager.updateAct(TEST_ID, 'write other.ts', base + 110);
+		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
 		expect(stripAnsi(result.content)).not.toBe('write other.ts'); // scramble chars present
 	});
 
