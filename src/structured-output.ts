@@ -37,7 +37,10 @@ function isOptionalArray(record: Record<string, unknown>, key: string): boolean 
 /** Minimum required fields to consider parsed JSON a valid structured output. */
 function isValidFileEntry(item: unknown): boolean {
 	if (!isRecord(item)) return false;
-	return typeof item.path === "string";
+	if (typeof item.path !== "string") return false;
+	if (item.role !== undefined && typeof item.role !== "string") return false;
+	if (item.description !== undefined && typeof item.description !== "string") return false;
+	return true;
 }
 
 /** Minimum required fields to consider parsed JSON a valid structured output. */
