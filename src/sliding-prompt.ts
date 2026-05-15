@@ -24,7 +24,6 @@ export const STEERING_HINT =
 	`- Context: Answer directly if possible; otherwise, investigate first, then delegate.\n` +
 	`- Acts: [Route all git, bash, CLI, or terminal tasks to \`build\` flow, For major conflicts or misaligned goals use ask_user, For lengthy plans with many steps use ask_user to confirm main points before proceeding]\n` +
 	`- Mindset: Gather context before acting. Investigate, discuss, plan — then delegate.\n` +
-	`- Spec: If a spec exists in \`.specs/\`, read it first and use it to guide implementation.\n` +
 	`- Anti-patterns: [Never implement directly, Never ask what you can discover with tools, Never skip investigation]\n` +
 	`Note: Context is inherited automatically for child flow; write intents focusing only on new work.\n` +
 	`${STEERING_HINT_CLOSE_TAG}`;
