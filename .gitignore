@@ -4,6 +4,7 @@ dist/
 .DS_Store
 *.bak
 
+.pi/
 context/
 debug/
 .cursor/

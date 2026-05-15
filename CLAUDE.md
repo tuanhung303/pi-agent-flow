@@ -201,3 +201,43 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
+
+## Flow Goal (Autonomous Continuation)
+
+Set a multi-step objective and the system automatically spawns flows to advance it after each turn. When active, the orchestrator receives a hidden instruction at `turn_end` to call the `flow` tool again until the goal is complete, paused, or a budget is exhausted.
+
+### Slash commands
+
+| Command | Usage |
+|---------|-------|
+| `set` | `/flow-goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` |
+| `clear` | `/flow-goal clear` — Clear the active goal (moved to history) |
+| `pause` | `/flow-goal pause` — Pause auto-continuation |
+| `resume` | `/flow-goal resume` — Resume a paused goal |
+| `edit` | `/flow-goal edit <new-objective> [--acceptance <text>]` |
+| `status`, `show` | `/flow-goal status` — Show current goal state and budgets |
+
+### How it works
+
+1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets.
+2. If under budget, it sends a hidden message instructing the orchestrator to call the `flow` tool.
+3. The spawned flow receives a `<flow-goal>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
+4. Completed flows and token usage are recorded in goal state.
+5. If `maxTokens` or `maxFlows` is exceeded, the goal **auto-pauses**.
+6. A **5-second cooldown** prevents rapid-fire spawns.
+
+### Persistence
+
+Goals are stored in `.pi/flow-goal.json` in the project root (atomic writes). Add `.pi/` to `.gitignore` — this is local runtime state.
+
+### Typical lifecycle
+
+```bash
+/flow-goal set "Refactor all tests to vitest" --acceptance "All tests pass" --max-flows 5
+# Work normally — after each turn the orchestrator auto-delegates
+/flow-goal pause    # Stop auto-continuation
+/flow-goal status   # Check progress
+/flow-goal clear    # Done
+```
+
+> No environment variable controls auto-continuation; it is active whenever a goal is set and not paused.

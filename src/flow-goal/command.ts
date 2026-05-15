@@ -63,6 +63,21 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
             maxFlows: maxFlowsMatch ? parseInt(maxFlowsMatch[1], 10) : undefined,
           });
           ctx.ui.notify?.(`Goal set: ${entry.objective}`, "info");
+
+          // Immediately trigger the model to start working on the goal
+          const aim = objective.slice(0, 60);
+          const flowCall = JSON.stringify({
+            flow: [{
+              type: "build",
+              intent: objective,
+              aim,
+              ...(entry.acceptance ? { acceptance: entry.acceptance } : {})
+            }]
+          });
+          pi.sendMessage(
+            { content: `You have a new active goal. Analyze it and call the flow tool to start executing.\n\nGoal: ${objective}${entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : ''}\n\nCall the flow tool: ${flowCall}`, display: false },
+            { triggerTurn: true }
+          );
           break;
         }
         case "clear": {
@@ -83,6 +98,21 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
           const entry = updateGoalStatus(cwd, "active");
           if (entry) {
             ctx.ui.notify?.("Goal resumed", "info");
+
+            // Trigger the model to continue working on the resumed goal
+            const aim = entry.objective.slice(0, 60);
+            const flowCall = JSON.stringify({
+              flow: [{
+                type: "build",
+                intent: entry.objective,
+                aim,
+                ...(entry.acceptance ? { acceptance: entry.acceptance } : {})
+              }]
+            });
+            pi.sendMessage(
+              { content: `You have a resumed goal. Continue working on it and call the flow tool to proceed.\n\nGoal: ${entry.objective}${entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : ''}\n\nCall the flow tool: ${flowCall}`, display: false },
+              { triggerTurn: true }
+            );
           } else {
             ctx.ui.notify?.("No active goal to resume", "error");
           }
