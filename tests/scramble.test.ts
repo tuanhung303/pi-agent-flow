@@ -2303,3 +2303,74 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 		expect(stripAnsi(result.content)).not.toBe('Brand new text here.');
 	});
 });
+
+describe('ScrambleStateManager — msg chunk glitch fixes', () => {
+	let manager: ScrambleStateManager;
+
+	beforeEach(() => {
+		manager = new ScrambleStateManager();
+		manager.setMode('illuminate');
+	});
+
+	it('stores pending glitch when new chunk arrives during active glitch', () => {
+		const base = 10_000_000;
+		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		// Trigger glitch with sentence boundary
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100, false, undefined, true);
+
+		// While glitch is active, send a new chunk with enough chars to trigger F1 accumulator
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 200, false, undefined, true);
+
+		// After original glitch completes (~1100ms), pending glitch should still be animating
+		const result = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 1500, false, undefined, true);
+		expect(result.isAnimating).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.');
+	});
+
+	it('pending glitch starts when active glitch completes', () => {
+		const base = 10_000_000;
+		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100, false, undefined, true);
+
+		// Queue pending glitch with long text to trigger F1 accumulator
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 200, false, undefined, true);
+
+		// First call after active glitch completes triggers pendingGlitch start
+		const r1 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 1500, false, undefined, true);
+		expect(r1.isAnimating).toBe(true);
+
+		// Wait long enough for pending glitch to complete too
+		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 3000, false, undefined, true);
+		expect(r2.isAnimating).toBe(false);
+		expect(stripAnsi(r2.content)).toBe('Hello world. How are you today? This is new and it contains enough characters.');
+	});
+
+	it('applyScramble cascade with empty queue returns text, not stale displayedText', () => {
+		const base = 10_000_000;
+		manager.setMode('cascade');
+		manager.updateMsg(TEST_ID, 'hello', base);
+		// Trigger cascade
+		manager.updateMsg(TEST_ID, 'hello world', base + 500);
+		// While cascade is active, text changes but is suppressed
+		manager.updateMsg(TEST_ID, 'hello universe', base + 510);
+		// Wait for cascade to complete
+		const result = manager.updateMsg(TEST_ID, 'hello universe', base + 2000);
+		expect(stripAnsi(result.content)).toBe('hello universe');
+	});
+
+	it('multiple rapid chunks overwrite pending glitch properly', () => {
+		const base = 10_000_000;
+		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100, false, undefined, true);
+
+		// First pending chunk (triggers F1 because long)
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today? First chunk with many extra characters to trigger accumulator properly.', base + 200, false, undefined, true);
+		// Second pending chunk overwrites (also triggers F1)
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 300, false, undefined, true);
+
+		// After active glitch completes, the LAST pending glitch should run
+		const result = manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 1500, false, undefined, true);
+		expect(result.isAnimating).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.');
+	});
+});

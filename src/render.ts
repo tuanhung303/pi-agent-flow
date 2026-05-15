@@ -183,7 +183,7 @@ export function renderFlowResult(
 			container = renderFlowCollapsed(ghostResult, flowStatusIcon(ghostResult, theme), false, streamingText || "", theme);
 		}
 		} else {
-			container = new Text(streamingText || "", 0, 0);
+			container = new Text(scrambleManager.renderStatic(streamingText || ""), 0, 0);
 		}
 	} else if (details.results.length === 1) {
 		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText);
@@ -245,7 +245,7 @@ function renderFlowExpanded(
 	const headerResult = scrambleManager.updateText(id, 'header', plainHeader, now, isComplete);
 	container.addChild(new Text(headerResult.isAnimating ? theme.fg("toolTitle", headerResult.content) : header, 0, 0));
 	if (error && r.errorMessage) {
-		container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
+		container.addChild(new Text(scrambleManager.renderStatic(theme.fg("error", `Error: ${r.errorMessage}`)), 0, 0));
 	}
 
 	// Stats: dashboard format
@@ -317,7 +317,7 @@ function renderFlowExpanded(
 
 	// Output: animate streaming text; show clean markdown when complete
 	if (!isComplete && streamingText) {
-		const scrambled = scrambleManager.updateMsg(id, stripAnsi(streamingText), now, isComplete).content;
+		const scrambled = scrambleManager.updateMsg(id, stripAnsi(streamingText), now, isComplete, undefined, true).content;
 		container.addChild(new Text(scrambled, 0, 0));
 	} else if (flowOutput) {
 		container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));

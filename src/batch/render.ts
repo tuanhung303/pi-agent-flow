@@ -123,9 +123,9 @@ export function renderBatchResult(
 	if (!canAnimate) {
 		if (!expanded) {
 			const summary = fullText.split("\n")[0] ?? "";
-			return new TruncatedText(summary, 0, 0);
+			return new TruncatedText(scrambleManager.renderStatic(summary), 0, 0);
 		}
-		return new Text(fullText, 0, 0);
+		return new Text(scrambleManager.renderStatic(fullText), 0, 0);
 	}
 	const now = Date.now();
 	const id = (args as any)?.toolCallId || (args as any)?.id || "batch";
