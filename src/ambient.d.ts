@@ -188,6 +188,7 @@ declare module "@mariozechner/pi-agent-core" {
 		content: any[];
 		details?: T;
 		isError?: boolean;
+		_toolCallId?: string;
 	}
 }
 

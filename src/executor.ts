@@ -94,7 +94,7 @@ export interface ExecuteFlowResult {
 	content: Array<{ type: string; text: string }>;
 	details: FlowDetails;
 	isError?: boolean;
-
+	_toolCallId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +305,7 @@ export async function executeFlows(
 		onUpdate({
 			content: [{ type: "text", text }],
 			details: makeDetails([...allResults]),
+			_toolCallId: toolCallId,
 		});
 	};
 
@@ -475,5 +476,6 @@ export async function executeFlows(
 			text: `Flow: ${successCount}/${results.length} completed\n\n${flowReports.join("\n\n---\n\n")}${advisorBlock}`,
 		}],
 		details: makeDetails(results),
+		_toolCallId: toolCallId,
 	};
 }
