@@ -134,7 +134,9 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string | un
 		parts.push(`Notes:\n${r.notes.map((s) => `  ${s}`).join("\n")}`);
 	}
 	if (r.error) parts.push(`Error: ${r.error}`);
-	return parts.join("\n");
+	const text = parts.join("\n");
+	if (text.includes("undefined")) return undefined;
+	return text;
 }
 
 // ---------------------------------------------------------------------------
@@ -461,11 +463,19 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				const size = originalText.length || contentSize || line.length;
 				rendered = `[flow] prior result · ${size} chars (not cached or evicted)`;
 			} else {
-				const renderedParts = compressed.map(renderCompressedFlowResult).filter((r): r is string => r !== undefined);
-				// If any compression failed the safety net, fall back to placeholder.
-				rendered = renderedParts.length === compressed.length
-					? renderedParts.join("\n\n")
-					: `[flow] prior result · ${originalText.length || line.length} chars (compression failed safety net)`;
+				const renderResults = compressed.map(renderCompressedFlowResult);
+				const hasAnyUndefined = renderResults.some(r => r === undefined);
+				
+				if (hasAnyUndefined) {
+					// Safety net: compression produced garbage, fall back to truncated raw.
+					originalText = extractToolResultText(entry) ?? "";
+					const size = originalText.length;
+					rendered = size > 2000
+						? originalText.slice(0, 2000) + "\n[truncated]"
+						: originalText;
+				} else {
+					rendered = renderResults.filter((r): r is string => r !== undefined).join("\n\n");
+				}
 			}
 		}
 
