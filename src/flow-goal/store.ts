@@ -53,7 +53,7 @@ export function getGoal(cwd: string): FlowGoalEntry | undefined {
 export function setGoal(
   cwd: string,
   objective: string,
-  opts?: { acceptance?: string; maxTokens?: number; maxFlows?: number },
+  opts?: { acceptance?: string; maxTokens?: number; maxFlows?: number; sessionId?: string },
 ): FlowGoalEntry {
   const state = readState(cwd);
   const now = new Date().toISOString();
@@ -68,6 +68,7 @@ export function setGoal(
     totalTokens: 0,
     maxTokens: opts?.maxTokens,
     maxFlows: opts?.maxFlows,
+    sessionId: opts?.sessionId,
   };
   if (state.current) {
     state.history.push(state.current);
@@ -88,10 +89,11 @@ export function clearGoal(cwd: string): void {
   writeState(cwd, state);
 }
 
-export function updateGoalStatus(cwd: string, status: FlowGoalStatus): FlowGoalEntry | undefined {
+export function updateGoalStatus(cwd: string, status: FlowGoalStatus, sessionId?: string): FlowGoalEntry | undefined {
   const state = readState(cwd);
   if (!state.current) return undefined;
   state.current.status = status;
+  if (sessionId !== undefined) state.current.sessionId = sessionId;
   state.current.updatedAt = new Date().toISOString();
   writeState(cwd, state);
   return state.current;

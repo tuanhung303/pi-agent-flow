@@ -3,18 +3,24 @@ import { getGoal, addTokens, updateGoalStatus } from "./store.js";
 
 let _previousObjective: string | undefined;
 let _lastSpawnAt = 0;
+let _currentSessionId: string | undefined;
 const SPAWN_COOLDOWN_MS = 5000;
 
 export function setupContinuation(
   pi: ExtensionAPI,
   getCwd: () => string | undefined,
 ): void {
+  pi.on("session_start", (_event, ctx) => {
+    _currentSessionId = ctx.sessionManager.getSessionId();
+  });
+
   pi.on("turn_end", async (event: TurnEndEvent) => {
     const cwd = getCwd();
     if (!cwd) return;
 
     const goal = getGoal(cwd);
     if (!goal || goal.status !== "active") return;
+    if (goal.sessionId && goal.sessionId !== _currentSessionId) return;
 
     // Cooldown: don't re-fire within 5 seconds of last spawn
     const now = Date.now();

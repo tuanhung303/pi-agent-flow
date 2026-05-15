@@ -30,6 +30,8 @@ export interface FlowGoalEntry {
   maxTokens?: number;
   /** Optional maximum number of flows. */
   maxFlows?: number;
+  /** Session ID that owns this goal. */
+  sessionId?: string;
 }
 
 export interface FlowGoalState {

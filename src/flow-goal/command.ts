@@ -57,10 +57,12 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
             ctx.ui.notify?.("Usage: /flow-goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]", "error");
             return;
           }
+          const sessionId = ctx.sessionManager.getSessionId();
           const entry = setGoal(cwd, objective, {
             acceptance: acceptanceMatch?.[1],
             maxTokens: maxTokensMatch ? parseInt(maxTokensMatch[1], 10) : undefined,
             maxFlows: maxFlowsMatch ? parseInt(maxFlowsMatch[1], 10) : undefined,
+            sessionId,
           });
           ctx.ui.notify?.(`Goal set: ${entry.objective}`, "info");
 
@@ -95,7 +97,8 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
           break;
         }
         case "resume": {
-          const entry = updateGoalStatus(cwd, "active");
+          const sessionId = ctx.sessionManager.getSessionId();
+          const entry = updateGoalStatus(cwd, "active", sessionId);
           if (entry) {
             ctx.ui.notify?.("Goal resumed", "info");
 
