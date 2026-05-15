@@ -1314,7 +1314,9 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 					// leave a stale anchor that triggers chain glitches on next frames.
 					state.displayedText = text;
 					state.lastText = text;
-					const pendingText = lineKey === 'msg' ? (state.targetText || text) : text;
+					const pendingText = lineKey === 'msg'
+						? (state.targetText && state.targetText.length > text.length ? text : (state.targetText || text))
+						: text;
 					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, pendingText, config);
 				}
 				// FIX: settle to current text, not stale targetText, to prevent snap-back.
@@ -1324,7 +1326,9 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 				state.targetText = '';
 				return settledText;
 			}
-			const glitchText = lineKey === 'msg' ? (state.targetText || text) : text;
+			const glitchText = lineKey === 'msg'
+				? (state.targetText && state.targetText.length > text.length ? text : (state.targetText || text))
+				: text;
 			return computeGlitchFrame(state.glitchQueue, frame, rng ?? poolRandomChar, glitchText, config);
 		}
 		const pulseIntensity = computePulseIntensity(state, now);
