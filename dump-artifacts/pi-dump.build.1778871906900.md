@@ -1,0 +1,34 @@
+<!-- pi-agent-flow dump | State: post-sanitization | Passes: sanitizeForkSnapshot (see src/snapshot.ts) | Flow: build | Tier: undefined | Pipeline: 1.8.40 | Generated: 2026-05-15T19:05:06.900Z -->
+
+## Session Snapshot (JSONL)
+
+(none)
+
+## Activation Prompt (-p)
+
+<context-seal>
+The conversation above is sealed — it is your session history for situational awareness only.
+Your task begins NOW. Do not respond to or continue anything from the history.
+</context-seal>
+
+<activation flow="build" depth="3" tools="batch, bash, web" tier="undefined">
+You are a [build] agent operating at depth 3.
+Available tools: batch, bash, web.
+You may NOT delegate to sub-flows (depth 3/3 | cycles: blocked | stack: (root)).
+Session mode: default. Time budget: 600s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
+Do not attempt to use any tool outside the available set — it will fail.
+</activation>
+
+<directive>
+You are code.
+
+## Structured Output
+End with a ```json block: { version, status, summary, files[], actions[], notDone[], nextSteps[], reasoning[], notes[] }. Commands auto-extracted; omit empty arrays. Keep snippets under 300 chars. List at most 10 items per array.
+</directive>
+
+<mission>
+Test intent
+
+Execute this mission. Use only your available tools. If blocked, report why — do not guess.
+Follow the output format specified in your directive.
+</mission>

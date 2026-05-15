@@ -1,0 +1,105 @@
+<context-seal>
+The conversation above is sealed — it is your session history for situational awareness only.
+Your task begins NOW. Do not respond to or continue anything from the history.
+</context-seal>
+
+<activation flow="build" depth="1" tools="batch, bash, find, grep, ls, web">
+You are a [build] agent operating at depth 1.
+Available tools: batch, bash, find, grep, ls, web.
+You may NOT delegate to sub-flows (depth 1/0 | cycles: blocked | stack: (root)).
+Session mode: long. Time budget: 900s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
+Do not attempt to use any tool outside the available set — it will fail.
+</activation>
+
+<directive>
+## Mission
+
+Implement and verify changes. Verify first, then ship. Prior conversation is background reference only.
+
+## Workflow
+
+1. Analyze — read existing code for context.
+2. Plan — outline approach before modifying.
+3. Test — write or identify a failing test when practical.
+4. Execute — implement changes following core principles.
+5. Verify — run tests and checks; refactor only if working.
+6. Ship — commit, push, monitor CI/CD; fix failures until green.
+7. Cleanup — delete old branch (local + remote) if requested. Otherwise leave the branch for the user to merge.
+
+## Rules
+
+- Follow SOLID, DRY, KISS.
+- Run `git branch --show-current` before making changes.
+- Commit with conventional messages: `feat:`, `fix:`, `refactor:`.
+- Do not merge to `main` unless the user explicitly requests it. If merging, use squash-merge (`git merge --squash`).
+- Update relevant docs; if none changed, state why.
+- Unexpected errors → recommend [debug], don't guess.
+
+## Structured Output
+End with a ```json block: { version, status, summary, files[], actions[], notDone[], nextSteps[], reasoning[], notes[] }. Commands auto-extracted; omit empty arrays. Keep snippets under 300 chars. List at most 10 items per array.
+</directive>
+
+<mission>
+Implement 3 fixes for the snapshot sanitization pipeline, based on the analysis of actual dump artifacts vs source code:
+
+**Phase 1 — Fix `reparentOrphans` reading parentId from wrong location (CRITICAL)**
+
+File: `src/snapshot.ts`, function `reparentOrphans` (around lines 675-700).
+
+CURRENT BUG: The function reads `entry.message.parentId` but in the actual JSONL format, `parentId` is an ENTRY-LEVEL field, not inside `message`. Example:
+```json
+{"type":"message","id":"8c87c0c1","parentId":"aef5318c","timestamp":"...","message":{"role":"assistant",...}}
+```
+So `entry.message.parentId` is always undefined, making the function a silent no-op. Evidence: pi-dump.craft.1778858979353.md has orphaned parentIds `aef5318c` and `6141088b` that reference non-existent messages.
+
+FIX:
+1. Change the ID collection to also scan `entry.id` and `entry.parentId` at the entry level (currently only looks at `entry?.message?.id`)
+2. Change the orphan detection to read `entry.parentId` (entry-level) as PRIMARY, with `entry.message?.parentId` as fallback
+3. When stripping, strip from the correct level — if `entry.parentId` exists, strip it from the entry, not from `entry.message`
+4. Remove the `if (!entry?.message) continue` guard since non-message entries can have orphaned parentIds too
+5. The id collection loop also needs fixing: it currently only collects `entry?.message?.id ?? entry?.message?.messageId ?? entry?.id` — this SHOULD actually work for collection since `entry?.id` is the fallback. Verify this works for model_change and thinking_level_change entries too.
+
+Add a regression test in `tests/` (e.g. in `tests/snapshot-compress.test.ts` or a new `tests/reparent-orphans.test.ts`):
+- Create a JSONL snapshot with: session header, a user message, an assistant message with a `batch_read` toolCall, and a tool result for that batch_read, and a subsequent assistant message whose parentId points to the batch_read tool result
+- Run `sanitizeForkSnapshot()` on it
+- Assert that NO parentId in the output references a non-existent ID
+- Specifically test that entry-level parentId is properly reparented
+
+**Phase 2 — Break `sanitizeMessages` into named sub-passes for observability**
+
+File: `src/snapshot.ts`, the main sanitization loop inside `sanitizeForkSnapshot` (around lines 715-900).
+
+CURRENT: The entire message-processing loop gets ONE pass name `"sanitizeMessages"` pushed to passesApplied, even though it performs 10+ distinct sub-operations.
+
+FIX: Track sub-operations as individual named passes. Instead of `passesApplied.push("sanitizeMessages")` at the end, collect which sub-operations actually fired and push those:
+- `forkMetadataInjection` — when fork metadata was injected into session header
+- `stripSystemPrompt` — when parent systemPrompt was replaced
+- `dropSlidingSystemPrompts` — when a sliding system prompt message was dropped
+- `normalizeToolResultRole` — when role was normalized from toolResult to tool
+- `stripReasoning` — when reasoning/thinking was stripped
+- `stripTimestamps` — when inner message.timestamp was stripped
+- `stripApiMetadata` — when API metadata fields were stripped from assistant messages
+- `stripDetails` — when details field was stripped from tool messages
+- `stripSteeringHints` — when steering hints were stripped from content
+- `stripStrategicHints` — when strategic hints were stripped from tool result content
+
+Use a Set<string> to collect which sub-passes fired during the loop, then `passesApplied.push(...subPasses)` after the loop. This makes the dump header and compression-stats entry fully transparent.
+
+**Phase 3 — Validate**
+
+1. Run `npm run build` to compile TypeScript
+2. Run `npm test` to verify all existing tests pass + new regression test passes
+3. Print a summary of all changes made, test results, and any issues found
+
+IMPORTANT CONTEXT:
+- The `sanitizeForkSnapshot` function already returns `{ result: string | null; passesApplied: string[] }` — this is already wired up
+- The dump header in `src/flow.ts` (around line 580) already reads `passesApplied` from the compression-stats JSONL trailer — so Phase 2 changes will automatically appear in new dumps
+- The second `reparentOrphans` call already exists in the pipeline (after compressToolResults) — so fixing the function itself is sufficient
+- Read the actual source files before editing to get exact line numbers
+- Be conservative with changes — minimal edits, maximum correctness
+- Commit with conventional messages: `fix:` for the bug, `refactor:` for the observability improvement
+Acceptance: reparentOrphans correctly reads entry-level parentId, sub-passes are individually named, all tests pass, build succeeds
+
+Execute this mission. Use only your available tools. If blocked, report why — do not guess.
+Follow the output format specified in your directive.
+</mission>
