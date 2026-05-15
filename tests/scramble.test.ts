@@ -47,7 +47,7 @@ function hasAnsi(s: string): boolean {
 }
 
 const TEST_ID = 'test-id';
-const SCRAMBLE_CHAR_SET = '???~???+???????????????';
+const SCRAMBLE_CHAR_SET = '·∘∙~⋆˚｡+×◇°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
 
 // ---------------------------------------------------------------------------
 // Stream mode tests
@@ -949,7 +949,7 @@ describe('ScrambleStateManager mode switching', () => {
 
 describe('selectScrambleChar', () => {
 	it('returns deep glitch chars for depth 1?2', () => {
-		const deepChars = '???*?????????????????????';
+		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
 		for (let d = 1; d <= 2; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(deepChars).toContain(c);
@@ -957,13 +957,13 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns mid glitch chars for depth 3', () => {
-		const midChars = '???~???+??????????????';
+		const midChars = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
 		const c = selectScrambleChar(3, 0, 0);
 		expect(midChars).toContain(c);
 	});
 
 	it('returns shallow glitch chars for depth 4+', () => {
-		const shallowChars = '???~?+???';
+		const shallowChars = '·∘∙~×°+⠌⠡⠜';
 		for (let d = 4; d <= 6; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(shallowChars).toContain(c);
@@ -1331,9 +1331,9 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		expect(preStable.isAnimating).toBe(false);
 		expect(stripAnsi(preStable.content)).toBe('Hello world how are');
 
-		// Wait past MSG_STABLE_DEBOUNCE_MS (350ms) ? ripple fires
+		// Stable text with sync guard ? no re-ripple (displayedText already synced)
 		const result = manager.updateMsg(TEST_ID, 'Hello world how are', base + 600);
-		expect(result.isAnimating).toBe(true);
+		expect(result.isAnimating).toBe(false);
 	});
 
 	it('updateAct uses glitch effect', () => {
@@ -1407,9 +1407,9 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		expect(sliding.isAnimating).toBe(false);
 		expect(stripAnsi(sliding.content)).toBe('world foo bar baz');
 
-		// After buffer timeout (800ms) ? ripple fires on stable text
+		// Stable text with sync guard ? no re-ripple (displayedText already synced)
 		const result = manager.updateMsg(TEST_ID, 'world foo bar baz', base + 900);
-		expect(result.isAnimating).toBe(true);
+		expect(result.isAnimating).toBe(false);
 	});
 
 	it('updateMsg does not force ripple on short gap (processLine path)', () => {
@@ -1968,15 +1968,15 @@ describe('selectScrambleChar with seed', () => {
 
 describe('selectScrambleChar ? smooth glitch blending', () => {
 	it('returns deep glitch chars at shallow depth (1.0)', () => {
-		const deepChars = '???*?????????????????????';
+		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
 		const c = selectScrambleChar(1, 0, 0, 12345);
 		expect(deepChars).toContain(c);
 	});
 
 	it('returns mid or shallow glitch chars at blend depth (3.0)', () => {
 		// At depth 3.0 we are in the mid?shallow blend zone [2.5, 3.5]
-		const midChars = '???~???+??????????????';
-		const shallowChars = '???~?+???';
+		const midChars = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const shallowChars = '·∘∙~×°+⠌⠡⠜';
 		const c = selectScrambleChar(3, 0, 0, 12345);
 		const isMid = midChars.includes(c);
 		const isShallow = shallowChars.includes(c);
@@ -1984,7 +1984,7 @@ describe('selectScrambleChar ? smooth glitch blending', () => {
 	});
 
 	it('returns shallow glitch chars at deep depth (5.0)', () => {
-		const shallowChars = '???~?+???';
+		const shallowChars = '·∘∙~×°+⠌⠡⠜';
 		const c = selectScrambleChar(5, 0, 0, 12345);
 		expect(shallowChars).toContain(c);
 	});
@@ -1996,8 +1996,8 @@ describe('selectScrambleChar ? smooth glitch blending', () => {
 		for (let seed = 0; seed < 50; seed++) {
 			results.add(selectScrambleChar(2, seed, 0, seed));
 		}
-		const deepChars = '???*?????????????????????';
-		const midChars = '???~???+??????????????';
+		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+		const midChars = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
 		let deepCount = 0;
 		let midCount = 0;
 		for (const c of results) {
@@ -2013,8 +2013,8 @@ describe('selectScrambleChar ? smooth glitch blending', () => {
 		for (let seed = 0; seed < 50; seed++) {
 			results.add(selectScrambleChar(3, seed, 0, seed));
 		}
-		const midChars = 'abcdefghijklmnopqrstuvwxyz??????????????';
-		const shallowChars = '?????????~?+-';
+		const midChars = 'abcdefghijklmnopqrstuvwxyzᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
+		const shallowChars = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
 		let midCount = 0;
 		let shallowCount = 0;
 		for (const c of results) {
@@ -2213,9 +2213,9 @@ describe('ScrambleStateManager (illuminate mode) ? ripple coexistence', () => {
 
 		// Text changes to short text ? no immediate ripple (chunk too small)
 		manager.updateMsg(TEST_ID, 'running... done', base + 100, false, undefined, true);
-		// After drain timeout (350ms) with no new text ? ripple fires on leftover content
+		// After drain timeout with sync guard ? displayedText already synced, no re-ripple
 		const drainRipple = manager.updateMsg(TEST_ID, 'running... done', base + 500, false, undefined, true);
-		expect(drainRipple.isAnimating).toBe(true);
+		expect(drainRipple.isAnimating).toBe(false);
 
 		// Ripple finishes, text still stable ? no re-ripple on unchanged text
 		const stable = manager.updateMsg(TEST_ID, 'running... done', base + 5000, false, undefined, true);
@@ -2275,9 +2275,9 @@ describe('ScrambleStateManager ? lastFlushTime init', () => {
 		expect(r1.isAnimating).toBe(false);
 		expect(stripAnsi(r1.content)).toBe('Hello world.');
 
-		// After buffer timeout (800ms) ? drain fires on pending text change
+		// After buffer timeout with sync guard ? displayedText already synced, no re-ripple
 		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 900, false, undefined, true);
-		expect(r2.isAnimating).toBe(true);
+		expect(r2.isAnimating).toBe(false);
 		// Note: early-frame glitch may show currentText for unstarted positions
 	});
 });
@@ -2338,9 +2338,9 @@ describe('ScrambleStateManager ? msg chunk glitch fixes', () => {
 		const duringCooldown = (manager as any).cache.get(TEST_ID)?.msg;
 		expect(duringCooldown.pendingGlitch).toBeNull();
 
-		// After the readable pause, the latest chunk gets its own controlled handoff.
+		// After the readable pause, displayedText is already synced ? no re-ripple on stable text
 		const started = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 4300, false, undefined, true);
-		expect(started.isAnimating).toBe(true);
+		expect(started.isAnimating).toBe(false);
 		const settled = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 6700, false, undefined, true);
 		expect(settled.isAnimating).toBe(false);
 		expect(stripAnsi(settled.content)).toBe('Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.');
@@ -2387,9 +2387,9 @@ describe('ScrambleStateManager ? msg chunk glitch fixes', () => {
 		const r1 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 2500, false, undefined, true);
 		expect(r1.isAnimating).toBe(false);
 
-		// Stable unchanged text after the cadence window gets a controlled follow-up pulse.
+		// Stable unchanged text after the cadence window ? displayedText already synced, no re-ripple
 		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 4300, false, undefined, true);
-		expect(r2.isAnimating).toBe(true);
+		expect(r2.isAnimating).toBe(false);
 		const r3 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 6700, false, undefined, true);
 		expect(r3.isAnimating).toBe(false);
 		expect(stripAnsi(r3.content)).toBe('Hello world. How are you today? This is new and it contains enough characters.');
@@ -2420,9 +2420,9 @@ describe('ScrambleStateManager ? msg chunk glitch fixes', () => {
 		const duringCooldown = (manager as any).cache.get(TEST_ID)?.msg;
 		expect(duringCooldown.pendingGlitch).toBeNull();
 
-		// After cooldown, unchanged latest chunk should be committed by one follow-up pulse.
+		// After cooldown, displayedText is already synced ? no re-ripple on stable text
 		const started = manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 4300, false, undefined, true);
-		expect(started.isAnimating).toBe(true);
+		expect(started.isAnimating).toBe(false);
 		const settled = manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 6700, false, undefined, true);
 		expect(settled.isAnimating).toBe(false);
 		expect(stripAnsi(settled.content)).toBe('Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.');

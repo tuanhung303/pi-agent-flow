@@ -28,7 +28,6 @@ import type { UsageStats } from './types.js';
 import { stripAnsi, tailText, truncateChars } from './render-utils.js';
 import type { Component } from '@mariozechner/pi-tui';
 import { Text, truncateToWidth } from '@mariozechner/pi-tui';
-import * as fs from 'fs';
 
 // ---------------------------------------------------------------------------
 // Live text store — mutable source for DynamicScrambleText closures
@@ -251,7 +250,7 @@ const MSG_CHUNK_DRAIN_MS = 120;
 
 // Msg pulses should mark meaningful progress, not every streaming update.
 // This is start-to-start; with the ~0.8s glitch duration it leaves about 2s quiet.
-const MSG_PULSE_COOLDOWN_MS = 4000;
+const MSG_PULSE_COOLDOWN_MS = 2500;
 
 // Resume gap: after a long pause (e.g. tool call), treat resumed chunks as a
 // fresh stream and force a ripple effect.
@@ -271,7 +270,7 @@ const STREAM_SPEED_MSG = 35;       // ms per char for msg: (~29 chars/sec)
 const STREAM_SPEED_ACT = 25;       // ms per char for act: (~40 chars/sec)
 const STREAM_SCRAMBLE_WIDTH = 5;   // scramble chars at cursor position
 const STREAM_RERANDOMIZE_RATE = 0.28; // 28% chance to re-randomize (CodePen style)
-const GLITCH_RERANDOMIZE = 0.28;
+const GLITCH_RERANDOMIZE = 0.12;
 const GLITCH_MAX_START = 40;
 const GLITCH_MAX_LENGTH = 40;
 const MSG_GLITCH_MIN_DURATION_MS = 2000;
@@ -702,7 +701,9 @@ function buildMsgGlitchQueue(oldText: string, newText: string): GlitchQueueItem[
 	const queue = buildGlitchQueue(oldText, newText);
 	if (queue.length === 0) return queue;
 	const maxEnd = queue.reduce((max, item) => Math.max(max, item.fadeOutEnd ?? item.end), 0);
-	const extension = MSG_GLITCH_MIN_FRAMES - maxEnd;
+	// Scale minimum with text length: short text resolves faster, long text keeps weight.
+	const scaledMinFrames = Math.min(MSG_GLITCH_MIN_FRAMES, Math.max(55, Math.ceil(queue.length * 3.5)));
+	const extension = scaledMinFrames - maxEnd;
 	if (extension <= 0) return queue;
 	for (const item of queue) {
 		item.end += extension;
@@ -730,7 +731,8 @@ export function computeGlitchFrame(
 				if (inDim) { output += DIM_OFF; inDim = false; }
 			} else {
 				if (!inDim) { output += DIM_ON; inDim = true; }
-				if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
+				const rollFade = hashNoise(0, i, frame, 77);
+				if (!entry.char || rollFade < GLITCH_RERANDOMIZE) {
 					entry.char = rng();
 				}
 				output += entry.char;
@@ -745,7 +747,8 @@ export function computeGlitchFrame(
 			}
 		} else if (frame >= entry.start) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
+			const rollScramble = hashNoise(0, i, frame, 88);
+			if (!entry.char || rollScramble < GLITCH_RERANDOMIZE) {
 				entry.char = rng();
 			}
 			if (cleanCurrent && i >= cleanCurrent.length) {
@@ -1331,22 +1334,37 @@ function processLine(
 			const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
 
 			if (state.glitchQueue.length > 0 && glitchComplete) {
-				state.glitchQueue = [];
-				state.glitchFrame = 0;
-				state.pendingGlitch = null;
-				state.pendingOldDisplayed = '';
-				state.pendingNewDisplayed = '';
-				state.pendingStartTime = 0;
-				state.displayedText = newText;
-				state.charsSinceLastFlush = 0;
+				if (!state.pendingGlitch) {
+					state.glitchQueue = [];
+					state.glitchFrame = 0;
+					state.targetText = '';
+					state.displayedText = newText;
+					state.lastText = newText;
+					state.charsSinceLastFlush = 0;
+				} else {
+					// Leave queue intact so applyScramble can hand off pendingGlitch
+					const settledText = newText;
+					state.displayedText = settledText;
+					state.lastText = settledText;
+					state.charsSinceLastFlush = 0;
+				}
 			}
 
 			if (textChanged) {
+				const isExtension = newText.startsWith(state.lastText);
 				const delta = Math.max(0, newText.length - state.lastText.length);
 				state.lastText = newText;
 				state.phraseBuffer = newText;
 				state.lastTextChangeTime = now;
+				if (!isExtension) {
+					state.charsSinceLastFlush = 0;
+				}
 				state.charsSinceLastFlush += delta;
+			}
+
+			// Sync displayedText when text is stable and no glitch is active
+			if (!textChanged && state.displayedText !== newText && state.glitchQueue.length === 0 && !state.pendingGlitch) {
+				state.displayedText = newText;
 			}
 
 			// F1: accumulator — periodic ripples during dense streaming
@@ -2084,14 +2102,6 @@ export class ScrambleStateManager {
 	updateMsg(id: string, text: string, now: number, isComplete: boolean = false, budget?: number, staticLine: boolean = false): ScrambleResult {
 		const visibleText = budget !== undefined ? tailText(text, budget) : text;
 
-		// DEBUG — check /tmp/pi-scramble-debug.log
-		const debugKey = `msg#${id}`;
-		try {
-			const s = this.cache.get(id)?.msg;
-			fs.appendFileSync('/tmp/pi-scramble-debug.log',
-				`${Date.now()} updateMsg id=${id} textLen=${visibleText.length} init=${s?.initialized} dispLen=${(s?.displayedText||'').length} lastLen=${(s?.lastText||'').length} chg=${(s?.lastText||'') !== visibleText} charsFlush=${s?.charsSinceLastFlush} ripples=${s?.ripples?.length} dispDiff=${visibleText !== s?.displayedText} textStart="${visibleText.slice(0,40).replace(/\n/g,'\\n')}" dispStart="${(s?.displayedText||'').slice(0,40).replace(/\n/g,'\\n')}"\n`);
-		} catch {}
-
 		if (isComplete) {
 			const record = this.cache.get(id);
 			if (!record) return { label: 'msg:', content: visibleText, isAnimating: false };
@@ -2182,25 +2192,32 @@ export class ScrambleStateManager {
 				const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
 
 				if (state.glitchQueue.length > 0 && glitchComplete) {
-					const settledText = state.targetText || visibleText;
-					state.glitchQueue = [];
-					state.glitchFrame = 0;
-					state.pendingGlitch = null;
-					state.pendingOldDisplayed = '';
-					state.pendingNewDisplayed = '';
-					state.pendingStartTime = 0;
-					state.targetText = '';
+					const settledText = visibleText;
+					if (!state.pendingGlitch) {
+						state.glitchQueue = [];
+						state.glitchFrame = 0;
+						state.targetText = '';
+					}
 					state.displayedText = settledText;
 					state.lastText = settledText;
 					state.charsSinceLastFlush = 0;
 				}
 
 				if (textChanged) {
+					const isExtension = visibleText.startsWith(state.lastText);
 					const delta = Math.max(0, visibleText.length - state.lastText.length);
 					state.lastText = visibleText;
 					state.phraseBuffer = visibleText;
 					state.lastTextChangeTime = now;
+					if (!isExtension) {
+						state.charsSinceLastFlush = 0;
+					}
 					state.charsSinceLastFlush += delta;
+				}
+
+				// Sync displayedText when text is stable and no glitch is active
+				if (!textChanged && state.displayedText !== visibleText && state.glitchQueue.length === 0 && !state.pendingGlitch) {
+					state.displayedText = visibleText;
 				}
 
 				const canStartPulse = state.lastGlitchTime === 0 || now - state.lastGlitchTime >= MSG_PULSE_COOLDOWN_MS;
@@ -2293,7 +2310,11 @@ export class ScrambleStateManager {
 			processLine(state, visibleText, now, this.mode, 'msg');
 		}
 		const hasActiveMsgGlitch = this.mode === 'illuminate' && state.glitchQueue.length > 0;
-		const suppressTailSlide = this.mode === 'illuminate' && staticLine && !isComplete && !hasActiveMsgGlitch && state.displayedText !== '' && state.displayedText !== visibleText;
+		// Only suppress tail-window slides (high overlap), not meaningful text changes.
+		const overlap = computeOverlapLen(state.displayedText, visibleText);
+		const minDispLen = Math.min(state.displayedText.length, visibleText.length);
+		const isTailSlide = overlap > 0 && overlap >= minDispLen * 0.5;
+		const suppressTailSlide = this.mode === 'illuminate' && staticLine && !isComplete && !hasActiveMsgGlitch && state.displayedText !== '' && state.displayedText !== visibleText && isTailSlide;
 		const displayText = suppressTailSlide ? state.displayedText : visibleText;
 		const content = applyScramble(displayText, state, now, this.mode, 'msg', () => this.poolRandomChar());
 		const isAnimating = this.isLineAnimating(state, now);
