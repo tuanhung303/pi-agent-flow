@@ -394,7 +394,7 @@ describe("compressToolResults — flow cache miss", () => {
 		const text = parsed.message.content[0].text;
 		// Must be the compact placeholder, NOT the bulky original
 		expect(text).toContain("[flow] prior result");
-		expect(text).toContain("not cached — context unavailable at depth ?");
+		expect(text).toContain("full context unavailable (result not cached at this depth)");
 		expect(text.length).toBeLessThan(200);
 		expect(text).not.toContain("Flow: 1/1 completed");
 	});

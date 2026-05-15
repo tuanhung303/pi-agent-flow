@@ -598,8 +598,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				} catch { /* ignore */ }
 			}
 
+			const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "sanitizeForkSnapshot (see src/snapshot.ts)";
-			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${flow.tier ?? getFlowTier(flow.name)} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
+			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${effectiveTier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
 
 			const markdown = [
 				sanitizationHeader,

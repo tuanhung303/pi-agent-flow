@@ -472,7 +472,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
 					: 0;
 				const size = originalText.length || contentSize || line.length;
-				rendered = `[flow] prior result · ${size} chars (not cached — context unavailable at depth ${forkDepth ?? '?'})`;
+				rendered = `[flow] prior result · ${size} chars — full context unavailable (result not cached at this depth)`;
 			} else {
 				const renderResults = compressed.map(renderCompressedFlowResult);
 				const hasAnyUndefined = renderResults.some(r => r === undefined);

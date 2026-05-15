@@ -458,7 +458,7 @@ export async function executeFlows(
 	for (const result of results) {
 		const so = result.structuredOutput;
 		if (!so) {
-			console.warn(`[pi-agent-flow] Flow result not cached: structuredOutput is null for flow '${result.type}' (exitCode=${result.exitCode}, messages=${result.messages.length}). The flow may not have produced structured JSON output.`);
+			console.warn(`[pi-agent-flow] Flow result for toolCallId=${toolCallId} type=${result.type} has no structuredOutput — cache entry skipped. This means child flows will see placeholder text instead of compressed results.`);
 			continue;
 		}
 		const compressed: CompressedFlowResult = {

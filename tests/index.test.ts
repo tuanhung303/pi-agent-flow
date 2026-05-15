@@ -173,7 +173,7 @@ describe("flow tool execute", () => {
 		// Flow results without cache entry are compressed to a placeholder instead of
 		// passing the bulky raw output verbatim (protects child context window).
 		expect(snapshot).toContain("[flow] prior result");
-		expect(snapshot).toContain("not cached — context unavailable at depth 1");
+		expect(snapshot).toContain("full context unavailable (result not cached at this depth)");
 		expect(snapshot).toContain("Current request should be inherited");
 		expect(snapshot).not.toContain("SECRET_THINKING_FIELD");
 		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
@@ -364,7 +364,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Text after delegation.");
 		// Flow results without cache entry are compressed to a placeholder.
 		expect(snapshot).toContain("[flow] prior result");
-		expect(snapshot).toContain("not cached — context unavailable at depth 1");
+		expect(snapshot).toContain("full context unavailable (result not cached at this depth)");
 		expect(snapshot).toContain("flow-call-2");
 		expect(snapshot).toContain('"name":"flow"');
 		expect(snapshot).toContain("Current request should be inherited");
@@ -1640,7 +1640,7 @@ describe("compressFlowToolResults", () => {
 
 		// Cache miss: must NOT pass bulky raw output verbatim; render a compact placeholder.
 		expect(result).toContain("[flow] prior result");
-		expect(result).toContain("not cached — context unavailable at depth ?");
+		expect(result).toContain("full context unavailable (result not cached at this depth)");
 		expect(result).not.toContain("Prior flow output not in cache");
 	});
 
