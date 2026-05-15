@@ -2642,10 +2642,10 @@ describe('DynamicScrambleText', () => {
 		expect(comp.render(80)).toEqual(['call-3']);
 	});
 
-	it('passes width to underlying Text', () => {
-		const comp = new DynamicScrambleText('a\nb', () => 'c\nd');
+	it('normalizes newlines and tabs to spaces for stable single-line layout', () => {
+		const comp = new DynamicScrambleText('a\nb', () => 'c\td\ne');
 		const lines = comp.render(10);
-		expect(lines).toEqual(['c', 'd']);
+		expect(lines).toEqual(['c d e']);
 	});
 
 	it('invalidate delegates to base Text', () => {

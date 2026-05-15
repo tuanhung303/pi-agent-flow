@@ -2931,7 +2931,9 @@ export class DynamicScrambleText implements Component {
 	invalidate(): void { this.base.invalidate(); }
 	render(width: number): string[] {
 		const content = this.getScrambleContent();
-		this.base.setText(this.truncated ? truncateToWidth(content, width) : content);
+		// Replace newlines/tabs with spaces to keep animation on a stable single line
+		const safeContent = content.replace(/[\r\n\t]+/g, ' ');
+		this.base.setText(this.truncated ? truncateToWidth(safeContent, width) : safeContent);
 		return this.base.render(width);
 	}
 }
