@@ -25,6 +25,20 @@ import {
 import { formatBatchOpsSummary } from "./batch/render.js";
 import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble.js";
 
+// ---------------------------------------------------------------------------
+// Anonymous flow-id counter — prevents scramble-state collisions when multiple
+// flow widgets share the screen and toolCallId is absent from result/args.
+// ---------------------------------------------------------------------------
+let anonFlowIdCounter = 0;
+function getAnonymousFlowId(): string {
+	return `flow-${++anonFlowIdCounter}`;
+}
+
+/** Reset the anonymous counter — call in tests for deterministic ids. */
+export function resetAnonymousFlowIdCounter(): void {
+	anonFlowIdCounter = 0;
+}
+
 function getLiveTextWithFallback(id: string): string | undefined {
 	const value = getLiveText(id);
 	if (value !== undefined) return value;
@@ -183,6 +197,27 @@ export function renderFlowResult(
 	const details = result.details as FlowDetails | undefined;
 	const streamingText = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
 
+	// Resolve a stable id for this flow widget. Once an id is stored in
+	// state we keep reusing it to prevent mid-render id switches that would
+	// reset scramble animation state. On first render we prefer result._toolCallId,
+	// then args inputs, then a per-state anonymous counter.
+	// This prevents scramble-state collisions when multiple flow widgets are
+	// visible simultaneously (e.g. sequential flows) and toolCallId is absent.
+	let resolvedToolCallId: string | undefined;
+	if (args?.state) {
+		const s = args.state as Record<string, any>;
+		resolvedToolCallId = s.__flowId;
+		if (!resolvedToolCallId) {
+			resolvedToolCallId = (result as any)._toolCallId || (args as any)?.toolCallId || (args as any)?.id;
+			if (!resolvedToolCallId) {
+				resolvedToolCallId = getAnonymousFlowId();
+			}
+			s.__flowId = resolvedToolCallId;
+		}
+	} else {
+		resolvedToolCallId = (result as any)._toolCallId || (args as any)?.toolCallId || (args as any)?.id;
+	}
+
 	let container: Container | Text;
 
 	if (!details || details.results.length === 0) {
@@ -200,19 +235,20 @@ export function renderFlowResult(
 				stderr: "",
 				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0, toolCalls: 0 },
 			};
+			const ghostId = resolvedToolCallId || 'ghost';
 			if (expanded) {
-			const now = Date.now();
-			container = renderFlowExpanded(ghostResult, flowStatusIcon(ghostResult, theme), false, getFlowDisplayItems([]), getFlowOutput([]), theme, "ghost", now, false, streamingText || "");
-		} else {
-			container = renderFlowCollapsed(ghostResult, flowStatusIcon(ghostResult, theme), false, streamingText || "", theme);
-		}
+				const now = Date.now();
+				container = renderFlowExpanded(ghostResult, flowStatusIcon(ghostResult, theme), false, getFlowDisplayItems([]), getFlowOutput([]), theme, ghostId, now, false, streamingText || "");
+			} else {
+				container = renderFlowCollapsed(ghostResult, flowStatusIcon(ghostResult, theme), false, streamingText || "", theme, undefined, ghostId);
+			}
 		} else {
 			container = new Text(scrambleManager.renderStatic(streamingText || ""), 0, 0);
 		}
 	} else if (details.results.length === 1) {
-		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText, (result as any)._toolCallId);
+		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText, resolvedToolCallId);
 	} else {
-		container = renderMultiFlowResult(details, expanded, theme, (result as any)._toolCallId);
+		container = renderMultiFlowResult(details, expanded, theme, resolvedToolCallId);
 	}
 
 	// In-place mutation pattern: reuse the stored root container
@@ -240,15 +276,15 @@ export function renderFlowResult(
 	}
 
 	// Scramble animation timer — shared helper so any renderer can animate.
-	const toolCallId = (result as any)._toolCallId;
+	// Use resolvedToolCallId so the timer scope matches the state scope.
 	let timerId: string;
 	if (!details || details.results.length === 0) {
 		const flowRequest = args?.flow?.[0];
-		timerId = flowRequest ? 'ghost' : (toolCallId || 'single');
+		timerId = resolvedToolCallId || (flowRequest ? 'ghost' : 'single');
 	} else if (details.results.length === 1) {
-		timerId = toolCallId || 'single';
+		timerId = resolvedToolCallId || 'single';
 	} else {
-		timerId = toolCallId || 'multi';
+		timerId = resolvedToolCallId || 'multi';
 	}
 	runScrambleTimer(args as Record<string, any> | undefined, timerId);
 

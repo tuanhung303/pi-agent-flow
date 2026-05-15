@@ -12,7 +12,7 @@ import {
 	getTruncationBudget,
 	stripAnsi,
 } from "../src/render-utils.js";
-import { renderFlowCall, renderFlowResult, renderSingleFlowResult } from "../src/render.js";
+import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/render.js";
 import { scrambleManager, DynamicScrambleText } from "../src/scramble.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
@@ -40,6 +40,7 @@ function extractText(node: Text | Container | TruncatedText | DynamicScrambleTex
 beforeEach(() => {
 	scrambleManager.setMode('cascade');
 	scrambleManager.clear();
+	resetAnonymousFlowIdCounter();
 });
 
 describe("visibleLength", () => {
@@ -1337,5 +1338,118 @@ describe("in-place mutation pattern", () => {
 
 		// Without state, each call returns a new Text object
 		expect(rendered1).not.toBe(rendered2);
+	});
+
+	it("generates distinct anonymous ids for separate tool calls to avoid scramble collisions", () => {
+		const state1: Record<string, any> = {};
+		const state2: Record<string, any> = {};
+
+		const result1 = makeResult();
+		const details1: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1] };
+
+		const result2 = makeResult({ type: "build", intent: "Fix bug" });
+		const details2: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result2] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details: details1 }, false, makeTheme(), { state: state1 });
+		renderFlowResult({ content: [{ type: "text", text: "" }], details: details2 }, false, makeTheme(), { state: state2 });
+
+		expect(state1.__flowId).toBeDefined();
+		expect(state2.__flowId).toBeDefined();
+		expect(state1.__flowId).not.toBe(state2.__flowId);
+	});
+
+	it("reuses the same anonymous id on subsequent renders of the same tool call", () => {
+		const state: Record<string, any> = {};
+		const args = { state };
+
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+		const firstId = state.__flowId;
+
+		renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
+		const secondId = state.__flowId;
+
+		expect(secondId).toBe(firstId);
+	});
+
+	it("uses args.toolCallId when result._toolCallId is absent", () => {
+		const state: Record<string, any> = {};
+		const args = { state, toolCallId: "call_custom_123" };
+
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+
+		// The resolved id is now stored in state so it stays stable across re-renders.
+		expect(state.__flowId).toBe("call_custom_123");
+		// Verify scramble state was created under the custom id.
+		const textResult = scrambleManager.updateText("call_custom_123", "header", "test", Date.now(), true, true);
+		expect(textResult.isAnimating).toBe(false);
+	});
+
+	it("uses result._toolCallId as the scramble id and stores it in state", () => {
+		const state: Record<string, any> = {};
+		const args = { state };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details, _toolCallId: "call_prod_456" } as any, false, makeTheme(), args);
+
+		expect(state.__flowId).toBe("call_prod_456");
+		const textResult = scrambleManager.updateText("call_prod_456", "header", "test", Date.now(), true, true);
+		expect(textResult.isAnimating).toBe(false);
+	});
+
+	it("uses args.id when result._toolCallId and args.toolCallId are absent", () => {
+		const state: Record<string, any> = {};
+		const args = { state, id: "fallback_id_999" };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+
+		expect(state.__flowId).toBe("fallback_id_999");
+		const textResult = scrambleManager.updateText("fallback_id_999", "header", "test", Date.now(), true, true);
+		expect(textResult.isAnimating).toBe(false);
+	});
+
+	it("generates a stable anonymous id for ghost state and reuses it when results arrive", () => {
+		const state: Record<string, any> = {};
+		const args = { state, flow: [{ type: "scout", intent: "Ghost test", aim: "Ghost test" }] };
+
+		// First render: no details (ghost state)
+		renderFlowResult({ content: [{ type: "text", text: "Starting..." }] }, false, makeTheme(), args);
+		const ghostId = state.__flowId;
+		expect(ghostId).toBeDefined();
+		expect(ghostId).toMatch(/^flow-\d+$/);
+
+		// Second render: still ghost
+		renderFlowResult({ content: [{ type: "text", text: "Still going..." }] }, false, makeTheme(), args);
+		expect(state.__flowId).toBe(ghostId);
+
+		// Third render: real result arrives — must keep same id to avoid scramble reset
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+		renderFlowResult({ content: [{ type: "text", text: "Done" }], details }, false, makeTheme(), args);
+		expect(state.__flowId).toBe(ghostId);
+	});
+
+	it("assigns distinct scramble ids to parallel flows in a batch", () => {
+		const state: Record<string, any> = {};
+		const args = { state };
+		const result1 = makeResult({ type: "scout", intent: "Map code" });
+		const result2 = makeResult({ type: "build", intent: "Ship fix" });
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details, _toolCallId: "call_batch_789" } as any, false, makeTheme(), args);
+
+		// Per-flow scramble ids are baseId#0, baseId#1
+		const id0Result = scrambleManager.updateText("call_batch_789#0", "header", "test", Date.now(), true, true);
+		const id1Result = scrambleManager.updateText("call_batch_789#1", "header", "test", Date.now(), true, true);
+		expect(id0Result.isAnimating).toBe(false);
+		expect(id1Result.isAnimating).toBe(false);
 	});
 });

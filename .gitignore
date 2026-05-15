@@ -8,3 +8,4 @@ context/
 .specs/
 debug/
 .cursor/
+flow-artifacts/dumps/
