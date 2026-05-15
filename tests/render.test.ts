@@ -1237,7 +1237,7 @@ describe("formatFlowToolCall — batch", () => {
 // ---------------------------------------------------------------------------
 
 describe("in-place mutation pattern", () => {
-	it("renderFlowResult always returns a fresh container (no __rootContainer caching)", () => {
+	it("renderFlowResult reuses cached container via __rootContainer", () => {
 		const state: Record<string, any> = {};
 		const args = { flow: [{ type: "scout", intent: "test" }], state };
 		const result = makeResult();
@@ -1246,8 +1246,8 @@ describe("in-place mutation pattern", () => {
 		const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
 		const rendered2 = renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
 
-		expect(rendered1).not.toBe(rendered2);
-		expect(state.__rootContainer).toBeUndefined();
+		expect(rendered1).toBe(rendered2);
+		expect(state.__rootContainer).toBe(rendered1);
 	});
 
 	it("renderFlowResult works without state (backwards compatible)", () => {
@@ -1260,15 +1260,15 @@ describe("in-place mutation pattern", () => {
 		expect(rendered1).not.toBe(rendered2);
 	});
 
-	it("renderFlowCall always returns a fresh Text (no __rootContainer caching)", () => {
+	it("renderFlowCall reuses cached container via __rootContainer", () => {
 		const state: Record<string, any> = {};
 		const args = { flow: [{ type: "scout", intent: "test" }], state };
 
 		const rendered1 = renderFlowCall(args, makeTheme());
 		const rendered2 = renderFlowCall(args, makeTheme());
 
-		expect(rendered1).not.toBe(rendered2);
-		expect(state.__rootContainer).toBeUndefined();
+		expect(rendered1).toBe(rendered2);
+		expect(state.__rootContainer).toBe(rendered1);
 	});
 
 	it("renderFlowCall works without state (backwards compatible)", () => {

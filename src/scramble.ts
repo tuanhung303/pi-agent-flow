@@ -30,6 +30,24 @@ import type { Component } from '@mariozechner/pi-tui';
 import { Text, truncateToWidth } from '@mariozechner/pi-tui';
 
 // ---------------------------------------------------------------------------
+// Live text store — mutable source for DynamicScrambleText closures
+// ---------------------------------------------------------------------------
+
+const liveTextMap = new Map<string, string>();
+
+export function setLiveText(key: string, text: string): void {
+	liveTextMap.set(key, text);
+}
+
+export function getLiveText(key: string): string | undefined {
+	return liveTextMap.get(key);
+}
+
+export function clearLiveText(key: string): void {
+	liveTextMap.delete(key);
+}
+
+// ---------------------------------------------------------------------------
 // Fast RNG (xorshift32) + hash-based noise
 // ---------------------------------------------------------------------------
 
@@ -2796,6 +2814,7 @@ export class ScrambleStateManager {
 	}
 
 	completeFlow(id: string): void {
+		clearLiveText(id);
 		const record = this.cache.get(id);
 		if (record) {
 			for (const key of ['aim', 'act', 'msg'] as LineKey[]) {

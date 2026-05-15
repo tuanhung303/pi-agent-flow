@@ -23,7 +23,7 @@ import {
 	isFlowSuccess,
 } from "./types.js";
 import { formatBatchOpsSummary } from "./batch/render.js";
-import { scrambleManager, runScrambleTimer, DynamicScrambleText } from "./scramble.js";
+import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble.js";
 import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi } from "./render-utils.js";
 
 function shortenPath(p: string): string {
@@ -140,7 +140,27 @@ function getLiveCountdown(r: SingleResult): string | undefined {
 // ---------------------------------------------------------------------------
 
 export function renderFlowCall(args: Record<string, any>, theme: FlowTheme): Container | Text {
-	return new Text("", 0, 0);
+	let container: Container | Text = new Text("", 0, 0);
+
+	// In-place mutation pattern: reuse the stored root container
+	// so the TUI host's cached reference stays valid.
+	if (args?.state) {
+		const s = args.state as Record<string, any>;
+		if (!s.__rootContainer) {
+			const root = new Container();
+			root.addChild(container);
+			s.__rootContainer = root;
+			container = root;
+		} else if (container !== s.__rootContainer) {
+			const root = s.__rootContainer as Container;
+			root.clear();
+			root.addChild(container);
+			root.invalidate();
+			container = root;
+		}
+	}
+
+	return container;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +206,30 @@ export function renderFlowResult(
 		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText);
 	} else {
 		container = renderMultiFlowResult(details, expanded, theme);
+	}
+
+	// In-place mutation pattern: reuse the stored root container
+	// so the TUI host's cached reference stays valid.
+	if (args?.state) {
+		const s = args.state as Record<string, any>;
+		if (!s.__rootContainer) {
+			// First render: store the container
+			s.__rootContainer = container;
+		} else if (container !== s.__rootContainer) {
+			// Subsequent renders: transfer children to the stored container
+			const root = s.__rootContainer as Container;
+			root.clear();
+			if (container instanceof Container) {
+				for (const child of (container as Container).children) {
+					root.addChild(child);
+				}
+			} else {
+				// container is a Text — wrap it as a child
+				root.addChild(container);
+			}
+			root.invalidate();
+			container = root;
+		}
 	}
 
 	// Scramble animation timer — shared helper so any renderer can animate.
@@ -362,7 +406,10 @@ function renderFlowExpanded(
 		const initialScrambled = scrambleManager.updateMsg(id, stripAnsi(streamingText_), now, isComplete, undefined, true).content;
 		container.addChild(new DynamicScrambleText(
 			initialScrambled,
-			() => scrambleManager.updateMsg(id, stripAnsi(streamingText_), Date.now(), isComplete, undefined, true).content
+			() => {
+				const freshStreamingText = getLiveText(id) || streamingText_;
+				return scrambleManager.updateMsg(id, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
+			}
 		));
 	} else if (flowOutput) {
 		container.addChild(new Markdown(flowOutput.trim(), 0, 0, mdTheme));
@@ -504,7 +551,10 @@ function renderFlowCollapsed(
 
 	let rawMsg: string;
 	let useError = false;
-	if (r.exitCode === -1 && streamingText != null) {
+	const liveText = getLiveText(id);
+	if (liveText != null) {
+		rawMsg = stripAnsi(liveText);
+	} else if (r.exitCode === -1 && streamingText != null) {
 		rawMsg = stripAnsi(streamingText);
 	} else if (r.structuredOutput?.summary) {
 		rawMsg = stripAnsi(r.structuredOutput.summary);
@@ -533,14 +583,15 @@ function renderFlowCollapsed(
 				msgKpi = scrambledMsgKpi;
 			}
 			const msgPrefix = `└─ msg: [${msgKpi}] - `;
+			const freshRawMsg = getLiveText(id) || rawMsg;
 			if (scrambleManager.getMode() === 'stream') {
-				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(id, rawMsg, now, isComplete, msgBudget)))}`;
+				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(id, freshRawMsg, now, isComplete, msgBudget)))}`;
 			} else {
-				const needsTail = (r.exitCode === -1 && streamingText != null) || streamingText != null;
-				const displayMsg = needsTail ? tailText(rawMsg, msgBudget) : truncateChars(rawMsg, msgBudget);
+				const needsTail = r.exitCode === -1 || streamingText != null || getLiveText(id) != null;
+				const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
 				const result = isComplete
 					? scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true)
-					: scrambleManager.updateMsg(id, rawMsg, now, isComplete, undefined, true);
+					: scrambleManager.updateMsg(id, freshRawMsg, now, isComplete, undefined, true);
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result.content))}`;
 			}
 		},
@@ -650,7 +701,10 @@ function renderMultiFlowExpanded(
 			const initialScrambled = scrambleManager.updateMsg(flowId, stripAnsi(streamingText_), now, isComplete, undefined, true).content;
 			container.addChild(new DynamicScrambleText(
 				initialScrambled,
-				() => scrambleManager.updateMsg(flowId, stripAnsi(streamingText_), Date.now(), isComplete, undefined, true).content
+				() => {
+					const freshStreamingText = getLiveText(flowId) || streamingText_;
+					return scrambleManager.updateMsg(flowId, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
+				}
 			));
 		} else if (flowOutput) {
 			container.addChild(new Spacer(1));
@@ -802,7 +856,10 @@ function renderActivityPanel(
 
 		let rawMsg: string;
 		let useError = false;
-		if (lastText) {
+		const liveText_ = getLiveText(flowId);
+		if (liveText_ != null) {
+			rawMsg = stripAnsi(liveText_);
+		} else if (lastText) {
 			rawMsg = stripAnsi(lastText);
 		} else if (error && r.errorMessage) {
 			rawMsg = stripAnsi(r.errorMessage);
@@ -821,14 +878,15 @@ function renderActivityPanel(
 					msgKpi = scrambledMsgKpi;
 				}
 				const msgPrefix = `${indent}└─ msg: [${msgKpi}] - `;
+				const freshRawMsg = getLiveText(flowId) || rawMsg;
 				if (scrambleManager.getMode() === 'stream') {
-					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(flowId, rawMsg, now, flowComplete, msgBudget)))}`;
+					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(flowId, freshRawMsg, now, flowComplete, msgBudget)))}`;
 				} else {
-					const needsTail = Boolean(liveText || lastText);
-					const displayMsg = needsTail ? tailText(rawMsg, msgBudget) : truncateChars(rawMsg, msgBudget);
+					const needsTail = Boolean(getLiveText(flowId) || liveText || lastText);
+					const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
 					const result = flowComplete
 						? scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete).content
-						: scrambleManager.updateMsg(flowId, rawMsg, now, flowComplete, undefined, true).content;
+						: scrambleManager.updateMsg(flowId, freshRawMsg, now, flowComplete, undefined, true).content;
 					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result))}`;
 				}
 			},

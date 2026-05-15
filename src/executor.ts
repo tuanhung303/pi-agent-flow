@@ -21,6 +21,7 @@ import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "./notify-state.js";
+import { setLiveText } from './scramble.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -279,6 +280,15 @@ export async function executeFlows(
 		if (!onUpdate) return;
 		if (streamingText !== undefined) lastStreamingText = streamingText;
 		const text = lastStreamingText || "";
+		// Update live text store for DynamicScrambleText closures
+		setLiveText(toolCallId || '_default_', text);
+		// Also update per-flow live text for multi-flow view
+		for (let i = 0; i < allResults.length; i++) {
+			const r = allResults[i];
+			if (r.streamingText) {
+				setLiveText(`${toolCallId || '_default_'}#${i}`, r.streamingText);
+			}
+		}
 		const signature =
 			text +
 			"|" +
@@ -363,6 +373,11 @@ export async function executeFlows(
 				onUpdate: (partial) => {
 					if (partial.details?.results[0]) {
 						allResults[index] = partial.details.results[0];
+						// Update per-flow live text
+						const flowText = partial.content?.[0]?.text;
+						if (flowText !== undefined) {
+							setLiveText(`${toolCallId || '_default_'}#${index}`, flowText);
+						}
 						emitProgress(partial.content?.[0]?.text);
 					}
 				},

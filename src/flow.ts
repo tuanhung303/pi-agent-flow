@@ -21,6 +21,7 @@ import {
 	normalizeFlowResult,
 } from "./types.js";
 import { extractStructuredOutput, generateCommandsFromHistory } from "./structured-output.js";
+import { setLiveText } from './scramble.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
 
 const isWindows = process.platform === "win32";
@@ -502,6 +503,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const emitUpdate = () => {
 		const streamingDelta = drainStreamingText(result);
 		if (streamingDelta) liveStreamingText += streamingDelta;
+		// Update live text store for DynamicScrambleText closures
+		setLiveText('_live_', liveStreamingText);
 		const estimatedTokens = drainStreamingEstimate(result);
 		if (result.usage.output !== lastActualOutputTokens) {
 			lastActualOutputTokens = result.usage.output;
