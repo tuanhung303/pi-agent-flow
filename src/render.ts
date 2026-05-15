@@ -139,11 +139,31 @@ function getLiveCountdown(r: SingleResult): string | undefined {
 // renderFlowCall — shown while the flow is being invoked
 // ---------------------------------------------------------------------------
 
-export function renderFlowCall(args: Record<string, any>, theme: FlowTheme): Text {
+export function renderFlowCall(args: Record<string, any>, theme: FlowTheme): Container | Text {
 	const flows = args.flow as Array<{ type: string; intent: string }> | undefined;
 
 	// Minimal — renderFlowResult owns the full display
-	return new Text("", 0, 0);
+	let container: Container | Text = new Text("", 0, 0);
+
+	// In-place mutation pattern: reuse the stored root container
+	// so the TUI host's cached reference stays valid.
+	if (args?.state) {
+		const s = args.state as Record<string, any>;
+		if (!s.__rootContainer) {
+			const root = new Container();
+			root.addChild(container);
+			s.__rootContainer = root;
+			container = root;
+		} else if (container !== s.__rootContainer) {
+			const root = s.__rootContainer as Container;
+			root.clear();
+			root.addChild(container);
+			root.invalidate();
+			container = root;
+		}
+	}
+
+	return container;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +209,30 @@ export function renderFlowResult(
 		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText);
 	} else {
 		container = renderMultiFlowResult(details, expanded, theme);
+	}
+
+	// In-place mutation pattern: reuse the stored root container
+	// so the TUI host's cached reference stays valid.
+	if (args?.state) {
+		const s = args.state as Record<string, any>;
+		if (!s.__rootContainer) {
+			// First render: store the container
+			s.__rootContainer = container;
+		} else if (container !== s.__rootContainer) {
+			// Subsequent renders: transfer children to the stored container
+			const root = s.__rootContainer as Container;
+			root.clear();
+			if (container instanceof Container) {
+				for (const child of (container as Container).children) {
+					root.addChild(child);
+				}
+			} else {
+				// container is a Text — wrap it as a child
+				root.addChild(container);
+			}
+			root.invalidate();
+			container = root;
+		}
 	}
 
 	// Scramble animation timer — shared helper so any renderer can animate.

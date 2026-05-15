@@ -12,7 +12,7 @@ import {
 	getTruncationBudget,
 	stripAnsi,
 } from "../src/render-utils.js";
-import { renderFlowResult, renderSingleFlowResult } from "../src/render.js";
+import { renderFlowCall, renderFlowResult, renderSingleFlowResult } from "../src/render.js";
 import { scrambleManager } from "../src/scramble.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
@@ -1227,5 +1227,67 @@ describe("formatFlowToolCall — batch", () => {
 		const rendered = renderSingleFlowResult(result, false, makeTheme(), "");
 		const text = extractText(rendered);
 		expect(text).not.toContain(flowOutput);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// In-place mutation pattern — container reuse
+// ---------------------------------------------------------------------------
+
+describe("in-place mutation pattern", () => {
+	it("renderFlowResult reuses the same container reference when args.state is provided", () => {
+		const state: Record<string, any> = {};
+		const args = { flow: [{ type: "scout", intent: "test" }], state };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+		const rendered2 = renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
+
+		expect(rendered1).toBe(rendered2);
+		expect(state.__rootContainer).toBe(rendered1);
+	});
+
+	it("renderFlowResult stores container in state on first call", () => {
+		const state: Record<string, any> = {};
+		const args = { flow: [{ type: "scout", intent: "test" }], state };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+
+		expect(state.__rootContainer).toBeDefined();
+		expect("children" in state.__rootContainer).toBe(true);
+	});
+
+	it("renderFlowResult works without state (backwards compatible)", () => {
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const rendered2 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+
+		expect(rendered1).not.toBe(rendered2);
+	});
+
+	it("renderFlowCall reuses the same container reference when args.state is provided", () => {
+		const state: Record<string, any> = {};
+		const args = { flow: [{ type: "scout", intent: "test" }], state };
+
+		const rendered1 = renderFlowCall(args, makeTheme());
+		const rendered2 = renderFlowCall(args, makeTheme());
+
+		expect(rendered1).toBe(rendered2);
+		expect(state.__rootContainer).toBe(rendered1);
+	});
+
+	it("renderFlowCall works without state (backwards compatible)", () => {
+		const args = { flow: [{ type: "scout", intent: "test" }] };
+
+		const rendered1 = renderFlowCall(args, makeTheme());
+		const rendered2 = renderFlowCall(args, makeTheme());
+
+		// Without state, each call returns a new Text object
+		expect(rendered1).not.toBe(rendered2);
 	});
 });
