@@ -1,8 +1,8 @@
 <flow-goal-budget>
-The flow goal has reached its budget limit.
+The flow goal has exceeded its budget advisory.
 
 Objective: {{objective}}
 Usage: {{totalTokens}}/{{maxTokens}} tokens, {{flowCount}}/{{maxFlows}} flows.
 
-Do NOT start new flows. Wrap up the current turn with a summary of progress and next steps. To continue, the user must adjust limits with `/flow-goal edit` or restart with `/flow-goal set`.
+Wrap up efficiently — prioritize the most impactful remaining work. The goal remains active; this is an advisory hint, not a hard stop.
 </flow-goal-budget>

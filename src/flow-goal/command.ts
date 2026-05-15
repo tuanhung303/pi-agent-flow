@@ -89,6 +89,15 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
         }
         case "resume": {
           const sessionId = ctx.sessionManager.getSessionId();
+          const current = getGoal(cwd);
+          if (!current) {
+            ctx.ui.notify?.("No goal to resume", "error");
+            break;
+          }
+          if (current.status === "active") {
+            ctx.ui.notify?.("Goal is already active", "info");
+            break;
+          }
           const entry = updateGoalStatus(cwd, "active", sessionId);
           if (entry) {
             ctx.ui.notify?.("Goal resumed", "info");
@@ -98,8 +107,6 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
               { content: `You have a resumed goal. Continue working on it and call the flow tool to proceed.\n\nGoal: ${entry.objective}${acceptanceLine}\n\nChoose the appropriate flow type (scout, craft, build, audit, debug, ideas) based on the objective's nature.`, display: false },
               { triggerTurn: true }
             );
-          } else {
-            ctx.ui.notify?.("No active goal to resume", "error");
           }
           break;
         }
