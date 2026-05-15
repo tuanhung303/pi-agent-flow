@@ -785,7 +785,7 @@ export function sanitizeForkSnapshot(
 		}
 
 		// Drop custom_message entries — hidden orchestrator instructions (e.g.
-		// flow-goal continuation hook messages with display:false) that children
+		// flow continuation hook messages with display:false) that children
 		// should never see.
 		if (entry?.type === "custom_message") {
 			subPasses.add("dropCustomMessages");
@@ -796,6 +796,24 @@ export function sanitizeForkSnapshot(
 		// model/tier via the <activation> block and CLI args.
 		if (entry?.type === "model_change" || entry?.type === "thinking_level_change") {
 			subPasses.add("dropConfigEvents");
+			continue;
+		}
+
+		// Defense-in-depth: drop entries with an explicit unknown type that do not
+		// belong in the fork snapshot protocol. Entries without a type field (e.g. bare
+		// session headers from getHeader) pass through unchanged.
+		if (
+			entry?.type !== undefined &&
+			entry?.type !== "session" &&
+			entry?.type !== "message"
+		) {
+			subPasses.add("dropUnknownTypes");
+			continue;
+		}
+
+		// Drop malformed message entries that lack a message payload.
+		if (entry?.type === "message" && !entry.message) {
+			subPasses.add("dropMalformedMessages");
 			continue;
 		}
 

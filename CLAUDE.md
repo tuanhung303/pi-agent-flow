@@ -212,7 +212,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
 
-## Flow Goal (Autonomous Continuation)
+## Flow (Autonomous Continuation)
 
 Set a multi-step objective and the system automatically spawns flows to advance it after each turn. When active, the orchestrator receives a hidden instruction at `turn_end` to call the `flow` tool again until the goal is complete, paused, or a budget is exhausted.
 
@@ -220,21 +220,21 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 
 | Command | Usage |
 |---------|-------|
-| `set` | `/flow-goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` — Sets the goal and **immediately auto-triggers** a build flow to start working. |
-| `clear` | `/flow-goal clear` — Marks the active goal as `abandoned` and moves it to history. |
-| `pause` | `/flow-goal pause` — Pauses auto-continuation so no new flows are spawned until the goal is resumed or cleared. |
-| `resume` | `/flow-goal resume` — Resumes a paused goal and **immediately auto-triggers** a build flow to continue. |
-| `edit` | `/flow-goal edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
-| `complete` | `/flow-goal complete` — Marks the current goal as completed. |
-| `status`, `show` | `/flow-goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
+| `set` | `/flow set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` — Sets the goal and **immediately auto-triggers** a build flow to start working. |
+| `clear` | `/flow clear` — Marks the active goal as `abandoned` and moves it to history. |
+| `pause` | `/flow pause` — Pauses auto-continuation so no new flows are spawned until the goal is resumed or cleared. |
+| `resume` | `/flow resume` — Resumes a paused goal and **immediately auto-triggers** a build flow to continue. |
+| `edit` | `/flow edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
+| `complete` | `/flow complete` — Marks the current goal as completed. |
+| `status`, `show` | `/flow status` (or `show`) — Displays current goal state, budgets, and completed flows |
 
-> **Note on `completed` status:** `completed` is a valid `FlowGoalStatus`. Goals can be marked completed manually via `/flow-goal complete`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
+> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow complete`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
 
 ### How it works
 
 1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets.
 2. If under budget, it sends a hidden message instructing the orchestrator to call the `flow` tool.
-3. The spawned flow receives a `<flow-goal>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
+3. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
 4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
 5. If `maxTokens` or `maxFlows` is exceeded, the goal **auto-pauses** silently without notifying the user.
 6. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
@@ -242,7 +242,7 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 
 ### Persistence
 
-Goals are stored in `.pi/flow-goal.json` in the project root (atomic writes). The file contains:
+Goals are stored in `.pi/flow.json` in the project root (atomic writes). The file contains:
 - `current`: the active goal (`id`, `objective`, `acceptance`, `createdAt`, `updatedAt`, `status`, `completedFlows`, `totalTokens`, `maxTokens`, `maxFlows`, `sessionId`).
 - `history`: previously completed or abandoned goals.
 
@@ -253,11 +253,11 @@ Add `.pi/` to `.gitignore` — this is local runtime state.
 ### Typical lifecycle
 
 ```bash
-/flow-goal set "Refactor all tests to vitest" --acceptance "All tests pass" --max-flows 5
+/flow set "Refactor all tests to vitest" --acceptance "All tests pass" --max-flows 5
 # Work normally — after each turn the orchestrator auto-delegates
-/flow-goal pause    # Stop auto-continuation
-/flow-goal status   # Check progress
-/flow-goal clear    # Done
+/flow pause    # Stop auto-continuation
+/flow status   # Check progress
+/flow clear    # Done
 ```
 
 > No environment variable controls auto-continuation; it is active whenever a goal is set and not paused.

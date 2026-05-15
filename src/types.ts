@@ -349,9 +349,9 @@ export interface PiAgentFlowAPI {
 // ---------------------------------------------------------------------------
 
 export type {
-	FlowGoalState,
-	FlowGoalEntry,
-	FlowGoalStatus,
+	GoalState,
+	GoalEntry,
+	GoalStatus,
 	GoalContext,
-} from "./flow-goal/types.js";
+} from "./flow/types.js";
 

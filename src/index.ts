@@ -28,7 +28,7 @@ import {
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
 } from "./sliding-prompt.js";
-import { registerFlowGoal, getGoal, recordFlowCompletion, addTokens } from "./flow-goal/index.js";
+import { registerFlow, getGoal, recordFlowCompletion, addTokens } from "./flow/index.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {
 	resolveFlowDepthConfig,
@@ -177,8 +177,8 @@ export default function (pi: ExtensionAPI) {
 	setupNotify(pi);
 
 
-	// Wire up /flow-goal command and continuation hooks
-	registerFlowGoal(pi);
+	// Wire up /flow command and continuation hooks
+	registerFlow(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
