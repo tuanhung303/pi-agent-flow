@@ -2373,4 +2373,53 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 		expect(result.isAnimating).toBe(true);
 		expect(stripAnsi(result.content)).not.toBe('Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.');
 	});
+
+	it('computeGlitchFrame shows currentText for resolved positions instead of stale entry.to', () => {
+		const rng = () => 'X';
+		const queue = buildGlitchQueue('abc', 'def');
+		const lateFrame = 999; // well past all entry ends
+		const result = computeGlitchFrame(queue, lateFrame, rng, 'xyz');
+		expect(stripAnsi(result)).toBe('xyz');
+	});
+
+	it('computeGlitchFrame shows currentText for unstarted positions instead of stale from', () => {
+		const rng = () => 'X';
+		const queue = buildGlitchQueue('abc', 'xyz');
+		const frame = 0; // no positions started yet
+		const result = computeGlitchFrame(queue, frame, rng, 'XYZ');
+		expect(stripAnsi(result)).toBe('XYZ');
+	});
+
+	it('computeGlitchFrame appends currentText characters beyond queue length', () => {
+		const rng = () => 'X';
+		const queue = buildGlitchQueue('ab', 'cd');
+		const lateFrame = 999; // well past all entry ends
+		const result = computeGlitchFrame(queue, lateFrame, rng, 'cdefgh');
+		expect(stripAnsi(result)).toBe('cdefgh');
+	});
+
+	it('processLine msg path triggers glitch on F1 accumulator', () => {
+		const base = 10_000_000;
+		// staticLine defaults to false, so processLine path is used
+		manager.updateMsg(TEST_ID, 'Hello world', base);
+		// Large chunk increase triggers F1 accumulator immediately
+		const result = manager.updateMsg(TEST_ID, 'Hello world. How are you today? I am fine.', base + 100);
+		expect(result.isAnimating).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('Hello world. How are you today? I am fine.');
+	});
+
+	it('processLine msg path queues pending glitch during active glitch', () => {
+		const base = 10_000_000;
+		manager.updateMsg(TEST_ID, 'Hello world', base);
+		// Trigger glitch with sentence boundary (shouldFlushPhrase path)
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100);
+
+		// While glitch is active, send a new chunk with enough chars to trigger F1 accumulator
+		manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 200);
+
+		// After original glitch completes (~1100ms), pending glitch should still be animating
+		const result = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 1500);
+		expect(result.isAnimating).toBe(true);
+		expect(stripAnsi(result.content)).not.toBe('Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.');
+	});
 });
