@@ -28,7 +28,6 @@ import {
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
 } from "./sliding-prompt.js";
-import { setupSpecMode } from "./spec-mode.js";
 import { registerFlowGoal, getGoal, recordFlowCompletion, addTokens } from "./flow-goal/index.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
 import {
@@ -177,8 +176,6 @@ export default function (pi: ExtensionAPI) {
 	// Wire up bundled notification channel
 	setupNotify(pi);
 
-	// Wire up /spec toggle
-	setupSpecMode(pi);
 
 	// Wire up /flow-goal command and continuation hooks
 	registerFlowGoal(pi, {

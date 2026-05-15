@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import registerExtension, { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "../src/index.js";
-import { setSpecModeActive } from "../src/sliding-prompt.js";
 import { runFlow, mapFlowConcurrent } from "../src/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
@@ -557,8 +556,6 @@ describe("flow tool execute", () => {
 		it("inserts sliding system prompt before latest user message unconditionally", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
-			setSpecModeActive(false);
-
 			const messages = [
 				{ role: "user" as const, content: "first prompt", timestamp: 1 },
 				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
@@ -580,7 +577,6 @@ describe("flow tool execute", () => {
 			process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 			const pi = createMockPi();
 			registerExtension(pi as any);
-			setSpecModeActive(false);
 
 			const messages = [
 				{ role: "user" as const, content: "first prompt", timestamp: 1 },

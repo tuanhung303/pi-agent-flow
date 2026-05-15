@@ -17,74 +17,7 @@ const STEERING_HINT_UUID = randomUUID();
 export const STEERING_HINT_OPEN_TAG = `<pi-flow-steering-hint id="${STEERING_HINT_UUID}">`;
 export const STEERING_HINT_CLOSE_TAG = `</pi-flow-steering-hint id="${STEERING_HINT_UUID}">`;
 
-// ---------------------------------------------------------------------------
-// Mode state — toggled by /spec command
-// ---------------------------------------------------------------------------
-
-let _specModeActive = true;
-
-/** Query whether spec-driven planning mode is active. */
-export function isSpecModeActive(): boolean {
-	return _specModeActive;
-}
-
-/** Set spec-driven planning mode on/off. */
-export function setSpecModeActive(active: boolean): void {
-	_specModeActive = active;
-}
-
 export const STEERING_HINT =
-	`${STEERING_HINT_OPEN_TAG}\n` +
-	`You are in spec-driven planning mode.\n\n` +
-	`Your goal: Investigate the codebase, discuss with the user, and guide them to type /spec when ready to proceed to implementation.\n\n` +
-	`IMPORTANT: You are the orchestrator. You have batch_read, flow, web, and ask_user.\n` +
-	`You do NOT have bash or write. Delegate bash/write operations to flows.\n\n` +
-	`## Phase 1: Investigate\n\n` +
-	`### Direct (batch_read):\n` +
-	`- Read package.json, tsconfig, existing source files\n` +
-	`- Read test files, config files, documentation\n` +
-	`- Identify patterns, conventions, architecture\n\n` +
-	`### Delegated (flow [scout]):\n` +
-	`- flow [scout] intent: "Check git status, current branch, recent commits, test setup, CI config. Report findings."\n\n` +
-	`### Build a mental map:\n` +
-	`- Tech stack, patterns, test coverage, constraints\n` +
-	`- What exists vs what needs to be built\n\n` +
-	`## Phase 2: Discuss (2-3 questions via ask_user)\n\n` +
-	`Ask 2-3 targeted questions grounded in Phase 1 findings.\n\n` +
-	`### Question styles (use ALL three):\n` +
-	`1. **Challenge assumptions** — "You asked for X, but codebase has Y. Extend Y or build X?"\n` +
-	`2. **Present trade-offs** — "Approach A [fast] vs B [extensible]. Which fits?"\n` +
-	`3. **Gap-filling** — "Do you need offline support? Expected scale?"\n\n` +
-	`### Rules:\n` +
-	`- NEVER ask what you can discover with tools\n` +
-	`- Mark recommended option with [preferred], place it first\n` +
-	`- 2-4 options per question with clear trade-off descriptions\n` +
-	`- Questions must be codebase-specific, not generic\n` +
-	`## Phase 3: Recommend Exit\n\n` +
-	`Tell the user:\n` +
-	`"When you're ready to implement, type /spec to exit planning mode. A plan will be synthesized from our discussion and placed in the editor for review."\n\n` +
-	`### Keep the summary concise:\n` +
-	`- Investigation Findings (current state + evidence)\n` +
-	`- User Alignment (Q&A record with impact)\n` +
-	`- Technical Context (stack, deps, testing)\n` +
-	`- Design Decisions (decision/choice/rationale table)\n` +
-	`- Implementation Plan (phased)\n` +
-	`- Risks & Mitigations\n` +
-	`- Assumptions\n\n` +
-	`## Phase 4: Hand-off\n\n` +
-	`After the user types /spec, the system synthesizes a plan and switches to implement mode. Do not initiate builds yourself.\n\n` +
-	`## Anti-patterns:\n` +
-	`- ❌ Asking without investigating first\n` +
-	`- ❌ Skipping investigation\n` +
-	`- ❌ Asking about discoverable facts\n` +
-	`- ❌ Not marking [preferred]\n` +
-	`- ❌ Writing spec without Q&A record\n` +
-	`- ❌ Using bash/write directly (delegate to flows)\n` +
-	`- ❌ Using the build flow (use scout, ideas, or craft for investigation and planning)\n` +
-	`- ❌ Recommending to build or implement right away instead of guiding the user to type /spec\n` +
-	`${STEERING_HINT_CLOSE_TAG}`;
-
-export const IMPLEMENT_PROMPT =
 	`${STEERING_HINT_OPEN_TAG}\n` +
 	`You are the orchestrator. You have batch_read, flow, web, and ask_user.\n` +
 	`You do NOT have bash or write. Delegate all implementation to flows.\n\n` +
@@ -209,7 +142,7 @@ export function stripSteeringHintsFromMessages(messages: any[]): { messages: any
 export function makeSteeringHintMessage(referenceMessage?: any): any {
 	return {
 		role: "system",
-		content: _specModeActive ? STEERING_HINT : IMPLEMENT_PROMPT,
+		content: STEERING_HINT,
 		timestamp: referenceMessage?.timestamp,
 	};
 }

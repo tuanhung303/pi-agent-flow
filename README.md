@@ -57,14 +57,13 @@ pi install .
 - **Flow-mode notification** — concise (`mode: name | lite: model - flash: model - full: model`) or verbose (with per-tier flow-name labels) startup message
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
 - **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
-- **Steering hint** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); switches between spec-driven planning and implement modes based on the `/spec` toggle, stripped from child snapshots to avoid duplication
+- **Steering hint** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); stripped from child snapshots to avoid duplication
 - **Session snapshot sanitization** — removes steering hints, reasoning/thinking artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
 - **Shared context inheritance** — child flows receive the parent's sanitized session automatically; write forward-looking intents and let the child pick up context from its inherited snapshot
 - **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
 - **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, live countdowns, scramble-animated act/msg/tps lines, and expanded view with full reports and tool traces
 - **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
 - **Quad-mode TUI scramble** — `stream`, `cascade`, `ripple`, and `illuminate` text animations on act, msg, TPS lines, and tool results (batch, web, ask_user) in the collapsed activity panel (default: `illuminate`)
-- **`/spec` command** — toggle spec-driven planning mode that guides the orchestrator through investigate → discuss → plan → delegate
 - **Dynamic notifications** — terminal and desktop alerts adapt their title/body based on flow completion state or pending `ask_user` decisions
 - **Preferred-choice guidance** — `ask_user` prompts can mark a recommended option with `[preferred]` and place it first
 
@@ -170,27 +169,6 @@ Flows are aware of their deadline from the moment they start:
 - **Two-stage warnings** — at 2 minutes before hard timeout a warning is injected into the child's reminder stream; at 2 minutes 15 seconds a final urge demands the agent stop all tool use and output structured findings.
 - **Grace period** — after the hard timeout fires, the agent gets a 90-second reporting grace to finish its summary before the process is force-killed.
 - **Graceful shutdown** — when the parent receives `SIGINT` or `SIGTERM`, the signal propagates to every child process group so sub-agents terminate cleanly instead of becoming orphans.
-
----
-
-## `/spec` Command
-
-Toggle spec-driven planning mode with the `/spec` command. When active, the steering hint instructs the orchestrator to follow a four-phase workflow:
-
-1. **Investigate** — read package files, tests, and config directly; delegate broad discovery to `[scout]`
-2. **Discuss** — ask 2–3 targeted, evidence-based questions via `ask_user`, marking the recommended choice with `[preferred]`
-3. **Recommend Exit** — prompt the user to type `/spec` when ready to proceed; do not initiate builds yourself
-4. **Synthesize** — on `/spec` deactivation, a plan is auto-generated from the conversation and placed in the editor for review
-
-Run `/spec` with a prompt to activate immediately and start investigating:
-
-```bash
-/spec Add a REST API endpoint for user preferences
-```
-
-Run `/spec` without arguments to toggle the mode on or off. When off, the orchestrator uses the standard implement-mode behavior: investigate first, then delegate directly to flows.
-
-When you deactivate spec mode, a new session is created and the orchestrator synthesizes a full implementation plan from the conversation history, placing it in the editor for review.
 
 ---
 

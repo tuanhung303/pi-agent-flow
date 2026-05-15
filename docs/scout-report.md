@@ -58,7 +58,6 @@ pi-agent-flow/
 │   │   └── symbols.ts         # File symbol extraction
 │   ├── notify.ts              # Notification channel setup
 │   ├── notify-state.ts        # Notification state machine
-│   ├── spec-mode.ts           # /spec toggle handler
 │   ├── sliding-prompt.ts      # Steering hint injection & stripping
 │   ├── reasoning-strip.ts     # Strip reasoning/thinking from messages
 │   ├── tool-utils.ts          # Strategic hint helpers
@@ -202,7 +201,6 @@ When `toolOptimize = false` (legacy):
 
 ### 4.5 Test Coverage Gaps
 - No tests for `src/ambient.d.ts` (if it has logic).
-- No tests for `src/spec-mode.ts` behavior integrated with the full index.ts lifecycle.
 - No tests for the `PI_FLOW_DUMP_SNAPSHOT` dump path logic in `src/flow.ts`.
 - No tests for the global shutdown signal handlers registered in `src/index.ts`.
 - No tests for the `Makefile` targets (expected, but scripts like `switch.sh` and `dev-start.sh` are untested shell scripts).
