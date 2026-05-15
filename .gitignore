@@ -8,3 +8,4 @@ context/
 debug/
 .cursor/
 flow-artifacts/dumps/
+docs/dump-analysis/
