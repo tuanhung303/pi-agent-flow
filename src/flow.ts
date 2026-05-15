@@ -181,7 +181,7 @@ function makeUniqueDumpTxtPath(mdPath: string): string {
 function atomicWriteFileSync(targetPath: string, data: string): void {
 	const dir = path.dirname(targetPath);
 	const tmpPath = path.join(dir, `.tmp-${path.basename(targetPath)}.${Date.now()}`);
-	fs.writeFileSync(tmpPath, data, { encoding: "utf-8" });
+	fs.writeFileSync(tmpPath, data, { encoding: "utf-8", mode: 0o600 });
 	fs.renameSync(tmpPath, targetPath);
 }
 
