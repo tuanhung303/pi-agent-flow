@@ -665,6 +665,7 @@ export function computeGlitchFrame(
 	rng: () => string,
 	currentText?: string
 ): string {
+	const cleanCurrent = currentText ? stripDecorativeIcons(currentText) : undefined;
 	let output = '';
 	let inDim = false;
 	for (let i = 0; i < queue.length; i++) {
@@ -678,7 +679,7 @@ export function computeGlitchFrame(
 			output += entry.char;
 		} else if (frame >= (fadeOutEnd ?? entry.end)) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			output += currentText?.[i] ?? entry.to;
+			output += cleanCurrent?.[i] ?? entry.to;
 		} else if (frame >= entry.start) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
 			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
@@ -686,16 +687,21 @@ export function computeGlitchFrame(
 			}
 			output += entry.char;
 		} else {
+			// Not started yet
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			output += currentText?.[i] ?? entry.from;
+			if (cleanCurrent && i >= cleanCurrent.length) {
+				// Position beyond current text — character being deleted, skip
+			} else {
+				output += cleanCurrent?.[i] ?? entry.from;
+			}
 		}
 	}
 	// Append any currentText characters beyond the queue length.
 	// When streaming text grows after a glitch queue was built, new characters
 	// beyond queue.length would be invisible without this append.
-	if (currentText && currentText.length > queue.length) {
+	if (cleanCurrent && cleanCurrent.length > queue.length) {
 		if (inDim) { output += DIM_OFF; inDim = false; }
-		output += currentText.slice(queue.length);
+		output += cleanCurrent.slice(queue.length);
 	}
 	if (inDim) output += DIM_OFF;
 	return output;

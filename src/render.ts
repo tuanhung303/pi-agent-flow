@@ -201,7 +201,7 @@ export function renderFlowResult(
 // Single flow result
 // ---------------------------------------------------------------------------
 
-function renderSingleFlowResult(
+export function renderSingleFlowResult(
 	r: SingleResult,
 	expanded: boolean,
 	theme: FlowTheme,
@@ -316,7 +316,7 @@ function renderFlowExpanded(
 	}
 
 	// Output: animate streaming text; show clean markdown when complete
-	if (!isComplete && streamingText) {
+	if (!isComplete && streamingText != null) {
 		const scrambled = scrambleManager.updateMsg(id, stripAnsi(streamingText), now, isComplete, undefined, true).content;
 		container.addChild(new Text(scrambled, 0, 0));
 	} else if (flowOutput) {
@@ -433,13 +433,13 @@ function renderFlowCollapsed(
 
 	let rawMsg: string;
 	let useError = false;
-	if (r.exitCode === -1 && streamingText) {
+	if (r.exitCode === -1 && streamingText != null) {
 		rawMsg = stripAnsi(streamingText);
 	} else if (r.structuredOutput?.summary) {
 		rawMsg = stripAnsi(r.structuredOutput.summary);
 	} else if (flowOutput) {
 		rawMsg = stripAnsi(flowOutput);
-	} else if (streamingText) {
+	} else if (streamingText != null) {
 		rawMsg = stripAnsi(streamingText);
 	} else if (error && r.errorMessage) {
 		rawMsg = stripAnsi(r.errorMessage);
@@ -457,7 +457,7 @@ function renderFlowCollapsed(
 		if (!isComplete) {
 			msgContent = scrambleManager.updateMsg(id, rawMsg, now, isComplete, undefined, true).content;
 		} else {
-			const needsTail = (r.exitCode === -1 && streamingText) || streamingText;
+			const needsTail = (r.exitCode === -1 && streamingText != null) || streamingText != null;
 			const displayMsg = needsTail ? tailText(rawMsg, msgBudget) : truncateChars(rawMsg, msgBudget);
 			msgContent = scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true).content;
 		}
@@ -543,7 +543,7 @@ function renderMultiFlowExpanded(
 		}
 
 		// Output: animate streaming text; show clean markdown when complete
-		if (!isComplete && r.streamingText) {
+		if (!isComplete && r.streamingText != null) {
 			const scrambled = scrambleManager.updateMsg(flowId, stripAnsi(r.streamingText), now, isComplete, undefined, true).content;
 			container.addChild(new Text(scrambled, 0, 0));
 		} else if (flowOutput) {

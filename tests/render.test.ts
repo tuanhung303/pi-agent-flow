@@ -12,7 +12,7 @@ import {
 	getTruncationBudget,
 	stripAnsi,
 } from "../src/render-utils.js";
-import { renderFlowResult } from "../src/render.js";
+import { renderFlowResult, renderSingleFlowResult } from "../src/render.js";
 import { scrambleManager } from "../src/scramble.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
@@ -770,14 +770,15 @@ describe("activity panel rendering", () => {
 		expect(exeLine!.includes("echo") || exeLine!.includes("bash")).toBe(true);
 	});
 
-	it("shows [n/a] when no log text", () => {
+	it("shows empty msg line when streamingText is empty and no other text sources exist", () => {
 		const result = makeResult({
 			messages: [],
 		});
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("[n/a]");
+		expect(text).not.toContain("[n/a]");
+		expect(text).toContain("└─ msg:");
 	});
 
 	it("passes full EXE text to TruncatedText in single flow collapsed", () => {
@@ -1163,5 +1164,68 @@ describe("formatFlowToolCall — batch", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("read src/a.ts×3");
+	});
+
+	it("collapsed view passes empty streamingText to scrambleManager instead of falling back to stale summary", () => {
+		const summary = "This is the stale summary";
+		const result = makeResult({
+			type: "build",
+			intent: "Implement feature",
+			exitCode: -1,
+			structuredOutput: {
+				version: "1.0",
+				status: "partial",
+				summary,
+				files: [],
+				actions: [],
+				notDone: [],
+				commands: [],
+				nextSteps: [],
+				reasoning: [],
+				notes: [],
+			},
+		});
+		const spy = vi.spyOn(scrambleManager, "updateMsg");
+		renderSingleFlowResult(result, false, makeTheme(), "");
+		expect(spy).toHaveBeenCalledWith(expect.any(String), "", expect.any(Number), false, undefined, true);
+		spy.mockRestore();
+	});
+
+	it("expanded view passes empty streamingText to scrambleManager instead of falling back to stale summary", () => {
+		const summary = "This is the stale summary";
+		const result = makeResult({
+			type: "build",
+			intent: "Implement feature",
+			exitCode: -1,
+			structuredOutput: {
+				version: "1.0",
+				status: "partial",
+				summary,
+				files: [],
+				actions: [],
+				notDone: [],
+				commands: [],
+				nextSteps: [],
+				reasoning: [],
+				notes: [],
+			},
+		});
+		const spy = vi.spyOn(scrambleManager, "updateMsg");
+		renderSingleFlowResult(result, true, makeTheme(), "");
+		expect(spy).toHaveBeenCalledWith(expect.any(String), "", expect.any(Number), false, undefined, true);
+		spy.mockRestore();
+	});
+
+	it("collapsed view does not fall back to flowOutput when streamingText is empty", () => {
+		const flowOutput = "flow output from messages";
+		const result = makeResult({
+			type: "build",
+			intent: "Implement feature",
+			exitCode: -1,
+			messages: [makeTextMessage(flowOutput)],
+		});
+		const rendered = renderSingleFlowResult(result, false, makeTheme(), "");
+		const text = extractText(rendered);
+		expect(text).not.toContain(flowOutput);
 	});
 });
