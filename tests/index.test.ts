@@ -51,6 +51,7 @@ function makeMockCtx(cwd: string) {
 		sessionManager: {
 			getHeader: () => ({}),
 			getBranch: () => [],
+			getSessionId: () => 'test-session-id',
 		},
 		hasUI: false,
 		ui: { confirm: vi.fn() },
@@ -157,6 +158,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => ({ version: 1 }),
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -232,6 +234,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => header,
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -293,6 +296,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => ({ version: 1 }),
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -354,6 +358,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => ({ version: 1 }),
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
