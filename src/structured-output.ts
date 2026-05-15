@@ -35,6 +35,12 @@ function isOptionalArray(record: Record<string, unknown>, key: string): boolean 
 }
 
 /** Minimum required fields to consider parsed JSON a valid structured output. */
+function isValidFileEntry(item: unknown): boolean {
+	if (!isRecord(item)) return false;
+	return typeof item.path === "string";
+}
+
+/** Minimum required fields to consider parsed JSON a valid structured output. */
 function isValidStructuredOutput(obj: unknown): obj is StructuredOutputRecord {
 	if (!isRecord(obj)) return false;
 	return (
@@ -43,6 +49,7 @@ function isValidStructuredOutput(obj: unknown): obj is StructuredOutputRecord {
 		VALID_STATUSES.includes(obj.status as FlowStatus) &&
 		typeof obj.summary === "string" &&
 		isOptionalArray(obj, "files") &&
+		(Array.isArray(obj.files) ? obj.files.every(isValidFileEntry) : true) &&
 		isOptionalArray(obj, "actions") &&
 		isOptionalArray(obj, "commands") &&
 		isOptionalArray(obj, "notDone") &&

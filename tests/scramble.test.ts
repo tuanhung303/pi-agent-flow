@@ -654,7 +654,7 @@ describe('buildChunkFlipQueue', () => {
 	it('all items have uniform end=CHUNK_FLIP_DURATION_FRAMES', () => {
 		const queue = buildChunkFlipQueue('hello', 'world');
 		for (const item of queue) {
-			expect(item.end).toBe(10);
+			expect(item.end).toBe(32);
 		}
 	});
 
@@ -662,7 +662,7 @@ describe('buildChunkFlipQueue', () => {
 		const queue = buildChunkFlipQueue('abcdef', 'ab');
 		for (let i = 2; i < queue.length; i++) {
 			expect(queue[i].fadeOutEnd).toBeDefined();
-			expect(queue[i].fadeOutEnd).toBe(queue[i].end + 8);
+			expect(queue[i].fadeOutEnd).toBe(queue[i].end + 12);
 		}
 	});
 
@@ -678,14 +678,14 @@ describe('buildChunkFlipQueue', () => {
 	it('computeGlitchFrame resolves all chars at the same frame', () => {
 		const queue = buildChunkFlipQueue('hello world', 'hello tests');
 		const rng = () => '~';
-		const result = computeGlitchFrame(queue, 11, rng);
+		const result = computeGlitchFrame(queue, 32, rng);
 		expect(stripAnsi(result)).toBe('hello tests');
 	});
 
 	it('isGlitchComplete returns true at CHUNK_FLIP_DURATION_FRAMES + CHUNK_FLIP_FADE_OUT_FRAMES', () => {
 		const queue = buildChunkFlipQueue('abcdef', 'ab');
-		expect(isGlitchComplete(queue, 17)).toBe(false);
-		expect(isGlitchComplete(queue, 18)).toBe(true);
+		expect(isGlitchComplete(queue, 43)).toBe(false);
+		expect(isGlitchComplete(queue, 44)).toBe(true);
 	});
 });
 describe('isGlitchComplete', () => {

@@ -84,7 +84,7 @@ export function buildForkSessionSnapshotJsonl(
 /**
  * Render a compressed flow result as compact text for child context.
  */
-export function renderCompressedFlowResult(r: CompressedFlowResult): string {
+export function renderCompressedFlowResult(r: CompressedFlowResult): string | undefined {
 	const parts: string[] = [`[Flow: ${r.type} ${r.status}]`];
 	if (r.intent) parts.push(`Intent: ${r.intent}`);
 	if (r.aim) parts.push(`Aim: ${r.aim}`);
@@ -98,9 +98,12 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string {
 				return `  ${f.path}${role}${desc}`;
 			})
 			.filter((line): line is string => line !== undefined);
-		if (fileLines.length) {
-			parts.push(`Files:\n${fileLines.join("\n")}`);
+		// Safety net: if >50% of file entries were invalid (no path), compression is
+		// producing garbage. Return undefined so caller falls back to truncated raw.
+		if (fileLines.length === 0 || fileLines.length < r.files.length / 2) {
+			return undefined;
 		}
+		parts.push(`Files:\n${fileLines.join("\n")}`);
 	}
 	if (r.actions?.length) {
 		const actionLines = r.actions.map((a) => {
@@ -458,7 +461,11 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				const size = originalText.length || contentSize || line.length;
 				rendered = `[flow] prior result · ${size} chars (not cached or evicted)`;
 			} else {
-				rendered = compressed.map(renderCompressedFlowResult).join("\n\n");
+				const renderedParts = compressed.map(renderCompressedFlowResult).filter((r): r is string => r !== undefined);
+				// If any compression failed the safety net, fall back to placeholder.
+				rendered = renderedParts.length === compressed.length
+					? renderedParts.join("\n\n")
+					: `[flow] prior result · ${originalText.length || line.length} chars (compression failed safety net)`;
 			}
 		}
 
@@ -758,6 +765,16 @@ export function sanitizeForkSnapshot(
 				}
 				if (stripped) {
 					message = { ...rest, ...(cleanedUsage !== undefined ? { usage: cleanedUsage } : {}) };
+					changed = true;
+				}
+			}
+
+			// Strip `details` from tool/toolResult messages — carries FlowDetails UI metadata
+			// (mode, flowStyle, projectAgentsDir, results) that children never need.
+			if (message.role === "tool" || message.role === "toolResult") {
+				if ("details" in message) {
+					const { details, ...restMessage } = message;
+					message = restMessage;
 					changed = true;
 				}
 			}
