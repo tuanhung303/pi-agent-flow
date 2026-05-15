@@ -2842,10 +2842,6 @@ export class ScrambleStateManager {
 				record[key].completed = true;
 				record[key].queue = [];
 				record[key].ripples = [];
-				record[key].phraseBuffer = '';
-				record[key].displayedText = '';
-				record[key].pendingText = '';
-				record[key].lastFlushTime = 0;
 				record[key].lastRippleEndTime = 0;
 				record[key].pendingGlitch = null;
 				record[key].pendingOldDisplayed = '';

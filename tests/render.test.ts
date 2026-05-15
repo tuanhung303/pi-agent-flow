@@ -719,6 +719,34 @@ describe("activity panel rendering", () => {
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
 
+	it("passes the live tail window to msg animation in multi-flow collapsed rows", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40;
+			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
+			const result = makeResult({
+				type: "scout",
+				intent: "Map the view rebuild code",
+				messages: [makeTextMessage("stale completed text")],
+				exitCode: -1,
+				streamingText: longStreaming,
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
+			const expectedTail = tailText(longStreaming, expectedBudget);
+			const spy = vi.spyOn(scrambleManager, "updateMsg");
+
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+			extractText(rendered);
+
+			expect(spy).toHaveBeenCalledWith(expect.any(String), expectedTail, expect.any(Number), false, undefined, true);
+			expect(spy).not.toHaveBeenCalledWith(expect.any(String), longStreaming, expect.any(Number), false, undefined, true);
+			spy.mockRestore();
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
 	it("includes long DIR text in TruncatedText", () => {
 		const longAim = "A" + "b".repeat(100) + "Z";
 		const result = makeResult({
@@ -852,6 +880,32 @@ describe("activity panel rendering", () => {
 			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
 			expect(logContent).toBe(tailText(longStreaming, expectedBudget));
 			expect(visibleLength(logContent)).toBeLessThanOrEqual(expectedBudget);
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
+	});
+
+	it("passes the live tail window to msg animation in single flow collapsed", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40;
+			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
+			const result = makeResult({
+				intent: "test",
+				messages: [],
+				exitCode: -1,
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
+			const expectedTail = tailText(longStreaming, expectedBudget);
+			const spy = vi.spyOn(scrambleManager, "updateMsg");
+
+			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
+			extractText(rendered);
+
+			expect(spy).toHaveBeenCalledWith(expect.any(String), expectedTail, expect.any(Number), false, undefined, true);
+			expect(spy).not.toHaveBeenCalledWith(expect.any(String), longStreaming, expect.any(Number), false, undefined, true);
+			spy.mockRestore();
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -1188,7 +1242,9 @@ describe("formatFlowToolCall — batch", () => {
 			},
 		});
 		const spy = vi.spyOn(scrambleManager, "updateMsg");
-		renderSingleFlowResult(result, false, makeTheme(), "");
+		const rendered = renderSingleFlowResult(result, false, makeTheme(), "");
+		expect(spy).not.toHaveBeenCalled();
+		extractText(rendered as any);
 		expect(spy).toHaveBeenCalledWith(expect.any(String), "", expect.any(Number), false, undefined, true);
 		spy.mockRestore();
 	});
@@ -1213,7 +1269,9 @@ describe("formatFlowToolCall — batch", () => {
 			},
 		});
 		const spy = vi.spyOn(scrambleManager, "updateMsg");
-		renderSingleFlowResult(result, true, makeTheme(), "");
+		const rendered = renderSingleFlowResult(result, true, makeTheme(), "");
+		expect(spy).not.toHaveBeenCalled();
+		extractText(rendered as any);
 		expect(spy).toHaveBeenCalledWith(expect.any(String), "", expect.any(Number), false, undefined, true);
 		spy.mockRestore();
 	});

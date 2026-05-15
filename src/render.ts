@@ -23,7 +23,7 @@ import {
 	isFlowSuccess,
 } from "./types.js";
 import { formatBatchOpsSummary } from "./batch/render.js";
-import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText, getLatestMsgText } from "./scramble.js";
+import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble.js";
 
 function getLiveTextWithFallback(id: string): string | undefined {
 	const value = getLiveText(id);
@@ -410,11 +410,10 @@ function renderFlowExpanded(
 	// Output: animate streaming text; show clean markdown when complete
 	if (!isComplete && streamingText != null) {
 		const streamingText_ = streamingText;
-		const initialScrambled = scrambleManager.updateMsg(id, stripAnsi(streamingText_), now, isComplete, undefined, true).content;
 		container.addChild(new DynamicScrambleText(
-			initialScrambled,
+			stripAnsi(streamingText_),
 			() => {
-				const freshStreamingText = (globalThis as any).__piFlowMsgText ?? streamingText_;
+				const freshStreamingText = getLiveTextWithFallback(id) ?? streamingText_;
 				return scrambleManager.updateMsg(id, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
 			}
 		));
@@ -558,9 +557,9 @@ function renderFlowCollapsed(
 
 	let rawMsg: string;
 	let useError = false;
-	const latestText = getLatestMsgText();
-	if (latestText !== '') {
-		rawMsg = stripAnsi(latestText);
+	const liveMsgText = r.exitCode === -1 ? getLiveTextWithFallback(id) : undefined;
+	if (liveMsgText != null) {
+		rawMsg = stripAnsi(liveMsgText);
 	} else if (r.exitCode === -1 && streamingText != null) {
 		rawMsg = stripAnsi(streamingText);
 	} else if (r.structuredOutput?.summary) {
@@ -576,9 +575,10 @@ function renderFlowCollapsed(
 		rawMsg = "[n/a]";
 	}
 
-	const initialMsgContent = scrambleManager.getMode() === 'stream'
-		? scrambleManager.streamMsg(id, rawMsg, now, isComplete, msgBudget)
-		: scrambleManager.updateMsg(id, rawMsg, now, isComplete, undefined, true).content;
+	const initialNeedsTail = r.exitCode === -1 || streamingText != null || liveMsgText != null;
+	const initialMsgContent = initialNeedsTail
+		? tailText(rawMsg, msgBudget)
+		: truncateChars(rawMsg, msgBudget);
 	const initialMsgPrefix = `└─ msg: [${msgKpi}] - `;
 	container.addChild(new DynamicScrambleText(
 		`${theme.fg("dim", initialMsgPrefix)}${theme.fg(useError ? "error" : "dim", italic(initialMsgContent))}`,
@@ -590,15 +590,13 @@ function renderFlowCollapsed(
 				msgKpi = scrambledMsgKpi;
 			}
 			const msgPrefix = `└─ msg: [${msgKpi}] - `;
-			const freshRawMsg = (globalThis as any).__piFlowMsgText ?? rawMsg;
+			const freshRawMsg = (r.exitCode === -1 ? getLiveTextWithFallback(id) : undefined) ?? rawMsg;
 			if (scrambleManager.getMode() === 'stream') {
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(id, freshRawMsg, now, isComplete, msgBudget)))}`;
 			} else {
-				const needsTail = r.exitCode === -1 || streamingText != null || (globalThis as any).__piFlowMsgText != null;
+				const needsTail = r.exitCode === -1 || streamingText != null;
 				const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
-				const result = isComplete
-					? scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true)
-					: scrambleManager.updateMsg(id, freshRawMsg, now, isComplete, undefined, true);
+				const result = scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true);
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result.content))}`;
 			}
 		},
@@ -705,9 +703,8 @@ function renderMultiFlowExpanded(
 		// Output: animate streaming text; show clean markdown when complete
 		if (!isComplete && r.streamingText != null) {
 			const streamingText_ = r.streamingText;
-			const initialScrambled = scrambleManager.updateMsg(flowId, stripAnsi(streamingText_), now, isComplete, undefined, true).content;
 			container.addChild(new DynamicScrambleText(
-				initialScrambled,
+				stripAnsi(streamingText_),
 				() => {
 					const freshStreamingText = getLiveTextWithFallback(flowId) ?? streamingText_;
 					return scrambleManager.updateMsg(flowId, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
@@ -863,7 +860,7 @@ function renderActivityPanel(
 
 		let rawMsg: string;
 		let useError = false;
-		const liveText_ = getLiveTextWithFallback(flowId);
+		const liveText_ = flowComplete ? undefined : getLiveTextWithFallback(flowId);
 		if (liveText_ != null) {
 			rawMsg = stripAnsi(liveText_);
 		} else if (lastText) {
@@ -875,8 +872,10 @@ function renderActivityPanel(
 			rawMsg = "[n/a]";
 		}
 
+		const initialNeedsTail = Boolean(liveText_ || liveText || lastText);
+		const initialDisplayMsg = initialNeedsTail ? tailText(rawMsg, msgBudget) : truncateChars(rawMsg, msgBudget);
 		container.addChild(new DynamicScrambleText(
-			`${theme.fg("dim", msgPrefixStub)}${theme.fg(useError ? "error" : "dim", italic(rawMsg))}`,
+			`${theme.fg("dim", msgPrefixStub)}${theme.fg(useError ? "error" : "dim", italic(initialDisplayMsg))}`,
 			() => {
 				const now = Date.now();
 				let msgKpi = formatCompactTokenPair(r.usage);
@@ -885,15 +884,13 @@ function renderActivityPanel(
 					msgKpi = scrambledMsgKpi;
 				}
 				const msgPrefix = `${indent}└─ msg: [${msgKpi}] - `;
-				const freshRawMsg = getLiveTextWithFallback(flowId) ?? rawMsg;
+				const freshRawMsg = flowComplete ? rawMsg : (getLiveTextWithFallback(flowId) ?? rawMsg);
 				if (scrambleManager.getMode() === 'stream') {
 					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(flowId, freshRawMsg, now, flowComplete, msgBudget)))}`;
 				} else {
 					const needsTail = Boolean(getLiveTextWithFallback(flowId) || liveText || lastText);
 					const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
-					const result = flowComplete
-						? scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete).content
-						: scrambleManager.updateMsg(flowId, freshRawMsg, now, flowComplete, undefined, true).content;
+					const result = scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete, undefined, true).content;
 					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result))}`;
 				}
 			},

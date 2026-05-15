@@ -21,7 +21,7 @@ import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "./notify-state.js";
-import { setLiveText, setLatestMsgText } from './scramble.js';
+import { setLiveText } from './scramble.js';
 import * as fs from 'fs';
 
 // ---------------------------------------------------------------------------
@@ -275,12 +275,14 @@ export async function executeFlows(
 	}
 
 	// Streaming progress
-	let lastStreamingText = "";
 	let lastEmittedSignature: string | undefined;
 	const emitProgress = (streamingText?: string) => {
-		// Update text tracking (no guard needed)
-		if (streamingText !== undefined) lastStreamingText = streamingText;
-		const text = lastStreamingText || "";
+		const activeStreamingText = allResults
+			.filter((r) => r.exitCode === -1)
+			.map((r) => r.streamingText)
+			.filter((text): text is string => Boolean(text))
+			.at(-1);
+		const text = streamingText ?? activeStreamingText ?? "";
 
 		// DEBUG TRACE — check /tmp/pi-flow-debug.log after running a flow
 		const ts = new Date().toISOString();
@@ -291,8 +293,6 @@ export async function executeFlows(
 		const key = toolCallId || 'collapsed';
 		setLiveText(key, text);
 		setLiveText('collapsed', text);
-		setLatestMsgText(text);
-		(globalThis as any).__piFlowMsgText = text;
 		for (let i = 0; i < allResults.length; i++) {
 			const r = allResults[i];
 			if (r.streamingText) {
