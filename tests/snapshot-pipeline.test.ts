@@ -25,6 +25,8 @@ const VALID_PASS_NAMES = new Set([
 	"stripSystemPrompt",
 	"dropSlidingSystemPrompts",
 	"dropSystemEvents",
+	"dropCustomMessages",
+	"dropConfigEvents",
 	"normalizeToolResultRole",
 	"stripReasoning",
 	"stripTimestamps",
@@ -465,5 +467,51 @@ describe("HEADER ROUND-TRIP TEST", () => {
 		// (f) Pipeline version is present.
 		expect(pipeline.trim()).toBe(pipelineVersion);
 		expect(pipeline.trim().length).toBeGreaterThan(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 4. CUSTOM MESSAGE / CONFIG EVENT DROP TEST
+// ---------------------------------------------------------------------------
+
+describe("CUSTOM MESSAGE / CONFIG EVENT DROP TEST", () => {
+	it("drops custom_message, model_change, and thinking_level_change entries", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1", systemPrompt: "You are helpful" },
+			{ type: "model_change", id: "mc-1", parentId: "session-1", provider: "wafer", modelId: "glm-5.1" },
+			{ type: "thinking_level_change", id: "tc-1", parentId: "mc-1", thinkingLevel: "high" },
+			{
+				type: "custom_message",
+				id: "cm-1",
+				parentId: "tc-1",
+				content: "You MUST call the flow tool now...",
+				display: false,
+			},
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: "hello",
+					id: "msg-1",
+					parentId: "cm-1",
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map());
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+
+		// custom_message, model_change, thinking_level_change must be gone
+		expect(entries.some((e: any) => e?.type === "custom_message")).toBe(false);
+		expect(entries.some((e: any) => e?.type === "model_change")).toBe(false);
+		expect(entries.some((e: any) => e?.type === "thinking_level_change")).toBe(false);
+
+		// The visible user message should survive
+		expect(entries.some((e: any) => e?.message?.role === "user")).toBe(true);
+
+		// Pass names should be recorded
+		expect(passesApplied).toContain("dropCustomMessages");
+		expect(passesApplied).toContain("dropConfigEvents");
 	});
 });

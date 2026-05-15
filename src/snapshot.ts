@@ -784,6 +784,21 @@ export function sanitizeForkSnapshot(
 			continue;
 		}
 
+		// Drop custom_message entries — hidden orchestrator instructions (e.g.
+		// flow-goal continuation hook messages with display:false) that children
+		// should never see.
+		if (entry?.type === "custom_message") {
+			subPasses.add("dropCustomMessages");
+			continue;
+		}
+
+		// Drop parent-specific configuration events; child receives its own
+		// model/tier via the <activation> block and CLI args.
+		if (entry?.type === "model_change" || entry?.type === "thinking_level_change") {
+			subPasses.add("dropConfigEvents");
+			continue;
+		}
+
 		// Drop sliding system prompt messages entirely.
 		if (
 			entry?.type === "message" &&
