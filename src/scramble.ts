@@ -28,6 +28,7 @@ import type { UsageStats } from './types.js';
 import { stripAnsi, tailText, truncateChars } from './render-utils.js';
 import type { Component } from '@mariozechner/pi-tui';
 import { Text, truncateToWidth } from '@mariozechner/pi-tui';
+import * as fs from 'fs';
 
 // ---------------------------------------------------------------------------
 // Live text store — mutable source for DynamicScrambleText closures
@@ -2049,6 +2050,14 @@ export class ScrambleStateManager {
 
 	updateMsg(id: string, text: string, now: number, isComplete: boolean = false, budget?: number, staticLine: boolean = false): ScrambleResult {
 		const visibleText = budget !== undefined ? tailText(text, budget) : text;
+
+		// DEBUG — check /tmp/pi-scramble-debug.log
+		const debugKey = `msg#${id}`;
+		try {
+			const s = this.cache.get(id)?.msg;
+			fs.appendFileSync('/tmp/pi-scramble-debug.log',
+				`${Date.now()} updateMsg id=${id} textLen=${visibleText.length} init=${s?.initialized} dispLen=${(s?.displayedText||'').length} lastLen=${(s?.lastText||'').length} chg=${(s?.lastText||'') !== visibleText} charsFlush=${s?.charsSinceLastFlush} ripples=${s?.ripples?.length} dispDiff=${visibleText !== s?.displayedText} textStart="${visibleText.slice(0,40).replace(/\n/g,'\\n')}" dispStart="${(s?.displayedText||'').slice(0,40).replace(/\n/g,'\\n')}"\n`);
+		} catch {}
 
 		if (isComplete) {
 			const record = this.cache.get(id);
