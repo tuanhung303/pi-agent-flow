@@ -1,0 +1,77 @@
+{
+  "exportedAt": "2026-05-15T01:16:04.737Z",
+  "sourceDirectory": "/tmp",
+  "repoDirectory": "flow-artifacts",
+  "artifacts": [
+    {
+      "filename": "snapshot-dump.scout.1778807646974.md",
+      "originalPath": "/tmp/snapshot-dump.scout.1778807646974.md",
+      "sizeBytes": 6237,
+      "type": "scout-snapshot",
+      "priority": "high"
+    },
+    {
+      "filename": "snapshot-dump.scout.1778807677865.md",
+      "originalPath": "/tmp/snapshot-dump.scout.1778807677865.md",
+      "sizeBytes": 10713,
+      "type": "scout-snapshot",
+      "priority": "high"
+    },
+    {
+      "filename": "snapshot-dump.md",
+      "originalPath": "/tmp/snapshot-dump.md",
+      "sizeBytes": 452934,
+      "type": "session-snapshot",
+      "priority": "high"
+    },
+    {
+      "filename": "flow-dump.md",
+      "originalPath": "/tmp/flow-dump.md",
+      "sizeBytes": 1450265,
+      "type": "full-flow-dump",
+      "priority": "high"
+    },
+    {
+      "filename": "pi-run-output.log",
+      "originalPath": "/tmp/pi-run-output.log",
+      "sizeBytes": 283483,
+      "type": "message-stream",
+      "priority": "medium"
+    },
+    {
+      "filename": "dump-context.mjs",
+      "originalPath": "/tmp/dump-context.mjs",
+      "sizeBytes": 5019,
+      "type": "helper-script",
+      "priority": "medium"
+    },
+    {
+      "filename": "reproduce-context.sh",
+      "originalPath": "/tmp/reproduce-context.sh",
+      "sizeBytes": 10517,
+      "type": "reproduction-script",
+      "priority": "medium"
+    },
+    {
+      "filename": "analyze_dump.py",
+      "originalPath": "/tmp/analyze_dump.py",
+      "sizeBytes": 4666,
+      "type": "analyzer-script",
+      "priority": "medium"
+    },
+    {
+      "filename": "pi-context-test.jsonl",
+      "originalPath": "/tmp/pi-context-test.jsonl",
+      "sizeBytes": 3072,
+      "type": "test-context",
+      "priority": "low"
+    },
+    {
+      "filename": "test-session.jsonl",
+      "originalPath": "/tmp/test-session.jsonl",
+      "sizeBytes": 424,
+      "type": "simulated-session",
+      "priority": "low"
+    }
+  ]
+}
