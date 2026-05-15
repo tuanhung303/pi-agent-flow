@@ -191,6 +191,43 @@ function atomicWriteFileSync(targetPath: string, data: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Dump TTL cleanup
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete stale dump files from the dump directory.
+ * Called once at the start of each dump block to prevent unbounded accumulation.
+ * Silently skips on any error (defensive).
+ */
+function cleanupStaleDumps(dumpPath: string, maxAgeHours = 168): void {
+	try {
+		const dir = path.dirname(dumpPath);
+		const baseName = path.basename(dumpPath);
+		const ext = path.extname(baseName);
+		const base = ext ? baseName.slice(0, -ext.length) : baseName;
+		const entries = fs.readdirSync(dir);
+		const nowMs = Date.now();
+		const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+		let deleted = 0;
+		for (const entry of entries) {
+			// Match both pi-dump.* and snapshot-dump.* families, plus .txt twins
+			if (!entry.startsWith(base)) continue;
+			const entryPath = path.join(dir, entry);
+			try {
+				const stats = fs.statSync(entryPath);
+				if (nowMs - stats.mtimeMs > maxAgeMs) {
+					fs.unlinkSync(entryPath);
+					deleted++;
+				}
+			} catch { /* ignore per-entry errors */ }
+		}
+		if (deleted > 0) {
+			console.error(`[pi-agent-flow] Cleaned ${deleted} stale dump file(s) from ${dir}`);
+		}
+	} catch { /* ignore all errors silently */ }
+}
+
+// ---------------------------------------------------------------------------
 // Reminder file helpers
 // ---------------------------------------------------------------------------
 
@@ -580,6 +617,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		// Dump verbatim child payload to disk for debugging when requested.
 		const dumpPath = process.env[FLOW_DUMP_SNAPSHOT_ENV] || inheritedCliArgs.dumpPath;
 		if (dumpPath) {
+			const maxAgeHours = Number(process.env.PI_FLOW_DUMP_MAX_AGE_HOURS);
+			cleanupStaleDumps(dumpPath, Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 168);
+
 			const promptIndex = piArgs.indexOf("-p");
 			const prompt = promptIndex >= 0 ? piArgs[promptIndex + 1] : "";
 

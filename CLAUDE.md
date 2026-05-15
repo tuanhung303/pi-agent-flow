@@ -191,6 +191,15 @@ ls -lh /tmp/pi-dump.*
 
 > 💡 **When to use it:** You need to inspect exactly what was sent to the model, reproduce a bug offline, or share a verbatim trace with another developer. The dump is written **before** the model call, so even if the flow crashes you still have the prompt.
 
+### Dump format evolution
+
+Two dump families may appear in your dump directory:
+
+- **`pi-dump.*`** (canonical, current) — includes HTML header, `.txt` twins, and compression stats.
+- **`snapshot-dump.*`** (legacy, pre-batch-refactor) — lacks all of the above; safe to delete.
+
+TTL cleanup runs automatically before each dump write. The default age is **7 days** (168 hours), configurable via `PI_FLOW_DUMP_MAX_AGE_HOURS`.
+
 ## Environment Variables
 
 Key env vars that control flow behavior. All are read from the `pi` process environment and propagated to child flows.
@@ -198,6 +207,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | Variable | Effect |
 |----------|--------|
 | `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
+| `PI_FLOW_DUMP_MAX_AGE_HOURS` | Max age of dump files before auto-cleanup deletes them (default 168 = 7 days). |
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |

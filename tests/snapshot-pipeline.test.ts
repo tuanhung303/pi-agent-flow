@@ -27,6 +27,8 @@ const VALID_PASS_NAMES = new Set([
 	"dropSystemEvents",
 	"dropCustomMessages",
 	"dropConfigEvents",
+	"dropUnknownTypes",
+	"dropMalformedMessages",
 	"normalizeToolResultRole",
 	"stripReasoning",
 	"stripTimestamps",
@@ -513,5 +515,108 @@ describe("CUSTOM MESSAGE / CONFIG EVENT DROP TEST", () => {
 		// Pass names should be recorded
 		expect(passesApplied).toContain("dropCustomMessages");
 		expect(passesApplied).toContain("dropConfigEvents");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 5. ORPHAN PARENTID REGRESSION TEST (batch_read behavioral)
+// ---------------------------------------------------------------------------
+
+describe("ORPHAN PARENTID REGRESSION TEST (batch_read behavioral)", () => {
+	it("drops batch_read tool calls AND their orphaned tool results, leaving no dangling parentIds", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1", systemPrompt: "You are helpful" },
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: "Read files",
+					id: "msg-user-1",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-assistant-1",
+					parentId: "msg-user-1",
+					content: [
+						{ type: "text", text: "I'll read the files." },
+						{
+							type: "toolCall",
+							id: "br-tc-1",
+							name: "batch_read",
+							arguments: { o: [{ o: "read", p: "src/a.ts" }] },
+						},
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool", // Legacy role: tool — should still be dropped
+					id: "msg-tool-1",
+					parentId: "msg-assistant-1",
+					toolCallId: "br-tc-1",
+					content: [{ type: "text", text: "Full content of a.ts" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-assistant-2",
+					parentId: "msg-tool-1",
+					content: [{ type: "text", text: "Next step after reading." }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "user",
+					id: "msg-user-2",
+					parentId: "msg-assistant-2",
+					content: "Now implement",
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+
+		// (a) batch_read tool calls stripped from assistant messages
+		expect(entries.some((e: any) => Array.isArray(e?.message?.content) && e.message.content.some((c: any) => c?.name === "batch_read"))).toBe(false);
+
+		// (b) orphaned tool results referencing batch_read are dropped
+		expect(entries.some((e: any) => e?.message?.toolCallId === "br-tc-1")).toBe(false);
+
+		// (c) Collect surviving IDs
+		const survivingIds = new Set<string>();
+		for (const entry of entries) {
+			const id = entry?.message?.id ?? entry?.id;
+			if (typeof id === "string") survivingIds.add(id);
+		}
+
+		// (d) NO surviving message has a parentId referencing a dropped message
+		for (const entry of entries) {
+			const entryParentId = entry?.parentId ?? entry?.parentMessageId;
+			const msgParentId = entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			const parentId = entryParentId ?? msgParentId;
+			if (typeof parentId === "string") {
+				expect(
+					survivingIds.has(parentId),
+					`orphaned parentId: ${parentId} in entry ${JSON.stringify(entry).slice(0, 200)}`,
+				).toBe(true);
+			}
+		}
+
+		// (e) msg-assistant-2 must survive and be reparented (not pointing to dropped msg-tool-1)
+		const msgAssistant2 = entries.find((e: any) => e?.message?.id === "msg-assistant-2");
+		expect(msgAssistant2).toBeDefined();
+		const msg2ParentId = msgAssistant2?.message?.parentId ?? msgAssistant2?.message?.parentMessageId ?? msgAssistant2?.parentId ?? msgAssistant2?.parentMessageId;
+		if (msg2ParentId !== undefined) {
+			expect(survivingIds.has(msg2ParentId)).toBe(true);
+		}
 	});
 });
