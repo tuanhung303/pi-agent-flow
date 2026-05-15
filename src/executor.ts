@@ -286,6 +286,7 @@ export async function executeFlows(
 		setLiveText(key, text);
 		setLiveText('collapsed', text);
 		setLatestMsgText(text);
+		(globalThis as any).__piFlowMsgText = text;
 		for (let i = 0; i < allResults.length; i++) {
 			const r = allResults[i];
 			if (r.streamingText) {

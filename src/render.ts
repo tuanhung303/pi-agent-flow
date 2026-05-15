@@ -414,7 +414,7 @@ function renderFlowExpanded(
 		container.addChild(new DynamicScrambleText(
 			initialScrambled,
 			() => {
-				const freshStreamingText = getLatestMsgText() || streamingText_;
+				const freshStreamingText = (globalThis as any).__piFlowMsgText || streamingText_;
 				return scrambleManager.updateMsg(id, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
 			}
 		));
@@ -590,11 +590,11 @@ function renderFlowCollapsed(
 				msgKpi = scrambledMsgKpi;
 			}
 			const msgPrefix = `└─ msg: [${msgKpi}] - `;
-			const freshRawMsg = getLatestMsgText() || rawMsg;
+			const freshRawMsg = (globalThis as any).__piFlowMsgText || rawMsg;
 			if (scrambleManager.getMode() === 'stream') {
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(id, freshRawMsg, now, isComplete, msgBudget)))}`;
 			} else {
-				const needsTail = r.exitCode === -1 || streamingText != null || getLatestMsgText() !== '';
+				const needsTail = r.exitCode === -1 || streamingText != null || (globalThis as any).__piFlowMsgText !== '';
 				const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
 				const result = isComplete
 					? scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true)
