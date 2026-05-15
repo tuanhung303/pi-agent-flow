@@ -353,6 +353,5 @@ export type {
 	FlowGoalEntry,
 	FlowGoalStatus,
 	GoalContext,
-	SpawnContinuation,
 } from "./flow-goal/types.js";
 

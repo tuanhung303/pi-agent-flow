@@ -46,10 +46,3 @@ export interface GoalContext {
   maxFlows?: number;
 }
 
-export type SpawnContinuation = (
-  flows: Array<{ type: string; intent: string; aim: string; acceptance?: string }>,
-) => Promise<void>;
-
-export type ExecuteFlowsFn = (
-  params: Array<{ type: string; intent: string; aim: string; acceptance?: string }>,
-) => Promise<Array<{ type: string; intent: string; aim: string; usage: { input: number; output: number } }>>;
