@@ -517,34 +517,32 @@ function renderFlowCollapsed(
 
 	// act: line (last tool call with count)
 	const lastTool = getLastToolCall(r.messages);
-	if (lastTool) {
-		const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-		const prefixStub = `├─ act: [${r.usage.toolCalls}] - `;
-		const budget = getTruncationBudget(visibleLength(prefixStub));
-		const actFullText = stripAnsi(lowerFirstWord(actStr));
-		const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
-		container.addChild(new DynamicScrambleText(
-			`${theme.fg("dim", prefixStub)}${italic(initialActContent)}`,
-			() => {
-				const now = Date.now();
-				let actContent: string;
-				if (scrambleManager.getMode() === 'stream') {
-					actContent = scrambleManager.streamAct(id, actFullText, now, isComplete, budget);
-				} else {
-					const displayAct = truncateChars(actFullText, budget);
-					actContent = scrambleManager.updateAct(id, displayAct, now, isComplete, true).content;
-				}
-				let actKpi = String(r.usage.toolCalls);
-				const scrambledActKpi = scrambleManager.updateActKpi(id, actKpi, now, isComplete, true);
-				if (scrambledActKpi !== actKpi) {
-					actKpi = scrambledActKpi;
-				}
-				const actPrefix = `├─ act: [${actKpi}] - `;
-				return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
-			},
-			true,
-		));
-	}
+	const actStr = lastTool ? formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme)) : "[n/a]";
+	const prefixStub = `├─ act: [${r.usage.toolCalls}] - `;
+	const budget = getTruncationBudget(visibleLength(prefixStub));
+	const actFullText = stripAnsi(lowerFirstWord(actStr));
+	const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
+	container.addChild(new DynamicScrambleText(
+		`${theme.fg("dim", prefixStub)}${italic(initialActContent)}`,
+		() => {
+			const now = Date.now();
+			let actContent: string;
+			if (scrambleManager.getMode() === 'stream') {
+				actContent = scrambleManager.streamAct(id, actFullText, now, isComplete, budget);
+			} else {
+				const displayAct = truncateChars(actFullText, budget);
+				actContent = scrambleManager.updateAct(id, displayAct, now, isComplete, true).content;
+			}
+			let actKpi = String(r.usage.toolCalls);
+			const scrambledActKpi = scrambleManager.updateActKpi(id, actKpi, now, isComplete, true);
+			if (scrambledActKpi !== actKpi) {
+				actKpi = scrambledActKpi;
+			}
+			const actPrefix = `├─ act: [${actKpi}] - `;
+			return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
+		},
+		true,
+	));
 
 	// msg: line (last assistant text or streaming)
 	let msgKpi = formatCompactTokenPair(r.usage);
@@ -818,34 +816,32 @@ function renderActivityPanel(
 
 		// act: line (last tool call with count)
 		const lastTool = getLastToolCall(r.messages);
-		if (lastTool) {
-			const actStr = formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme));
-			const prefixStub = `${indent}├─ act: [${r.usage.toolCalls}] - `;
-			const budget = getTruncationBudget(visibleLength(prefixStub));
-			const actFullText = stripAnsi(lowerFirstWord(actStr));
-			const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
-			container.addChild(new DynamicScrambleText(
-				`${theme.fg("dim", prefixStub)}${italic(initialActContent)}`,
-				() => {
-					const now = Date.now();
-					let actContent: string;
-					if (scrambleManager.getMode() === 'stream') {
-						actContent = scrambleManager.streamAct(flowId, actFullText, now, flowComplete, budget);
-					} else {
-						const displayAct = truncateChars(actFullText, budget);
-						actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
-					}
-					let actKpi = String(r.usage.toolCalls);
-					const scrambledActKpi = scrambleManager.updateActKpi(flowId, actKpi, now, flowComplete, false);
-					if (scrambledActKpi !== actKpi) {
-						actKpi = scrambledActKpi;
-					}
-					const actPrefix = `${indent}├─ act: [${actKpi}] - `;
-					return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
-				},
-				true,
-			));
-		}
+		const actStr = lastTool ? formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme)) : "[n/a]";
+		const prefixStub = `${indent}├─ act: [${r.usage.toolCalls}] - `;
+		const budget = getTruncationBudget(visibleLength(prefixStub));
+		const actFullText = stripAnsi(lowerFirstWord(actStr));
+		const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
+		container.addChild(new DynamicScrambleText(
+			`${theme.fg("dim", prefixStub)}${italic(initialActContent)}`,
+			() => {
+				const now = Date.now();
+				let actContent: string;
+				if (scrambleManager.getMode() === 'stream') {
+					actContent = scrambleManager.streamAct(flowId, actFullText, now, flowComplete, budget);
+				} else {
+					const displayAct = truncateChars(actFullText, budget);
+					actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
+				}
+				let actKpi = String(r.usage.toolCalls);
+				const scrambledActKpi = scrambleManager.updateActKpi(flowId, actKpi, now, flowComplete, false);
+				if (scrambledActKpi !== actKpi) {
+					actKpi = scrambledActKpi;
+				}
+				const actPrefix = `${indent}├─ act: [${actKpi}] - `;
+				return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
+			},
+			true,
+		));
 
 		// msg: line (live streaming text or last assistant text)
 		let msgKpi = formatCompactTokenPair(r.usage);

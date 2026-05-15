@@ -807,7 +807,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).not.toContain("[n/a]");
+		expect(text).toContain("├─ act: [0] - [n/a]");
 		expect(text).toContain("└─ msg:");
 	});
 
