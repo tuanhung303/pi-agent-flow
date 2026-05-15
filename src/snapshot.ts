@@ -1,4 +1,23 @@
 /**
+ * Canonical JSONL event schema for fork session snapshots:
+ *
+ * Each line is a JSON object with a `type` field. Supported types:
+ *
+ * - `session` (header line): Session metadata including id, startedAt, model,
+ *   systemPrompt, etc. Always the first line.
+ * - `model_change`: Model switch event during the session.
+ * - `thinking_level_change`: Thinking level adjustment event.
+ * - `system`: System prompt content (emitted after session for self-containment).
+ * - `message`: Chat message with role, content, usage, etc.
+ * - `compression-stats`: Trailing metadata about sanitization efficiency.
+ *
+ * Message sub-types by role:
+ * - `user`: User input
+ * - `assistant`: Assistant output (may contain toolCall parts)
+ * - `tool`: Tool result (formerly `toolResult`, normalized to `tool`)
+ */
+
+/**
  * Session snapshot building, sanitization, and tool result compression.
  *
  * Extracted from index.ts for single-responsibility and testability.
@@ -38,7 +57,22 @@ export function buildForkSessionSnapshotJsonl(
 	if (!header || typeof header !== "object") return null;
 
 	const branchEntries = sessionManager.getBranch();
-	const lines = [JSON.stringify(header)];
+	const lines: string[] = [];
+	let sessionEmitted = false;
+
+	// Emit session header once
+	if (!sessionEmitted) {
+		lines.push(JSON.stringify(header));
+		sessionEmitted = true;
+	}
+
+	// Emit system event so the JSONL is self-contained — parsers can reconstruct
+	// full context without needing the markdown section.
+	const systemPrompt = (header as any).systemPrompt;
+	if (typeof systemPrompt === "string" && systemPrompt) {
+		lines.push(JSON.stringify({ type: "system", content: systemPrompt }));
+	}
+
 	for (const entry of branchEntries) lines.push(JSON.stringify(entry));
 	return `${lines.join("\n")}\n`;
 }
@@ -56,12 +90,17 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string {
 	if (r.aim) parts.push(`Aim: ${r.aim}`);
 	if (r.summary) parts.push(`Summary: ${r.summary}`);
 	if (r.files?.length) {
-		const fileLines = r.files.map((f) => {
-			const role = f.role ? ` (${f.role})` : "";
-			const desc = f.description ? ` — ${f.description}` : "";
-			return `  ${f.path}${role}${desc}`;
-		});
-		parts.push(`Files:\n${fileLines.join("\n")}`);
+		const fileLines = r.files
+			.map((f) => {
+				if (!f.path) return undefined;
+				const role = f.role ? ` (${f.role})` : "";
+				const desc = f.description ? ` — ${f.description}` : "";
+				return `  ${f.path}${role}${desc}`;
+			})
+			.filter((line): line is string => line !== undefined);
+		if (fileLines.length) {
+			parts.push(`Files:\n${fileLines.join("\n")}`);
+		}
 	}
 	if (r.actions?.length) {
 		const actionLines = r.actions.map((a) => {
@@ -690,16 +729,35 @@ export function sanitizeForkSnapshot(
 				changed ||= stripped.changed;
 			}
 
+			// Strip inner `message.timestamp` — the outer event-level timestamp (ISO string)
+			// is sufficient for ordering. The inner epoch-ms timestamp is redundant.
+			if ("timestamp" in message) {
+				const { timestamp, ...restMessage } = message;
+				message = restMessage;
+				changed = true;
+			}
+
 			// Strip API metadata fields that children don't need (~5-7 KB per assistant message).
 			// IMPORTANT: keep `usage` (including `totalTokens`). The child `pi` process replays
 			// this JSONL and core/session code reads `message.usage.totalTokens`; stripping
 			// `usage` causes: Cannot read properties of undefined (reading 'totalTokens').
+			// Strip `cost` from `usage` — it's always zeros in forked context and children never need it.
 			if (message.role === "assistant") {
-				const { api, provider, model, stopReason, responseId, responseModel, ...rest } = message;
-				// Only count as changed if at least one field was actually present.
+				const { api, provider, model, stopReason, responseId, responseModel, usage, ...rest } = message;
+				let stripped = false;
 				if (api !== undefined || provider !== undefined || model !== undefined ||
 					stopReason !== undefined || responseId !== undefined || responseModel !== undefined) {
-					message = rest;
+					stripped = true;
+				}
+				// Strip cost sub-object from usage while preserving totalTokens and other fields.
+				let cleanedUsage = usage;
+				if (usage && typeof usage === "object" && "cost" in usage) {
+					const { cost, ...usageWithoutCost } = usage as any;
+					cleanedUsage = usageWithoutCost;
+					stripped = true;
+				}
+				if (stripped) {
+					message = { ...rest, ...(cleanedUsage !== undefined ? { usage: cleanedUsage } : {}) };
 					changed = true;
 				}
 			}
@@ -771,18 +829,19 @@ export function sanitizeForkSnapshot(
 	sanitized = compressToolResults(sanitized, cache);
 
 	// Telemetry: measure total delta across sanitization, stripping, and compression.
+	const postBytes = sanitized.length;
+	const reduction = preBytes > 0 ? ((1 - postBytes / preBytes) * 100).toFixed(0) : "0";
 	if (DEBUG_CONTEXT) {
-		const postBytes = sanitized.length;
-		const reduction = preBytes > 0 ? ((1 - postBytes / preBytes) * 100).toFixed(0) : "0";
 		console.error(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
-		// Emit compression stats as a trailing metadata entry so the dump contains observability data.
-		sanitized = sanitized.trimEnd() + "\n" + JSON.stringify({
-			type: "compression-stats",
-			preBytes,
-			postBytes,
-			reductionPercent: Number(reduction),
-		}) + "\n";
 	}
+	// Always emit compression-stats as a trailing metadata entry so the dump contains
+	// observability data regardless of DEBUG_CONTEXT setting.
+	sanitized = sanitized.trimEnd() + "\n" + JSON.stringify({
+		type: "compression-stats",
+		preBytes,
+		postBytes,
+		reductionPercent: Number(reduction),
+	}) + "\n";
 
 	return sanitized;
 }
