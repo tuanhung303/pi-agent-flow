@@ -22,6 +22,7 @@ import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrat
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "./notify-state.js";
 import { setLiveText, setLatestMsgText } from './scramble.js';
+import * as fs from 'fs';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -280,6 +281,11 @@ export async function executeFlows(
 		// Update text tracking (no guard needed)
 		if (streamingText !== undefined) lastStreamingText = streamingText;
 		const text = lastStreamingText || "";
+
+		// DEBUG TRACE — check /tmp/pi-flow-debug.log after running a flow
+		const ts = new Date().toISOString();
+		const debugMsg = `[${ts}] emitProgress called | streamingText="${(streamingText || '').slice(0, 60)}" | text="${text.slice(0, 60)}" | onUpdate=${!!onUpdate}\n`;
+		try { fs.appendFileSync('/tmp/pi-flow-debug.log', debugMsg); } catch {}
 
 		// Update live text store FIRST — always
 		const key = toolCallId || 'collapsed';
