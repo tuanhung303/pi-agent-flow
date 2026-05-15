@@ -240,7 +240,17 @@ export function renderFlowResult(
 	}
 
 	// Scramble animation timer — shared helper so any renderer can animate.
-	runScrambleTimer(args as Record<string, any> | undefined);
+	const toolCallId = (result as any)._toolCallId;
+	let timerId: string;
+	if (!details || details.results.length === 0) {
+		const flowRequest = args?.flow?.[0];
+		timerId = flowRequest ? 'ghost' : (toolCallId || 'single');
+	} else if (details.results.length === 1) {
+		timerId = toolCallId || 'single';
+	} else {
+		timerId = toolCallId || 'multi';
+	}
+	runScrambleTimer(args as Record<string, any> | undefined, timerId);
 
 	return container;
 }

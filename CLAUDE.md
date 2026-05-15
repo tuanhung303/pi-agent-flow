@@ -93,6 +93,10 @@ Once linked locally, your daily loop is just:
 > globally, which **overwrites and destroys your local symlink**. To get published updates,
 > run `./scripts/switch.sh` first to toggle to REMOTE, then run `pi update`.
 
+### Autonomous Pi testing (bash + PTY)
+
+For **`npm run lint` / `npm test`** plus scripted **`pi`** sessions over a pseudo-terminal (`expect`, optional `script` wrapper)—including why bare **`pi -p`** runs often skip full TUI behavior—see **[docs/autonomous-pi-testing.md](docs/autonomous-pi-testing.md)**. Template harness: `scripts/example-autonomous-pi.expect` (copy and tune `AFTER_MS`, optional `STARTUP_RE`, and `RESPONSE_RE` to match your Pi layout / mission).
+
 ### Payload dump workflow
 
 When developing locally, you often want to capture the exact prompt stream that `pi` sends to flows so you can debug, diff, or replay it.

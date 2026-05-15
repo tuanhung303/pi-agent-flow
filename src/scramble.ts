@@ -2687,27 +2687,77 @@ export class ScrambleStateManager {
 	}
 
 	hasActiveAnimations(id: string, now: number): boolean {
+		const prefix = `${id}#`;
 		// Stream mode
 		if (this.mode === 'stream') {
-			const streamRecord = this.streamState.get(id);
-			if (streamRecord) {
-				if (this.isStreamAnimating(streamRecord.msg)) return true;
-				if (this.isStreamAnimating(streamRecord.act)) return true;
+			const exact = this.streamState.get(id);
+			if (exact) {
+				if (this.isStreamAnimating(exact.msg)) return true;
+				if (this.isStreamAnimating(exact.act)) return true;
+			}
+			for (const [key, record] of this.streamState) {
+				if (key.startsWith(prefix)) {
+					if (this.isStreamAnimating(record.msg)) return true;
+					if (this.isStreamAnimating(record.act)) return true;
+				}
 			}
 			return false;
 		}
-		// Cascade/ripple/illuminate
+		// Cascade/ripple/illuminate — exact match
 		const record = this.cache.get(id);
 		if (record) {
 			for (const key of ['aim', 'act', 'msg'] as LineKey[]) {
 				if (this.isLineAnimating(record[key], now)) return true;
 			}
 		}
+		// Prefix match for sub-flows (multi#0, panel#1, etc.)
+		for (const [key, rec] of this.cache) {
+			if (key.startsWith(prefix)) {
+				for (const lineKey of ['aim', 'act', 'msg'] as LineKey[]) {
+					if (this.isLineAnimating(rec[lineKey], now)) return true;
+				}
+			}
+		}
 		// Generic cache entries for this id
-		const prefix = `${id}#`;
 		for (const [key, state] of this.genericCache) {
 			if (key.startsWith(prefix) && this.isLineAnimating(state, now)) return true;
 		}
+		// Value flash states — exact + prefix
+		const checkValueState = (map: Map<string, ValueFlashState>): boolean => {
+			const exact = map.get(id);
+			if (exact && !exact.completed) {
+				if (this.mode === 'cascade') {
+					if (exact.queue.length) {
+						const frame = Math.floor((now - exact.startTime) / CASCADE_FRAME_MS);
+						if (!isCascadeComplete(exact.queue, frame, exact.queueMaxEnd)) return true;
+					}
+				} else {
+					if (exact.glitchQueue.length > 0) {
+						const frame = Math.floor((now - exact.startTime) / CASCADE_FRAME_MS);
+						if (!isGlitchComplete(exact.glitchQueue, frame)) return true;
+					}
+				}
+			}
+			for (const [key, state] of map) {
+				if (key.startsWith(prefix) && !state.completed) {
+					if (this.mode === 'cascade') {
+						if (state.queue.length) {
+							const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+							if (!isCascadeComplete(state.queue, frame, state.queueMaxEnd)) return true;
+						}
+					} else {
+						if (state.glitchQueue.length > 0) {
+							const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+							if (!isGlitchComplete(state.glitchQueue, frame)) return true;
+						}
+					}
+				}
+			}
+			return false;
+		};
+		if (checkValueState(this.tpsState)) return true;
+		if (checkValueState(this.actKpiState)) return true;
+		if (checkValueState(this.msgKpiState)) return true;
 		return false;
 	}
 
@@ -2839,6 +2889,9 @@ export class ScrambleStateManager {
 				record[key].pendingOldDisplayed = '';
 				record[key].pendingNewDisplayed = '';
 				record[key].pendingStartTime = 0;
+				record[key].glitchQueue = [];
+				record[key].glitchFrame = 0;
+				record[key].targetText = '';
 			}
 		}
 		const tpsState = this.tpsState.get(id);
@@ -2847,18 +2900,24 @@ export class ScrambleStateManager {
 			tpsState.queue = [];
 			tpsState.ripples = [];
 			tpsState.lastRippleEndTime = 0;
+			tpsState.glitchQueue = [];
+			tpsState.glitchFrame = 0;
 		}
 		const actKpiState = this.actKpiState.get(id);
 		if (actKpiState) {
 			actKpiState.completed = true;
 			actKpiState.queue = [];
 			actKpiState.ripples = [];
+			actKpiState.glitchQueue = [];
+			actKpiState.glitchFrame = 0;
 		}
 		const msgKpiState = this.msgKpiState.get(id);
 		if (msgKpiState) {
 			msgKpiState.completed = true;
 			msgKpiState.queue = [];
 			msgKpiState.ripples = [];
+			msgKpiState.glitchQueue = [];
+			msgKpiState.glitchFrame = 0;
 		}
 		const streamRecord = this.streamState.get(id);
 		if (streamRecord) {
@@ -2879,6 +2938,9 @@ export class ScrambleStateManager {
 				state.pendingNewDisplayed = '';
 				state.pendingStartTime = 0;
 				state.lastRippleEndTime = 0;
+				state.glitchQueue = [];
+				state.glitchFrame = 0;
+				state.targetText = '';
 			}
 		}
 		this.sweepCompletedEntries();
@@ -2903,11 +2965,11 @@ export class ScrambleStateManager {
  * Shared animation timer — wired by any renderer that uses scrambleManager.
  * Uses chained setTimeout (not setInterval) to avoid TUI ghost frames.
  */
-export function runScrambleTimer(args: Record<string, any> | undefined): void {
+export function runScrambleTimer(args: Record<string, any> | undefined, id?: string): void {
 	if (args?.invalidate && args?.state) {
 		const s = (args.state as any).__scramble = (args.state as any).__scramble || {};
 		const now = Date.now();
-		const hasActive = scrambleManager.hasAnyActiveAnimations(now);
+		const hasActive = id ? scrambleManager.hasActiveAnimations(id, now) : scrambleManager.hasAnyActiveAnimations(now);
 
 		if (hasActive) {
 			if (!s.animTimer) {

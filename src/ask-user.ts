@@ -1738,7 +1738,7 @@ export function createAskUserTool() {
             const line = theme.fg("error", `✖ ${details.error}`);
             if (!canAnimate) return new Text(scrambleManager.renderStatic(line), 0, 0);
             const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
-            runScrambleTimer(args as Record<string, any> | undefined);
+            runScrambleTimer(args as Record<string, any> | undefined, id);
             return new Text(scrambled, 0, 0);
          }
 
@@ -1751,7 +1751,7 @@ export function createAskUserTool() {
             const line = theme.fg("muted", waitingText);
             if (!canAnimate) return new Text(scrambleManager.renderStatic(line), 0, 0);
             const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
-            runScrambleTimer(args as Record<string, any> | undefined);
+            runScrambleTimer(args as Record<string, any> | undefined, id);
             return new Text(scrambled, 0, 0);
          }
 
@@ -1759,7 +1759,7 @@ export function createAskUserTool() {
             const line = theme.fg("warning", "Cancelled");
             if (!canAnimate) return new Text(scrambleManager.renderStatic(line), 0, 0);
             const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
-            runScrambleTimer(args as Record<string, any> | undefined);
+            runScrambleTimer(args as Record<string, any> | undefined, id);
             return new Text(scrambled, 0, 0);
          }
 
@@ -1792,7 +1792,7 @@ export function createAskUserTool() {
 
          if (!canAnimate) return new Text(scrambleManager.renderStatic(text), 0, 0);
          const scrambled = scrambleManager.updateText(id, "result", stripAnsi(text), now, false).content;
-         runScrambleTimer(args as Record<string, any> | undefined);
+         runScrambleTimer(args as Record<string, any> | undefined, id);
          return new Text(scrambled, 0, 0);
       },
    };

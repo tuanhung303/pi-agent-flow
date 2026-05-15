@@ -132,11 +132,11 @@ export function renderBatchResult(
 	if (!expanded) {
 		const summary = fullText.split("\n")[0] ?? "";
 		const scrambled = scrambleManager.updateText(id, "result", stripAnsi(summary), now, false).content;
-		runScrambleTimer(args as Record<string, any> | undefined);
+		runScrambleTimer(args as Record<string, any> | undefined, id);
 		return new TruncatedText(scrambled, 0, 0);
 	}
 	const scrambled = scrambleManager.updateText(id, "result", stripAnsi(fullText), now, false).content;
-	runScrambleTimer(args as Record<string, any> | undefined);
+	runScrambleTimer(args as Record<string, any> | undefined, id);
 	return new Text(scrambled, 0, 0);
 }
 
