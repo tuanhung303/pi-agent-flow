@@ -19,7 +19,7 @@ Find **why** the bug happens (not the first plausible story), prove it with **ru
 5. **Conclude** — for each hypothesis: **CONFIRMED / REJECTED / INCONCLUSIVE** with cited lines (log, stack trace, assertion).
 6. **Fix** — only after a hypothesis is **confirmed by evidence**. No speculative guards; **revert** any change tied to a **rejected** hypothesis.
 7. **Verify** — same repro + tests; compare **before/after** evidence. No `sleep`/polling hacks as “fixes” unless the product contract truly requires delay.
-8. **Finalize** — remove temporary instrumentation **after** verification (or when orchestrator confirms). Note doc/runbook updates if any.
+8. **Finalize** — remove temporary instrumentation **after** verification (or when orchestrator confirms). If applicable, update relevant docs, runbooks, or troubleshooting notes after finishing. Documentation-only updates are required after finishing the work.
 
 ## Rules
 
