@@ -279,6 +279,7 @@ const GLITCH_SHORT_MAX_START = 10;
 const GLITCH_SHORT_MAX_LENGTH = 10;
 const GLITCH_COOLDOWN_MS = 1000;
 const GLITCH_FADE_OUT_FRAMES = 18;
+const WARM_WHITE_FLASH = '\x1b[38;2;255;245;240m';
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers
@@ -356,6 +357,7 @@ interface GlitchQueueItem {
 	start: number;
 	end: number;
 	fadeOutEnd?: number;
+	settleEnd?: number;
 	char: string | null;
 }
 
@@ -704,11 +706,21 @@ function buildMsgGlitchQueue(oldText: string, newText: string): GlitchQueueItem[
 	// Scale minimum with text length: short text resolves faster, long text keeps weight.
 	const scaledMinFrames = Math.min(MSG_GLITCH_MIN_FRAMES, Math.max(55, Math.ceil(queue.length * 3.5)));
 	const extension = scaledMinFrames - maxEnd;
-	if (extension <= 0) return queue;
+	if (extension <= 0) {
+		for (const item of queue) {
+			if (item.to !== '') {
+				item.settleEnd = item.end + 14 + Math.floor(Math.random() * 10);
+			}
+		}
+		return queue;
+	}
 	for (const item of queue) {
 		item.end += extension;
 		if (item.fadeOutEnd !== undefined) {
 			item.fadeOutEnd += extension;
+		}
+		if (item.to !== '') {
+			item.settleEnd = item.end + 14 + Math.floor(Math.random() * 10);
 		}
 	}
 	return queue;
@@ -718,45 +730,86 @@ export function computeGlitchFrame(
 	queue: GlitchQueueItem[],
 	frame: number,
 	rng: () => string,
-	currentText?: string
+	currentText?: string,
+	config?: IlluminateConfig,
+	seed: number = 0,
 ): string {
 	const cleanCurrent = currentText != null ? stripDecorativeIcons(currentText) : undefined;
 	let output = '';
 	let inDim = false;
+
+	// Pre-compute sparkle indices for settle phase (2-3 chars per frame)
+	const sparkleCount = 2 + Math.floor(hashNoise(seed, 0xBEEF, frame, 55) * 2);
+	const sparkleIndices = new Set<number>();
+	for (let s = 0; s < sparkleCount; s++) {
+		const idx = Math.floor(hashNoise(seed, 0xCAFE + s, frame, 66) * queue.length);
+		if (idx >= 0 && idx < queue.length) sparkleIndices.add(idx);
+	}
+
 	for (let i = 0; i < queue.length; i++) {
 		const entry = queue[i];
 		const fadeOutEnd = entry.fadeOutEnd;
+		const settleEnd = entry.settleEnd;
+		const resolvedChar = cleanCurrent?.[i] ?? entry.to;
+
 		if (fadeOutEnd !== undefined && frame >= entry.end && frame < fadeOutEnd) {
 			if (cleanCurrent && i >= cleanCurrent.length) {
 				if (inDim) { output += DIM_OFF; inDim = false; }
 			} else {
 				if (!inDim) { output += DIM_ON; inDim = true; }
-				const rollFade = hashNoise(0, i, frame, 77);
+				const rollFade = hashNoise(seed, i, frame, 77);
 				if (!entry.char || rollFade < GLITCH_RERANDOMIZE) {
 					entry.char = rng();
 				}
 				output += entry.char;
 			}
-		} else if (frame >= (fadeOutEnd ?? entry.end)) {
+		} else if (settleEnd !== undefined && frame >= entry.end && frame < settleEnd) {
+			if (inDim) { output += DIM_OFF; inDim = false; }
+			if (cleanCurrent && i >= cleanCurrent.length) {
+				// Position beyond current text — skip
+			} else {
+				if (sparkleIndices.has(i)) {
+					output += selectSparkChar(seed, i, frame);
+				} else {
+					output += resolvedChar;
+				}
+			}
+		} else if (frame >= (settleEnd ?? fadeOutEnd ?? entry.end)) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
 			if (cleanCurrent && i >= cleanCurrent.length) {
 				// Position beyond current text — character no longer visible (e.g. tail
 				// truncation or text shrink), skip it rather than showing stale entry.to.
 			} else {
-				output += cleanCurrent?.[i] ?? entry.to;
+				output += resolvedChar;
 			}
 		} else if (frame >= entry.start) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			const rollScramble = hashNoise(0, i, frame, 88);
+			const rollScramble = hashNoise(seed, i, frame, 88);
 			if (!entry.char || rollScramble < GLITCH_RERANDOMIZE) {
 				entry.char = rng();
+			}
+			let outChar = entry.char;
+			// Eased glitch intensity: in final ~40%, resolved char peeks through
+			const window = entry.end - entry.start;
+			if (window > 0 && entry.to !== '' && frame >= entry.start + window * 0.6) {
+				const t = (frame - (entry.start + window * 0.6)) / (window * 0.4);
+				const peekEase = smoothstep(0, 1, t);
+				const roll = hashNoise(seed, i, frame, 99);
+				if (roll < peekEase) {
+					outChar = resolvedChar;
+				}
 			}
 			if (cleanCurrent && i >= cleanCurrent.length) {
 				// Position beyond current text — skip scramble rather than
 				// appending a char that no longer exists (e.g. after tail
 				// truncation or text shrink).
 			} else {
-				output += entry.char;
+				// Warm-white resolve flash for illuminate mode
+				if (config && frame >= Math.max(entry.start, entry.end - 3) && frame < entry.end) {
+					output += WARM_WHITE_FLASH + outChar + ILLUMINATE_CLOSE;
+				} else {
+					output += outChar;
+				}
 			}
 		} else {
 			// Not started yet
@@ -781,7 +834,7 @@ export function computeGlitchFrame(
 
 export function isGlitchComplete(queue: GlitchQueueItem[], frame: number): boolean {
 	if (queue.length === 0) return true;
-	return frame >= Math.max(...queue.map(e => e.fadeOutEnd ?? e.end));
+	return frame >= Math.max(...queue.map(e => e.settleEnd ?? e.fadeOutEnd ?? e.end));
 }
 
 function shouldStartGlitch(state: { lastGlitchTime: number; glitchQueue: unknown[] }, now: number, cooldownMs: number): boolean {
@@ -1242,6 +1295,11 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 		}
 		return computeCascadeFrame(state.queue, frame, rng);
 	} else if (mode === 'illuminate') {
+		const config = lineKey === 'msg'
+			? ILLUMINATE_CONFIGS.msgContent
+			: lineKey === 'act'
+				? ILLUMINATE_CONFIGS.actLabel
+				: undefined;
 		if (state.glitchQueue.length > 0) {
 			const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 			if (isGlitchComplete(state.glitchQueue, frame)) {
@@ -1259,7 +1317,7 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 					state.pendingNewDisplayed = '';
 					state.pendingStartTime = 0;
 					const pendingText = lineKey === 'msg' ? (state.targetText || text) : text;
-					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, pendingText);
+					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, pendingText, config);
 				}
 				const settledText = lineKey === 'msg' ? (state.targetText || text) : text;
 				state.displayedText = settledText;
@@ -1268,13 +1326,8 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 				return settledText;
 			}
 			const glitchText = lineKey === 'msg' ? (state.targetText || text) : text;
-			return computeGlitchFrame(state.glitchQueue, frame, rng ?? poolRandomChar, glitchText);
+			return computeGlitchFrame(state.glitchQueue, frame, rng ?? poolRandomChar, glitchText, config);
 		}
-		const config = lineKey === 'msg'
-			? ILLUMINATE_CONFIGS.msgContent
-			: lineKey === 'act'
-				? ILLUMINATE_CONFIGS.actLabel
-				: undefined;
 		const pulseIntensity = computePulseIntensity(state, now);
 		return applyRipples(text, state.ripples, now, config, undefined, undefined, pulseIntensity);
 	} else {
@@ -1757,7 +1810,8 @@ export class ScrambleStateManager {
 			if (this.mode === 'illuminate' && state.glitchQueue.length > 0) {
 				const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 				if (!isGlitchComplete(state.glitchQueue, frame)) {
-					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), text);
+					const config = key === 'msg:' ? ILLUMINATE_CONFIGS.msgContent : key === 'act:' ? ILLUMINATE_CONFIGS.actLabel : undefined;
+					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), text, config);
 					return { label: key, content, isAnimating: true };
 				}
 				state.glitchQueue = [];
@@ -1878,7 +1932,7 @@ export class ScrambleStateManager {
 			if (this.mode === 'illuminate' && state.glitchQueue.length > 0) {
 				const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 				if (!isGlitchComplete(state.glitchQueue, frame)) {
-					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), text);
+					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), text, undefined);
 					return { label: 'aim:', content, isAnimating: true };
 				}
 				state.glitchQueue = [];
@@ -2010,7 +2064,7 @@ export class ScrambleStateManager {
 			if (this.mode === 'illuminate' && state.glitchQueue.length > 0) {
 				const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 				if (!isGlitchComplete(state.glitchQueue, frame)) {
-					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), text);
+					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), text, ILLUMINATE_CONFIGS.actLabel);
 					return { label: 'act:', content, isAnimating: true };
 				}
 				state.glitchQueue = [];
@@ -2139,7 +2193,7 @@ export class ScrambleStateManager {
 			if (this.mode === 'illuminate' && state.glitchQueue.length > 0) {
 				const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 				if (!isGlitchComplete(state.glitchQueue, frame)) {
-					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), visibleText);
+					const content = computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), visibleText, ILLUMINATE_CONFIGS.msgContent);
 					return { label: 'msg:', content, isAnimating: true };
 				}
 				state.glitchQueue = [];
@@ -2533,7 +2587,7 @@ export class ScrambleStateManager {
 					state.prev = value;
 					return value;
 				}
-				return computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), value);
+				return computeGlitchFrame(state.glitchQueue, frame, () => this.poolRandomChar(), value, undefined);
 			}
 			state.prev = value;
 			return value;
