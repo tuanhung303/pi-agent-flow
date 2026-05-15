@@ -210,25 +210,34 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 
 | Command | Usage |
 |---------|-------|
-| `set` | `/flow-goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` |
-| `clear` | `/flow-goal clear` — Clear the active goal (moved to history) |
-| `pause` | `/flow-goal pause` — Pause auto-continuation |
-| `resume` | `/flow-goal resume` — Resume a paused goal |
-| `edit` | `/flow-goal edit <new-objective> [--acceptance <text>]` |
-| `status`, `show` | `/flow-goal status` — Show current goal state and budgets |
+| `set` | `/flow-goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` — Sets the goal and **immediately auto-triggers** a build flow to start working. |
+| `clear` | `/flow-goal clear` — Marks the active goal as `abandoned` and moves it to history. |
+| `pause` | `/flow-goal pause` — Pauses auto-continuation so no new flows are spawned until the goal is resumed or cleared. |
+| `resume` | `/flow-goal resume` — Resumes a paused goal and **immediately auto-triggers** a build flow to continue. |
+| `edit` | `/flow-goal edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
+| `status`, `show` | `/flow-goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
+
+> **Note on `completed` status:** `completed` is a valid `FlowGoalStatus`, but there is no `/flow-goal complete` command. Goals only reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
 
 ### How it works
 
 1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets.
 2. If under budget, it sends a hidden message instructing the orchestrator to call the `flow` tool.
 3. The spawned flow receives a `<flow-goal>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
-4. Completed flows and token usage are recorded in goal state.
-5. If `maxTokens` or `maxFlows` is exceeded, the goal **auto-pauses**.
-6. A **5-second cooldown** prevents rapid-fire spawns.
+4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
+5. If `maxTokens` or `maxFlows` is exceeded, the goal **auto-pauses** silently without notifying the user.
+6. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
+7. Goals are **session-scoped** via `sessionId`; resuming in a new session still works but clears the old session binding.
 
 ### Persistence
 
-Goals are stored in `.pi/flow-goal.json` in the project root (atomic writes). Add `.pi/` to `.gitignore` — this is local runtime state.
+Goals are stored in `.pi/flow-goal.json` in the project root (atomic writes). The file contains:
+- `current`: the active goal (`id`, `objective`, `acceptance`, `createdAt`, `updatedAt`, `status`, `completedFlows`, `totalTokens`, `maxTokens`, `maxFlows`, `sessionId`).
+- `history`: previously completed or abandoned goals.
+
+Add `.pi/` to `.gitignore` — this is local runtime state.
+
+> ⚠️ **Token counting:** The continuation hook estimates tokens using `Math.ceil(messageText.length / 4)`, not actual model token counts. This is a lightweight heuristic for budget guarding.
 
 ### Typical lifecycle
 
