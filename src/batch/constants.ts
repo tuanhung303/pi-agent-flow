@@ -8,10 +8,11 @@
 
 export const MAX_LINES = 3000;
 export const MAX_BYTES = 100 * 1024; // 100KB
-export const SAFE_FULL_READ_LIMIT = 800;
-export const TARGETED_READ_LINE_LIMIT = 2000;
+export const SAFE_FULL_READ_LIMIT = 400;
+export const TARGETED_READ_LINE_LIMIT = 500;
 export const MAX_CONTEXT_MAP_ENTRIES = 100;
-export const MAX_TOTAL_RESULT_LINES = 4000;
+export const MAX_TOTAL_RESULT_LINES = 1500;
+export const BATCH_READ_MAX_TOTAL_BYTES = 150 * 1024; // 150KB
 export const BASH_SOFT_TIMEOUT_MS = 20_000;
 export const BASH_POLL_TAIL_LINES = 50;
 export const MAX_BASH_OUTPUT_BYTES = 100 * 1024; // 100KB
