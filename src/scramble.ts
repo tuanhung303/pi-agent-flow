@@ -279,7 +279,6 @@ const GLITCH_SHORT_MAX_START = 10;
 const GLITCH_SHORT_MAX_LENGTH = 10;
 const GLITCH_COOLDOWN_MS = 1000;
 const GLITCH_FADE_OUT_FRAMES = 18;
-const WARM_WHITE_FLASH = '\x1b[38;2;255;245;240m';
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers
@@ -804,12 +803,7 @@ export function computeGlitchFrame(
 				// appending a char that no longer exists (e.g. after tail
 				// truncation or text shrink).
 			} else {
-				// Warm-white resolve flash for illuminate mode
-				if (config && frame >= Math.max(entry.start, entry.end - 3) && frame < entry.end) {
-					output += WARM_WHITE_FLASH + outChar + ILLUMINATE_CLOSE;
-				} else {
-					output += outChar;
-				}
+				output += outChar;
 			}
 		} else {
 			// Not started yet
@@ -1025,11 +1019,11 @@ export function applyRipples(
 				if (isCrest) {
 					prefix = illuminatePrefix(maxDepth, bestElapsed, bestDur, config, combinedDepth);
 					if (config.color === 'dynamic' && crestDepth > 0 && crestDepth < 1.5) {
-						// Gradient peak: vivid salmon → warm white
+						// Gradient peak: vivid salmon → capped bright salmon (stay closer to theme)
 						const t = Math.min(1, crestDepth / 1.5);
 						const cr = Math.round(lerp(255, 255, t));
-						const cg = Math.round(lerp(90, 240, t));
-						const cb = Math.round(lerp(70, 230, t));
+						const cg = Math.round(lerp(90, 170, t));
+						const cb = Math.round(lerp(70, 150, t));
 						prefix = `\x1b[38;2;${cr};${cg};${cb}m`;
 					}
 				}
@@ -1316,10 +1310,15 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 					state.pendingOldDisplayed = '';
 					state.pendingNewDisplayed = '';
 					state.pendingStartTime = 0;
+					// FIX: sync displayedText to current text so pending handoff doesn't
+					// leave a stale anchor that triggers chain glitches on next frames.
+					state.displayedText = text;
+					state.lastText = text;
 					const pendingText = lineKey === 'msg' ? (state.targetText || text) : text;
 					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, pendingText, config);
 				}
-				const settledText = lineKey === 'msg' ? (state.targetText || text) : text;
+				// FIX: settle to current text, not stale targetText, to prevent snap-back.
+				const settledText = text;
 				state.displayedText = settledText;
 				state.lastText = settledText;
 				state.targetText = '';
