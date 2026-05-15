@@ -1112,6 +1112,78 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		}
 	});
 
+	it("reparents entry-level parentId when target message is dropped", () => {
+		const snapshot = makeSnapshot([
+			{ version: 1, id: "session-1" },
+			{
+				type: "message",
+				id: "user-1",
+				parentId: "session-1",
+				message: { role: "user", content: "hello" },
+			},
+			{
+				type: "message",
+				id: "assistant-1",
+				parentId: "user-1",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "br-1", name: "batch_read", arguments: { o: [{ o: "read", p: "a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				id: "tool-1",
+				parentId: "assistant-1",
+				message: {
+					role: "toolResult",
+					toolCallId: "br-1",
+					content: "a.ts content",
+				},
+			},
+			{
+				type: "message",
+				id: "assistant-2",
+				parentId: "tool-1",
+				message: {
+					role: "assistant",
+					content: "Next",
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
+		const entries = parseSnapshot(result!);
+
+		// batch_read and its result should be gone
+		expect(entries.some((e: any) => Array.isArray(e?.message?.content) && e.message.content.some((c: any) => c?.name === "batch_read"))).toBe(false);
+		expect(entries.some((e: any) => e?.message?.toolCallId === "br-1")).toBe(false);
+
+		// Collect surviving IDs (excluding compression-stats)
+		const survivingIds = new Set<string>();
+		for (const entry of entries) {
+			const id = entry?.message?.id ?? entry?.id;
+			if (typeof id === "string") survivingIds.add(id);
+		}
+
+		// No parentId should reference a non-existent message
+		for (const entry of entries) {
+			const entryParentId = entry?.parentId ?? entry?.parentMessageId;
+			const msgParentId = entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			const parentId = entryParentId ?? msgParentId;
+			if (typeof parentId === "string") {
+				expect(survivingIds.has(parentId)).toBe(true);
+			}
+		}
+
+		// assistant-2 should have its entry-level parentId stripped
+		const assistant2 = entries.find((e: any) => e?.id === "assistant-2");
+		expect(assistant2).toBeDefined();
+		expect(assistant2?.parentId).toBeUndefined();
+		expect(assistant2?.parentMessageId).toBeUndefined();
+		expect(assistant2?.message?.parentId).toBeUndefined();
+		expect(assistant2?.message?.parentMessageId).toBeUndefined();
+	});
+
 	it("returns passesApplied in correct order", () => {
 		const snapshot = makeSnapshot([
 			{ version: 1 },
