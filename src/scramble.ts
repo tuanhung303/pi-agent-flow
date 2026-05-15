@@ -1150,7 +1150,7 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 			if (isGlitchComplete(state.glitchQueue, frame)) {
 				state.glitchQueue = [];
 				state.glitchFrame = 0;
-				return state.displayedText || text;
+				return text;
 			}
 			return computeGlitchFrame(state.glitchQueue, frame, rng ?? poolRandomChar);
 		}
@@ -1213,6 +1213,7 @@ function processLine(
 			const hasActiveRipples = state.ripples.some(r => now - r.time < r.dur);
 			const gap = now - state.lastTextChangeTime;
 			const glitchCooledDown = now - state.lastGlitchTime >= GLITCH_COOLDOWN_MS;
+			const previousText = state.lastText;
 
 			if (textChanged) {
 				const delta = Math.max(0, newText.length - state.lastText.length);
@@ -1220,13 +1221,11 @@ function processLine(
 				state.phraseBuffer = newText;
 				state.lastTextChangeTime = now;
 				state.charsSinceLastFlush += delta;
-				// During active ripple, keep displayedText frozen (text being scrambled)
-				// Between ripples, displayedText stays as last rippled text for chunk detection
 			}
 
 			// F1: accumulator — periodic ripples during dense streaming
 			if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && state.charsSinceLastFlush >= 20 && newText !== state.displayedText) {
-				const oldDisplayed = state.displayedText;
+				const oldDisplayed = previousText || state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
@@ -1239,7 +1238,7 @@ function processLine(
 					state.lastGlitchTime = now;
 				}
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
-				const oldDisplayed = state.displayedText;
+				const oldDisplayed = previousText || state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
@@ -1254,7 +1253,7 @@ function processLine(
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
 				// glitch it out so it doesn't sit plain indefinitely.
-				const oldDisplayed = state.displayedText;
+				const oldDisplayed = previousText || state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
@@ -1269,7 +1268,7 @@ function processLine(
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 				// Streaming resumed after a long pause (e.g., tool call) —
 				// force a fresh glitch on the accumulated content.
-				const oldDisplayed = state.displayedText;
+				const oldDisplayed = previousText || state.displayedText;
 				state.displayedText = newText;
 				state.lastFlushTime = now;
 				state.lastAnimTime = now;
@@ -1308,11 +1307,12 @@ function processLine(
 			state.lastText = newText;
 			return;
 		}
+		const oldDisplayed = state.displayedText;
 		state.displayedText = newText;
 		state.lastText = newText;
 		state.lastFlushTime = now;
 		state.lastAnimTime = now;
-		state.glitchQueue = buildGlitchQueue(state.displayedText || '', newText);
+		state.glitchQueue = buildGlitchQueue(oldDisplayed || '', newText);
 		state.startTime = now;
 		state.glitchFrame = 0;
 		state.lastGlitchTime = now;
@@ -1891,6 +1891,7 @@ export class ScrambleStateManager {
 				const hasActiveRipples = state.ripples.some(r => now - r.time < r.dur);
 				const gap = now - state.lastTextChangeTime;
 				const glitchCooledDown = now - state.lastGlitchTime >= GLITCH_COOLDOWN_MS;
+				const previousText = state.lastText;
 
 				if (textChanged) {
 					const delta = Math.max(0, visibleText.length - state.lastText.length);
@@ -1902,7 +1903,7 @@ export class ScrambleStateManager {
 
 				// F1: accumulator — periodic ripples during dense streaming
 				if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && state.charsSinceLastFlush >= 20 && visibleText !== state.displayedText) {
-					const oldDisplayed = state.displayedText;
+					const oldDisplayed = previousText || state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
@@ -1915,7 +1916,7 @@ export class ScrambleStateManager {
 						state.lastGlitchTime = now;
 					}
 				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(visibleText, state.displayedText, state.lastFlushTime, now)) {
-					const oldDisplayed = state.displayedText;
+					const oldDisplayed = previousText || state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
@@ -1930,7 +1931,7 @@ export class ScrambleStateManager {
 				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && visibleText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 					// Drain: text stopped arriving and we have unrippled content —
 					// glitch it out so it doesn't sit plain indefinitely.
-					const oldDisplayed = state.displayedText;
+					const oldDisplayed = previousText || state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
@@ -1945,7 +1946,7 @@ export class ScrambleStateManager {
 				} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && visibleText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 					// Streaming resumed after a long pause (e.g., tool call) —
 					// force a fresh glitch on the accumulated content.
-					const oldDisplayed = state.displayedText;
+					const oldDisplayed = previousText || state.displayedText;
 					state.displayedText = visibleText;
 					state.lastFlushTime = now;
 					state.lastAnimTime = now;
