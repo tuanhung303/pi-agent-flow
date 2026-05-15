@@ -1760,7 +1760,7 @@ describe("compressFlowToolResults", () => {
 		expect(result).not.toContain("Full verbose ideas output");
 	});
 
-	it("compresses batch_read tool results via stripBatchReadToolCalls (compressToolResults no longer handles batch_read)", () => {
+	it("drops batch_read tool results via stripBatchReadToolCalls (compressToolResults no longer handles batch_read)", () => {
 		flowCache.set("flow-call-1", [{
 			type: "scout",
 			status: "accomplished",
@@ -1790,8 +1790,8 @@ describe("compressFlowToolResults", () => {
 		const stripped = stripBatchReadToolCalls(snapshot);
 		const result = compressToolResults(stripped, flowCache);
 
-		// batch_read result should be compressed to metadata
-		expect(result).toContain("[batch_read] 3 ops → paths: src/flow.ts, src/snapshot.ts, src/index.ts");
+		// batch_read result should be dropped entirely to avoid orphaned tool results
+		expect(result).not.toContain("br-call-1");
 		expect(result).not.toContain("Full content of flow.ts");
 		expect(result).not.toContain("Full content of snapshot.ts");
 
@@ -1803,7 +1803,7 @@ describe("compressFlowToolResults", () => {
 		expect(result).toContain("Reading files");
 	});
 
-	it("compresses batch_read results via stripBatchReadToolCalls even with empty flow cache", () => {
+	it("drops batch_read results via stripBatchReadToolCalls even with empty flow cache", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-call-1", arguments: { o: [
@@ -1818,11 +1818,11 @@ describe("compressFlowToolResults", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("[batch_read] 2 ops → paths: src/a.ts, src/b.ts");
+		expect(result).not.toContain("br-call-1");
 		expect(result).not.toContain("Huge file content");
 	});
 
-	it("handles batch_read with toolResult format content-level toolCallId via stripBatchReadToolCalls", () => {
+	it("drops batch_read with toolResult format content-level toolCallId via stripBatchReadToolCalls", () => {
 		flowCache.set("flow-call-1", [{ type: "scout", status: "accomplished" }]);
 
 		const snapshot = [
@@ -1836,11 +1836,11 @@ describe("compressFlowToolResults", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("[batch_read] 1 ops → paths: src/x.ts");
+		expect(result).not.toContain("br-call-2");
 		expect(result).not.toContain("Full content of x.ts");
 	});
 
-	it("truncates path list when batch_read has many ops via stripBatchReadToolCalls", () => {
+	it("drops batch_read with many ops via stripBatchReadToolCalls", () => {
 		const ops = Array.from({ length: 15 }, (_, i) => ({ o: "read", p: `src/file${i}.ts` }));
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
@@ -1853,12 +1853,11 @@ describe("compressFlowToolResults", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("[batch_read] 15 ops → paths:");
-		expect(result).toContain("+5 more");
+		expect(result).not.toContain("br-call-3");
 		expect(result).not.toContain("Full content of all 15 files");
 	});
 
-	it("handles batch_read with no parseable arguments gracefully via stripBatchReadToolCalls", () => {
+	it("drops batch_read with no parseable arguments via stripBatchReadToolCalls", () => {
 		flowCache.set("flow-call-1", [{ type: "scout", status: "accomplished" }]);
 
 		const snapshot = [
@@ -1872,7 +1871,7 @@ describe("compressFlowToolResults", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("[batch_read] result compressed");
+		expect(result).not.toContain("br-call-4");
 		expect(result).not.toContain("Full content without args");
 	});
 });
@@ -1947,7 +1946,7 @@ describe("stripBatchReadToolCalls", () => {
 		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
 	});
 
-	it("compresses orphaned tool result messages for batch_read tool calls", () => {
+	it("drops orphaned tool result messages for batch_read tool calls", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
@@ -1960,13 +1959,12 @@ describe("stripBatchReadToolCalls", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("br-1");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-1");
 		expect(result).not.toContain("--- src/a.ts");
 		expect(result).toContain("Thanks");
 	});
 
-	it("compresses orphaned tool result with content-level toolCallId", () => {
+	it("drops orphaned tool result with content-level toolCallId", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-2", arguments: { o: [{ o: "read", p: "src/b.ts" }] } },
@@ -1978,11 +1976,10 @@ describe("stripBatchReadToolCalls", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("br-2");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-2");
 	});
 
-	it("preserves non-batch_read tool results while compressing batch_read results", () => {
+	it("preserves non-batch_read tool results while dropping batch_read results", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
@@ -1997,8 +1994,7 @@ describe("stripBatchReadToolCalls", () => {
 		].join("\n") + "\n";
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("br-1");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-1");
 		expect(result).toContain("web-1");
 		expect(result).toContain("Search results...");
 	});
@@ -2017,7 +2013,7 @@ describe("stripBatchReadToolCalls", () => {
 		expect(result).not.toContain("br-id-1");
 	});
 
-	it("compresses orphaned toolResult messages with id field", () => {
+	it("drops orphaned toolResult messages with id field", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", id: "br-id-2", name: "batch_read", arguments: { o: [{ o: "read", p: "src/x.ts" }] } },
@@ -2028,12 +2024,11 @@ describe("stripBatchReadToolCalls", () => {
 		].join("\n") + "\n";
 
 		const result = stripBatchReadToolCalls(snapshot);
-		expect(result).toContain("br-id-2");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-id-2");
 		expect(result).not.toContain("file content here");
 	});
 
-	it("preserves non-batch_read toolResult messages with id field while compressing batch_read", () => {
+	it("preserves non-batch_read toolResult messages with id field while dropping batch_read", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", id: "br-id-3", name: "batch_read", arguments: {} },
@@ -2048,14 +2043,13 @@ describe("stripBatchReadToolCalls", () => {
 		].join("\n") + "\n";
 
 		const result = stripBatchReadToolCalls(snapshot);
-		expect(result).toContain("br-id-3");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-id-3");
 		expect(result).not.toContain("batch_read result");
 		expect(result).toContain("flow-id-1");
 		expect(result).toContain("flow result");
 	});
 
-	it("handles mixed id and toolCallId fields in same assistant message — compresses toolResults", () => {
+	it("handles mixed id and toolCallId fields in same assistant message — drops toolResults", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", id: "br-mixed-1", name: "batch_read", arguments: {} },
@@ -2070,9 +2064,8 @@ describe("stripBatchReadToolCalls", () => {
 		].join("\n") + "\n";
 
 		const result = stripBatchReadToolCalls(snapshot);
-		expect(result).toContain("br-mixed-1");
-		expect(result).toContain("br-mixed-2");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-mixed-1");
+		expect(result).not.toContain("br-mixed-2");
 		expect(result).not.toContain("result 1");
 		expect(result).not.toContain("result 2");
 	});

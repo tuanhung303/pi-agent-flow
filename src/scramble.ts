@@ -240,6 +240,7 @@ const GLITCH_MAX_LENGTH = 40;
 const GLITCH_SHORT_MAX_START = 10;
 const GLITCH_SHORT_MAX_LENGTH = 10;
 const GLITCH_COOLDOWN_MS = 1000;
+const GLITCH_FADE_OUT_FRAMES = 18;
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers
@@ -310,6 +311,15 @@ interface QueueItem {
 	char?: string;
 }
 
+interface GlitchQueueItem {
+	from: string;
+	to: string;
+	start: number;
+	end: number;
+	fadeOutEnd?: number;
+	char: string | null;
+}
+
 interface LineState {
 	lastText: string;
 	queue: QueueItem[];
@@ -336,7 +346,7 @@ interface LineState {
 	// Accumulated chars since last flush (forces periodic ripples during dense streaming)
 	charsSinceLastFlush: number;
 	// Glitch effect queue (msg: in illuminate mode)
-	glitchQueue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>;
+	glitchQueue: GlitchQueueItem[];
 	glitchFrame: number;
 	lastGlitchTime: number;
 }
@@ -412,7 +422,7 @@ interface ValueFlashState {
 	// Ambient pulse: when last ripple expired
 	lastRippleEndTime: number;
 	// Glitch effect for value flashes (tps, actKpi, msgKpi)
-	glitchQueue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>;
+	glitchQueue: GlitchQueueItem[];
 	glitchFrame: number;
 	lastGlitchTime: number;
 }
@@ -622,8 +632,8 @@ export function computeCascadeFrame(queue: QueueItem[], frame: number, rng?: () 
 // Pure algorithm: GLITCH (TextScramble faithful port with Unicode braille)
 // ---------------------------------------------------------------------------
 
-export function buildGlitchQueue(oldText: string, newText: string, maxStart: number = GLITCH_MAX_START, maxLength: number = GLITCH_MAX_LENGTH): Array<{ from: string; to: string; start: number; end: number; char: string | null }> {
-	const queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }> = [];
+export function buildGlitchQueue(oldText: string, newText: string, maxStart: number = GLITCH_MAX_START, maxLength: number = GLITCH_MAX_LENGTH): GlitchQueueItem[] {
+	const queue: GlitchQueueItem[] = [];
 	const cleanOld = stripDecorativeIcons(oldText);
 	const cleanNew = stripDecorativeIcons(newText);
 	const length = Math.max(cleanOld.length, cleanNew.length);
@@ -632,36 +642,49 @@ export function buildGlitchQueue(oldText: string, newText: string, maxStart: num
 		const to = cleanNew[i] || '';
 		const start = Math.floor(Math.random() * maxStart);
 		const end = start + Math.floor(Math.random() * maxLength);
-		queue.push({ from, to, start, end, char: null });
+		const fadeOutEnd = to === '' ? end + GLITCH_FADE_OUT_FRAMES : undefined;
+		queue.push({ from, to, start, end, fadeOutEnd, char: null });
 	}
 	return queue;
 }
 
 export function computeGlitchFrame(
-	queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>,
+	queue: GlitchQueueItem[],
 	frame: number,
 	rng: () => string
 ): string {
 	let output = '';
+	let inDim = false;
 	for (let i = 0; i < queue.length; i++) {
 		const entry = queue[i];
-		if (frame >= entry.end) {
+		const fadeOutEnd = entry.fadeOutEnd;
+		if (fadeOutEnd !== undefined && frame >= entry.end && frame < fadeOutEnd) {
+			if (!inDim) { output += DIM_ON; inDim = true; }
+			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
+				entry.char = rng();
+			}
+			output += entry.char;
+		} else if (frame >= (fadeOutEnd ?? entry.end)) {
+			if (inDim) { output += DIM_OFF; inDim = false; }
 			output += entry.to;
 		} else if (frame >= entry.start) {
+			if (inDim) { output += DIM_OFF; inDim = false; }
 			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
 				entry.char = rng();
 			}
 			output += entry.char;
 		} else {
+			if (inDim) { output += DIM_OFF; inDim = false; }
 			output += entry.from;
 		}
 	}
+	if (inDim) output += DIM_OFF;
 	return output;
 }
 
-export function isGlitchComplete(queue: Array<{ from: string; to: string; start: number; end: number; char: string | null }>, frame: number): boolean {
+export function isGlitchComplete(queue: GlitchQueueItem[], frame: number): boolean {
 	if (queue.length === 0) return true;
-	return frame >= Math.max(...queue.map(e => e.end));
+	return frame >= Math.max(...queue.map(e => e.fadeOutEnd ?? e.end));
 }
 
 function shouldStartGlitch(state: { lastGlitchTime: number; glitchQueue: unknown[] }, now: number, cooldownMs: number): boolean {

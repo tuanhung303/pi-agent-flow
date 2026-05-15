@@ -530,9 +530,8 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
 export function stripBatchReadToolCalls(snapshot: string): string {
 	const lines = snapshot.trimEnd().split("\n");
 
-	// Pass 1: Collect all batch_read toolCallIds and their arguments.
+	// Pass 1: Collect all batch_read toolCallIds from assistant messages.
 	const batchReadToolCallIds = new Set<string>();
-	const batchReadArgs = new Map<string, unknown>();
 	for (const line of lines) {
 		let entry: any;
 		try { entry = JSON.parse(line); } catch { continue; }
@@ -543,16 +542,13 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 
 		for (const part of content) {
 			if (part.type === "toolCall" && part.name === "batch_read" && (part.id || part.toolCallId)) {
-				const id = part.id ?? part.toolCallId;
-				batchReadToolCallIds.add(id);
-				if (part.arguments) batchReadArgs.set(id, part.arguments);
+				batchReadToolCallIds.add(part.id ?? part.toolCallId);
 			}
 		}
 	}
 
 	// Pass 2: Strip batch_read toolCall parts from assistant messages,
-	// and COMPRESS matching tool result messages (keep them so children
-	// know which files were already read — don't drop entirely).
+	// and remove orphaned tool result messages.
 	const result: string[] = [];
 
 	for (const line of lines) {
@@ -564,28 +560,11 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 			continue;
 		}
 
-		// Tool result message — compress if it's a batch_read result
+		// Tool result message — skip if it's a batch_read result
 		if (entry.message.role === "tool" || entry.message.role === "toolResult") {
 			const toolCallId = entry.message.toolCallId ??
 				(Array.isArray(entry.message.content) ? entry.message.content.find((p: any) => p.type === "toolResult")?.toolCallId : undefined);
-			if (toolCallId && batchReadToolCallIds.has(toolCallId)) {
-				const args = batchReadArgs.get(toolCallId);
-				const paths = extractBatchReadPaths(args);
-				const rendered = paths.length > 0
-					? renderCompressedBatchReadResult(paths)
-					: "[batch_read] result compressed";
-				entry = {
-					...entry,
-					message: {
-						...entry.message,
-						// Ensure toolCallId is present at message level for API compatibility.
-						...(entry.message.toolCallId ? {} : { toolCallId }),
-						content: [{ type: "text", text: rendered }],
-					},
-				};
-				result.push(JSON.stringify(entry));
-				continue;
-			}
+			if (toolCallId && batchReadToolCallIds.has(toolCallId)) continue;
 			result.push(line);
 			continue;
 		}
@@ -712,10 +691,13 @@ export function sanitizeForkSnapshot(
 			}
 
 			// Strip API metadata fields that children don't need (~5-7 KB per assistant message).
+			// IMPORTANT: keep `usage` (including `totalTokens`). The child `pi` process replays
+			// this JSONL and core/session code reads `message.usage.totalTokens`; stripping
+			// `usage` causes: Cannot read properties of undefined (reading 'totalTokens').
 			if (message.role === "assistant") {
-				const { api, provider, model, usage, stopReason, responseId, responseModel, ...rest } = message;
+				const { api, provider, model, stopReason, responseId, responseModel, ...rest } = message;
 				// Only count as changed if at least one field was actually present.
-				if (api !== undefined || provider !== undefined || model !== undefined || usage !== undefined ||
+				if (api !== undefined || provider !== undefined || model !== undefined ||
 					stopReason !== undefined || responseId !== undefined || responseModel !== undefined) {
 					message = rest;
 					changed = true;
