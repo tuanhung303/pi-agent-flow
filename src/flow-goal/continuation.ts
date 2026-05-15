@@ -7,7 +7,7 @@
 
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
 import type { SpawnContinuation } from "./types.js";
-import { getGoal, addTokens, updateGoalStatus } from "./store.js";
+import { getGoal, addTokens, updateGoalStatus, recordFlowCompletion } from "./store.js";
 import {
   continuationTemplate,
   budgetLimitTemplate,
@@ -83,34 +83,20 @@ export function setupContinuation(
       return;
     }
 
-    // Spawn continuation when the turn didn't already dispatch flows
-    const hasFlowTool =
-      messageText.includes("flow [") ||
-      messageText.includes("Flow:") ||
-      messageText.includes('"flow":');
-
-    if (!hasFlowTool) {
-      const text = renderTemplate(continuationTemplate, {
-        objective: goal.objective,
+    // Spawn continuation
+    const beforeCount = goal.completedFlows.length;
+    await spawnContinuation([
+      {
+        type: "build",
+        intent: goal.objective,
+        aim: goal.objective.slice(0, 60),
         acceptance: goal.acceptance,
-        flowCount,
-        maxFlows: goal.maxFlows,
-        totalTokens: goal.totalTokens,
-      });
-      pi.sendMessage(
-        { content: text, display: false, customType: "flow-goal-continuation" },
-        { triggerTurn: true },
-      );
-
-      // Also trigger the spawn callback so the orchestrator knows which flows to run
-      await spawnContinuation([
-        {
-          type: "build",
-          intent: goal.objective,
-          aim: goal.objective.slice(0, 60),
-          acceptance: goal.acceptance,
-        },
-      ]);
+      },
+    ]);
+    const afterGoal = getGoal(cwd);
+    if (afterGoal && afterGoal.completedFlows.length === beforeCount) {
+      recordFlowCompletion(cwd, { type: "build", intent: goal.objective, aim: goal.objective.slice(0, 60) });
+      addTokens(cwd, turnTokens);
     }
   });
 }

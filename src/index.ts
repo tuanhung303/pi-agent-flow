@@ -5,7 +5,7 @@
  * Each flow receives a forked snapshot of the current session context.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { setupNotify } from "./notify.js";
 import { discoverFlows, getFlowTier } from "./agents.js";
@@ -181,17 +181,79 @@ export default function (pi: ExtensionAPI) {
 	setupSpecMode(pi);
 
 	// Wire up /flow-goal command and continuation hooks
-	registerFlowGoal(pi);
+	registerFlowGoal(pi, {
+		executeFlows: async (params) => {
+			if (!resolved || !_sessionCtx) return [];
+			const discovery = discoverFlows(_sessionCtx.cwd, "all");
+			const { flows } = discovery;
+			const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir);
+
+			const { result: forkSessionSnapshotJsonl } = sanitizeForkSnapshot(
+				buildForkSessionSnapshotJsonl(_sessionCtx.sessionManager),
+				flowResultCache,
+				{ forkedAt: new Date().toISOString(), depth: currentDepth + 1 },
+			);
+
+			const getTierOverride = (tier: "lite" | "flash" | "full"): string | undefined => {
+				const flagName =
+					tier === "lite"
+						? "flow-lite-model"
+						: tier === "flash"
+							? "flow-flash-model"
+							: "flow-full-model";
+				const runtimeValue = pi.getFlag(flagName);
+				if (typeof runtimeValue === "string" && runtimeValue.trim()) return runtimeValue.trim();
+				const inheritedValue = inheritedCliArgs.tieredModels?.[tier];
+				return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
+			};
+
+			const result = await executeFlows(
+				{
+					flows,
+					currentDepth,
+					maxDepth,
+					ancestorFlowStack,
+					preventCycles,
+					toolOptimize: resolved.toolOptimize,
+					structuredOutput: resolved.structuredOutput,
+					cwd: _sessionCtx.cwd,
+					loadedFlowModelConfigs: resolved.loadedFlowModelConfigs,
+					maxConcurrency: resolved.maxConcurrency,
+					defaultSessionMode: resolved.defaultSessionMode,
+					signal: undefined,
+					onUpdate: undefined,
+					makeDetails,
+					getFlag: (name: string) => name === "flow-mode" ? resolved!.activeRuntimeFlowMode : pi.getFlag(name),
+					tierOverrideResolver: getTierOverride,
+					fallbackModel: inheritedCliArgs.fallbackModel,
+					forkSessionSnapshotJsonl,
+					flowResultCache,
+					projectFlowsDir: discovery.projectFlowsDir,
+					sessionManager: _sessionCtx.sessionManager,
+					hasUI: _sessionCtx.hasUI,
+					uiConfirm: (title, body) => _sessionCtx!.ui.confirm(title, body),
+					onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
+					confirmProjectFlows: false,
+				},
+				params,
+				`flow-goal-${Date.now()}`,
+			);
+
+			return result.details.results;
+		},
+	});
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
 	let resolved: ResolvedSettings | undefined;
+	let _sessionCtx: ExtensionContext | undefined;
 	let bashTracker: BashProcessTracker | undefined;
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
+		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
 
 		// Only restrict tools for the main orchestrator (depth 0).
