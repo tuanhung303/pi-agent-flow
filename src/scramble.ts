@@ -48,6 +48,18 @@ export function clearLiveText(key: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Direct streaming text — no key lookup, no fallback chain
+// ---------------------------------------------------------------------------
+
+let _latestMsgText = '';
+export function setLatestMsgText(text: string): void {
+	_latestMsgText = text;
+}
+export function getLatestMsgText(): string {
+	return _latestMsgText;
+}
+
+// ---------------------------------------------------------------------------
 // Fast RNG (xorshift32) + hash-based noise
 // ---------------------------------------------------------------------------
 

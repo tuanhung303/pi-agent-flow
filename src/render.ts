@@ -23,7 +23,7 @@ import {
 	isFlowSuccess,
 } from "./types.js";
 import { formatBatchOpsSummary } from "./batch/render.js";
-import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble.js";
+import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText, getLatestMsgText } from "./scramble.js";
 
 function getLiveTextWithFallback(id: string): string | undefined {
 	const value = getLiveText(id);
@@ -414,7 +414,7 @@ function renderFlowExpanded(
 		container.addChild(new DynamicScrambleText(
 			initialScrambled,
 			() => {
-				const freshStreamingText = getLiveTextWithFallback(id) ?? streamingText_;
+				const freshStreamingText = getLatestMsgText() || streamingText_;
 				return scrambleManager.updateMsg(id, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
 			}
 		));
@@ -558,9 +558,9 @@ function renderFlowCollapsed(
 
 	let rawMsg: string;
 	let useError = false;
-	const liveText = getLiveTextWithFallback(id);
-	if (liveText != null) {
-		rawMsg = stripAnsi(liveText);
+	const latestText = getLatestMsgText();
+	if (latestText !== '') {
+		rawMsg = stripAnsi(latestText);
 	} else if (r.exitCode === -1 && streamingText != null) {
 		rawMsg = stripAnsi(streamingText);
 	} else if (r.structuredOutput?.summary) {
@@ -590,11 +590,11 @@ function renderFlowCollapsed(
 				msgKpi = scrambledMsgKpi;
 			}
 			const msgPrefix = `└─ msg: [${msgKpi}] - `;
-			const freshRawMsg = getLiveTextWithFallback(id) ?? rawMsg;
+			const freshRawMsg = getLatestMsgText() || rawMsg;
 			if (scrambleManager.getMode() === 'stream') {
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(id, freshRawMsg, now, isComplete, msgBudget)))}`;
 			} else {
-				const needsTail = r.exitCode === -1 || streamingText != null || getLiveTextWithFallback(id) != null;
+				const needsTail = r.exitCode === -1 || streamingText != null || getLatestMsgText() !== '';
 				const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
 				const result = isComplete
 					? scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true)

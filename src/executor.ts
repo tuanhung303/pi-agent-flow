@@ -21,7 +21,7 @@ import { getFlowSummaryText } from "./runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "./notify-state.js";
-import { setLiveText } from './scramble.js';
+import { setLiveText, setLatestMsgText } from './scramble.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -285,6 +285,7 @@ export async function executeFlows(
 		const key = toolCallId || 'collapsed';
 		setLiveText(key, text);
 		setLiveText('collapsed', text);
+		setLatestMsgText(text);
 		for (let i = 0; i < allResults.length; i++) {
 			const r = allResults[i];
 			if (r.streamingText) {
