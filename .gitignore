@@ -7,3 +7,4 @@ dist/
 context/
 .specs/
 debug/
+flow-artifacts/
