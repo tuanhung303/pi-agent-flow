@@ -1,4 +1,4 @@
-{"type":"header","version":3,"id":"test-session-001","timestamp":"2026-05-15T00:00:00Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow"}
+{"type":"session","version":3,"id":"test-session-001","timestamp":"2026-05-15T00:00:00Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow"}
 {"type":"system","content":"You are a helpful assistant."}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"Previous context here."}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I see the previous context."}]}}
