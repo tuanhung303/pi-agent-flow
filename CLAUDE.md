@@ -99,6 +99,22 @@ Once linked locally, your daily loop is just:
 
 For **`npm run lint` / `npm test`** plus scripted **`pi`** sessions over a pseudo-terminal (`expect`, optional `script` wrapper)—including why bare **`pi -p`** runs often skip full TUI behavior—see **[docs/autonomous-pi-testing.md](docs/autonomous-pi-testing.md)**. Template harness: `scripts/example-autonomous-pi.expect` (copy and tune `AFTER_MS`, optional `STARTUP_RE`, and `RESPONSE_RE` to match your Pi layout / mission).
 
+## Write-Then-Execute Convention
+
+For non-trivial scripts (Python, Node, shell), always **write the script to `./tmp/` first, then execute it** — never inline multi-line code via `python -c '...'` or `node -e '...'`.
+
+Why:
+- The `batch` tool guarantees file ops complete before bash ops, so write → execute is safe in a single call.
+- Avoids shell escaping nightmares with quotes and newlines.
+- Produces better error traces (file path + line numbers).
+- Leaves the script inspectable for debugging.
+
+Example workflow in a single `batch` call:
+1. `o: "write"`, `p: "./tmp/analyze.py"`, `c: "<script content>"`
+2. `o: "bash"`, `c: "python ./tmp/analyze.py"`
+
+Clean up one-time-use `./tmp/` scripts when the task is complete.
+
 ### Payload dump workflow
 
 When developing locally, you often want to capture the exact prompt stream that `pi` sends to flows so you can debug, diff, or replay it.

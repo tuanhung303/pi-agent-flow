@@ -28,3 +28,4 @@ Implement and verify changes. Verify first, then ship. Prior conversation is bac
 - Do not merge to `main` unless the user explicitly requests it. If merging, use squash-merge (`git merge --squash`).
 - Update relevant docs; if none changed, state why.
 - Unexpected errors → recommend [debug], don't guess.
+- For non-trivial scripts, write to `./tmp/` then execute — avoid `python -c` or `node -e` for multi-line code. File ops run before bash ops in a single batch call, so write → execute is guaranteed safe. Clean up ./tmp/ scripts when done if they're one-time use.

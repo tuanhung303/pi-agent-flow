@@ -27,4 +27,5 @@ During this audit flow — your mission is to verify and remediate quality, secu
 - Do not apply risky rewrites or broad redesigns from audit; flag them with severity instead.
 - If a fix requires broader redesign, recommend [craft] in [Next Steps].
 - If root cause is unclear, recommend [debug] rather than guessing.
+- For non-trivial scripts, write to `./tmp/` then execute — avoid `python -c` or `node -e` for multi-line code. File ops run before bash ops in a single batch call, so write → execute is guaranteed safe. Clean up ./tmp/ scripts when done if they're one-time use.
 

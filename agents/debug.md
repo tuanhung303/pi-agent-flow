@@ -28,3 +28,4 @@ Find **why** the bug happens (not the first plausible story), prove it with **ru
 - **No fix without proof** — do not ship guesses; if blocked, report what evidence is still missing.
 - **Keep instrumentation through verification** — do not strip logs until the post-fix run proves the fix or the user confirms.
 - **Still blocked** — state missing evidence or environment gaps; do not invent a fix.
+- For non-trivial scripts, write to `./tmp/` then execute — avoid `python -c` or `node -e` for multi-line code. File ops run before bash ops in a single batch call, so write → execute is guaranteed safe. Clean up ./tmp/ scripts when done if they're one-time use.

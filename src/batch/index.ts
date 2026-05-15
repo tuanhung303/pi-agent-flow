@@ -346,6 +346,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 		"Each edit matches the on-disk file, not prior ops in the same call — so order within a file's `e` array doesn't matter.",
 		"Bash ops run in parallel. Use i (id) to track them. Use batch_bash_poll to check on pending commands.",
 		"Before calling batch, plan: list every file you need to read, edit, or create, and every command you need to run — then put them ALL in one call.",
+		"For non-trivial scripts (Python, Node, shell), write the script to ./tmp/ first with o:'write', then execute it with o:'bash'. File ops always run before bash ops, so the write is guaranteed to complete before execution. This avoids escaping issues, produces better error traces, and leaves the script inspectable for debugging.",
 	];
 	if (toolOptimize) {
 		guidelines.push("In this mode batch is your ONLY edit tool — there is no separate edit command. Always use batch for every edit, even single-block single-file changes.");
@@ -361,6 +362,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			`Bash ops use c (command), i (id), t (timeout, default ${BASH_SOFT_TIMEOUT_MS}ms), h (cwd). Commands exceeding the soft timeout return "pending" status with last 50 lines of output; poll with batch_bash_poll.`,
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
 			"The primary tool for all file operations and shell commands. Always combine multiple ops into one call: reads, edits, creates, deletes, and bash can all coexist. Avoid: 3 separate batch calls for 3 edits. Do: 1 batch call with 3 ops in the o array.",
+			"Prefer write-then-execute for scripts: write code to ./tmp/ via o:'write', then run it via o:'bash'. File ops complete before bash ops, so this is guaranteed safe. Avoid bash python -c '...' or node -e '...' for anything beyond a simple one-liner.",
 		].join("\n"),
 		promptSnippet: "Batch operations — run multiple file ops and bash commands in one call",
 		promptGuidelines: guidelines,
