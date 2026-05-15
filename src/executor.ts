@@ -277,22 +277,25 @@ export async function executeFlows(
 	let lastStreamingText = "";
 	let lastEmittedSignature: string | undefined;
 	const emitProgress = (streamingText?: string) => {
-		if (!onUpdate) return;
+		// Update text tracking (no guard needed)
 		if (streamingText !== undefined) lastStreamingText = streamingText;
 		const text = lastStreamingText || "";
-		// Update live text store for DynamicScrambleText closures
-		// Store under both the actual key AND the predictable fallback
+
+		// Update live text store FIRST — always
 		const key = toolCallId || 'collapsed';
 		setLiveText(key, text);
-		setLiveText('collapsed', text);  // ← ALWAYS store under predictable key
-		// Also update per-flow live text for multi-flow view
+		setLiveText('collapsed', text);
 		for (let i = 0; i < allResults.length; i++) {
 			const r = allResults[i];
 			if (r.streamingText) {
 				setLiveText(`${key}#${i}`, r.streamingText);
-				setLiveText(`collapsed#${i}`, r.streamingText);  // ← predictable fallback
+				setLiveText(`collapsed#${i}`, r.streamingText);
 			}
 		}
+
+		// Now check onUpdate for host callback
+		if (!onUpdate) return;
+
 		const signature =
 			text +
 			"|" +
@@ -313,7 +316,7 @@ export async function executeFlows(
 		});
 	};
 
-	if (onUpdate) emitProgress();
+	emitProgress();
 
 	// Execute all flows in parallel
 	const executionStart = Date.now();
