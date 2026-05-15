@@ -2,7 +2,7 @@
  * Unit tests for tri-mode text scramble effect (stream + cascade + ripple).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import {
 	applyRipples,
 	buildGlitchQueue,
@@ -48,6 +48,17 @@ function hasAnsi(s: string): boolean {
 
 const TEST_ID = 'test-id';
 const SCRAMBLE_CHAR_SET = '·∘∙~⋆˚｡+×◇°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+
+// Stabilise Math.random() so glitch timing is deterministic across test runs.
+beforeAll(() => {
+	let callCount = 0;
+	vi.spyOn(Math, 'random').mockImplementation(() => {
+		return callCount++ % 2 === 0 ? 0.25 : 0.9;
+	});
+});
+afterAll(() => {
+	vi.restoreAllMocks();
+});
 
 // ---------------------------------------------------------------------------
 // Stream mode tests
@@ -107,8 +118,10 @@ describe('renderStreamText', () => {
 
 	it('beyond-cursor scramble chars keep fuzzing each frame', () => {
 		const cursorChars: string[] = [];
-		const r1 = renderStreamText('abcdefghij', 2, 3, cursorChars);
-		const r2 = renderStreamText('abcdefghij', 2, 3, cursorChars);
+		const rng1 = vi.fn(() => 'A');
+		const rng2 = vi.fn(() => 'B');
+		const r1 = renderStreamText('abcdefghij', 2, 3, cursorChars, rng1);
+		const r2 = renderStreamText('abcdefghij', 2, 3, cursorChars, rng2);
 		// Beyond cursor zone starts at index 5 (revealed 2 + width 3)
 		// Positions 5+ should produce different scramble chars across calls
 		const stripped1 = stripAnsi(r1);

@@ -6,11 +6,22 @@
  * 4) runScrambleTimer scoping: idle flow must not see active animations from other flows.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { ScrambleStateManager } from '../src/scramble.js';
 
 const TEST_ID = 'scope-id';
 const BASE = 1_000_000;
+
+// Stabilise Math.random() so glitch timing is deterministic across test runs.
+beforeAll(() => {
+	let callCount = 0;
+	vi.spyOn(Math, 'random').mockImplementation(() => {
+		return callCount++ % 2 === 0 ? 0.25 : 0.9;
+	});
+});
+afterAll(() => {
+	vi.restoreAllMocks();
+});
 
 describe('ScrambleStateManager — timer scope & cleanup', () => {
 	let manager: ScrambleStateManager;
