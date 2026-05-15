@@ -1,20 +1,19 @@
 /**
- * Canonical JSONL event schema for fork session snapshots:
+ * Two JSONL protocols are used in this codebase:
  *
- * Each line is a JSON object with a `type` field. Supported types:
+ * 1. Fork Snapshot Protocol (snapshot.ts):
+ *    Types: session, model_change, thinking_level_change, system, message,
+ *           compression-stats
+ *    Purpose: Serialized session state passed to child flows via --session.
+ *              Emitted by buildForkSessionSnapshotJsonl() and consumed by
+ *              sanitizeForkSnapshot() before forking.
  *
- * - `session` (header line): Session metadata including id, startedAt, model,
- *   systemPrompt, etc. Always the first line.
- * - `model_change`: Model switch event during the session.
- * - `thinking_level_change`: Thinking level adjustment event.
- * - `system`: System prompt content (emitted after session for self-containment).
- * - `message`: Chat message with role, content, usage, etc.
- * - `compression-stats`: Trailing metadata about sanitization efficiency.
- *
- * Message sub-types by role:
- * - `user`: User input
- * - `assistant`: Assistant output (may contain toolCall parts)
- * - `tool`: Tool result (formerly `toolResult`, normalized to `tool`)
+ * 2. Streaming Stdout Protocol (runner-events.ts):
+ *    Types: session, agent_start, turn_start, message_start, message_end,
+ *           message_update
+ *    Sub-events under message_update: thinking_start, thinking_delta, text_delta
+ *    Purpose: Real-time events emitted by the pi process stdout during flow
+ *              execution. Parsed by processFlowJsonLine().
  */
 
 /**
@@ -58,12 +57,20 @@ export function buildForkSessionSnapshotJsonl(
 
 	const branchEntries = sessionManager.getBranch();
 	const lines: string[] = [];
-	let sessionEmitted = false;
 
-	// Emit session header once
-	if (!sessionEmitted) {
+	// Emit session header once, unless getBranch() already includes it as the
+	// first entry (some session managers include the header in the branch).
+	const firstBranch = branchEntries[0];
+	const headerId = (header as any)?.id;
+	const firstId = firstBranch && typeof firstBranch === "object" ? (firstBranch as any)?.id : undefined;
+	const firstType = firstBranch && typeof firstBranch === "object" ? (firstBranch as any)?.type : undefined;
+	if (
+		!firstBranch ||
+		typeof firstBranch !== "object" ||
+		(firstType !== "session" && firstType !== "header") ||
+		firstId !== headerId
+	) {
 		lines.push(JSON.stringify(header));
-		sessionEmitted = true;
 	}
 
 	// Emit system event so the JSONL is self-contained — parsers can reconstruct

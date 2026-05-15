@@ -104,11 +104,13 @@ When developing locally, you often want to capture the exact prompt stream that 
 
 **Manual — if you prefer to control the path yourself:**
 ```bash
-export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump.jsonl
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump
 pi
 # … do your work …
-cat /tmp/pi-dump.txt      # read the reconstructed prompt
+cat /tmp/pi-dump.scout.1715724000000.txt   # read the reconstructed prompt
 ```
+
+You can also pass `--dump <path>` on the CLI as an alternative to the env var.
 
 **Convenience — one-liner for your shell:**
 ```bash
@@ -157,20 +159,26 @@ Global default delegation depth (`DEFAULT_MAX_DELEGATION_DEPTH`) is 3; each flow
 
 ### What a snapshot dump looks like
 
-When `PI_FLOW_DUMP_SNAPSHOT` is set, every time a flow spawns the agent writes two files **per flow** (the base path gets a unique suffix so parallel flows don't overwrite each other):
+When `PI_FLOW_DUMP_SNAPSHOT` is set (or `--dump <path>` is passed), every time a
+flow spawns the agent writes two files **per flow** (the base path gets a unique
+suffix so parallel flows don't overwrite each other):
 
-1. `<path>.<flowName>.<timestamp>.jsonl` — a JSON Lines stream with one object per message (system prompt, user prompt, tool calls, tool results, assistant replies).
-2. `<path>.<flowName>.<timestamp>.txt` — the reconstructed raw prompt as the model actually saw it.
+1. `<base>.<flowName>.<timestamp>.md` — a markdown file containing:
+   - A `<!-- pi-agent-flow dump -->` header with sanitization metadata
+   - `## Session Snapshot (JSONL)` — the full fork snapshot JSONL (post-sanitization)
+   - `## Activation Prompt (-p)` — the reconstructed raw prompt
+   - `## Compression Stats` — sanitization reduction metrics (when available)
+2. `<base>.<flowName>.<timestamp>.txt` — just the human-readable reconstructed prompt
 
 Example:
 
 ```bash
-export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot.jsonl
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot
 pi
 # After running a flow:
 ls -lh /tmp/pi-snapshot.*
-# → pi-snapshot.jsonl   (structured, machine-readable)
-# → pi-snapshot.txt     (human-readable prompt transcript)
+# → pi-snapshot.scout.1715724000000.md   (structured + human-readable)
+# → pi-snapshot.scout.1715724000000.txt   (prompt transcript only)
 ```
 
 > 💡 **When to use it:** You need to inspect exactly what was sent to the model, reproduce a bug offline, or share a verbatim trace with another developer. The dump is written **before** the model call, so even if the flow crashes you still have the prompt.

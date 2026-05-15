@@ -1319,7 +1319,7 @@ describe("acceptance field propagation", () => {
 		const prev = process.env.PI_FLOW_DUMP_SNAPSHOT;
 		process.env.PI_FLOW_DUMP_SNAPSHOT = dumpFile;
 		try {
-			const jsonl = '{"type":"header","systemPrompt":"test"}\n{"type":"message","message":{"role":"user","content":"hello"}}\n';
+			const jsonl = '{"type":"session","systemPrompt":"test"}\n{"type":"message","message":{"role":"user","content":"hello"}}\n';
 			const opts: RunFlowOptions = {
 				cwd: "/tmp",
 				flows: [mockFlow],
@@ -1348,15 +1348,21 @@ describe("acceptance field propagation", () => {
 			await promise;
 			// Each flow writes to a unique path; find the actual file.
 			const baseName = path.basename(baseDumpFile);
-			const files = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith(baseName));
-			expect(files.length).toBeGreaterThanOrEqual(1);
-			const actualDumpFile = path.join(os.tmpdir(), files[0]);
+			const mdFiles = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith(baseName) && f.endsWith(".md"));
+			expect(mdFiles.length).toBe(1);
+			const actualDumpFile = path.join(os.tmpdir(), mdFiles[0]);
 			const dumped = fs.readFileSync(actualDumpFile, "utf-8");
+			expect(dumped).toContain("<!-- pi-agent-flow dump");
+			expect(dumped).toContain("State: post-sanitization");
 			expect(dumped).toContain("## Session Snapshot (JSONL)");
 			expect(dumped).toContain("## Activation Prompt (-p)");
-			expect(dumped).toContain('"type":"header"');
+			expect(dumped).toContain('"type":"session"');
 			expect(dumped).toContain("<activation flow=\"scout\"");
+			const txtFile = actualDumpFile.replace(/\.md$/, ".txt");
+			expect(fs.existsSync(txtFile)).toBe(true);
+			expect(fs.readFileSync(txtFile, "utf-8")).toContain("<activation flow=\"scout\"");
 			try { fs.unlinkSync(actualDumpFile); } catch { /* ignore */ }
+			try { fs.unlinkSync(txtFile); } catch { /* ignore */ }
 		} finally {
 			if (prev === undefined) delete process.env.PI_FLOW_DUMP_SNAPSHOT;
 			else process.env.PI_FLOW_DUMP_SNAPSHOT = prev;
@@ -1372,7 +1378,7 @@ describe("acceptance field propagation", () => {
 		const prev = process.env.PI_FLOW_DUMP_SNAPSHOT;
 		delete process.env.PI_FLOW_DUMP_SNAPSHOT;
 		try {
-			const jsonl = '{"type":"header","systemPrompt":"test"}\n';
+			const jsonl = '{"type":"session","systemPrompt":"test"}\n';
 			const opts: RunFlowOptions = {
 				cwd: "/tmp",
 				flows: [mockFlow],

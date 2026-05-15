@@ -55,6 +55,7 @@ export interface ParsedFlowCliArgs {
 		flash?: string;
 		full?: string;
 	};
+	dumpPath?: string;
 }
 
 /**
@@ -89,6 +90,7 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 	let tieredLiteModel: string | undefined;
 	let tieredFlashModel: string | undefined;
 	let tieredFullModel: string | undefined;
+	let dumpPath: string | undefined;
 
 	let i = 2; // skip executable + script name
 	while (i < argv.length) {
@@ -281,6 +283,13 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 			continue;
 		}
 
+		if (flagName === "--dump") {
+			const [value, skip] = getValue();
+			if (value !== undefined) dumpPath = value;
+			i += skip;
+			continue;
+		}
+
 		if (inlineValue !== undefined) {
 			alwaysProxy.push(flagName, inlineValue);
 			i++;
@@ -312,5 +321,6 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 			flash: tieredFlashModel,
 			full: tieredFullModel,
 		},
+		dumpPath,
 	};
 }

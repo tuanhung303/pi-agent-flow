@@ -1,5 +1,17 @@
 /**
- * Helpers for parsing Pi JSON mode events and summarizing flow results.
+ * Streaming Stdout Protocol
+ *
+ * Event types emitted by pi child processes:
+ * - session: session metadata
+ * - agent_start: agent initialization
+ * - turn_start: turn beginning
+ * - message_start: message beginning
+ * - message_end: message completed
+ * - message_update: streaming delta
+ *   - thinking_start / thinking_delta: reasoning tokens
+ *   - text_delta: content tokens
+ *
+ * See snapshot.ts for the Fork Snapshot Protocol (session state serialization).
  */
 
 import type { Message } from "@mariozechner/pi-ai";
