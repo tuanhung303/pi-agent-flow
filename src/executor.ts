@@ -281,12 +281,16 @@ export async function executeFlows(
 		if (streamingText !== undefined) lastStreamingText = streamingText;
 		const text = lastStreamingText || "";
 		// Update live text store for DynamicScrambleText closures
-		setLiveText(toolCallId || 'collapsed', text);
+		// Store under both the actual key AND the predictable fallback
+		const key = toolCallId || 'collapsed';
+		setLiveText(key, text);
+		setLiveText('collapsed', text);  // ← ALWAYS store under predictable key
 		// Also update per-flow live text for multi-flow view
 		for (let i = 0; i < allResults.length; i++) {
 			const r = allResults[i];
 			if (r.streamingText) {
-				setLiveText(`${toolCallId || 'collapsed'}#${i}`, r.streamingText);
+				setLiveText(`${key}#${i}`, r.streamingText);
+				setLiveText(`collapsed#${i}`, r.streamingText);  // ← predictable fallback
 			}
 		}
 		const signature =
@@ -378,6 +382,7 @@ export async function executeFlows(
 						const flowText = partial.content?.[0]?.text;
 						if (flowText !== undefined) {
 							setLiveText(`${toolCallId || 'collapsed'}#${index}`, flowText);
+							setLiveText(`collapsed#${index}`, flowText);  // ← predictable fallback
 						}
 						emitProgress(partial.content?.[0]?.text);
 					}
