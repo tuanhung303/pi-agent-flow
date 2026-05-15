@@ -36,7 +36,7 @@ function formatGoal(entry: NonNullable<ReturnType<typeof getGoal>>): string {
 export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
   pi.registerCommand("flow-goal", {
     description:
-      "Manage an active flow goal. Subcommands: set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>], clear, pause, resume, edit <new-objective> [--acceptance <text>], status, show",
+      "Manage an active flow goal. Subcommands: set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>], clear, pause, resume, complete, edit <new-objective> [--acceptance <text>], status, show",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const trimmed = args.trim();
       const firstSpace = trimmed.indexOf(" ");
@@ -66,18 +66,9 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
           });
           ctx.ui.notify?.(`Goal set: ${entry.objective}`, "info");
 
-          // Immediately trigger the model to start working on the goal
-          const aim = objective.slice(0, 60);
-          const flowCall = JSON.stringify({
-            flow: [{
-              type: "build",
-              intent: objective,
-              aim,
-              ...(entry.acceptance ? { acceptance: entry.acceptance } : {})
-            }]
-          });
+          const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
           pi.sendMessage(
-            { content: `You have a new active goal. Analyze it and call the flow tool to start executing.\n\nGoal: ${objective}${entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : ''}\n\nCall the flow tool: ${flowCall}`, display: false },
+            { content: `You have a new active goal. Analyze it and call the flow tool to start executing.\n\nGoal: ${objective}${acceptanceLine}\n\nChoose the appropriate flow type (scout, craft, build, audit, debug, ideas) based on the objective's nature.`, display: false },
             { triggerTurn: true }
           );
           break;
@@ -102,18 +93,9 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
           if (entry) {
             ctx.ui.notify?.("Goal resumed", "info");
 
-            // Trigger the model to continue working on the resumed goal
-            const aim = entry.objective.slice(0, 60);
-            const flowCall = JSON.stringify({
-              flow: [{
-                type: "build",
-                intent: entry.objective,
-                aim,
-                ...(entry.acceptance ? { acceptance: entry.acceptance } : {})
-              }]
-            });
+            const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
             pi.sendMessage(
-              { content: `You have a resumed goal. Continue working on it and call the flow tool to proceed.\n\nGoal: ${entry.objective}${entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : ''}\n\nCall the flow tool: ${flowCall}`, display: false },
+              { content: `You have a resumed goal. Continue working on it and call the flow tool to proceed.\n\nGoal: ${entry.objective}${acceptanceLine}\n\nChoose the appropriate flow type (scout, craft, build, audit, debug, ideas) based on the objective's nature.`, display: false },
               { triggerTurn: true }
             );
           } else {
@@ -129,9 +111,16 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
             ctx.ui.notify?.("Usage: /flow-goal edit <new-objective> [--acceptance <text>]", "error");
             return;
           }
+          const previousGoal = getGoal(cwd);
+          const previousObjective = previousGoal?.objective ?? "(none)";
           const entry = updateGoalObjective(cwd, objective, acceptanceMatch?.[1]);
           if (entry) {
             ctx.ui.notify?.(`Goal updated: ${entry.objective}`, "info");
+            const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
+            pi.sendMessage(
+              { content: `<flow-goal-update>\nThe flow goal objective has been updated.\n\nPrevious: ${previousObjective}\nCurrent: ${entry.objective}${acceptanceLine}\n\nAdjust your plan accordingly. Continue with the revised objective. Choose the appropriate flow type.\n</flow-goal-update>`, display: false },
+              { triggerTurn: true }
+            );
           } else {
             ctx.ui.notify?.("No active goal to edit", "error");
           }
@@ -147,9 +136,18 @@ export function setupFlowGoalCommand(pi: ExtensionAPI, getCwd: () => string | un
           }
           break;
         }
+        case "complete": {
+          const entry = updateGoalStatus(cwd, "completed");
+          if (entry) {
+            ctx.ui.notify?.("Goal marked as completed", "info");
+          } else {
+            ctx.ui.notify?.("No active goal to complete", "error");
+          }
+          break;
+        }
         default: {
           ctx.ui.notify?.(
-            "Unknown subcommand. Usage: /flow-goal {set|clear|pause|resume|edit|status|show}",
+            "Unknown subcommand. Usage: /flow-goal {set|clear|pause|resume|complete|edit|status|show}",
             "error",
           );
         }

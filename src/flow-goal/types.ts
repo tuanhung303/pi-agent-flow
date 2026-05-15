@@ -2,7 +2,7 @@
  * Flow goal types — autonomous continuation state for multi-step goals.
  */
 
-export type FlowGoalStatus = "active" | "paused" | "completed" | "abandoned";
+export type FlowGoalStatus = "active" | "paused" | "budget_limited" | "completed" | "abandoned";
 
 export interface FlowGoalEntry {
   /** Unique goal identifier (timestamp-based). */

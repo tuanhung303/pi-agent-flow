@@ -215,9 +215,10 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 | `pause` | `/flow-goal pause` — Pauses auto-continuation so no new flows are spawned until the goal is resumed or cleared. |
 | `resume` | `/flow-goal resume` — Resumes a paused goal and **immediately auto-triggers** a build flow to continue. |
 | `edit` | `/flow-goal edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
+| `complete` | `/flow-goal complete` — Marks the current goal as completed. |
 | `status`, `show` | `/flow-goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
 
-> **Note on `completed` status:** `completed` is a valid `FlowGoalStatus`, but there is no `/flow-goal complete` command. Goals only reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
+> **Note on `completed` status:** `completed` is a valid `FlowGoalStatus`. Goals can be marked completed manually via `/flow-goal complete`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
 
 ### How it works
 
