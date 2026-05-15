@@ -890,8 +890,8 @@ function renderActivityPanel(
 				} else {
 					const needsTail = Boolean(getLiveTextWithFallback(flowId) || liveText || lastText);
 					const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
-					const result = scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete, undefined, true).content;
-					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result))}`;
+					const result = scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete, undefined, true);
+					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(result.content))}`;
 				}
 			},
 			true,

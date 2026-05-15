@@ -47,7 +47,7 @@ function hasAnsi(s: string): boolean {
 }
 
 const TEST_ID = 'test-id';
-const SCRAMBLE_CHAR_SET = '·∘∙~⋆˚｡+×◇°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+const SCRAMBLE_CHAR_SET = '???~???+???????????????';
 
 // ---------------------------------------------------------------------------
 // Stream mode tests
@@ -165,7 +165,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 	it('streamAct reveals text progressively', () => {
 		const base = 1000000;
 		const result = manager.streamAct(TEST_ID, 'read file.ts', base, false, 40);
-		// At first call, cursor just started — should have scramble chars
+		// At first call, cursor just started ? should have scramble chars
 		expect(hasAnsi(result)).toBe(true);
 	});
 
@@ -184,7 +184,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamAct(TEST_ID, 'read file.ts', base, false, 40);
 		// Let it complete
 		manager.streamAct(TEST_ID, 'read file.ts', base + 500, false, 40);
-		// New tool call — should reset and scramble again
+		// New tool call ? should reset and scramble again
 		const result = manager.streamAct(TEST_ID, 'write other.ts', base + 1000, false, 40);
 		expect(hasAnsi(result)).toBe(true);
 	});
@@ -196,7 +196,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		// Let it fully reveal
 		const before = manager.streamAct(TEST_ID, 'ls /foo/bar/a', base + 500, false, 40);
 		expect(hasAnsi(before)).toBe(false);
-		// Same tool, different path — should NOT reset (no dim scramble)
+		// Same tool, different path ? should NOT reset (no dim scramble)
 		const result = manager.streamAct(TEST_ID, 'ls /foo/bar/b', base + 600, false, 40);
 		expect(hasAnsi(result)).toBe(false);
 	});
@@ -219,7 +219,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 	it('streamMsg handles incremental text growth', () => {
 		const base = 1000000;
 		manager.streamMsg(TEST_ID, 'Found', base, false, 40);
-		// Text grew — cursor catches up
+		// Text grew ? cursor catches up
 		const result = manager.streamMsg(TEST_ID, 'Found 4 files', base + 200, false, 40);
 		// Should have some resolved and some scramble
 		expect(hasAnsi(result)).toBe(true);
@@ -230,7 +230,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamMsg(TEST_ID, 'Found 4 files', base, false, 40);
 		// Let it complete
 		manager.streamMsg(TEST_ID, 'Found 4 files', base + 500, false, 40);
-		// Completely new text — should reset
+		// Completely new text ? should reset
 		const result = manager.streamMsg(TEST_ID, 'Error: something failed', base + 1000, false, 40);
 		expect(hasAnsi(result)).toBe(true);
 	});
@@ -284,7 +284,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamMsg(TEST_ID, 'first flow', base, false, 40);
 		manager.streamMsg(TEST_ID, 'first flow', base + 500, true, 40);
 		expect(manager.hasAnyActiveAnimations(base + 500)).toBe(false);
-		// New flow starts — should reset and scramble again
+		// New flow starts ? should reset and scramble again
 		const result = manager.streamMsg(TEST_ID, 'second flow', base + 600, false, 40);
 		expect(hasAnsi(result)).toBe(true);
 		expect(stripAnsi(result)).not.toBe('second flow');
@@ -296,7 +296,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamAct(TEST_ID, 'read first.ts', base, false, 40);
 		manager.streamAct(TEST_ID, 'read first.ts', base + 500, true, 40);
 		expect(manager.hasAnyActiveAnimations(base + 500)).toBe(false);
-		// New flow starts — should reset and scramble again
+		// New flow starts ? should reset and scramble again
 		const result = manager.streamAct(TEST_ID, 'write second.ts', base + 600, false, 40);
 		expect(hasAnsi(result)).toBe(true);
 		expect(stripAnsi(result)).not.toBe('write second.ts');
@@ -308,7 +308,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		const textWithAnsi1 = '\x1b[32mhello\x1b[0m world';
 		const textWithAnsi2 = '\x1b[33mhello\x1b[0m world';
 		manager.streamMsg(TEST_ID, textWithAnsi1, base, false, 40);
-		// Same visible text, different ANSI codes — should NOT reset
+		// Same visible text, different ANSI codes ? should NOT reset
 		const result = manager.streamMsg(TEST_ID, textWithAnsi2, base + 500, false, 40);
 		// Should be fully revealed (same text, no reset)
 		expect(stripAnsi(result)).toBe('hello world');
@@ -327,14 +327,14 @@ describe('ScrambleStateManager (stream mode)', () => {
 		// Should have some resolved chars at the start
 		expect(stripAnsi(mid).slice(0, 1)).not.toBe(''); // at least 1 char revealed by ~170ms
 
-		// Now grow text beyond budget — window slides
+		// Now grow text beyond budget ? window slides
 		const result = manager.streamMsg(TEST_ID, '0123456789abc', base + 200, false, budget);
 		const stripped = stripAnsi(result);
 		// The visible text is the tail (last 10 chars). Because the window slid,
 		// the overlap-based adjustment should keep some chars revealed instead of
 		// dropping to 0 and showing pure scramble.
 		expect(stripped.length).toBeLessThanOrEqual(budget);
-		// Should NOT be pure scramble noise — at least some chars should be resolved
+		// Should NOT be pure scramble noise ? at least some chars should be resolved
 		// (the overlap "6789" was previously revealed and is still visible)
 		expect(stripped.slice(0, 2)).toBe('34'); // "3456789abc" tail, overlap preserved
 	});
@@ -345,9 +345,9 @@ describe('ScrambleStateManager (stream mode)', () => {
 		manager.streamMsg(TEST_ID, 'hello world', base, false, budget);
 		// Let 6 chars reveal
 		const partial = manager.streamMsg(TEST_ID, 'hello world', base + 250, false, budget);
-		expect(stripAnsi(partial).slice(0, 6)).toBe('hello '); // 250/35 ≈ 7 chars
+		expect(stripAnsi(partial).slice(0, 6)).toBe('hello '); // 250/35 ? 7 chars
 
-		// Grow text within budget — same visible text, just longer
+		// Grow text within budget ? same visible text, just longer
 		const result = manager.streamMsg(TEST_ID, 'hello world!', base + 250, false, budget);
 		// Old visible text "hello world" is a prefix of new visible text.
 		// Previously-revealed chars should stay revealed; only the new "!" is scrambled.
@@ -364,7 +364,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 		const done = manager.streamMsg(TEST_ID, 'first message text here', base + 1000, false, budget);
 		expect(hasAnsi(done)).toBe(false);
 
-		// Completely different text — no overlap
+		// Completely different text ? no overlap
 		const result = manager.streamMsg(TEST_ID, 'totally different content now', base + 1001, false, budget);
 		// Should reset and show scramble
 		expect(hasAnsi(result)).toBe(true);
@@ -394,7 +394,7 @@ describe('ScrambleStateManager (stream mode)', () => {
 
 		// Clock jumps backward (simulates NTP sync or VM time drift)
 		const afterJump = manager.streamMsg(TEST_ID, 'hello world', base + 50, false, 40);
-		// Should not crash or instantly complete — animation still active
+		// Should not crash or instantly complete ? animation still active
 		expect(hasAnsi(afterJump)).toBe(true);
 
 		// Clock recovers and catches up
@@ -543,7 +543,7 @@ describe('computeCascadeFrame', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildGlitchQueue', () => {
-	it('sets fadeOutEnd for removed chars (long → short)', () => {
+	it('sets fadeOutEnd for removed chars (long ? short)', () => {
 		const queue = buildGlitchQueue('hello world', 'hi', 40, 40);
 		// Indices 2+ are removed chars
 		for (let i = 2; i < queue.length; i++) {
@@ -717,7 +717,7 @@ describe('applyRipples', () => {
 });
 
 // ---------------------------------------------------------------------------
-// ScrambleStateManager — CASCADE mode tests
+// ScrambleStateManager ? CASCADE mode tests
 // ---------------------------------------------------------------------------
 
 describe('ScrambleStateManager (cascade mode)', () => {
@@ -747,7 +747,7 @@ describe('ScrambleStateManager (cascade mode)', () => {
 	it('updateAct does NOT scramble when text is the same', () => {
 		const base = 2000000;
 		manager.updateAct(TEST_ID, 'same text', base);
-		// First call creates cascade — still animating at t+300ms
+		// First call creates cascade ? still animating at t+300ms
 		const during = manager.updateAct(TEST_ID, 'same text', base + 300);
 		expect(during.isAnimating).toBe(true);
 		// After cascade completes (~640ms), plain text
@@ -840,7 +840,7 @@ describe('ScrambleStateManager (cascade mode)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// ScrambleStateManager — RIPPLE mode tests
+// ScrambleStateManager ? RIPPLE mode tests
 // ---------------------------------------------------------------------------
 
 describe('ScrambleStateManager (ripple mode)', () => {
@@ -879,7 +879,7 @@ describe('ScrambleStateManager (ripple mode)', () => {
 	it('same text does not trigger new ripple', () => {
 		const now = Date.now();
 		manager.updateMsg(TEST_ID, 'same text', now);
-		// First call creates ripple — still active at t+300ms
+		// First call creates ripple ? still active at t+300ms
 		const during = manager.updateMsg(TEST_ID, 'same text', now + 300);
 		expect(during.isAnimating).toBe(true);
 		// After ripple expires (dur scaled to 645ms for 9-char text) and afterglow ends at 4145ms, plain text
@@ -948,8 +948,8 @@ describe('ScrambleStateManager mode switching', () => {
 // ---------------------------------------------------------------------------
 
 describe('selectScrambleChar', () => {
-	it('returns deep glitch chars for depth 1–2', () => {
-		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+	it('returns deep glitch chars for depth 1?2', () => {
+		const deepChars = '???*?????????????????????';
 		for (let d = 1; d <= 2; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(deepChars).toContain(c);
@@ -957,13 +957,13 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns mid glitch chars for depth 3', () => {
-		const midChars = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const midChars = '???~???+??????????????';
 		const c = selectScrambleChar(3, 0, 0);
 		expect(midChars).toContain(c);
 	});
 
 	it('returns shallow glitch chars for depth 4+', () => {
-		const shallowChars = '·∘∙~×°+⠌⠡⠜';
+		const shallowChars = '???~?+???';
 		for (let d = 4; d <= 6; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(shallowChars).toContain(c);
@@ -971,7 +971,7 @@ describe('selectScrambleChar', () => {
 	});
 });
 
-describe('applyRipples — eased ripple expansion', () => {
+describe('applyRipples ? eased ripple expansion', () => {
 	it('easeOutQuart produces larger early radius than linear', () => {
 		const now = Date.now();
 		const ripple = { pos: 5, time: now - 100, dur: 666, spread: 1 };
@@ -984,7 +984,7 @@ describe('applyRipples — eased ripple expansion', () => {
 	});
 });
 
-describe('applyRipples — overlapping ripple blending', () => {
+describe('applyRipples ? overlapping ripple blending', () => {
 	it('blends two overlapping ripples instead of breaking after first match', () => {
 		const now = Date.now();
 		const r1 = { pos: 2, time: now - 50, dur: 666, spread: 1 };
@@ -997,7 +997,7 @@ describe('applyRipples — overlapping ripple blending', () => {
 	});
 });
 
-describe('applyRipples — negative elapsed / clock backward jump', () => {
+describe('applyRipples ? negative elapsed / clock backward jump', () => {
 	it('survives negative elapsed without crashing', () => {
 		const now = Date.now();
 		const futureRipple = { pos: 5, time: now + 1000, dur: 666, spread: 1 };
@@ -1007,7 +1007,7 @@ describe('applyRipples — negative elapsed / clock backward jump', () => {
 	});
 });
 
-describe('ScrambleStateManager — mode validation', () => {
+describe('ScrambleStateManager ? mode validation', () => {
 	it('throws on invalid mode string', () => {
 		const manager = new ScrambleStateManager();
 		expect(() => manager.setMode('invalid' as any)).toThrow('Invalid scramble mode');
@@ -1022,7 +1022,7 @@ describe('ScrambleStateManager — mode validation', () => {
 	});
 });
 
-describe('ScrambleStateManager — universal TPS hysteresis', () => {
+describe('ScrambleStateManager ? universal TPS hysteresis', () => {
 	it('ripple mode suppresses flash on tiny TPS change', () => {
 		const manager = new ScrambleStateManager();
 		manager.setMode('ripple');
@@ -1062,7 +1062,7 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		expect(hasAnsi(result)).toBe(true);
 	});
 
-	it('TPS flash respects 3s cooldown — blocked within cooldown, fires after', () => {
+	it('TPS flash respects 3s cooldown ? blocked within cooldown, fires after', () => {
 		const manager = new ScrambleStateManager();
 		manager.setMode('ripple');
 		const base = 6000000;
@@ -1107,23 +1107,23 @@ describe('ScrambleStateManager — universal TPS hysteresis', () => {
 		manager.setMode('ripple');
 		const base = 6000000;
 		// First call: sets state, no flash (not staticLine)
-		manager.updateMsgKpi(TEST_ID, '↑10k↓5k', base, false, false);
+		manager.updateMsgKpi(TEST_ID, '?10k?5k', base, false, false);
 		// Second call: value change triggers first flash (render at t+110 for wide ripple)
-		manager.updateMsgKpi(TEST_ID, '↑20k↓10k', base + 100, false, false);
+		manager.updateMsgKpi(TEST_ID, '?20k?10k', base + 100, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
-		const rendered = manager.updateMsgKpi(TEST_ID, '↑20k↓10k', base + 110, false, false);
+		const rendered = manager.updateMsgKpi(TEST_ID, '?20k?10k', base + 110, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
 		// Third call with new value but within 3s cooldown: blocked
-		const blocked = manager.updateMsgKpi(TEST_ID, '↑30k↓15k', base + 500, false, false);
-		expect(blocked).toBe('↑30k↓15k');
+		const blocked = manager.updateMsgKpi(TEST_ID, '?30k?15k', base + 500, false, false);
+		expect(blocked).toBe('?30k?15k');
 		// Fourth call after 3s cooldown: flash allowed
-		manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3100, false, false);
-		const afterCooldown = manager.updateMsgKpi(TEST_ID, '↑40k↓20k', base + 3140, false, false);
+		manager.updateMsgKpi(TEST_ID, '?40k?20k', base + 3100, false, false);
+		const afterCooldown = manager.updateMsgKpi(TEST_ID, '?40k?20k', base + 3140, false, false);
 		expect(manager.hasAnyActiveAnimations(base + 3140)).toBe(true);
 	});
 });
 
-describe('ScrambleStateManager — memory bounds', () => {
+describe('ScrambleStateManager ? memory bounds', () => {
 	it('sweeps completed flow entries when maps grow large', () => {
 		const manager = new ScrambleStateManager();
 		manager.setMode('cascade');
@@ -1139,7 +1139,7 @@ describe('ScrambleStateManager — memory bounds', () => {
 	});
 });
 
-describe('computeCascadeFrame — clamped negative frame', () => {
+describe('computeCascadeFrame ? clamped negative frame', () => {
 	it('handles negative frame without crashing', () => {
 		const queue = buildQueue('hello', 'world');
 		const result = computeCascadeFrame(queue, -5);
@@ -1184,8 +1184,8 @@ describe('applyRipples with illuminate config', () => {
 describe('applyRipples afterglow spark with thin braille', () => {
 	it('uses thin braille sparks when spark config is enabled (default)', () => {
 		// Deterministic setup: seed=0, now=155 gives agTick=3 with 40ms tick
-		// hashNoise(0, 0, 3, 77)=0.0436 < 0.045 → index 0 pops
-		// hashNoise(0, 7, 3, 77)=0.0006 < 0.045 → index 7 pops
+		// hashNoise(0, 0, 3, 77)=0.0436 < 0.045 ? index 0 pops
+		// hashNoise(0, 7, 3, 77)=0.0006 < 0.045 ? index 7 pops
 		const ripple = { pos: 0, time: -150, dur: 300, spread: 1, seed: 0 };
 		const config = { ...ILLUMINATE_CONFIGS.msgContent, spark: true, scramble: true };
 		const result = applyRipples('0123456789', [ripple], 155, config);
@@ -1212,17 +1212,17 @@ describe('applyRipples afterglow spark with thin braille', () => {
 		// Spaces should remain intact (index 1, 3, 5, etc. are spaces)
 		expect(plain[1]).toBe(' ');
 		expect(plain[3]).toBe(' ');
-		// Index 0 is not a space and deterministically pops → thin braille
+		// Index 0 is not a space and deterministically pops ? thin braille
 		expect(THIN_BRAILLE_SPARK).toContain(plain[0]);
 		// Index 7 in spaced text is a space, so it's preserved
 		expect(plain[7]).toBe(' ');
 	});
 });
 
-describe('illuminatePrefix — 12-zone SGR transition', () => {
+describe('illuminatePrefix ? 12-zone SGR transition', () => {
 	it('uses DIM prefix at low intensity', () => {
 		const now = Date.now();
-		// Early ripple = low intensity → dim zone (threshold 0.25)
+		// Early ripple = low intensity ? dim zone (threshold 0.25)
 		const ripple = { pos: 5, time: now - 10, dur: 850, spread: 1.5 };
 		const config = ILLUMINATE_CONFIGS.msgContent;
 		const result = applyRipples('abcdefghij', [ripple], now, config);
@@ -1232,7 +1232,7 @@ describe('illuminatePrefix — 12-zone SGR transition', () => {
 
 	it('uses no weight prefix at moderate intensity (normal zone)', () => {
 		const now = Date.now();
-		// Mid-ripple at moderate elapsed → normal zone (0.25–0.75)
+		// Mid-ripple at moderate elapsed ? normal zone (0.25?0.75)
 		const ripple = { pos: 5, time: now - 300, dur: 850, spread: 1.5 };
 		const config = ILLUMINATE_CONFIGS.msgContent;
 		const result = applyRipples('abcdefghij', [ripple], now, config);
@@ -1249,17 +1249,17 @@ describe('illuminatePrefix — 12-zone SGR transition', () => {
 		// Result must contain truecolor codes and be well-formed
 		expect(result).toContain('\x1b[38;2;');
 		// With wider band, some chars may be in normal zone (no weight prefix)
-		// while others are in dim zone — both are valid
+		// while others are in dim zone ? both are valid
 		expect(result.includes('\x1b[38;2;')).toBe(true);
 	});
 
 	it('produces magenta-spike mid-intensity colors', () => {
 		const now = Date.now();
-		// elapsed=250 at spread=1.5 on 14-char text hits magenta spike zone (0.30–0.42)
+		// elapsed=250 at spread=1.5 on 14-char text hits magenta spike zone (0.30?0.42)
 		const ripple = { pos: 7, time: now - 250, dur: 850, spread: 1.5 };
 		const config = ILLUMINATE_CONFIGS.msgContent;
 		const result = applyRipples('abcdefghijklmn', [ripple], now, config);
-		// Should produce truecolor codes — look for magenta/violet signature RGBs
+		// Should produce truecolor codes ? look for magenta/violet signature RGBs
 		// Magenta spike: high red (200-255), low green (50-100), medium blue (120-170)
 		expect(result).toContain('\x1b[38;2;');
 		const colorMatches = result.match(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g);
@@ -1291,17 +1291,17 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 	it('updateMsg shows plain text while buffering, ripples on chunk threshold', () => {
 		const base = 2000000;
 		manager.updateMsg(TEST_ID, 'Hello world', base);
-		// Same text — no ripple
+		// Same text ? no ripple
 		const same = manager.updateMsg(TEST_ID, 'Hello world', base + 100);
 		expect(same.isAnimating).toBe(false);
 		expect(stripAnsi(same.content)).toBe('Hello world');
 
-		// Text changes to short text without sentence boundary — no ripple (chunk too small)
+		// Text changes to short text without sentence boundary ? no ripple (chunk too small)
 		const small = manager.updateMsg(TEST_ID, 'Hello world how are', base + 200);
 		expect(small.isAnimating).toBe(false);
 		expect(stripAnsi(small.content)).toBe('Hello world how are');
 
-		// Text changes with sentence boundary — chunk threshold met, ripple fires immediately
+		// Text changes with sentence boundary ? chunk threshold met, ripple fires immediately
 		const longText = 'Hello world. How are you doing today? The weather is nice and the sun is shining.';
 		const ripple = manager.updateMsg(TEST_ID, longText, base + 300);
 		expect(ripple.isAnimating).toBe(true);
@@ -1311,12 +1311,12 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 	it('updateMsg does not ripple while text is actively changing', () => {
 		const base = 2000000;
 		manager.updateMsg(TEST_ID, 'Hello', base);
-		// Text changes rapidly — should stay plain, no animation
+		// Text changes rapidly ? should stay plain, no animation
 		const r1 = manager.updateMsg(TEST_ID, 'Hello wor', base + 100);
 		expect(r1.isAnimating).toBe(false);
 		expect(stripAnsi(r1.content)).toBe('Hello wor');
 
-		// More changes before debounce elapses — still plain
+		// More changes before debounce elapses ? still plain
 		const r2 = manager.updateMsg(TEST_ID, 'Hello world', base + 300);
 		expect(r2.isAnimating).toBe(false);
 		expect(stripAnsi(r2.content)).toBe('Hello world');
@@ -1331,7 +1331,7 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		expect(preStable.isAnimating).toBe(false);
 		expect(stripAnsi(preStable.content)).toBe('Hello world how are');
 
-		// Wait past MSG_STABLE_DEBOUNCE_MS (350ms) — ripple fires
+		// Wait past MSG_STABLE_DEBOUNCE_MS (350ms) ? ripple fires
 		const result = manager.updateMsg(TEST_ID, 'Hello world how are', base + 600);
 		expect(result.isAnimating).toBe(true);
 	});
@@ -1385,14 +1385,14 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		manager.updateMsg(TEST_ID, 'lo world foo bar', base);
 		// Simulate a 1-char tail window slide: old suffix overlaps new prefix (>50%)
 		const result = manager.updateMsg(TEST_ID, 'o world foo bar b', base + 100);
-		// Should NOT spawn a new ripple immediately — displayedText stays old
+		// Should NOT spawn a new ripple immediately ? displayedText stays old
 		expect(result.content).not.toContain(CYAN_GLOW);
 	});
 
 	it('shows plain text immediately on text changes', () => {
 		const base = 8000000;
 		manager.updateMsg(TEST_ID, 'hello world today', base);
-		// Text changes — should show latest text as plain immediately
+		// Text changes ? should show latest text as plain immediately
 		const result = manager.updateMsg(TEST_ID, 'world today is nice', base + 100);
 		const stripped = stripAnsi(result.content);
 		expect(stripped).toBe('world today is nice');
@@ -1402,12 +1402,12 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 	it('updateMsg ripples on slide after buffer timeout', () => {
 		const base = 9000000;
 		manager.updateMsg(TEST_ID, 'lo world foo bar', base);
-		// Sliding window changes — text is plain while sliding, no immediate ripple
+		// Sliding window changes ? text is plain while sliding, no immediate ripple
 		const sliding = manager.updateMsg(TEST_ID, 'world foo bar baz', base + 100);
 		expect(sliding.isAnimating).toBe(false);
 		expect(stripAnsi(sliding.content)).toBe('world foo bar baz');
 
-		// After buffer timeout (800ms) — ripple fires on stable text
+		// After buffer timeout (800ms) ? ripple fires on stable text
 		const result = manager.updateMsg(TEST_ID, 'world foo bar baz', base + 900);
 		expect(result.isAnimating).toBe(true);
 	});
@@ -1415,7 +1415,7 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 	it('updateMsg does not force ripple on short gap (processLine path)', () => {
 		const base = 2000000;
 		manager.updateMsg(TEST_ID, 'Helloworld!!', base);
-		// Small text change after 500ms — gap < STREAMING_RESUME_GAP_MS, no ripple
+		// Small text change after 500ms ? gap < STREAMING_RESUME_GAP_MS, no ripple
 		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 500);
 		expect(result.isAnimating).toBe(false);
 		expect(stripAnsi(result.content)).toBe('Helloworld!!!');
@@ -1434,10 +1434,10 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 	it('updateMsg staticLine does not force ripple on short gap', () => {
 		const base = 2000000;
 		manager.updateMsg(TEST_ID, 'Helloworld!!', base, false, undefined, true);
-		// Small text change after 500ms — gap < STREAMING_RESUME_GAP_MS, no ripple
+		// Small text change after 500ms ? gap < STREAMING_RESUME_GAP_MS, no ripple
 		const result = manager.updateMsg(TEST_ID, 'Helloworld!!!', base + 500, false, undefined, true);
 		expect(result.isAnimating).toBe(false);
-		expect(stripAnsi(result.content)).toBe('Helloworld!!!');
+		expect(stripAnsi(result.content)).toBe('Helloworld!!');
 	});
 
 	it('updateMsg staticLine forces ripple after long pause', () => {
@@ -1449,13 +1449,32 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 		expect(result.isAnimating).toBe(true);
 		// Note: early-frame glitch may show currentText for unstarted positions
 	});
+
+	it('updateMsg staticLine rate-limits tail-window pulses', () => {
+		const base = 2100000;
+		const firstTail = 'Hello world. This starts a visible msg pulse.';
+		const nextTail = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst';
+		const laterTail = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123';
+		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		manager.updateMsg(TEST_ID, firstTail, base + 100, false, undefined, true);
+
+		const beforeCooldown = manager.updateMsg(TEST_ID, nextTail, base + 700, false, undefined, true);
+		const beforeState = (manager as any).cache.get(TEST_ID)?.msg;
+		expect(beforeState.pendingGlitch).toBeNull();
+
+		const stillCoolingDown = manager.updateMsg(TEST_ID, nextTail, base + 2200, false, undefined, true);
+		expect(stillCoolingDown.isAnimating).toBe(false);
+
+		const afterCooldown = manager.updateMsg(TEST_ID, laterTail, base + 4200, false, undefined, true);
+		expect(afterCooldown.isAnimating).toBe(true);
+	});
 });
 
 // ---------------------------------------------------------------------------
 // Spread behavior tests
 // ---------------------------------------------------------------------------
 
-describe('applyRipples — spread < 1 radius proportionality', () => {
+describe('applyRipples ? spread < 1 radius proportionality', () => {
 	it('spread 0.5 produces narrower radius than spread 1.0', () => {
 		const now = Date.now();
 		const narrow = { pos: 5, time: now - 100, dur: 666, spread: 0.5 };
@@ -1472,7 +1491,7 @@ describe('applyRipples — spread < 1 radius proportionality', () => {
 		const ripple = { pos: 2, time: now - 50, dur: 666, spread: 0.5 };
 		const result = applyRipples('hello', [ripple], now);
 		const stripped = stripAnsi(result);
-		// At 50ms with spread 0.5, radius should be small — not all chars scrambled
+		// At 50ms with spread 0.5, radius should be small ? not all chars scrambled
 		const scrambled = stripped.split('').filter(c => !'hello'.includes(c)).length;
 		expect(scrambled).toBeLessThan(5);
 	});
@@ -1494,10 +1513,10 @@ describe('applyRipples — spread < 1 radius proportionality', () => {
 // Multi-ripple blending depth tests
 // ---------------------------------------------------------------------------
 
-describe('applyRipples — multi-ripple depth blending', () => {
+describe('applyRipples ? multi-ripple depth blending', () => {
 	it('picks deeper depth when ripples overlap', () => {
 		const now = Date.now();
-		// Two ripples at same position, same time — one with wider spread
+		// Two ripples at same position, same time ? one with wider spread
 		const r1 = { pos: 5, time: now - 100, dur: 666, spread: 0.8 };
 		const r2 = { pos: 5, time: now - 100, dur: 666, spread: 1.5 };
 		const result = applyRipples('abcdefghij', [r1, r2], now);
@@ -1533,11 +1552,11 @@ describe('applyRipples — multi-ripple depth blending', () => {
 // Random pool exhaustion tests
 // ---------------------------------------------------------------------------
 
-describe('poolRandomChar — exhaustion behavior', () => {
+describe('poolRandomChar ? exhaustion behavior', () => {
 	it('renders stream text correctly across many frames (pool cycles)', () => {
 		const visibleText = 'abcdefghij';
 		const cursorChars: string[] = [];
-		// Render 200 frames — pool size is 2048, so it will not exhaust
+		// Render 200 frames ? pool size is 2048, so it will not exhaust
 		for (let i = 0; i < 200; i++) {
 			const result = renderStreamText(visibleText, 3, 3, cursorChars);
 			expect(stripAnsi(result).length).toBe(visibleText.length);
@@ -1551,7 +1570,7 @@ describe('poolRandomChar — exhaustion behavior', () => {
 		manager1.setMode('cascade');
 		manager2.setMode('cascade');
 		const base = 1000000;
-		// Both managers animate same text — each should produce valid output
+		// Both managers animate same text ? each should produce valid output
 		manager1.updateMsg('id-1', 'hello world', base);
 		manager1.updateMsg('id-1', 'goodbye all', base + 300);
 		manager2.updateMsg('id-2', 'hello world', base);
@@ -1570,7 +1589,7 @@ describe('poolRandomChar — exhaustion behavior', () => {
 // randomizedCenter edge avoidance tests
 // ---------------------------------------------------------------------------
 
-describe('randomizedCenter — edge avoidance', () => {
+describe('randomizedCenter ? edge avoidance', () => {
 	it('3-char text always centers at index 1', () => {
 		const manager = new ScrambleStateManager();
 		manager.setMode('ripple');
@@ -1597,7 +1616,7 @@ describe('randomizedCenter — edge avoidance', () => {
 // sweepCompletedEntries batch deletion test
 // ---------------------------------------------------------------------------
 
-describe('ScrambleStateManager — sweepCompletedEntries batch delete', () => {
+describe('ScrambleStateManager ? sweepCompletedEntries batch delete', () => {
 	it('clears all completed entries in one sweep cycle', () => {
 		const manager = new ScrambleStateManager();
 		manager.setMode('cascade');
@@ -1607,7 +1626,7 @@ describe('ScrambleStateManager — sweepCompletedEntries batch delete', () => {
 			manager.updateMsg(id, 'test', 1000000 + i * 10);
 			manager.completeFlow(id);
 		}
-		// All 50 should be swept eventually — after enough operations
+		// All 50 should be swept eventually ? after enough operations
 		// Trigger an update that causes sweep
 		manager.updateMsg('fresh', 'hello', 1000000 + 50000, true);
 		// After batch sweep, completed entries should be gone
@@ -1619,7 +1638,7 @@ describe('ScrambleStateManager — sweepCompletedEntries batch delete', () => {
 // Visible-window contract tests
 // ---------------------------------------------------------------------------
 
-describe('ScrambleStateManager — visible-window contract', () => {
+describe('ScrambleStateManager ? visible-window contract', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -1678,7 +1697,7 @@ describe('ScrambleStateManager — visible-window contract', () => {
 // Static line behavior tests
 // ---------------------------------------------------------------------------
 
-describe('ScrambleStateManager — staticLine behavior', () => {
+describe('ScrambleStateManager ? staticLine behavior', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -1768,9 +1787,9 @@ describe('ScrambleStateManager — staticLine behavior', () => {
 		manager.setMode('ripple');
 		const base = 1000000;
 		// First call triggers initial flash (ripple dur = 400ms)
-		manager.updateText('id-1', 'header', 'scout - [↑ 0.11M]', base, false, true);
+		manager.updateText('id-1', 'header', 'scout - [? 0.11M]', base, false, true);
 		// Minor digit change (>50% overlap) should NOT spawn a new ripple
-		manager.updateText('id-1', 'header', 'scout - [↑ 0.12M]', base + 50, false, true);
+		manager.updateText('id-1', 'header', 'scout - [? 0.12M]', base + 50, false, true);
 		// Old ripple expires at base+400; afterglow ends at base+3900
 		expect(manager.hasAnyActiveAnimations(base + 4500)).toBe(false);
 	});
@@ -1898,7 +1917,7 @@ describe('buildQueue with seeded RNG', () => {
 	});
 });
 
-describe('buildQueue — organic cascade (asymmetric ease)', () => {
+describe('buildQueue ? organic cascade (asymmetric ease)', () => {
 	it('start frames remain valid with wider jitter', () => {
 		const rng = new FastRNG(42);
 		const queue = buildQueue('hello world', 'goodbye all', 40, 40, rng);
@@ -1947,17 +1966,17 @@ describe('selectScrambleChar with seed', () => {
 	});
 });
 
-describe('selectScrambleChar — smooth glitch blending', () => {
+describe('selectScrambleChar ? smooth glitch blending', () => {
 	it('returns deep glitch chars at shallow depth (1.0)', () => {
-		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+		const deepChars = '???*?????????????????????';
 		const c = selectScrambleChar(1, 0, 0, 12345);
 		expect(deepChars).toContain(c);
 	});
 
 	it('returns mid or shallow glitch chars at blend depth (3.0)', () => {
-		// At depth 3.0 we are in the mid→shallow blend zone [2.5, 3.5]
-		const midChars = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
-		const shallowChars = '·∘∙~×°+⠌⠡⠜';
+		// At depth 3.0 we are in the mid?shallow blend zone [2.5, 3.5]
+		const midChars = '???~???+??????????????';
+		const shallowChars = '???~?+???';
 		const c = selectScrambleChar(3, 0, 0, 12345);
 		const isMid = midChars.includes(c);
 		const isShallow = shallowChars.includes(c);
@@ -1965,7 +1984,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 	});
 
 	it('returns shallow glitch chars at deep depth (5.0)', () => {
-		const shallowChars = '·∘∙~×°+⠌⠡⠜';
+		const shallowChars = '???~?+???';
 		const c = selectScrambleChar(5, 0, 0, 12345);
 		expect(shallowChars).toContain(c);
 	});
@@ -1977,8 +1996,8 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 		for (let seed = 0; seed < 50; seed++) {
 			results.add(selectScrambleChar(2, seed, 0, seed));
 		}
-		const deepChars = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
-		const midChars = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const deepChars = '???*?????????????????????';
+		const midChars = '???~???+??????????????';
 		let deepCount = 0;
 		let midCount = 0;
 		for (const c of results) {
@@ -1994,8 +2013,8 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 		for (let seed = 0; seed < 50; seed++) {
 			results.add(selectScrambleChar(3, seed, 0, seed));
 		}
-		const midChars = 'abcdefghijklmnopqrstuvwxyzᚠᚢᚦᚨᚻᛟᛝ◇◈△▽○●◎';
-		const shallowChars = '·∘∙⠁⠂⠃⠄⠅⠆~?+-';
+		const midChars = 'abcdefghijklmnopqrstuvwxyz??????????????';
+		const shallowChars = '?????????~?+-';
 		let midCount = 0;
 		let shallowCount = 0;
 		for (const c of results) {
@@ -2006,7 +2025,7 @@ describe('selectScrambleChar — smooth glitch blending', () => {
 	});
 });
 
-describe('applyRipples — depth band (DEPTH_BAND_MAX=7)', () => {
+describe('applyRipples ? depth band (DEPTH_BAND_MAX=7)', () => {
 	it('scrambles more characters with wider band at same elapsed time', () => {
 		const now = Date.now();
 		const ripple = { pos: 5, time: now - 100, dur: 666, spread: 1 };
@@ -2078,7 +2097,7 @@ describe('findSentenceStarts', () => {
 describe('randomSentenceStart', () => {
 	it('centers for single-sentence short text', () => {
 		const pos = randomSentenceStart('hello world');
-		// Length 11, center is ~5 with ±4 jitter (0.4 ratio for short text) → [1, 9]
+		// Length 11, center is ~5 with ?4 jitter (0.4 ratio for short text) ? [1, 9]
 		expect(pos).toBeGreaterThanOrEqual(1);
 		expect(pos).toBeLessThanOrEqual(9);
 	});
@@ -2099,7 +2118,7 @@ describe('randomSentenceStart', () => {
 // Stream-too-fast fix: ripple coexistence and cascade guard
 // ---------------------------------------------------------------------------
 
-describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', () => {
+describe('ScrambleStateManager (ripple mode) ? sentence-start coexistence', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -2111,14 +2130,14 @@ describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', ()
 	it('updateMsg staticLine suppresses new ripple while old one is active', () => {
 		const base = 2000000;
 		manager.updateMsg(TEST_ID, 'Hello world. Second sentence.', base, false, undefined, true);
-		// First call initializes — one ripple spawned
+		// First call initializes ? one ripple spawned
 		const result1 = manager.updateMsg(TEST_ID, 'Hello world. Second sentence.', base + 100, false, undefined, true);
 		expect(result1.isAnimating).toBe(true);
 
-		// Second call with changed text while old ripple still active — should SUPPRESS
+		// Second call with changed text while old ripple still active ? should SUPPRESS
 		const result2 = manager.updateMsg(TEST_ID, 'Hello world. Second changed.', base + 600, false, undefined, true);
 		expect(result2.isAnimating).toBe(true);
-		// New text is now visible during ripple — wavefront scrambles what it hits,
+		// New text is now visible during ripple ? wavefront scrambles what it hits,
 		// content outside shows as plain. state.displayedText stays frozen only for
 		// chunk-detection, not rendering.
 		expect(stripAnsi(result2.content).length).toBe('Hello world. Second changed.'.length);
@@ -2130,7 +2149,7 @@ describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', ()
 		manager.updateMsg(TEST_ID, text, base, false, undefined, true);
 		// Warm-up call after afterglow expiry
 		manager.updateMsg(TEST_ID, text, base + 1200, false, undefined, true);
-		// Wait for afterglow + cooldown, then change text — ensures a fresh ripple
+		// Wait for afterglow + cooldown, then change text ? ensures a fresh ripple
 		const changed = 'First sentence. Second changed. Third here.';
 		const result = manager.updateMsg(TEST_ID, changed, base + 2000, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
@@ -2141,7 +2160,7 @@ describe('ScrambleStateManager (ripple mode) — sentence-start coexistence', ()
 	});
 });
 
-describe('ScrambleStateManager (cascade mode) — no-restart guard', () => {
+describe('ScrambleStateManager (cascade mode) ? no-restart guard', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -2168,7 +2187,7 @@ describe('ScrambleStateManager (cascade mode) — no-restart guard', () => {
 	});
 });
 
-describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => {
+describe('ScrambleStateManager (illuminate mode) ? ripple coexistence', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -2180,7 +2199,7 @@ describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => 
 	it('updateMsg staticLine ripples immediately on text change with boundary', () => {
 		const base = 5000000;
 		manager.updateMsg(TEST_ID, 'Hello world. How are you?', base, false, undefined, true);
-		// Text changes with sentence boundary — chunk threshold met, ripple fires immediately
+		// Text changes with sentence boundary ? chunk threshold met, ripple fires immediately
 		const result = manager.updateMsg(TEST_ID, 'Goodbye world. How is it?', base + 100, false, undefined, true);
 		expect(result.isAnimating).toBe(true);
 		// Note: early-frame glitch may show currentText for unstarted positions
@@ -2192,23 +2211,23 @@ describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => 
 		// Initialize with short text
 		manager.updateMsg(TEST_ID, 'running...', base, false, undefined, true);
 
-		// Text changes to short text — no immediate ripple (chunk too small)
+		// Text changes to short text ? no immediate ripple (chunk too small)
 		manager.updateMsg(TEST_ID, 'running... done', base + 100, false, undefined, true);
-		// After drain timeout (350ms) with no new text — ripple fires on leftover content
+		// After drain timeout (350ms) with no new text ? ripple fires on leftover content
 		const drainRipple = manager.updateMsg(TEST_ID, 'running... done', base + 500, false, undefined, true);
 		expect(drainRipple.isAnimating).toBe(true);
 
-		// Ripple finishes, text still stable — no re-ripple on unchanged text
+		// Ripple finishes, text still stable ? no re-ripple on unchanged text
 		const stable = manager.updateMsg(TEST_ID, 'running... done', base + 5000, false, undefined, true);
 		expect(stable.isAnimating).toBe(false);
 		expect(stripAnsi(stable.content)).toBe('running... done');
 
-		// Text changes with sentence boundary — chunk threshold met, ripple fires
+		// Text changes with sentence boundary ? chunk threshold met, ripple fires
 		const longText = 'running... done. Now we are processing the data and analyzing the results carefully.';
 		const chunkRipple = manager.updateMsg(TEST_ID, longText, base + 5500, false, undefined, true);
 		expect(chunkRipple.isAnimating).toBe(true);
 
-		// Ripple finishes, text still stable — no re-ripple
+		// Ripple finishes, text still stable ? no re-ripple
 		const later = manager.updateMsg(TEST_ID, longText, base + 10000, false, undefined, true);
 		expect(later.isAnimating).toBe(false);
 		expect(stripAnsi(later.content)).toBe(longText);
@@ -2216,11 +2235,11 @@ describe('ScrambleStateManager (illuminate mode) — ripple coexistence', () => 
 });
 
 // ---------------------------------------------------------------------------
-// Bug fixes — staticLine buffering: lastFlushTime init, budget-overflow,
+// Bug fixes ? staticLine buffering: lastFlushTime init, budget-overflow,
 // ripple position bounds
 // ---------------------------------------------------------------------------
 
-describe('ScrambleStateManager — lastFlushTime init', () => {
+describe('ScrambleStateManager ? lastFlushTime init', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -2251,19 +2270,19 @@ describe('ScrambleStateManager — lastFlushTime init', () => {
 		manager.setMode('illuminate');
 		const base = 1_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world.', base, false, undefined, true);
-		// Text streams in — plain, no ripple (chunk too small)
+		// Text streams in, but the visible chunk remains stable until the glitch handoff.
 		const r1 = manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100, false, undefined, true);
 		expect(r1.isAnimating).toBe(false);
-		expect(stripAnsi(r1.content)).toBe('Hello world. How are you today?');
+		expect(stripAnsi(r1.content)).toBe('Hello world.');
 
-		// After buffer timeout (800ms) — drain fires on pending text change
+		// After buffer timeout (800ms) ? drain fires on pending text change
 		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 900, false, undefined, true);
 		expect(r2.isAnimating).toBe(true);
 		// Note: early-frame glitch may show currentText for unstarted positions
 	});
 });
 
-describe('ScrambleStateManager — ripple position bounds', () => {
+describe('ScrambleStateManager ? ripple position bounds', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -2288,7 +2307,7 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 100, false, undefined, true);
 		// Old text stays frozen on screen during suppression (ripple still active).
 		const frozen = manager.updateMsg(TEST_ID, 'Brand new text here.', base + 300, false, undefined, true);
-		// Content is the OLD text with active scramble chars — definitely not the new text.
+		// Content is the OLD text with active scramble chars ? definitely not the new text.
 		expect(stripAnsi(frozen.content)).not.toBe('Brand new text here.');
 		// Wait for old ripple + afterglow to fully expire and cooldown to pass
 		manager.updateMsg(TEST_ID, 'Brand new text here.', base + 1200, false, undefined, true);
@@ -2300,7 +2319,7 @@ describe('ScrambleStateManager — ripple position bounds', () => {
 	});
 });
 
-describe('ScrambleStateManager — msg chunk glitch fixes', () => {
+describe('ScrambleStateManager ? msg chunk glitch fixes', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
@@ -2308,7 +2327,7 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 		manager.setMode('illuminate');
 	});
 
-	it('stores pending glitch when new chunk arrives during active glitch', () => {
+	it('rate-limits pending glitch when new chunk arrives during active glitch', () => {
 		const base = 10_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
 		// Trigger glitch with sentence boundary
@@ -2316,29 +2335,64 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 
 		// While glitch is active, send a new chunk with enough chars to trigger F1 accumulator
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 200, false, undefined, true);
+		const duringCooldown = (manager as any).cache.get(TEST_ID)?.msg;
+		expect(duringCooldown.pendingGlitch).toBeNull();
 
-		// After original glitch completes (~1100ms), pending glitch should still be animating
-		const result = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 1500, false, undefined, true);
-		expect(result.isAnimating).toBe(true);
-		// Note: early-frame glitch may show currentText for unstarted positions
+		// After the readable pause, the latest chunk gets its own controlled handoff.
+		const started = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 4300, false, undefined, true);
+		expect(started.isAnimating).toBe(true);
+		const settled = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 6700, false, undefined, true);
+		expect(settled.isAnimating).toBe(false);
+		expect(stripAnsi(settled.content)).toBe('Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.');
 	});
 
-	it('pending glitch starts when active glitch completes', () => {
+	it('keeps msg pulse active for about two seconds', () => {
+		const base = 10_000_000;
+		manager.updateMsg(TEST_ID, 'Hello', base, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Hello world. This is a longer msg pulse target.', base + 100, false, undefined, true);
+
+		const during = manager.updateMsg(TEST_ID, 'Hello world. This is a longer msg pulse target.', base + 1900, false, undefined, true);
+		expect(during.isAnimating).toBe(true);
+
+		const after = manager.updateMsg(TEST_ID, 'Hello world. This is a longer msg pulse target.', base + 2400, false, undefined, true);
+		expect(after.isAnimating).toBe(false);
+		expect(stripAnsi(after.content)).toBe('Hello world. This is a longer msg pulse target.');
+	});
+
+	it('does not commit a new msg chunk until the active pulse completes', () => {
+		const base = 10_000_000;
+		manager.updateMsg(TEST_ID, 'Previous chunk.', base, false, undefined, true);
+
+		const nextChunk = 'Next chunk. This is long enough to trigger an accumulator pulse.';
+		const started = manager.updateMsg(TEST_ID, nextChunk, base + 100, false, undefined, true);
+		const duringState = (manager as any).cache.get(TEST_ID)?.msg;
+		expect(started.isAnimating).toBe(true);
+		expect(duringState.displayedText).toBe('Previous chunk.');
+
+		const after = manager.updateMsg(TEST_ID, nextChunk, base + 2400, false, undefined, true);
+		const afterState = (manager as any).cache.get(TEST_ID)?.msg;
+		expect(after.isAnimating).toBe(false);
+		expect(stripAnsi(after.content)).toBe(nextChunk);
+		expect(afterState.displayedText).toBe(nextChunk);
+	});
+
+	it('pending glitch waits for pulse cooldown after active glitch completes', () => {
 		const base = 10_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100, false, undefined, true);
 
-		// Queue pending glitch with long text to trigger F1 accumulator
+		// Rapid follow-up chunk is displayed but should not queue a back-to-back pulse.
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 200, false, undefined, true);
 
-		// First call after active glitch completes triggers pendingGlitch start
-		const r1 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 1500, false, undefined, true);
-		expect(r1.isAnimating).toBe(true);
+		const r1 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 2500, false, undefined, true);
+		expect(r1.isAnimating).toBe(false);
 
-		// Wait long enough for pending glitch to complete too
-		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 3000, false, undefined, true);
-		expect(r2.isAnimating).toBe(false);
-		expect(stripAnsi(r2.content)).toBe('Hello world. How are you today? This is new and it contains enough characters.');
+		// Stable unchanged text after the cadence window gets a controlled follow-up pulse.
+		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 4300, false, undefined, true);
+		expect(r2.isAnimating).toBe(true);
+		const r3 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 6700, false, undefined, true);
+		expect(r3.isAnimating).toBe(false);
+		expect(stripAnsi(r3.content)).toBe('Hello world. How are you today? This is new and it contains enough characters.');
 	});
 
 	it('applyScramble cascade with empty queue returns text, not stale displayedText', () => {
@@ -2354,7 +2408,7 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 		expect(stripAnsi(result.content)).toBe('hello universe');
 	});
 
-	it('multiple rapid chunks overwrite pending glitch properly', () => {
+	it('multiple rapid chunks do not chain pending glitches inside pulse cooldown', () => {
 		const base = 10_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today?', base + 100, false, undefined, true);
@@ -2363,11 +2417,15 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today? First chunk with many extra characters to trigger accumulator properly.', base + 200, false, undefined, true);
 		// Second pending chunk overwrites (also triggers F1)
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 300, false, undefined, true);
+		const duringCooldown = (manager as any).cache.get(TEST_ID)?.msg;
+		expect(duringCooldown.pendingGlitch).toBeNull();
 
-		// After active glitch completes, the LAST pending glitch should run
-		const result = manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 1500, false, undefined, true);
-		expect(result.isAnimating).toBe(true);
-		// Note: early-frame glitch may show currentText for unstarted positions
+		// After cooldown, unchanged latest chunk should be committed by one follow-up pulse.
+		const started = manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 4300, false, undefined, true);
+		expect(started.isAnimating).toBe(true);
+		const settled = manager.updateMsg(TEST_ID, 'Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.', base + 6700, false, undefined, true);
+		expect(settled.isAnimating).toBe(false);
+		expect(stripAnsi(settled.content)).toBe('Hello world. How are you today? Second chunk with even more characters to overwrite the pending glitch queue.');
 	});
 
 	it('computeGlitchFrame shows currentText for resolved positions instead of stale entry.to', () => {
@@ -2400,7 +2458,7 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 		const rng = () => 'X';
 		const queue = buildGlitchQueue('ab', 'cd');
 		const lateFrame = 999; // well past all entry ends
-		const result = computeGlitchFrame(queue, lateFrame, rng, '✔c✅d');
+		const result = computeGlitchFrame(queue, lateFrame, rng, `${String.fromCodePoint(0x2714)}c${String.fromCodePoint(0x2705)}d`);
 		expect(stripAnsi(result)).toBe('cd');
 	});
 
@@ -2444,7 +2502,7 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 // Frame-by-frame desync reproduction tests
 // ---------------------------------------------------------------------------
 
-describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix', () => {
+describe('ScrambleStateManager (illuminate mode) ? frame-by-frame desync fix', () => {
 	let manager: ScrambleStateManager;
 	const getMsgState = (id: string) => (manager as any).cache.get(id)?.msg;
 
@@ -2470,11 +2528,13 @@ describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix',
 		result = manager.updateMsg(id, growingText, base + 200, false, undefined, true);
 		const stateAfterGrow = getMsgState(id);
 		expect(stateAfterGrow.glitchQueue.length > 0 || stateAfterGrow.pendingGlitch != null).toBe(true);
+		expect(stateAfterGrow.displayedText).toBe('Hello world');
+		expect(stateAfterGrow.lastText).toBe(growingText);
 
 		// Poll every 200ms until animation settles (real TUI calls updateMsg each frame)
 		let t = base + 200;
 		let settleResult = result;
-		while (settleResult.isAnimating && t < base + 10000) {
+		while ((settleResult.isAnimating || getMsgState(id)?.displayedText !== growingText) && t < base + 20000) {
 			t += 200;
 			settleResult = manager.updateMsg(id, growingText, t, false, undefined, true);
 		}
@@ -2512,7 +2572,7 @@ describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix',
 		// Poll every 200ms until animation settles
 		let t = base + 200;
 		let result = manager.updateMsg(id, growingText, t);
-		while (result.isAnimating && t < base + 10000) {
+		while (result.isAnimating && t < base + 20000) {
 			t += 200;
 			result = manager.updateMsg(id, growingText, t);
 		}
@@ -2545,13 +2605,13 @@ describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix',
 		// Another small chunk
 		manager.updateMsg(id, 'Hello world!', base + 100, false, undefined, true);
 
-		// Stop updating — drain should fire after MSG_CHUNK_DRAIN_MS (120ms)
+		// Stop updating ? drain should fire after MSG_CHUNK_DRAIN_MS (120ms)
 		const drainResult = manager.updateMsg(id, 'Hello world!', base + 250, false, undefined, true);
 		const drainState = getMsgState(id);
 
 		// At t=250, drain should have fired (150ms since last text change)
 		// Content should at least be correct after glitch fully completes
-		const final = manager.updateMsg(id, 'Hello world!', base + 4000, false, undefined, true);
+		const final = manager.updateMsg(id, 'Hello world!', base + 8000, false, undefined, true);
 		const finalState = getMsgState(id);
 
 		expect(final.isAnimating).toBe(false);
@@ -2574,7 +2634,7 @@ describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix',
 		const state1 = getMsgState(id);
 		expect(state1.glitchQueue.length).toBeGreaterThan(0);
 
-		// Second change while glitch active — should queue pending
+		// Second change while glitch active ? should queue pending
 		const text2 = 'Initial text here for testing the pending glitch queue behavior. Second chunk with even more extra characters to overwrite pending.';
 		manager.updateMsg(id, text2, base + 200, false, undefined, true);
 		const state2 = getMsgState(id);
@@ -2583,7 +2643,7 @@ describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix',
 		// Poll until settled
 		let t = base + 200;
 		let final = manager.updateMsg(id, text2, t, false, undefined, true);
-		while (final.isAnimating && t < base + 10000) {
+		while ((final.isAnimating || getMsgState(id)?.displayedText !== text2) && t < base + 20000) {
 			t += 200;
 			final = manager.updateMsg(id, text2, t, false, undefined, true);
 		}
