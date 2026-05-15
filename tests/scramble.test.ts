@@ -28,6 +28,7 @@ import {
 	hashNoise,
 	findSentenceStarts,
 	randomSentenceStart,
+	DynamicScrambleText,
 } from '../src/scramble.js';
 
 // ---------------------------------------------------------------------------
@@ -2616,5 +2617,39 @@ describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix',
 		expect(stripAnsi(afterComplete.content)).toBe('Start text. Changed text here.');
 		expect(state.displayedText).toBe('Start text. Changed text here.');
 		expect(state.lastText).toBe('Start text. Changed text here.');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// DynamicScrambleText component
+// ---------------------------------------------------------------------------
+
+describe('DynamicScrambleText', () => {
+	it('renders initial content', () => {
+		const comp = new DynamicScrambleText('hello', () => 'world');
+		const lines = comp.render(80);
+		expect(lines).toEqual(['world']);
+	});
+
+	it('recomputes content on each render', () => {
+		let callCount = 0;
+		const comp = new DynamicScrambleText('init', () => {
+			callCount++;
+			return `call-${callCount}`;
+		});
+		expect(comp.render(80)).toEqual(['call-1']);
+		expect(comp.render(80)).toEqual(['call-2']);
+		expect(comp.render(80)).toEqual(['call-3']);
+	});
+
+	it('passes width to underlying Text', () => {
+		const comp = new DynamicScrambleText('a\nb', () => 'c\nd');
+		const lines = comp.render(10);
+		expect(lines).toEqual(['c', 'd']);
+	});
+
+	it('invalidate delegates to base Text', () => {
+		const comp = new DynamicScrambleText('x', () => 'y');
+		expect(() => comp.invalidate()).not.toThrow();
 	});
 });

@@ -26,6 +26,8 @@
 
 import type { UsageStats } from './types.js';
 import { stripAnsi, tailText, truncateChars } from './render-utils.js';
+import type { Component } from '@mariozechner/pi-tui';
+import { Text } from '@mariozechner/pi-tui';
 
 // ---------------------------------------------------------------------------
 // Fast RNG (xorshift32) + hash-based noise
@@ -2891,6 +2893,25 @@ export function runScrambleTimer(args: Record<string, any> | undefined): void {
 			clearTimeout(s.animTimer);
 			s.animTimer = undefined;
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DynamicScrambleText — TUI component that recomputes scramble on re-render
+// ---------------------------------------------------------------------------
+
+export class DynamicScrambleText implements Component {
+	private base: Text;
+	constructor(
+		initialContent: string,
+		private getScrambleContent: () => string,
+	) {
+		this.base = new Text(initialContent, 0, 0);
+	}
+	invalidate(): void { this.base.invalidate(); }
+	render(width: number): string[] {
+		this.base.setText(this.getScrambleContent());
+		return this.base.render(width);
 	}
 }
 

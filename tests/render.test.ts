@@ -13,14 +13,16 @@ import {
 	stripAnsi,
 } from "../src/render-utils.js";
 import { renderFlowCall, renderFlowResult, renderSingleFlowResult } from "../src/render.js";
-import { scrambleManager } from "../src/scramble.js";
+import { scrambleManager, DynamicScrambleText } from "../src/scramble.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
 
-// Helper to extract text from Text, TruncatedText, or Container objects
-function extractText(node: Text | Container | TruncatedText): string {
+// Helper to extract text from Text, TruncatedText, Container, or DynamicScrambleText objects
+function extractText(node: Text | Container | TruncatedText | DynamicScrambleText): string {
 	let raw: string;
-	if ("text" in node && typeof node.text === "string") {
+	if (node instanceof DynamicScrambleText) {
+		raw = node.render(80).join("\n");
+	} else if ("text" in node && typeof node.text === "string") {
 		raw = node.text;
 	} else if ("children" in node && Array.isArray(node.children)) {
 		raw = node.children.map((child: any) => extractText(child)).join("\n");
@@ -1235,7 +1237,7 @@ describe("formatFlowToolCall — batch", () => {
 // ---------------------------------------------------------------------------
 
 describe("in-place mutation pattern", () => {
-	it("renderFlowResult reuses the same container reference when args.state is provided", () => {
+	it("renderFlowResult always returns a fresh container (no __rootContainer caching)", () => {
 		const state: Record<string, any> = {};
 		const args = { flow: [{ type: "scout", intent: "test" }], state };
 		const result = makeResult();
@@ -1244,20 +1246,8 @@ describe("in-place mutation pattern", () => {
 		const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
 		const rendered2 = renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
 
-		expect(rendered1).toBe(rendered2);
-		expect(state.__rootContainer).toBe(rendered1);
-	});
-
-	it("renderFlowResult stores container in state on first call", () => {
-		const state: Record<string, any> = {};
-		const args = { flow: [{ type: "scout", intent: "test" }], state };
-		const result = makeResult();
-		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
-
-		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
-
-		expect(state.__rootContainer).toBeDefined();
-		expect("children" in state.__rootContainer).toBe(true);
+		expect(rendered1).not.toBe(rendered2);
+		expect(state.__rootContainer).toBeUndefined();
 	});
 
 	it("renderFlowResult works without state (backwards compatible)", () => {
@@ -1270,15 +1260,15 @@ describe("in-place mutation pattern", () => {
 		expect(rendered1).not.toBe(rendered2);
 	});
 
-	it("renderFlowCall reuses the same container reference when args.state is provided", () => {
+	it("renderFlowCall always returns a fresh Text (no __rootContainer caching)", () => {
 		const state: Record<string, any> = {};
 		const args = { flow: [{ type: "scout", intent: "test" }], state };
 
 		const rendered1 = renderFlowCall(args, makeTheme());
 		const rendered2 = renderFlowCall(args, makeTheme());
 
-		expect(rendered1).toBe(rendered2);
-		expect(state.__rootContainer).toBe(rendered1);
+		expect(rendered1).not.toBe(rendered2);
+		expect(state.__rootContainer).toBeUndefined();
 	});
 
 	it("renderFlowCall works without state (backwards compatible)", () => {
