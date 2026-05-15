@@ -7,7 +7,7 @@
 
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
 import type { SpawnContinuation } from "./types.js";
-import { getGoal, addTokens, updateGoalStatus, recordFlowCompletion } from "./store.js";
+import { getGoal, addTokens, updateGoalStatus } from "./store.js";
 import {
   continuationTemplate,
   budgetLimitTemplate,
@@ -83,8 +83,7 @@ export function setupContinuation(
       return;
     }
 
-    // Spawn continuation
-    const beforeCount = goal.completedFlows.length;
+    // Spawn continuation — only delegate, do not record fake completions
     await spawnContinuation([
       {
         type: "build",
@@ -93,10 +92,5 @@ export function setupContinuation(
         acceptance: goal.acceptance,
       },
     ]);
-    const afterGoal = getGoal(cwd);
-    if (afterGoal && afterGoal.completedFlows.length === beforeCount) {
-      recordFlowCompletion(cwd, { type: "build", intent: goal.objective, aim: goal.objective.slice(0, 60) });
-      addTokens(cwd, turnTokens);
-    }
   });
 }
