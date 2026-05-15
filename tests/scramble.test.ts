@@ -574,11 +574,11 @@ describe('buildGlitchQueue', () => {
 		}
 	});
 
-	it('fadeOutEnd is exactly end + GLITCH_FADE_OUT_FRAMES', () => {
+	it('fadeOutEnd includes proportional bonus frames', () => {
 		const queue = buildGlitchQueue('abcdef', 'ab', 0, 0);
-		// For removed chars at indices 2+, fadeOutEnd = end + 18
+		// 4 deletions -> bonus = min(8, floor(4/2)) = 2
 		for (let i = 2; i < queue.length; i++) {
-			expect(queue[i].fadeOutEnd).toBe(queue[i].end + 18);
+			expect(queue[i].fadeOutEnd).toBe(queue[i].end + 18 + 2);
 		}
 	});
 });
@@ -675,6 +675,103 @@ describe('isGlitchComplete', () => {
 
 	it('returns true for empty queue', () => {
 		expect(isGlitchComplete([], 0)).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Glitch shrink-and-expand animation tests
+// ---------------------------------------------------------------------------
+
+describe('buildGlitchQueue — proportional fade-out timing', () => {
+	it('adds bonus frames proportional to deleted char count', () => {
+		const queue = buildGlitchQueue('hello world', 'hi', 0, 0);
+		const deletedItems = queue.filter(q => q.to === '' && q.from !== '');
+		expect(deletedItems.length).toBe(9);
+		const bonus = Math.min(8, Math.floor(9 / 2));
+		for (const item of deletedItems) {
+			expect(item.fadeOutEnd).toBe(item.end + 18 + bonus);
+		}
+	});
+
+	it('caps bonus frames at 8', () => {
+		const queue = buildGlitchQueue('a'.repeat(20), '', 0, 0);
+		const deletedItems = queue.filter(q => q.to === '' && q.from !== '');
+		expect(deletedItems.length).toBe(20);
+		for (const item of deletedItems) {
+			expect(item.fadeOutEnd).toBe(item.end + 18 + 8);
+		}
+	});
+
+	it('adds no bonus when there are no deletions', () => {
+		const queue = buildGlitchQueue('hello', 'world', 0, 0);
+		for (const item of queue) {
+			expect(item.fadeOutEnd).toBeUndefined();
+		}
+	});
+});
+
+describe('computeGlitchFrame — orphan scramble rendering', () => {
+	it('renders dim scramble for orphans in scramble window instead of skipping', () => {
+		const queue: any[] = [
+			{ from: 'a', to: 'x', start: 0, end: 10, char: null },
+			{ from: 'b', to: 'y', start: 0, end: 10, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 5, rng, 'a');
+		// index 0: non-orphan scramble
+		// index 1: orphan, should render dim scramble instead of skip
+		const stripped = stripAnsi(result);
+		expect(stripped).toBe('~~');
+		expect(result).toContain(DIM_ON);
+	});
+});
+
+describe('computeGlitchFrame — orphan dissolve in fade-out', () => {
+	it('shows solid scramble for first 50% of orphan fade-out', () => {
+		const queue: any[] = [
+			{ from: 'a', to: '', start: 0, end: 10, fadeOutEnd: 20, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 12, rng, '', undefined, 42);
+		const stripped = stripAnsi(result);
+		expect(stripped).toBe('~');
+		expect(result).toContain(DIM_ON);
+	});
+
+	it('suppresses orphan scramble at the end of fade-out window', () => {
+		const queue: any[] = [
+			{ from: 'a', to: '', start: 0, end: 10, fadeOutEnd: 20, char: null },
+		];
+		const rng = () => '~';
+		// frame = 19: fadeProgress = 0.9, dissolveThreshold = 1 - (0.9 - 0.5) * 2 = 0.2
+		// At frame 20 (past fadeOutEnd), orphan is fully gone
+		const result = computeGlitchFrame(queue, 20, rng, '', undefined, 42);
+		const stripped = stripAnsi(result);
+		expect(stripped).toBe('');
+		expect(result).not.toContain(DIM_ON);
+	});
+});
+
+describe('computeGlitchFrame — expand spark-in', () => {
+	it('uses spark chars for first 25% of new char scramble window', () => {
+		const queue: any[] = [
+			{ from: '', to: 'x', start: 0, end: 10, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 1, rng, undefined, undefined, 42);
+		const stripped = stripAnsi(result);
+		expect(THIN_BRAILLE_SPARK).toContain(stripped[0]);
+		expect(stripped[0]).not.toBe('~');
+	});
+
+	it('uses dense scramble after first 25% for new chars', () => {
+		const queue: any[] = [
+			{ from: '', to: 'x', start: 0, end: 10, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 5, rng, undefined, undefined, 42);
+		const stripped = stripAnsi(result);
+		expect(stripped[0]).toBe('~');
 	});
 });
 
@@ -1480,6 +1577,38 @@ describe('ScrambleStateManager (illuminate mode)', () => {
 
 		const afterCooldown = manager.updateMsg(TEST_ID, laterTail, base + 4200, false, undefined, true);
 		expect(afterCooldown.isAnimating).toBe(true);
+	});
+
+	it('shrink transition builds proportional fade-out queue', () => {
+		const base = 3000000;
+		manager.updateAct(TEST_ID, 'long text here', base);
+		manager.updateAct(TEST_ID, 'hi', base + 100);
+		const state = (manager as any).cache.get(TEST_ID)?.act;
+		const queue = state?.glitchQueue as any[];
+		expect(queue).toBeDefined();
+		expect(queue.length).toBeGreaterThan(0);
+		const deletedItems = queue.filter((q: any) => q.to === '' && q.from !== '');
+		const bonus = Math.min(8, Math.floor(deletedItems.length / 2));
+		for (const item of deletedItems) {
+			expect(item.fadeOutEnd).toBe(item.end + 18 + bonus);
+		}
+	});
+
+	it('end-to-end shrink transition resolves to short text', () => {
+		const base = 3000000;
+		manager.updateAct(TEST_ID, 'long text here for sure', base);
+		const result = manager.updateAct(TEST_ID, 'short', base + 100);
+		expect(result.isAnimating).toBe(true);
+
+		let t = base + 100;
+		let lastResult = result;
+		while (manager.hasAnyActiveAnimations(t) && t < base + 8000) {
+			t += 100;
+			lastResult = manager.updateAct(TEST_ID, 'short', t);
+		}
+
+		expect(stripAnsi(lastResult.content)).toBe('short');
+		expect(lastResult.isAnimating).toBe(false);
 	});
 });
 

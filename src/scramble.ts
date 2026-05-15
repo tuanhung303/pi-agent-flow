@@ -695,6 +695,21 @@ export function buildGlitchQueue(oldText: string, newText: string, maxStart: num
 		const fadeOutEnd = to === '' ? end + GLITCH_FADE_OUT_FRAMES : undefined;
 		queue.push({ from, to, start, end, fadeOutEnd, char: null });
 	}
+	// Task A: proportional fade-out timing based on deletion count
+	let deletedCount = 0;
+	for (const item of queue) {
+		if (item.to === '' && item.from !== '') {
+			deletedCount++;
+		}
+	}
+	const bonusFrames = Math.min(8, Math.floor(deletedCount / 2));
+	if (bonusFrames > 0) {
+		for (const item of queue) {
+			if (item.fadeOutEnd !== undefined) {
+				item.fadeOutEnd += bonusFrames;
+			}
+		}
+	}
 	return queue;
 }
 
@@ -750,21 +765,31 @@ export function computeGlitchFrame(
 		const fadeOutEnd = entry.fadeOutEnd;
 		const settleEnd = entry.settleEnd;
 		const resolvedChar = cleanCurrent?.[i] ?? entry.to;
+		const isOrphan = cleanCurrent != null && i >= cleanCurrent.length;
 
 		if (fadeOutEnd !== undefined && frame >= entry.end && frame < fadeOutEnd) {
-			if (cleanCurrent && i >= cleanCurrent.length) {
-				if (inDim) { output += DIM_OFF; inDim = false; }
-			} else {
-				if (!inDim) { output += DIM_ON; inDim = true; }
-				const rollFade = hashNoise(seed, i, frame, 77);
-				if (!entry.char || rollFade < GLITCH_RERANDOMIZE) {
-					entry.char = rng();
+			if (!inDim) { output += DIM_ON; inDim = true; }
+			const rollFade = hashNoise(seed, i, frame, 77);
+			if (!entry.char || rollFade < GLITCH_RERANDOMIZE) {
+				entry.char = rng();
+			}
+			if (isOrphan) {
+				// Task C: orphan dissolve in fade-out
+				const fadeProgress = (frame - entry.end) / (fadeOutEnd - entry.end);
+				if (fadeProgress < 0.5) {
+					output += entry.char;
+				} else {
+					const dissolveThreshold = 1 - (fadeProgress - 0.5) * 2;
+					if (hashNoise(seed, i, frame, 123) < dissolveThreshold) {
+						output += entry.char;
+					}
 				}
+			} else {
 				output += entry.char;
 			}
 		} else if (settleEnd !== undefined && frame >= entry.end && frame < settleEnd) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			if (cleanCurrent && i >= cleanCurrent.length) {
+			if (isOrphan) {
 				// Position beyond current text — skip
 			} else {
 				if (sparkleIndices.has(i)) {
@@ -775,7 +800,7 @@ export function computeGlitchFrame(
 			}
 		} else if (frame >= (settleEnd ?? fadeOutEnd ?? entry.end)) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			if (cleanCurrent && i >= cleanCurrent.length) {
+			if (isOrphan) {
 				// Position beyond current text — character no longer visible (e.g. tail
 				// truncation or text shrink), skip it rather than showing stale entry.to.
 			} else {
@@ -788,9 +813,11 @@ export function computeGlitchFrame(
 				entry.char = rng();
 			}
 			let outChar = entry.char;
-			// Eased glitch intensity: in final ~40%, resolved char peeks through
 			const window = entry.end - entry.start;
-			if (window > 0 && entry.to !== '' && frame >= entry.start + window * 0.6) {
+			// Task D: expand spark-in for new chars
+			if (window > 0 && entry.from === '' && entry.to !== '' && frame < entry.start + window * 0.25) {
+				outChar = selectSparkChar(seed, i, frame);
+			} else if (window > 0 && entry.to !== '' && !isOrphan && frame >= entry.start + window * 0.6) {
 				const t = (frame - (entry.start + window * 0.6)) / (window * 0.4);
 				const peekEase = smoothstep(0, 1, t);
 				const roll = hashNoise(seed, i, frame, 99);
@@ -798,17 +825,17 @@ export function computeGlitchFrame(
 					outChar = resolvedChar;
 				}
 			}
-			if (cleanCurrent && i >= cleanCurrent.length) {
-				// Position beyond current text — skip scramble rather than
-				// appending a char that no longer exists (e.g. after tail
-				// truncation or text shrink).
+			if (isOrphan) {
+				// Task B: orphan scramble rendering
+				if (!inDim) { output += DIM_ON; inDim = true; }
+				output += outChar;
 			} else {
 				output += outChar;
 			}
 		} else {
 			// Not started yet
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			if (cleanCurrent && i >= cleanCurrent.length) {
+			if (isOrphan) {
 				// Position beyond current text — character being deleted, skip
 			} else {
 				output += cleanCurrent?.[i] ?? entry.from;

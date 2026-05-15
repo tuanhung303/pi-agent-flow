@@ -51,7 +51,11 @@ describe('ILLUMINATE debug — specific bug scenarios', () => {
 			if (stripped.length > shortTail.length) {
 				const extra = stripped.slice(shortTail.length);
 				const visibleExtra = extra.replace(/\x1b\[[0-9;]*m/g, '');
-				if (visibleExtra.length > 0) {
+				// With orphan scramble rendering, extra chars beyond current text
+				// are dim scramble/spark symbols — not old text leakage.
+				// Old text leakage would show ASCII letters from the long text.
+				const hasOldTextChar = /[a-zA-Z]/.test(visibleExtra);
+				if (hasOldTextChar) {
 					foundOldChar = true;
 					console.log(`Frame ${f}: EXTRA! frame=${frame} maxEnd=${maxEnd} gLen=${s.glitchQueue.length} out="${stripped.slice(0,30)}..." vExtra="${visibleExtra}"`);
 				}
