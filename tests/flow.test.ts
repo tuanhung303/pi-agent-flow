@@ -885,9 +885,6 @@ describe("child flow harness tools", () => {
 		expect(toolsIndex).toBeGreaterThan(-1);
 		const toolsValue = args[toolsIndex + 1];
 		expect(toolsValue).not.toBe("");
-		expect(toolsValue).toContain("read");
-		expect(toolsValue).toContain("write");
-		expect(toolsValue).toContain("edit");
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");

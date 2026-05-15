@@ -569,7 +569,7 @@ function renderFlowCollapsed(
 	const actFullText = stripAnsi(lowerFirstWord(actStr));
 	const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
 	container.addChild(new DynamicScrambleText(
-		`${theme.fg("dim", prefixStub)}${italic(initialActContent)}`,
+		`${theme.fg("dim", prefixStub)}${theme.fg("toolOutput", italic(initialActContent))}`,
 		() => {
 			const now = Date.now();
 			let actContent: string;
@@ -585,7 +585,7 @@ function renderFlowCollapsed(
 				actKpi = scrambledActKpi;
 			}
 			const actPrefix = `├─ act: [${actKpi}] - `;
-			return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
+			return `${theme.fg("dim", actPrefix)}${theme.fg("toolOutput", italic(actContent))}`;
 		},
 		true,
 	));
@@ -868,7 +868,7 @@ function renderActivityPanel(
 		const actFullText = stripAnsi(lowerFirstWord(actStr));
 		const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
 		container.addChild(new DynamicScrambleText(
-			`${theme.fg("dim", prefixStub)}${italic(initialActContent)}`,
+			`${theme.fg("dim", prefixStub)}${theme.fg("toolOutput", italic(initialActContent))}`,
 			() => {
 				const now = Date.now();
 				let actContent: string;
@@ -884,7 +884,7 @@ function renderActivityPanel(
 					actKpi = scrambledActKpi;
 				}
 				const actPrefix = `${indent}├─ act: [${actKpi}] - `;
-				return `${theme.fg("dim", actPrefix)}${italic(actContent)}`;
+				return `${theme.fg("dim", actPrefix)}${theme.fg("toolOutput", italic(actContent))}`;
 			},
 			true,
 		));

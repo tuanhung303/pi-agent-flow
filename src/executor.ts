@@ -457,7 +457,10 @@ export async function executeFlows(
 	// Cache flow results
 	for (const result of results) {
 		const so = result.structuredOutput;
-		if (!so) continue;
+		if (!so) {
+			console.warn(`[pi-agent-flow] Flow result not cached: structuredOutput is null for flow '${result.type}' (exitCode=${result.exitCode}, messages=${result.messages.length}). The flow may not have produced structured JSON output.`);
+			continue;
+		}
 		const compressed: CompressedFlowResult = {
 			type: result.type,
 			status: isFlowError(result) ? "failed" : "accomplished",

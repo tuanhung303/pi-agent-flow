@@ -366,6 +366,10 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
 export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
 	const lines = snapshot.trimEnd().split("\n");
 
+	// Extract fork depth from header for contextual placeholders.
+	let forkDepth: number | undefined;
+	try { const hdr = JSON.parse(lines[0]); forkDepth = hdr?.depth; } catch {}
+
 	// Quick check: if there are no flow cache entries and no compressible tool calls,
 	// nothing to compress — return early.
 	if (cache.size === 0) {
@@ -468,7 +472,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
 					: 0;
 				const size = originalText.length || contentSize || line.length;
-				rendered = `[flow] prior result · ${size} chars (not cached or evicted)`;
+				rendered = `[flow] prior result · ${size} chars (not cached — context unavailable at depth ${forkDepth ?? '?'})`;
 			} else {
 				const renderResults = compressed.map(renderCompressedFlowResult);
 				const hasAnyUndefined = renderResults.some(r => r === undefined);
@@ -772,6 +776,14 @@ export function sanitizeForkSnapshot(
 			}
 		}
 
+		// Drop type: "system" entries — the parent orchestrator system prompt was already
+		// stripped from the header above. Standalone system events leak the full prompt.
+		// Children receive their own directive in the <activation> block.
+		if (entry?.type === "system") {
+			subPasses.add("dropSystemEvents");
+			continue;
+		}
+
 		// Drop sliding system prompt messages entirely.
 		if (
 			entry?.type === "message" &&
@@ -924,6 +936,7 @@ export function sanitizeForkSnapshot(
 		postBytes,
 		reductionPercent: Number(reduction),
 		passesApplied,
+
 	}) + "\n";
 
 	return { result: sanitized, passesApplied };

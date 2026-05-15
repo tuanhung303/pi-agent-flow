@@ -44,10 +44,9 @@ export function setupContinuation(
     // Build a flow tool call instruction
     const aim = goal.objective.slice(0, 60);
     const acceptanceClause = goal.acceptance ? ` Acceptance: ${goal.acceptance}.` : '';
-    pi.sendUserMessage(
-      `You MUST call the flow tool now to advance the active goal.${'\n'}` +
+    const flowCall = `You MUST call the flow tool now to advance the active goal.${'\n'}` +
       `Goal: ${goal.objective}${'\n'}` +
-      `Call the flow tool with: {"flow": [{"type": "build", "intent": "${goal.objective.replace(/"/g, '\\"')}", "aim": "${aim.replace(/"/g, '\\"')}"${goal.acceptance ? `, "acceptance": "${goal.acceptance.replace(/"/g, '\\"')}"` : ''}}]}`
-    );
+      `Call the flow tool with: {"flow": [{"type": "build", "intent": "${goal.objective.replace(/"/g, '\\"')}", "aim": "${aim.replace(/"/g, '\\"')}"${goal.acceptance ? `, "acceptance": "${goal.acceptance.replace(/"/g, '\\"')}"` : ''}}]}`;
+    pi.sendMessage({ content: flowCall, display: false }, { triggerTurn: true });
   });
 }

@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { type FlowConfig } from "./agents.js";
+import { type FlowConfig, getFlowTier } from "./agents.js";
 import { getInheritedCliArgs } from "./cli-args.js";
 import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
 import {
@@ -46,6 +46,9 @@ const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
 const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
 const FLOW_DUMP_SNAPSHOT_ENV = "PI_FLOW_DUMP_SNAPSHOT";
+
+const packageJsonPath = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "package.json");
+const { version: pipelineVersion } = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 
 // ---------------------------------------------------------------------------
 // Global child process group tracking for signal propagation
@@ -298,14 +301,16 @@ function buildFlowArgs(
 	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
 	const canDelegate = currentDepth < effectiveMaxDepth;
 
-	// Child flows get their configured tools from flow.tools, optimized by
-	// getOptimizedTools. When toolOptimize is on and the child can delegate,
-	// include "flow" so it can spawn sub-flows.
+	// Default tools for child flows. Legacy read/write/edit are NOT registered
+	// for children — only batch (which includes read/write ops) is available.
+	// The flow's frontmatter `tools` field overrides this default when set.
 	const defaultTools = toolOptimize
 		? canDelegate
 			? ["batch", "bash", "flow", "web"]
 			: ["batch", "bash", "web"]
-		: ["read", "write", "edit", "batch", "bash", "flow", "web"];
+		: canDelegate
+			? ["batch", "bash", "flow", "web"]
+			: ["batch", "bash", "web"];
 	// getOptimizedTools replaces legacy read/write/edit with batch when
 	// toolOptimize is on. If the flow's frontmatter explicitly lists "flow",
 	// it passes through; otherwise the defaultTools above handle it.
@@ -355,8 +360,9 @@ function buildFlowArgs(
 			? `Session mode: ${sessionMode}. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
 			: "";
 
+	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 	const activation =
-		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}">\n` +
+		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
 		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
@@ -593,7 +599,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			}
 
 			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "sanitizeForkSnapshot (see src/snapshot.ts)";
-			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Generated: ${new Date().toISOString()} -->`;
+			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${flow.tier ?? getFlowTier(flow.name)} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
 
 			const markdown = [
 				sanitizationHeader,
@@ -632,6 +638,20 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				Math.max(minimumGraceMs, proportionalGraceMs),
 			);
 			const { command, prefixArgs } = resolveFlowSpawn();
+			if (dumpPath) {
+				const distDir = path.dirname(new URL(import.meta.url).pathname);
+				const srcDir = path.join(distDir, "..", "src");
+				const checkStale = (srcFile: string, distFile: string) => {
+					try {
+						const srcMtime = fs.statSync(path.join(srcDir, srcFile)).mtimeMs;
+						const distMtime = fs.statSync(path.join(distDir, distFile)).mtimeMs;
+						return srcMtime > distMtime;
+					} catch { return false; }
+				};
+				if (checkStale("snapshot.ts", "snapshot.js") || checkStale("flow.ts", "flow.js")) {
+					console.warn("⚠️ Source newer than dist — run npm run build for accurate dumps");
+				}
+			}
 			const proc = spawn(command, [...prefixArgs, ...piArgs], {
 				cwd: taskCwd ?? cwd,
 				shell: false,
