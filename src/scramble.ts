@@ -241,8 +241,8 @@ const GLITCH_SHORT_MAX_START = 10;
 const GLITCH_SHORT_MAX_LENGTH = 10;
 const GLITCH_COOLDOWN_MS = 1000;
 const GLITCH_FADE_OUT_FRAMES = 18;
-const CHUNK_FLIP_DURATION_FRAMES = 10;
-const CHUNK_FLIP_FADE_OUT_FRAMES = 8;
+const CHUNK_FLIP_DURATION_FRAMES = 32;
+const CHUNK_FLIP_FADE_OUT_FRAMES = 12;
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers

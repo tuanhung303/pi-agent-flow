@@ -208,15 +208,17 @@ describe("flow tool execute", () => {
 		});
 
 		const steeringHint = "<pi-flow-steering-hint>old routing prompt</pi-flow-steering-hint>";
-		const header = { version: 1, meta: { keep: "header formatting" } };
+		const header = { version: 1, meta: { keep: "header formatting" }, systemPrompt: "test system prompt" };
 		const unchangedUser = { type: "message", message: { role: "user", content: "Unchanged requirement", timestamp: 1 } };
 		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }], timestamp: 2 } };
 		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
 		const droppedSystem = { type: "message", message: { role: "system", content: steeringHint, timestamp: 4 } };
 		const unchangedTool = { type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
+		const unchangedUserExpected = { type: "message", message: { role: "user", content: "Unchanged requirement" } };
+		const unchangedAssistantExpected = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }] } };
 		const normalizedToolLine = JSON.stringify({
 			...unchangedTool,
-			message: { ...unchangedTool.message, role: "tool" },
+			message: { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }] },
 		});
 		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
 
@@ -242,9 +244,11 @@ describe("flow tool execute", () => {
 		expect(lines[0]).toContain('"meta"');
 		expect(lines[0]).toContain('forkedAt');
 		expect(lines[0]).toContain('"depth"');
-		expect(lines).toContain(JSON.stringify(unchangedUser));
-		expect(lines).toContain(JSON.stringify(unchangedAssistant));
+		expect(lines).toContain(JSON.stringify(unchangedUserExpected));
+		expect(lines).toContain(JSON.stringify(unchangedAssistantExpected));
 		expect(lines).toContain(normalizedToolLine);
+		expect(lines).toContain(JSON.stringify({ type: "system", content: header.systemPrompt }));
+		expect(lines.some((l: string) => l.includes('"type":"compression-stats"'))).toBe(true);
 		expect(lines).not.toContain(JSON.stringify(changedAssistant));
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");
