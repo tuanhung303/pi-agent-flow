@@ -2438,3 +2438,183 @@ describe('ScrambleStateManager — msg chunk glitch fixes', () => {
 		// Note: early-frame glitch may show currentText for unstarted positions
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Frame-by-frame desync reproduction tests
+// ---------------------------------------------------------------------------
+
+describe('ScrambleStateManager (illuminate mode) — frame-by-frame desync fix', () => {
+	let manager: ScrambleStateManager;
+	const getMsgState = (id: string) => (manager as any).cache.get(id)?.msg;
+
+	beforeEach(() => {
+		manager = new ScrambleStateManager();
+		manager.setMode('illuminate');
+	});
+
+	it('staticLine=true: text settles exactly after glitch completes', () => {
+		const base = 10_000_000;
+		const id = 'frame-static';
+
+		// Init
+		let result = manager.updateMsg(id, 'Hello world', base, false, undefined, true);
+		expect(result.isAnimating).toBe(false);
+
+		// Sentence boundary triggers glitch
+		result = manager.updateMsg(id, 'Hello world. How are you today?', base + 100, false, undefined, true);
+		expect(result.isAnimating || (getMsgState(id)?.glitchQueue?.length ?? 0) > 0).toBe(true);
+
+		// Grow text during active glitch (queued as pending)
+		const growingText = 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator properly.';
+		result = manager.updateMsg(id, growingText, base + 200, false, undefined, true);
+		const stateAfterGrow = getMsgState(id);
+		expect(stateAfterGrow.glitchQueue.length > 0 || stateAfterGrow.pendingGlitch != null).toBe(true);
+
+		// Poll every 200ms until animation settles (real TUI calls updateMsg each frame)
+		let t = base + 200;
+		let settleResult = result;
+		while (settleResult.isAnimating && t < base + 10000) {
+			t += 200;
+			settleResult = manager.updateMsg(id, growingText, t, false, undefined, true);
+		}
+
+		const state = getMsgState(id);
+		expect(settleResult.isAnimating).toBe(false);
+		expect(stripAnsi(settleResult.content)).toBe(growingText);
+		expect(state.displayedText).toBe(growingText);
+		expect(state.lastText).toBe(growingText);
+		expect(state.glitchQueue.length).toBe(0);
+		expect(state.pendingGlitch).toBeNull();
+
+		// CRITICAL: calling again with same text after a long delay must NOT spawn a new glitch chain
+		const stillSettled = manager.updateMsg(id, growingText, t + 1000, false, undefined, true);
+		expect(stillSettled.isAnimating).toBe(false);
+		expect(stripAnsi(stillSettled.content)).toBe(growingText);
+		expect(hasAnsi(stillSettled.content)).toBe(false);
+	});
+
+
+	it('staticLine=false: text settles exactly after glitch completes', () => {
+		const base = 20_000_000;
+		const id = 'frame-process';
+
+		// Init
+		manager.updateMsg(id, 'Hello world', base);
+
+		// Trigger glitch with sentence boundary
+		manager.updateMsg(id, 'Hello world. How are you today?', base + 100);
+
+		// Grow during active glitch
+		const growingText = 'Hello world. How are you today? This is new content with enough characters to queue properly.';
+		manager.updateMsg(id, growingText, base + 200);
+
+		// Poll every 200ms until animation settles
+		let t = base + 200;
+		let result = manager.updateMsg(id, growingText, t);
+		while (result.isAnimating && t < base + 10000) {
+			t += 200;
+			result = manager.updateMsg(id, growingText, t);
+		}
+
+		const state = getMsgState(id);
+		expect(result.isAnimating).toBe(false);
+		expect(stripAnsi(result.content)).toBe(growingText);
+		expect(state.displayedText).toBe(growingText);
+		expect(state.lastText).toBe(growingText);
+		expect(state.glitchQueue.length).toBe(0);
+
+		// CRITICAL: no new glitch chain on same text after delay
+		const stillSettled = manager.updateMsg(id, growingText, t + 1000);
+		expect(stillSettled.isAnimating).toBe(false);
+		expect(stripAnsi(stillSettled.content)).toBe(growingText);
+		expect(hasAnsi(stillSettled.content)).toBe(false);
+	});
+
+
+	it('drain condition: text stops growing and glitch completes', () => {
+		const base = 30_000_000;
+		const id = 'frame-drain';
+
+		// Init
+		manager.updateMsg(id, 'Hello', base, false, undefined, true);
+
+		// Small chunk (not enough for F1)
+		manager.updateMsg(id, 'Hello world', base + 50, false, undefined, true);
+
+		// Another small chunk
+		manager.updateMsg(id, 'Hello world!', base + 100, false, undefined, true);
+
+		// Stop updating — drain should fire after MSG_CHUNK_DRAIN_MS (120ms)
+		const drainResult = manager.updateMsg(id, 'Hello world!', base + 250, false, undefined, true);
+		const drainState = getMsgState(id);
+
+		// At t=250, drain should have fired (150ms since last text change)
+		// Content should at least be correct after glitch fully completes
+		const final = manager.updateMsg(id, 'Hello world!', base + 4000, false, undefined, true);
+		const finalState = getMsgState(id);
+
+		expect(final.isAnimating).toBe(false);
+		expect(stripAnsi(final.content)).toBe('Hello world!');
+		expect(finalState.displayedText).toBe('Hello world!');
+		expect(finalState.lastText).toBe('Hello world!');
+		expect(finalState.glitchQueue.length).toBe(0);
+	});
+
+	it('growing text during active glitch queues pending and settles after completion', () => {
+		const base = 40_000_000;
+		const id = 'frame-pending';
+
+		// Init with long text to trigger F1 immediately on next change
+		manager.updateMsg(id, 'Initial text here for testing the pending glitch queue behavior.', base, false, undefined, true);
+
+		// First change triggers glitch
+		const text1 = 'Initial text here for testing the pending glitch queue behavior. First chunk with many extra characters.';
+		manager.updateMsg(id, text1, base + 100, false, undefined, true);
+		const state1 = getMsgState(id);
+		expect(state1.glitchQueue.length).toBeGreaterThan(0);
+
+		// Second change while glitch active — should queue pending
+		const text2 = 'Initial text here for testing the pending glitch queue behavior. Second chunk with even more extra characters to overwrite pending.';
+		manager.updateMsg(id, text2, base + 200, false, undefined, true);
+		const state2 = getMsgState(id);
+		expect(state2.glitchQueue.length > 0 || state2.pendingGlitch != null).toBe(true);
+
+		// Poll until settled
+		let t = base + 200;
+		let final = manager.updateMsg(id, text2, t, false, undefined, true);
+		while (final.isAnimating && t < base + 10000) {
+			t += 200;
+			final = manager.updateMsg(id, text2, t, false, undefined, true);
+		}
+
+		const finalState = getMsgState(id);
+		expect(final.isAnimating).toBe(false);
+		expect(stripAnsi(final.content)).toBe(text2);
+		expect(finalState.displayedText).toBe(text2);
+		expect(finalState.lastText).toBe(text2);
+		expect(finalState.glitchQueue.length).toBe(0);
+		expect(finalState.pendingGlitch).toBeNull();
+	});
+
+
+	it('completed state syncs displayedText after glitch finishes', () => {
+		const base = 50_000_000;
+		const id = 'frame-complete-sync';
+
+		// Init and trigger a glitch
+		manager.updateMsg(id, 'Start text', base, false, undefined, true);
+		manager.updateMsg(id, 'Start text. Changed text here.', base + 100, false, undefined, true);
+
+		// Mark complete while glitch is still running
+		const duringComplete = manager.updateMsg(id, 'Start text. Changed text here.', base + 200, true, undefined, true);
+		expect(duringComplete.isAnimating).toBe(true);
+
+		// After glitch completes in completed state, displayedText should be synced
+		const afterComplete = manager.updateMsg(id, 'Start text. Changed text here.', base + 4000, true, undefined, true);
+		const state = getMsgState(id);
+		expect(afterComplete.isAnimating).toBe(false);
+		expect(stripAnsi(afterComplete.content)).toBe('Start text. Changed text here.');
+		expect(state.displayedText).toBe('Start text. Changed text here.');
+		expect(state.lastText).toBe('Start text. Changed text here.');
+	});
+});

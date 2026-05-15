@@ -665,27 +665,42 @@ export function computeGlitchFrame(
 	rng: () => string,
 	currentText?: string
 ): string {
-	const cleanCurrent = currentText ? stripDecorativeIcons(currentText) : undefined;
+	const cleanCurrent = currentText != null ? stripDecorativeIcons(currentText) : undefined;
 	let output = '';
 	let inDim = false;
 	for (let i = 0; i < queue.length; i++) {
 		const entry = queue[i];
 		const fadeOutEnd = entry.fadeOutEnd;
 		if (fadeOutEnd !== undefined && frame >= entry.end && frame < fadeOutEnd) {
-			if (!inDim) { output += DIM_ON; inDim = true; }
-			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
-				entry.char = rng();
+			if (cleanCurrent && i >= cleanCurrent.length) {
+				if (inDim) { output += DIM_OFF; inDim = false; }
+			} else {
+				if (!inDim) { output += DIM_ON; inDim = true; }
+				if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
+					entry.char = rng();
+				}
+				output += entry.char;
 			}
-			output += entry.char;
 		} else if (frame >= (fadeOutEnd ?? entry.end)) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
-			output += cleanCurrent?.[i] ?? entry.to;
+			if (cleanCurrent && i >= cleanCurrent.length) {
+				// Position beyond current text — character no longer visible (e.g. tail
+				// truncation or text shrink), skip it rather than showing stale entry.to.
+			} else {
+				output += cleanCurrent?.[i] ?? entry.to;
+			}
 		} else if (frame >= entry.start) {
 			if (inDim) { output += DIM_OFF; inDim = false; }
 			if (!entry.char || Math.random() < GLITCH_RERANDOMIZE) {
 				entry.char = rng();
 			}
-			output += entry.char;
+			if (cleanCurrent && i >= cleanCurrent.length) {
+				// Position beyond current text — skip scramble rather than
+				// appending a char that no longer exists (e.g. after tail
+				// truncation or text shrink).
+			} else {
+				output += entry.char;
+			}
 		} else {
 			// Not started yet
 			if (inDim) { output += DIM_OFF; inDim = false; }
@@ -1188,6 +1203,9 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 					state.pendingStartTime = 0;
 					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, text);
 				}
+				// FIX: Sync displayedText and lastText with current text after glitch completion
+				state.displayedText = text;
+				state.lastText = text;
 				return text;
 			}
 			return computeGlitchFrame(state.glitchQueue, frame, rng ?? poolRandomChar, text);
@@ -1661,6 +1679,9 @@ export class ScrambleStateManager {
 				state.glitchQueue = [];
 				state.glitchFrame = 0;
 			}
+			// FIX: Ensure displayedText is synced even in completed state
+			state.displayedText = text;
+			state.lastText = text;
 			return { label: key, content: text, isAnimating: false };
 		}
 		// Trigger initial reveal animation for static text (non-stream modes)
@@ -1779,6 +1800,9 @@ export class ScrambleStateManager {
 				state.glitchQueue = [];
 				state.glitchFrame = 0;
 			}
+			// FIX: Ensure displayedText is synced even in completed state
+			state.displayedText = text;
+			state.lastText = text;
 			return { label: 'aim:', content: text, isAnimating: false };
 		}
 		// Stream mode: aim is static text, no typewriter animation
@@ -1908,6 +1932,9 @@ export class ScrambleStateManager {
 				state.glitchQueue = [];
 				state.glitchFrame = 0;
 			}
+			// FIX: Ensure displayedText is synced even in completed state
+			state.displayedText = text;
+			state.lastText = text;
 			return { label: 'act:', content: text, isAnimating: false };
 		}
 		if (!state.initialized) {
@@ -2034,6 +2061,9 @@ export class ScrambleStateManager {
 				state.glitchQueue = [];
 				state.glitchFrame = 0;
 			}
+			// FIX: Ensure displayedText is synced even in completed state
+			state.displayedText = visibleText;
+			state.lastText = visibleText;
 			return { label: 'msg:', content: visibleText, isAnimating: false };
 		}
 		if (!state.initialized) {
