@@ -119,7 +119,7 @@ describe("context handler — strategic hints not stripped", () => {
 	it("sanitizeForkSnapshot still strips hints (children don't need them)", async () => {
 		const { sanitizeForkSnapshot } = await import("../src/snapshot.js");
 		const snapshot = JSON.stringify({ type: "message", message: { role: "toolResult", content: "Result\n\n[Hint: Plan next step.]" } }) + "\n";
-		const result = sanitizeForkSnapshot(snapshot);
+		const { result } = sanitizeForkSnapshot(snapshot);
 		expect(result).not.toContain("[Hint:");
 		expect(result).toContain("Result");
 	});

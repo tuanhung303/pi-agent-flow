@@ -663,6 +663,39 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Reparent orphans
+// ---------------------------------------------------------------------------
+
+/**
+ * Fix parentId references that point to messages which no longer exist.
+ * Call this after any pass that drops messages.
+ */
+function reparentOrphans(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const survivingIds = new Set<string>();
+	for (const line of lines) {
+		try {
+			const entry = JSON.parse(line);
+			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
+			if (typeof id === "string" && id) survivingIds.add(id);
+		} catch { /* ignore */ }
+	}
+	for (let i = 0; i < lines.length; i++) {
+		try {
+			const entry = JSON.parse(lines[i]);
+			if (!entry?.message) continue;
+			const parentId = entry.message.parentId ?? entry.message.parentMessageId;
+			if (typeof parentId === "string" && parentId && !survivingIds.has(parentId)) {
+				const { parentId: _pid, parentMessageId: _pmid, ...restMessage } = entry.message;
+				entry.message = restMessage;
+				lines[i] = JSON.stringify(entry);
+			}
+		} catch { /* ignore */ }
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+// ---------------------------------------------------------------------------
 // Snapshot sanitization
 // ---------------------------------------------------------------------------
 
@@ -683,8 +716,8 @@ export function sanitizeForkSnapshot(
 	snapshot: string | null,
 	cache: Map<string, CompressedFlowResult[]> = new Map(),
 	options?: SanitizeForkSnapshotOptions,
-): string | null {
-	if (!snapshot) return snapshot;
+): { result: string | null; passesApplied: string[] } {
+	if (!snapshot) return { result: snapshot, passesApplied: [] };
 
 	const preBytes = snapshot.length;
 	const lines = snapshot.trimEnd().split("\n");
@@ -829,38 +862,28 @@ export function sanitizeForkSnapshot(
 		sanitizedLines.push(outLine);
 	}
 
-	// Reparent orphaned parentIds after steering-hint messages were dropped.
-	// Build a set of surviving message IDs, then fix any parentId that points
-	// to a removed message.
-	const survivingIds = new Set<string>();
-	for (const line of sanitizedLines) {
-		try {
-			const entry = JSON.parse(line);
-			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
-			if (typeof id === "string" && id) survivingIds.add(id);
-		} catch { /* ignore */ }
-	}
-	for (let i = 0; i < sanitizedLines.length; i++) {
-		try {
-			const entry = JSON.parse(sanitizedLines[i]);
-			if (!entry?.message) continue;
-			const parentId = entry.message.parentId ?? entry.message.parentMessageId;
-			if (typeof parentId === "string" && parentId && !survivingIds.has(parentId)) {
-				const { parentId: _pid, parentMessageId: _pmid, ...restMessage } = entry.message;
-				entry.message = restMessage;
-				sanitizedLines[i] = JSON.stringify(entry);
-			}
-		} catch { /* ignore */ }
-	}
+	const passesApplied: string[] = [];
 
 	let sanitized = `${sanitizedLines.join("\n")}\n`;
+	passesApplied.push("sanitizeMessages");
+
+	// Reparent orphaned parentIds after steering-hint messages were dropped.
+	sanitized = reparentOrphans(sanitized);
+	passesApplied.push("reparentOrphans");
 
 	// Strip batch_read tool calls from assistant messages.
 	// Children don't have batch_read in their active tools.
 	sanitized = stripBatchReadToolCalls(sanitized);
+	passesApplied.push("stripBatchRead");
 
 	// Compress tool results (flow, batch, web, ask_user).
 	sanitized = compressToolResults(sanitized, cache);
+	passesApplied.push("compressToolResults");
+
+	// Reparent again after stripBatchRead and compressToolResults may have
+	// dropped additional messages, leaving new orphaned parentIds.
+	sanitized = reparentOrphans(sanitized);
+	passesApplied.push("reparentOrphans");
 
 	// Telemetry: measure total delta across sanitization, stripping, and compression.
 	const postBytes = sanitized.length;
@@ -875,7 +898,8 @@ export function sanitizeForkSnapshot(
 		preBytes,
 		postBytes,
 		reductionPercent: Number(reduction),
+		passesApplied,
 	}) + "\n";
 
-	return sanitized;
+	return { result: sanitized, passesApplied };
 }

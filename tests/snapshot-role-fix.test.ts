@@ -745,7 +745,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 			{ type: "message", message: { role: "user", content: "Now implement the feature", timestamp: 7 } },
 		]);
 
-		const result = sanitizeForkSnapshot(snapshot, flowCache);
+		const { result } = sanitizeForkSnapshot(snapshot, flowCache);
 
 		// (a) batch_read calls stripped from assistant messages
 		expect(result).not.toContain("\"name\":\"batch_read\"");
@@ -796,7 +796,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 			},
 		]);
 
-		const result = sanitizeForkSnapshot(snapshot, new Map());
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
 
 		// bash call and result preserved
 		expect(result).toContain("bash-id-1");
@@ -804,7 +804,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 	});
 
 	it("returns null for null input", () => {
-		expect(sanitizeForkSnapshot(null)).toBeNull();
+		expect(sanitizeForkSnapshot(null).result).toBeNull();
 	});
 
 	it("handles snapshot with only batch_read calls (no other tools)", () => {
@@ -832,7 +832,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 			},
 		]);
 
-		const result = sanitizeForkSnapshot(snapshot, new Map());
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
 
 		// batch_read calls stripped from assistant, toolResults dropped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
@@ -944,7 +944,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 			},
 		]);
 
-		const result = sanitizeForkSnapshot(snapshot, new Map());
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
 
 		// batch_read call stripped from assistant, toolResult dropped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
@@ -1017,7 +1017,7 @@ describe("sanitizeForkSnapshot preserves assistant usage", () => {
 			},
 		]);
 
-		const result = sanitizeForkSnapshot(snapshot, new Map());
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
 		const entries = parseSnapshot(result!);
 		const assistant = entries.find((e: any) => e?.message?.role === "assistant");
 
@@ -1029,5 +1029,102 @@ describe("sanitizeForkSnapshot preserves assistant usage", () => {
 		expect(assistant?.message?.stopReason).toBeUndefined();
 		expect(assistant?.message?.responseId).toBeUndefined();
 		expect(assistant?.message?.responseModel).toBeUndefined();
+	});
+});
+
+// ===========================================================================
+// Regression: orphaned parentId after destructive passes
+// ===========================================================================
+
+describe("sanitizeForkSnapshot reparentOrphans regression", () => {
+	it("fixes parentIds orphaned by stripBatchRead and compressToolResults", () => {
+		const snapshot = makeSnapshot([
+			{ version: 1 },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-1",
+					content: [{ type: "text", text: "Plan" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-2",
+					parentId: "msg-1",
+					content: [
+						{ type: "toolCall", id: "br-1", name: "batch_read", arguments: { o: [{ o: "read", p: "a.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					id: "msg-3",
+					parentId: "msg-2",
+					toolCallId: "br-1",
+					content: [{ type: "text", text: "a.ts content" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-4",
+					parentId: "msg-3",
+					content: [{ type: "text", text: "Next step" }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map());
+		const entries = parseSnapshot(result!);
+
+		// batch_read tool call and result should be stripped
+		expect(entries.some((e: any) => e?.message?.content?.some((c: any) => c?.name === "batch_read"))).toBe(false);
+		expect(entries.some((e: any) => e?.message?.toolCallId === "br-1")).toBe(false);
+
+		// Collect surviving IDs
+		const survivingIds = new Set<string>();
+		for (const entry of entries) {
+			const id = entry?.message?.id ?? entry?.id;
+			if (typeof id === "string") survivingIds.add(id);
+		}
+
+		// No parentId should reference a non-existent message
+		for (const entry of entries) {
+			const parentId = entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			if (typeof parentId === "string") {
+				expect(survivingIds.has(parentId)).toBe(true);
+			}
+		}
+
+		// msg-4 should be reparented (parentId msg-3 was dropped, so it should now
+		// either point to msg-2 or have no parentId)
+		const msg4 = entries.find((e: any) => e?.message?.id === "msg-4");
+		expect(msg4).toBeDefined();
+		const msg4ParentId = msg4?.message?.parentId ?? msg4?.message?.parentMessageId;
+		if (msg4ParentId !== undefined) {
+			expect(survivingIds.has(msg4ParentId)).toBe(true);
+		}
+	});
+
+	it("returns passesApplied in correct order", () => {
+		const snapshot = makeSnapshot([
+			{ version: 1 },
+			{ type: "message", message: { role: "user", content: "hello" } },
+		]);
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map());
+		expect(result).toBeDefined();
+		expect(passesApplied).toEqual([
+			"sanitizeMessages",
+			"reparentOrphans",
+			"stripBatchRead",
+			"compressToolResults",
+			"reparentOrphans",
+		]);
 	});
 });

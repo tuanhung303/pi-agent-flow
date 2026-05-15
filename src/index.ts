@@ -352,7 +352,7 @@ export default function (pi: ExtensionAPI) {
 				// artifacts before passing it to child flows.
 				// Uses the persistent module-level cache so historical flow results
 				// are properly compressed (not passed through verbatim).
-				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
+				const { result: forkSessionSnapshotJsonl } = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
 					{

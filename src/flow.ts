@@ -567,8 +567,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const promptIndex = piArgs.indexOf("-p");
 			const prompt = promptIndex >= 0 ? piArgs[promptIndex + 1] : "";
 
-			// Extract compression stats from the trailing JSONL entry if present.
+			// Extract compression stats and applied passes from the trailing JSONL entry if present.
 			let compressionStats = "";
+			let passesApplied: string[] = [];
 			if (forkSessionSnapshotJsonl) {
 				const lines = forkSessionSnapshotJsonl.trimEnd().split("\n");
 				const lastLine = lines[lines.length - 1];
@@ -576,11 +577,13 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					const lastEntry = JSON.parse(lastLine);
 					if (lastEntry?.type === "compression-stats") {
 						compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${lastEntry.preBytes} bytes\n- Post-sanitization: ${lastEntry.postBytes} bytes\n- Reduction: ${lastEntry.reductionPercent}%`;
+						passesApplied = Array.isArray(lastEntry.passesApplied) ? lastEntry.passesApplied : [];
 					}
 				} catch { /* ignore */ }
 			}
 
-			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: stripSteeringHints, stripReasoning, stripBatchRead, compressToolResults, reparentOrphans | Flow: ${flow.name} | Generated: ${new Date().toISOString()} -->`;
+			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "sanitizeForkSnapshot (see src/snapshot.ts)";
+			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Generated: ${new Date().toISOString()} -->`;
 
 			const markdown = [
 				sanitizationHeader,
