@@ -281,12 +281,12 @@ export async function executeFlows(
 		if (streamingText !== undefined) lastStreamingText = streamingText;
 		const text = lastStreamingText || "";
 		// Update live text store for DynamicScrambleText closures
-		setLiveText(toolCallId || '_default_', text);
+		setLiveText(toolCallId || 'collapsed', text);
 		// Also update per-flow live text for multi-flow view
 		for (let i = 0; i < allResults.length; i++) {
 			const r = allResults[i];
 			if (r.streamingText) {
-				setLiveText(`${toolCallId || '_default_'}#${i}`, r.streamingText);
+				setLiveText(`${toolCallId || 'collapsed'}#${i}`, r.streamingText);
 			}
 		}
 		const signature =
@@ -376,7 +376,7 @@ export async function executeFlows(
 						// Update per-flow live text
 						const flowText = partial.content?.[0]?.text;
 						if (flowText !== undefined) {
-							setLiveText(`${toolCallId || '_default_'}#${index}`, flowText);
+							setLiveText(`${toolCallId || 'collapsed'}#${index}`, flowText);
 						}
 						emitProgress(partial.content?.[0]?.text);
 					}

@@ -503,8 +503,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const emitUpdate = () => {
 		const streamingDelta = drainStreamingText(result);
 		if (streamingDelta) liveStreamingText += streamingDelta;
-		// Update live text store for DynamicScrambleText closures
-		setLiveText('_live_', liveStreamingText);
+		// Live text is stored per-toolCallId by the executor's emitProgress, not here.
 		const estimatedTokens = drainStreamingEstimate(result);
 		if (result.usage.output !== lastActualOutputTokens) {
 			lastActualOutputTokens = result.usage.output;

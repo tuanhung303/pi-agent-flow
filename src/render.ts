@@ -203,9 +203,9 @@ export function renderFlowResult(
 			container = new Text(scrambleManager.renderStatic(streamingText || ""), 0, 0);
 		}
 	} else if (details.results.length === 1) {
-		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText);
+		container = renderSingleFlowResult(details.results[0], expanded, theme, streamingText, (result as any)._toolCallId);
 	} else {
-		container = renderMultiFlowResult(details, expanded, theme);
+		container = renderMultiFlowResult(details, expanded, theme, (result as any)._toolCallId);
 	}
 
 	// In-place mutation pattern: reuse the stored root container
@@ -407,7 +407,7 @@ function renderFlowExpanded(
 		container.addChild(new DynamicScrambleText(
 			initialScrambled,
 			() => {
-				const freshStreamingText = getLiveText(id) || streamingText_;
+				const freshStreamingText = getLiveText(id) ?? streamingText_;
 				return scrambleManager.updateMsg(id, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
 			}
 		));
@@ -583,7 +583,7 @@ function renderFlowCollapsed(
 				msgKpi = scrambledMsgKpi;
 			}
 			const msgPrefix = `└─ msg: [${msgKpi}] - `;
-			const freshRawMsg = getLiveText(id) || rawMsg;
+			const freshRawMsg = getLiveText(id) ?? rawMsg;
 			if (scrambleManager.getMode() === 'stream') {
 				return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(id, freshRawMsg, now, isComplete, msgBudget)))}`;
 			} else {
@@ -702,7 +702,7 @@ function renderMultiFlowExpanded(
 			container.addChild(new DynamicScrambleText(
 				initialScrambled,
 				() => {
-					const freshStreamingText = getLiveText(flowId) || streamingText_;
+					const freshStreamingText = getLiveText(flowId) ?? streamingText_;
 					return scrambleManager.updateMsg(flowId, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
 				}
 			));
@@ -878,7 +878,7 @@ function renderActivityPanel(
 					msgKpi = scrambledMsgKpi;
 				}
 				const msgPrefix = `${indent}└─ msg: [${msgKpi}] - `;
-				const freshRawMsg = getLiveText(flowId) || rawMsg;
+				const freshRawMsg = getLiveText(flowId) ?? rawMsg;
 				if (scrambleManager.getMode() === 'stream') {
 					return `${theme.fg("dim", msgPrefix)}${theme.fg(useError ? "error" : "dim", italic(scrambleManager.streamMsg(flowId, freshRawMsg, now, flowComplete, msgBudget)))}`;
 				} else {

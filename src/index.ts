@@ -411,7 +411,8 @@ export default function (pi: ExtensionAPI) {
 					content: result.content,
 					details: result.details,
 					isError: result.isError,
-				};
+					_toolCallId: toolCallId,
+				} as any;
 				appendStrategicHintOnce(flowToolResult);
 				return flowToolResult;
 			},
