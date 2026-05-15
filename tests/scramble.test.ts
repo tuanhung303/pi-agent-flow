@@ -5,8 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
 	applyRipples,
+	buildGlitchQueue,
 	buildQueue,
 	computeCascadeFrame,
+	computeGlitchFrame,
+	isGlitchComplete,
 	renderStreamText,
 	ScrambleStateManager,
 	DEFAULT_MODE,
@@ -531,6 +534,133 @@ describe('computeCascadeFrame', () => {
 				expect(SCRAMBLE_CHAR_SET).toContain(ch);
 			}
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Glitch algorithm tests
+// ---------------------------------------------------------------------------
+
+describe('buildGlitchQueue', () => {
+	it('sets fadeOutEnd for removed chars (long → short)', () => {
+		const queue = buildGlitchQueue('hello world', 'hi', 40, 40);
+		// Indices 2+ are removed chars
+		for (let i = 2; i < queue.length; i++) {
+			expect(queue[i].fadeOutEnd).toBeDefined();
+			expect(queue[i].fadeOutEnd).toBeGreaterThan(queue[i].end);
+		}
+	});
+
+	it('does not set fadeOutEnd for kept or new chars', () => {
+		const queue = buildGlitchQueue('hello', 'world', 40, 40);
+		for (const item of queue) {
+			if (item.to !== '') {
+				expect(item.fadeOutEnd).toBeUndefined();
+			}
+		}
+	});
+
+	it('fadeOutEnd is exactly end + GLITCH_FADE_OUT_FRAMES', () => {
+		const queue = buildGlitchQueue('abcdef', 'ab', 0, 0);
+		// For removed chars at indices 2+, fadeOutEnd = end + 18
+		for (let i = 2; i < queue.length; i++) {
+			expect(queue[i].fadeOutEnd).toBe(queue[i].end + 18);
+		}
+	});
+});
+
+describe('computeGlitchFrame', () => {
+	it('renders dim sparkles during fade-out window for removed chars', () => {
+		const queue: any[] = [
+			{ from: 'a', to: 'x', start: 0, end: 5, char: null },
+			{ from: 'b', to: '', start: 0, end: 5, fadeOutEnd: 23, char: null },
+		];
+		const rng = () => '~';
+		// At frame 10, first char is resolved, second is in fade-out
+		const result = computeGlitchFrame(queue, 10, rng);
+		expect(stripAnsi(result)).toBe('x~');
+		expect(result).toContain(DIM_ON);
+		expect(result).toContain(DIM_OFF);
+	});
+
+	it('removed chars render as empty string after fadeOutEnd', () => {
+		const queue: any[] = [
+			{ from: 'a', to: 'x', start: 0, end: 5, char: null },
+			{ from: 'b', to: '', start: 0, end: 5, fadeOutEnd: 23, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 25, rng);
+		expect(stripAnsi(result)).toBe('x');
+		expect(result).not.toContain(DIM_ON);
+	});
+
+	it('does not add dim for chars without fadeOutEnd', () => {
+		const queue: any[] = [
+			{ from: 'a', to: 'x', start: 0, end: 5, char: null },
+			{ from: 'b', to: 'y', start: 0, end: 5, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 10, rng);
+		expect(stripAnsi(result)).toBe('xy');
+		expect(result).not.toContain(DIM_ON);
+	});
+
+	it('groups contiguous fade-out chars under single dim pair', () => {
+		const queue: any[] = [
+			{ from: 'a', to: '', start: 0, end: 5, fadeOutEnd: 23, char: null },
+			{ from: 'b', to: '', start: 0, end: 5, fadeOutEnd: 23, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 10, rng);
+		const dimOnCount = (result.match(/\x1b\[2m/g) || []).length;
+		const dimOffCount = (result.match(/\x1b\[22m/g) || []).length;
+		expect(dimOnCount).toBe(1);
+		expect(dimOffCount).toBe(1);
+	});
+
+	it('preserves from chars before start even with fadeOutEnd', () => {
+		const queue: any[] = [
+			{ from: 'a', to: '', start: 5, end: 10, fadeOutEnd: 28, char: null },
+		];
+		const rng = () => '~';
+		const result = computeGlitchFrame(queue, 2, rng);
+		expect(stripAnsi(result)).toBe('a');
+		expect(result).not.toContain(DIM_ON);
+	});
+
+	it('long-to-short transition does not vanish chars before fadeOutEnd', () => {
+		const queue = buildGlitchQueue('long text here', 'short', 40, 40);
+		const maxEnd = Math.max(...queue.map(e => e.fadeOutEnd ?? e.end));
+		const oldMaxEnd = Math.max(...queue.map(e => e.end));
+		const rng = () => '~';
+		const resultAtOldEnd = computeGlitchFrame(queue, oldMaxEnd, rng);
+		expect(stripAnsi(resultAtOldEnd).length).toBeGreaterThan('short'.length);
+		const resultAtMaxEnd = computeGlitchFrame(queue, maxEnd + 1, rng);
+		expect(stripAnsi(resultAtMaxEnd)).toBe('short');
+	});
+});
+
+describe('isGlitchComplete', () => {
+	it('returns true when all entries are past end (no fadeOutEnd)', () => {
+		const queue: any[] = [
+			{ from: 'a', to: 'x', start: 0, end: 5, char: null },
+		];
+		expect(isGlitchComplete(queue, 6)).toBe(true);
+		expect(isGlitchComplete(queue, 4)).toBe(false);
+	});
+
+	it('waits for fadeOutEnd when present', () => {
+		const queue: any[] = [
+			{ from: 'a', to: 'x', start: 0, end: 5, char: null },
+			{ from: 'b', to: '', start: 0, end: 5, fadeOutEnd: 23, char: null },
+		];
+		expect(isGlitchComplete(queue, 6)).toBe(false);
+		expect(isGlitchComplete(queue, 22)).toBe(false);
+		expect(isGlitchComplete(queue, 23)).toBe(true);
+	});
+
+	it('returns true for empty queue', () => {
+		expect(isGlitchComplete([], 0)).toBe(true);
 	});
 });
 

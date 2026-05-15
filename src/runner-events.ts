@@ -356,11 +356,11 @@ function addFlowAssistantMessage(result: FlowResult, message: AssistantMessage):
 		result.usage!.cacheRead += usage.cacheRead || 0;
 		result.usage!.cacheWrite += usage.cacheWrite || 0;
 		result.usage!.cost += usage.cost?.total || 0;
-		result.usage!.contextTokens = usage.totalTokens || 0;
+		result.usage!.contextTokens = usage.totalTokens ?? 0;
 
 		// Snapshot ctx baseline for smooth streaming estimation
 		const ctxState = getCtxState(result);
-		ctxState.baseline = usage.totalTokens || 0;
+		ctxState.baseline = usage.totalTokens ?? 0;
 		ctxState.streamingChars = 0;
 	}
 

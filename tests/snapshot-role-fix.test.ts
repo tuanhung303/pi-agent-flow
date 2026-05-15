@@ -33,7 +33,7 @@ function parseSnapshot(snapshot: string): any[] {
 // ===========================================================================
 
 describe("compressToolResults with production JSONL `id` field", () => {
-	it("compresses batch_read tool results via stripBatchReadToolCalls (compressToolResults no longer handles batch_read)", () => {
+	it("drops batch_read tool results via stripBatchReadToolCalls (compressToolResults no longer handles batch_read)", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -56,10 +56,9 @@ describe("compressToolResults with production JSONL `id` field", () => {
 			},
 		]);
 
-		// batch_read compression now happens in stripBatchReadToolCalls, not compressToolResults
 		const result = stripBatchReadToolCalls(snapshot);
 
-		expect(result).toContain("[batch_read] 2 ops → paths: src/a.ts, src/b.ts");
+		expect(result).not.toContain("br-id-1");
 		expect(result).not.toContain("Huge file content");
 	});
 
@@ -183,7 +182,7 @@ describe("compressToolResults with production JSONL `id` field", () => {
 		expect(result).not.toContain('User answered: yes');
 	});
 
-	it("handles mixed `id` and `toolCallId` fields via stripBatchReadToolCalls", () => {
+	it("drops mixed `id` and `toolCallId` fields via stripBatchReadToolCalls", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -227,14 +226,13 @@ describe("compressToolResults with production JSONL `id` field", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// Both should be compressed regardless of which field the toolCall uses
-		expect(result).toContain("[batch_read] 1 ops → paths: src/a.ts");
-		expect(result).toContain("[batch_read] 1 ops → paths: src/b.ts");
+		expect(result).not.toContain("br-id-field");
+		expect(result).not.toContain("br-tc-field");
 		expect(result).not.toContain("Content of a.ts");
 		expect(result).not.toContain("Content of b.ts");
 	});
 
-	it("compresses tool results with role 'tool' (backward compat) via stripBatchReadToolCalls", () => {
+	it("drops tool results with role 'tool' (backward compat) via stripBatchReadToolCalls", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -259,8 +257,7 @@ describe("compressToolResults with production JSONL `id` field", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// role: "tool" is also matched (backward compat with both "tool" and "toolResult")
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-old-1");
 		expect(result).not.toContain("Full content of a.ts");
 	});
 });
@@ -305,7 +302,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		expect(result).toContain("Read those files");
 	});
 
-	it("compresses orphaned batch_read toolResults instead of dropping them", () => {
+	it("drops orphaned batch_read toolResults", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -342,10 +339,8 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		// The batch_read toolCall is removed from assistant messages
 		expect(result).not.toContain("\"name\":\"batch_read\"");
 
-		// The toolResult is COMPRESSED (not dropped) so child knows what was read
-		expect(result).toContain("br-id-orphan");
-		expect(result).toContain("[batch_read]");
-		expect(result).toContain("src/a.ts");
+		// The toolResult is DROPPED to avoid orphaned tool results in child context
+		expect(result).not.toContain("br-id-orphan");
 		expect(result).not.toContain("file content here");
 
 		// Other messages preserved
@@ -353,7 +348,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		expect(result).toContain("Now analyze");
 	});
 
-	it("preserves non-batch_read tool results while compressing batch_read ones", () => {
+	it("preserves non-batch_read tool results while dropping batch_read ones", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -388,9 +383,9 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// batch_read call removed from assistant, but toolResult compressed (not dropped)
+		// batch_read call removed from assistant, toolResult dropped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
-		expect(result).toContain("br-id-1"); // toolResult preserved with compressed content
+		expect(result).not.toContain("br-id-1");
 		expect(result).not.toContain("batch_read result");
 
 		// flow call and result preserved
@@ -398,7 +393,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		expect(result).toContain("flow result");
 	});
 
-	it("compresses orphaned tool results with content-level toolCallId when batch_read uses `id`", () => {
+	it("drops orphaned tool results with content-level toolCallId when batch_read uses `id`", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -424,9 +419,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// toolResult compressed (not dropped)
-		expect(result).toContain("br-id-2");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-id-2");
 		expect(result).not.toContain("some result");
 	});
 
@@ -451,7 +444,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
 	});
 
-	it("compresses tool results when role is 'tool' (backward compat)", () => {
+	it("drops tool results when role is 'tool' (backward compat)", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -479,13 +472,12 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		// The batch_read toolCall is stripped from the assistant message
 		expect(result).not.toContain("\"name\":\"batch_read\"");
 
-		// Tool result is compressed (not dropped) so child knows what was read
-		expect(result).toContain("br-old-role");
-		expect(result).toContain("[batch_read]");
+		// Tool result is dropped to avoid orphaned tool results
+		expect(result).not.toContain("br-old-role");
 		expect(result).not.toContain("orphaned tool result");
 	});
 
-	it("compresses multiple batch_read results instead of dropping them", () => {
+	it("drops multiple batch_read results", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -530,9 +522,9 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// Both batch_read toolResults compressed (not dropped)
-		expect(result).toContain("br-multi-1");
-		expect(result).toContain("br-multi-2");
+		// Both batch_read toolResults dropped
+		expect(result).not.toContain("br-multi-1");
+		expect(result).not.toContain("br-multi-2");
 		expect(result).not.toContain("result 1");
 		expect(result).not.toContain("result 2");
 
@@ -613,7 +605,7 @@ describe("role field: 'toolResult' is required for matching", () => {
 		expect(result).not.toContain("line 1");
 	});
 
-	it("stripBatchReadToolCalls compresses orphans with role 'tool' (backward compat)", () => {
+	it("stripBatchReadToolCalls drops orphans with role 'tool' (backward compat)", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -641,13 +633,12 @@ describe("role field: 'toolResult' is required for matching", () => {
 		// batch_read call stripped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
 
-		// Orphaned result compressed (backward compat: both "tool" and "toolResult" are matched)
-		expect(result).toContain("br-role-old");
-		expect(result).toContain("[batch_read]");
+		// Orphaned result dropped (backward compat: both "tool" and "toolResult" are matched)
+		expect(result).not.toContain("br-role-old");
 		expect(result).not.toContain("orphaned content");
 	});
 
-	it("stripBatchReadToolCalls compresses orphans with role 'toolResult'", () => {
+	it("stripBatchReadToolCalls drops orphans with role 'toolResult'", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -672,10 +663,9 @@ describe("role field: 'toolResult' is required for matching", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// Call stripped, result compressed (not dropped)
+		// Call stripped, result dropped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
-		expect(result).toContain("br-role-new");
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-role-new");
 		expect(result).not.toContain("orphaned content");
 	});
 });
@@ -760,10 +750,8 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 		// (a) batch_read calls stripped from assistant messages
 		expect(result).not.toContain("\"name\":\"batch_read\"");
 
-		// (b) batch_read tool results COMPRESSED (not removed) so child knows what was read
-		expect(result).toContain("br-id-pipeline"); // toolResult preserved
-		expect(result).toContain("[batch_read]");
-		expect(result).toContain("src/a.ts");
+		// (b) batch_read tool results DROPPED to avoid orphaned tool results
+		expect(result).not.toContain("br-id-pipeline");
 		expect(result).not.toContain("Full file content of a.ts and b.ts");
 
 		// (c) flow tool calls and results preserved
@@ -846,10 +834,9 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 
 		const result = sanitizeForkSnapshot(snapshot, new Map());
 
-		// batch_read calls stripped from assistant, but toolResults compressed (not dropped)
+		// batch_read calls stripped from assistant, toolResults dropped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
-		expect(result).toContain("br-solo"); // toolResult preserved
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-solo");
 		expect(result).not.toContain("x.ts content");
 
 		// Header and user preserved
@@ -959,14 +946,88 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 
 		const result = sanitizeForkSnapshot(snapshot, new Map());
 
-		// batch_read call stripped from assistant, toolResult compressed (not dropped)
+		// batch_read call stripped from assistant, toolResult dropped
 		expect(result).not.toContain("\"name\":\"batch_read\"");
-		expect(result).toContain("br-mixed"); // toolResult preserved
-		expect(result).toContain("[batch_read]");
+		expect(result).not.toContain("br-mixed");
 		expect(result).not.toContain("a.ts content");
 
 		// bash call + result preserved
 		expect(result).toContain("bash-mixed");
 		expect(result).toContain("ls output");
+	});
+
+	it("forbids orphaned batch_read toolResults — must drop them entirely, never compress-and-keep", () => {
+		const snapshot = makeSnapshot([
+			{ version: 1 },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", id: "br-orphan-guard", name: "batch_read", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+					],
+					timestamp: 1,
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "br-orphan-guard",
+					content: [{ type: "text", text: "full content here" }],
+					timestamp: 2,
+				},
+			},
+		]);
+
+		const result = stripBatchReadToolCalls(snapshot);
+
+		// HARD CONTRACT: orphaned batch_read toolResults must be COMPLETELY REMOVED.
+		// Keeping them (even compressed) creates orphaned tool results that cause
+		// child pi processes to fail on startup with "tool_call_id is not found".
+		expect(result).not.toContain("br-orphan-guard");
+		expect(result).not.toContain("[batch_read]");
+		expect(result).not.toContain("full content here");
+		expect(result).not.toContain("\"name\":\"batch_read\"");
+	});
+});
+
+// ===========================================================================
+// Assistant usage must survive fork sanitization (child pi replays JSONL)
+// ===========================================================================
+
+describe("sanitizeForkSnapshot preserves assistant usage", () => {
+	it("keeps message.usage.totalTokens while stripping api/provider/model/stopReason/responseId", () => {
+		const snapshot = makeSnapshot([
+			{ version: 1 },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "hello" }],
+					timestamp: 1,
+					api: "openai",
+					provider: "wafer",
+					model: "glm-5.1",
+					usage: { input: 10, output: 5, totalTokens: 8821, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
+					stopReason: "stop",
+					responseId: "resp_1",
+					responseModel: "glm-5.1",
+				},
+			},
+		]);
+
+		const result = sanitizeForkSnapshot(snapshot, new Map());
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e: any) => e?.message?.role === "assistant");
+
+		expect(assistant?.message?.usage?.totalTokens).toBe(8821);
+		expect(assistant?.message?.usage?.input).toBe(10);
+		expect(assistant?.message?.api).toBeUndefined();
+		expect(assistant?.message?.provider).toBeUndefined();
+		expect(assistant?.message?.model).toBeUndefined();
+		expect(assistant?.message?.stopReason).toBeUndefined();
+		expect(assistant?.message?.responseId).toBeUndefined();
+		expect(assistant?.message?.responseModel).toBeUndefined();
 	});
 });
