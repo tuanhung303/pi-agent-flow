@@ -4,6 +4,7 @@ import {
 	stripBatchReadToolCalls,
 	sanitizeForkSnapshot,
 } from "../src/snapshot.js";
+import { STEERING_HINT } from "../src/sliding-prompt.js";
 import type { CompressedFlowResult } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -1184,19 +1185,69 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		expect(assistant2?.message?.parentMessageId).toBeUndefined();
 	});
 
-	it("returns passesApplied in correct order", () => {
+	it("returns passesApplied with individually named sub-passes", () => {
 		const snapshot = makeSnapshot([
-			{ version: 1 },
-			{ type: "message", message: { role: "user", content: "hello" } },
+			{ version: 1, systemPrompt: "You are helpful" },
+			{
+				type: "message",
+				message: {
+					role: "system",
+					content: STEERING_HINT,
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: "Hello",
+					timestamp: 1234567890,
+					api: "openai",
+					provider: "wafer",
+					model: "glm-5.1",
+					usage: { totalTokens: 100, cost: { total: 0 } },
+					stopReason: "stop",
+					responseId: "resp_1",
+					responseModel: "glm-5.1",
+					reasoning: "I should greet",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "Result\n\n[Hint: Plan next step.]",
+					details: { flowStyle: "scout" },
+				},
+			},
 		]);
+
 		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map());
 		expect(result).toBeDefined();
-		expect(passesApplied).toEqual([
-			"sanitizeMessages",
-			"reparentOrphans",
-			"stripBatchRead",
-			"compressToolResults",
-			"reparentOrphans",
-		]);
+
+		// Sub-passes that should fire for this snapshot
+		expect(passesApplied).toContain("stripSystemPrompt");
+		expect(passesApplied).toContain("dropSlidingSystemPrompts");
+		expect(passesApplied).toContain("normalizeToolResultRole");
+		expect(passesApplied).toContain("stripReasoning");
+		expect(passesApplied).toContain("stripTimestamps");
+		expect(passesApplied).toContain("stripApiMetadata");
+		expect(passesApplied).toContain("stripDetails");
+		expect(passesApplied).toContain("stripStrategicHints");
+
+		// Main pipeline passes
+		expect(passesApplied).toContain("reparentOrphans");
+		expect(passesApplied).toContain("stripBatchRead");
+		expect(passesApplied).toContain("compressToolResults");
+
+		// Order: sub-passes first (in insertion order), then main passes
+		const reparentIndex1 = passesApplied.indexOf("reparentOrphans");
+		const stripBatchIndex = passesApplied.indexOf("stripBatchRead");
+		const compressIndex = passesApplied.indexOf("compressToolResults");
+		const reparentIndex2 = passesApplied.lastIndexOf("reparentOrphans");
+
+		expect(reparentIndex1).toBeLessThan(stripBatchIndex);
+		expect(stripBatchIndex).toBeLessThan(compressIndex);
+		expect(compressIndex).toBeLessThan(reparentIndex2);
 	});
 });

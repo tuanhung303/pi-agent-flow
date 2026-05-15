@@ -682,13 +682,25 @@ function reparentOrphans(snapshot: string): string {
 	}
 	for (let i = 0; i < lines.length; i++) {
 		try {
-			const entry = JSON.parse(lines[i]);
-			if (!entry?.message) continue;
-			const parentId = entry.message.parentId ?? entry.message.parentMessageId;
+			let entry = JSON.parse(lines[i]);
+			const entryParentId = entry.parentId ?? entry.parentMessageId;
+			const messageParentId = entry.message?.parentId ?? entry.message?.parentMessageId;
+			const parentId = entryParentId ?? messageParentId;
 			if (typeof parentId === "string" && parentId && !survivingIds.has(parentId)) {
-				const { parentId: _pid, parentMessageId: _pmid, ...restMessage } = entry.message;
-				entry.message = restMessage;
-				lines[i] = JSON.stringify(entry);
+				let modified = false;
+				if (entry.parentId === parentId || entry.parentMessageId === parentId) {
+					const { parentId: _pid, parentMessageId: _pmid, ...restEntry } = entry;
+					entry = restEntry;
+					modified = true;
+				}
+				if (entry.message && (entry.message.parentId === parentId || entry.message.parentMessageId === parentId)) {
+					const { parentId: _pid, parentMessageId: _pmid, ...restMessage } = entry.message;
+					entry = { ...entry, message: restMessage };
+					modified = true;
+				}
+				if (modified) {
+					lines[i] = JSON.stringify(entry);
+				}
 			}
 		} catch { /* ignore */ }
 	}
@@ -722,6 +734,7 @@ export function sanitizeForkSnapshot(
 	const preBytes = snapshot.length;
 	const lines = snapshot.trimEnd().split("\n");
 	const sanitizedLines: string[] = [];
+	const subPasses = new Set<string>();
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
@@ -747,6 +760,7 @@ export function sanitizeForkSnapshot(
 					...(options.depth !== undefined ? { depth: options.depth } : {}),
 				};
 				changed = true;
+				subPasses.add("forkMetadataInjection");
 			}
 
 			// Replace the parent orchestrator system prompt with a brief note.
@@ -754,6 +768,7 @@ export function sanitizeForkSnapshot(
 			if (entry.systemPrompt && typeof entry.systemPrompt === "string") {
 				entry = { ...entry, systemPrompt: "[parent orchestrator system prompt stripped — child receives its own directive]" };
 				changed = true;
+				subPasses.add("stripSystemPrompt");
 			}
 		}
 
@@ -763,6 +778,7 @@ export function sanitizeForkSnapshot(
 			entry.message?.role === "system" &&
 			contentContainsSteeringHintTag(entry.message?.content)
 		) {
+			subPasses.add("dropSlidingSystemPrompts");
 			continue;
 		}
 
@@ -773,6 +789,7 @@ export function sanitizeForkSnapshot(
 			if (message.role === "toolResult") {
 				message = { ...message, role: "tool" };
 				changed = true;
+				subPasses.add("normalizeToolResultRole");
 			}
 
 			// Strip reasoning/thinking from assistant messages.
@@ -783,7 +800,10 @@ export function sanitizeForkSnapshot(
 			if (message.role === "assistant" || message.role === "system" || message.role === "tool") {
 				const stripped = stripReasoningFromAssistantMessage(message);
 				message = stripped.message;
-				changed ||= stripped.changed;
+				if (stripped.changed) {
+					changed = true;
+					subPasses.add("stripReasoning");
+				}
 			}
 
 			// Strip inner `message.timestamp` — the outer event-level timestamp (ISO string)
@@ -792,6 +812,7 @@ export function sanitizeForkSnapshot(
 				const { timestamp, ...restMessage } = message;
 				message = restMessage;
 				changed = true;
+				subPasses.add("stripTimestamps");
 			}
 
 			// Strip API metadata fields that children don't need (~5-7 KB per assistant message).
@@ -816,6 +837,7 @@ export function sanitizeForkSnapshot(
 				if (stripped) {
 					message = { ...rest, ...(cleanedUsage !== undefined ? { usage: cleanedUsage } : {}) };
 					changed = true;
+					subPasses.add("stripApiMetadata");
 				}
 			}
 
@@ -826,6 +848,7 @@ export function sanitizeForkSnapshot(
 					const { details, ...restMessage } = message;
 					message = restMessage;
 					changed = true;
+					subPasses.add("stripDetails");
 				}
 			}
 
@@ -837,6 +860,7 @@ export function sanitizeForkSnapshot(
 				if (!isJsonEqual(afterSliding, modifiedContent)) {
 					modifiedContent = afterSliding;
 					changed = true;
+					subPasses.add("stripSteeringHints");
 				}
 
 				// Strip strategic hints from tool results
@@ -845,6 +869,7 @@ export function sanitizeForkSnapshot(
 					if (!isJsonEqual(afterHints, modifiedContent)) {
 						modifiedContent = afterHints;
 						changed = true;
+						subPasses.add("stripStrategicHints");
 					}
 				}
 
@@ -865,7 +890,7 @@ export function sanitizeForkSnapshot(
 	const passesApplied: string[] = [];
 
 	let sanitized = `${sanitizedLines.join("\n")}\n`;
-	passesApplied.push("sanitizeMessages");
+	passesApplied.push(...subPasses);
 
 	// Reparent orphaned parentIds after steering-hint messages were dropped.
 	sanitized = reparentOrphans(sanitized);
