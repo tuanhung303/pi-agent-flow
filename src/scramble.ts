@@ -241,8 +241,6 @@ const GLITCH_SHORT_MAX_START = 10;
 const GLITCH_SHORT_MAX_LENGTH = 10;
 const GLITCH_COOLDOWN_MS = 1000;
 const GLITCH_FADE_OUT_FRAMES = 18;
-const CHUNK_FLIP_DURATION_FRAMES = 32;
-const CHUNK_FLIP_FADE_OUT_FRAMES = 12;
 
 // ---------------------------------------------------------------------------
 // Easing and interpolation helpers
@@ -645,22 +643,6 @@ export function buildGlitchQueue(oldText: string, newText: string, maxStart: num
 		const start = Math.floor(Math.random() * maxStart);
 		const end = start + Math.floor(Math.random() * maxLength);
 		const fadeOutEnd = to === '' ? end + GLITCH_FADE_OUT_FRAMES : undefined;
-		queue.push({ from, to, start, end, fadeOutEnd, char: null });
-	}
-	return queue;
-}
-
-export function buildChunkFlipQueue(oldText: string, newText: string): GlitchQueueItem[] {
-	const queue: GlitchQueueItem[] = [];
-	const cleanOld = stripDecorativeIcons(oldText);
-	const cleanNew = stripDecorativeIcons(newText);
-	const length = Math.max(cleanOld.length, cleanNew.length);
-	const start = 0;
-	const end = CHUNK_FLIP_DURATION_FRAMES;
-	for (let i = 0; i < length; i++) {
-		const from = cleanOld[i] || '';
-		const to = cleanNew[i] || '';
-		const fadeOutEnd = to === '' ? end + CHUNK_FLIP_FADE_OUT_FRAMES : undefined;
 		queue.push({ from, to, start, end, fadeOutEnd, char: null });
 	}
 	return queue;
@@ -1251,7 +1233,7 @@ function processLine(
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
 				if (glitchCooledDown) {
-					state.glitchQueue = buildChunkFlipQueue(oldDisplayed, newText);
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
 					state.startTime = now;
 					state.glitchFrame = 0;
 					state.lastGlitchTime = now;
@@ -1264,7 +1246,7 @@ function processLine(
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
 				if (glitchCooledDown) {
-					state.glitchQueue = buildChunkFlipQueue(oldDisplayed, newText);
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
 					state.startTime = now;
 					state.glitchFrame = 0;
 					state.lastGlitchTime = now;
@@ -1279,7 +1261,7 @@ function processLine(
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
 				if (glitchCooledDown) {
-					state.glitchQueue = buildChunkFlipQueue(oldDisplayed, newText);
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
 					state.startTime = now;
 					state.glitchFrame = 0;
 					state.lastGlitchTime = now;
@@ -1294,7 +1276,7 @@ function processLine(
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
 				if (glitchCooledDown) {
-					state.glitchQueue = buildChunkFlipQueue(oldDisplayed, newText);
+					state.glitchQueue = buildGlitchQueue(oldDisplayed, newText);
 					state.startTime = now;
 					state.glitchFrame = 0;
 					state.lastGlitchTime = now;
@@ -1330,7 +1312,7 @@ function processLine(
 		state.lastText = newText;
 		state.lastFlushTime = now;
 		state.lastAnimTime = now;
-		state.glitchQueue = lineKey === 'act' ? buildChunkFlipQueue(state.displayedText || '', newText) : buildGlitchQueue(state.displayedText || '', newText);
+		state.glitchQueue = buildGlitchQueue(state.displayedText || '', newText);
 		state.startTime = now;
 		state.glitchFrame = 0;
 		state.lastGlitchTime = now;
@@ -1786,7 +1768,7 @@ export class ScrambleStateManager {
 				state.startTime = now;
 				state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 			} else if (this.mode === 'illuminate') {
-				state.glitchQueue = buildChunkFlipQueue('', text);
+				state.glitchQueue = buildGlitchQueue('', text);
 				state.startTime = now;
 				state.lastGlitchTime = now;
 				state.glitchFrame = 0;
@@ -1813,7 +1795,7 @@ export class ScrambleStateManager {
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.end), 0);
 					} else if (this.mode === 'illuminate') {
 						state.ripples = [];
-						state.glitchQueue = buildChunkFlipQueue(state.displayedText || '', text);
+						state.glitchQueue = buildGlitchQueue(state.displayedText || '', text);
 						state.startTime = now;
 						state.lastGlitchTime = now;
 						state.glitchFrame = 0;
@@ -1927,7 +1909,7 @@ export class ScrambleStateManager {
 					state.charsSinceLastFlush = 0;
 					state.ripples = [];
 					if (glitchCooledDown) {
-						state.glitchQueue = buildChunkFlipQueue(oldDisplayed, visibleText);
+						state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
 						state.startTime = now;
 						state.glitchFrame = 0;
 						state.lastGlitchTime = now;
@@ -1940,7 +1922,7 @@ export class ScrambleStateManager {
 					state.charsSinceLastFlush = 0;
 					state.ripples = [];
 					if (glitchCooledDown) {
-						state.glitchQueue = buildChunkFlipQueue(oldDisplayed, visibleText);
+						state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
 						state.startTime = now;
 						state.glitchFrame = 0;
 						state.lastGlitchTime = now;
@@ -1955,7 +1937,7 @@ export class ScrambleStateManager {
 					state.charsSinceLastFlush = 0;
 					state.ripples = [];
 					if (glitchCooledDown) {
-						state.glitchQueue = buildChunkFlipQueue(oldDisplayed, visibleText);
+						state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
 						state.startTime = now;
 						state.glitchFrame = 0;
 						state.lastGlitchTime = now;
@@ -1970,7 +1952,7 @@ export class ScrambleStateManager {
 					state.charsSinceLastFlush = 0;
 					state.ripples = [];
 					if (glitchCooledDown) {
-						state.glitchQueue = buildChunkFlipQueue(oldDisplayed, visibleText);
+						state.glitchQueue = buildGlitchQueue(oldDisplayed, visibleText);
 						state.startTime = now;
 						state.glitchFrame = 0;
 						state.lastGlitchTime = now;
