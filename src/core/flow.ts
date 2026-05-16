@@ -408,12 +408,9 @@ function buildFlowArgs(
 	const activation =
 		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}" lineage="${lineage}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
-		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
 		`${flowListSection}` +
 		`${parentLineageHint}` +
-		`${timeBudgetHint}` +
-		`${projectHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
 

@@ -109,7 +109,7 @@ describe("runFlow case-insensitive lookup", () => {
 		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
 		const args = spawnCall[1] as string[];
 		const prompt = args[args.indexOf("-p") + 1];
-		expect(prompt).toContain("Session mode: long. Time budget: 900s total.");
+		expect(prompt).not.toContain("Session mode: long. Time budget: 900s total.");
 		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("90000");
 
 		mockProc.emit("close", 0);
@@ -1095,9 +1095,9 @@ describe("timeout two-stage behavior", () => {
 		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
 		const args = spawnCall[1] as string[];
 		const prompt = args[args.indexOf("-p") + 1];
-		expect(prompt).toContain("Session mode: fast. Time budget: 300s total.");
-		expect(prompt).toContain("Long-running tools may be interrupted near the deadline");
-		expect(prompt).toContain("output structured findings immediately");
+		expect(prompt).not.toContain("Session mode: fast. Time budget: 300s total.");
+		expect(prompt).not.toContain("Long-running tools may be interrupted near the deadline");
+		expect(prompt).not.toContain("output structured findings immediately");
 		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("30000");
 
 		// Advance to 135s before timeout (165s elapsed, urge fires here)
