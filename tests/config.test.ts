@@ -10,6 +10,7 @@ import {
 	resolveFlowModelCandidates,
 	writeGlobalFlowMode,
 } from "../src/config/config.js";
+import { resolveModelContextWindow } from "../src/config/models.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;
@@ -437,6 +438,135 @@ describe("loadFlowSettings", () => {
 		});
 		const result = loadFlowSettings(tmpDir);
 		expect(result).toEqual({});
+	});
+});
+
+describe("resolveModelContextWindow", () => {
+	let tmpDir: string;
+	let originalHome: string | undefined;
+	let originalAgentDir: string | undefined;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-models-test-"));
+		originalHome = process.env.HOME;
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.HOME = tmpDir;
+		delete process.env.PI_CODING_AGENT_DIR;
+	});
+
+	afterEach(() => {
+		process.env.HOME = originalHome;
+		if (originalAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function writeModelsJson(content: Record<string, unknown>) {
+		const dir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, "models.json"), JSON.stringify(content, null, 2), "utf-8");
+	}
+
+	it("returns undefined when models.json does not exist", () => {
+		expect(resolveModelContextWindow("openai/gpt-4o")).toBeUndefined();
+	});
+
+	it("returns undefined for invalid model string format", () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [{ id: "gpt-4o", contextWindow: 128000 }],
+				},
+			},
+		});
+		expect(resolveModelContextWindow("gpt-4o")).toBeUndefined();
+	});
+
+	it("resolves contextWindow for a simple provider/modelId", () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [{ id: "gpt-4o", contextWindow: 128000 }],
+				},
+			},
+		});
+		expect(resolveModelContextWindow("openai/gpt-4o")).toBe(128000);
+	});
+
+	it("resolves contextWindow for a nested modelId with slashes", () => {
+		writeModelsJson({
+			providers: {
+				firework: {
+					models: [
+						{
+							id: "accounts/fireworks/routers/kimi-k2p6-turbo",
+							contextWindow: 196608,
+						},
+					],
+				},
+			},
+		});
+		expect(
+			resolveModelContextWindow("firework/accounts/fireworks/routers/kimi-k2p6-turbo"),
+		).toBe(196608);
+	});
+
+	it("returns undefined when provider is not found", () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [{ id: "gpt-4o", contextWindow: 128000 }],
+				},
+			},
+		});
+		expect(resolveModelContextWindow("anthropic/claude-3-5-sonnet")).toBeUndefined();
+	});
+
+	it("returns undefined when model id is not found", () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [{ id: "gpt-4o", contextWindow: 128000 }],
+				},
+			},
+		});
+		expect(resolveModelContextWindow("openai/gpt-4o-mini")).toBeUndefined();
+	});
+
+	it("ignores malformed model entries and continues searching", () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [
+						{ id: "gpt-4", contextWindow: "invalid" },
+						"not-an-object",
+						{ id: "gpt-4o", contextWindow: 128000 },
+					],
+				},
+			},
+		});
+		expect(resolveModelContextWindow("openai/gpt-4o")).toBe(128000);
+	});
+
+	it("respects PI_CODING_AGENT_DIR for models.json location", () => {
+		const customDir = path.join(tmpDir, "custom-agent");
+		fs.mkdirSync(customDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = customDir;
+		fs.writeFileSync(
+			path.join(customDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					custom: {
+						models: [{ id: "custom-model", contextWindow: 32000 }],
+					},
+				},
+			}),
+			"utf-8",
+		);
+		expect(resolveModelContextWindow("custom/custom-model")).toBe(32000);
 	});
 });
 

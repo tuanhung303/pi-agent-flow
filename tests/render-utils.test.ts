@@ -191,4 +191,8 @@ describe('formatContextLabel', () => {
   it('handles large numbers', () => {
     expect(formatContextLabel(950500, 1000000)).toBe('0.95M/1.00M');
   });
+
+  it('returns placeholder when ctxTokens is 0 and max is known', () => {
+    expect(formatContextLabel(0, 200000)).toBe('--/0.20M');
+  });
 });

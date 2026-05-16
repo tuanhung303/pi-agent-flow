@@ -558,8 +558,8 @@ function renderFlowCollapsed(
 	const countdown = formatCountdownRemaining(r.deadlineAtMs);
 	const statsParts: string[] = [];
 	if (countdown) statsParts.push(countdown);
-	if (r.usage.contextTokens || r.maxContextTokens) {
-		const ctxLabel = formatContextLabel(r.usage.contextTokens || 0, r.maxContextTokens);
+	if (r.maxContextTokens !== undefined || r.usage.contextTokens > 0) {
+		const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 		statsParts.push(ctxLabel);
 	}
 	const tpsValue = r.usage.smoothedTps;
@@ -868,8 +868,8 @@ function renderActivityPanel(
 		const countdown = formatCountdownRemaining(r.deadlineAtMs);
 		const statsParts: string[] = [];
 		if (countdown) statsParts.push(countdown);
-		if (r.usage.contextTokens || r.maxContextTokens) {
-			const ctxLabel = formatContextLabel(r.usage.contextTokens || 0, r.maxContextTokens);
+		if (r.maxContextTokens !== undefined || r.usage.contextTokens > 0) {
+			const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 			statsParts.push(ctxLabel);
 		}
 		const tpsValue = r.usage.smoothedTps;
