@@ -141,6 +141,21 @@ eval "$(./scripts/switch.sh)"   # when switching to LOCAL the script prints an e
 
 > ⚠️ The variable **must** be exported in the same shell that starts `pi`. Running `export` inside a subshell (e.g. `bash -c 'export …'`) will **not** work because child-process environment variables do not propagate upward to the parent.
 
+### Syncing dump artifacts to the repo
+
+Use `scripts/sync-dumps.sh` to copy the current `/tmp` dump files into `dump-artifacts/` and regenerate the manifests:
+
+```bash
+./scripts/sync-dumps.sh
+```
+
+This script is **idempotent** — safe to run multiple times. It:
+1. Removes stale `pi-dump*` and `snapshot-dump*` files from `dump-artifacts/`
+2. Copies fresh `pi-dump*` and `snapshot-dump*` files from `/tmp`
+3. Regenerates `MANIFEST.md` and `manifest.json`
+
+> 💡 **When to use it:** After a debugging session where you want to archive or diff the exact prompts that were sent to child flows. The synced artifacts are analysis material and can be committed if you are tracking format evolution, but they are not required for CI.
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
