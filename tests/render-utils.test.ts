@@ -7,7 +7,7 @@ import {
   getTruncationBudget,
   lowerFirstWord,
   formatModelLabel,
-  formatElapsed,
+  formatCountdownRemaining,
 } from '../src/tui/render-utils.js';
 
 describe('visibleLength', () => {
@@ -159,17 +159,17 @@ describe('formatModelLabel', () => {
   });
 });
 
-describe('formatElapsed', () => {
-  it('returns undefined when startedAtMs is missing', () => {
-    expect(formatElapsed(undefined)).toBeUndefined();
+describe('formatCountdownRemaining', () => {
+  it('returns undefined when deadlineAtMs is missing', () => {
+    expect(formatCountdownRemaining(undefined)).toBeUndefined();
   });
 
-  it('formats elapsed time as MM:SS', () => {
-    const result = formatElapsed(Date.now() - 90_000);
-    expect(['01:30', '01:31']).toContain(result);
+  it('formats remaining time as MM:SS', () => {
+    const result = formatCountdownRemaining(Date.now() + 90_000);
+    expect(['01:30', '01:29']).toContain(result);
   });
 
-  it('returns undefined for future timestamps', () => {
-    expect(formatElapsed(Date.now() + 1000)).toBeUndefined();
+  it('returns undefined for past deadlines', () => {
+    expect(formatCountdownRemaining(Date.now() - 1000)).toBeUndefined();
   });
 });

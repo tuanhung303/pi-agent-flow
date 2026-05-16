@@ -111,11 +111,11 @@ export function formatModelLabel(model: string | undefined, maxTail: number = 10
 	return `${provider}/${shortened}`;
 }
 
-export function formatElapsed(startedAtMs?: number): string | undefined {
-	if (typeof startedAtMs !== "number") return undefined;
-	const elapsed = Date.now() - startedAtMs;
-	if (elapsed < 0) return undefined;
-	return formatCountdown(elapsed);
+export function formatCountdownRemaining(deadlineAtMs?: number): string | undefined {
+	if (typeof deadlineAtMs !== "number") return undefined;
+	const remaining = deadlineAtMs - Date.now();
+	if (remaining < 0) return undefined;
+	return formatCountdown(remaining);
 }
 
 /** Regex matching ANSI escape sequences. */

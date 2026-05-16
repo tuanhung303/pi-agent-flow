@@ -49,7 +49,7 @@ function getLiveTextWithFallback(id: string): string | undefined {
 	const fallbackId = id.includes("#") ? "collapsed" + id.slice(id.indexOf("#")) : "collapsed";
 	return getLiveText(fallbackId);
 }
-import { formatCompactStats, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatElapsed } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatCountdownRemaining } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -555,10 +555,10 @@ function renderFlowCollapsed(
 
 	const isComplete = r.exitCode !== -1;
 
-	// Build header stats: elapsed · tok/s
-	const elapsed = formatElapsed(r.startedAtMs);
+	// Build header stats: countdown · tok/s
+	const countdown = formatCountdownRemaining(r.deadlineAtMs);
 	const statsParts: string[] = [];
-	if (elapsed) statsParts.push(elapsed);
+	if (countdown) statsParts.push(countdown);
 	const tpsValue = r.usage.smoothedTps;
 	const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 	if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
@@ -861,10 +861,10 @@ function renderActivityPanel(
 		const headerPrefix = isLast ? "└─" : "├─";
 		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 
-		// Build header stats: elapsed · tok/s
-		const elapsed = formatElapsed(r.startedAtMs);
+		// Build header stats: countdown · tok/s
+		const countdown = formatCountdownRemaining(r.deadlineAtMs);
 		const statsParts: string[] = [];
-		if (elapsed) statsParts.push(elapsed);
+		if (countdown) statsParts.push(countdown);
 		const tpsValue = r.usage.smoothedTps;
 		const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 		if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
