@@ -9,6 +9,117 @@ import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { getGoal, getWarpCount, recordWarp } from "./store.js";
+import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
+import {
+  stripSteeringHintFromContent,
+  isJsonEqual,
+  contentContainsSteeringHintTag,
+} from "../steering/sliding-prompt.js";
+import { stripStrategicHintsFromContent } from "../steering/tool-utils.js";
+import { logError } from "../config/log.js";
+
+function sanitizeBranchForWarp(messages: any[]): { messages: any[]; passesApplied: string[] } {
+  const passesApplied = new Set<string>();
+  const sanitized: any[] = [];
+
+  for (const message of messages) {
+    if (!message) continue;
+
+    // Drop messages with role: 'custom' (hidden orchestrator messages that convertToLlm would promote to user)
+    if (message.role === "custom") {
+      passesApplied.add("dropCustomMessages");
+      continue;
+    }
+
+    // Drop messages with role: 'system' that contain steering hint tags
+    if (message.role === "system" && contentContainsSteeringHintTag(message.content)) {
+      passesApplied.add("dropSlidingSystemPrompts");
+      continue;
+    }
+
+    let changed = false;
+    let sanitizedMessage = message;
+
+    // Strip reasoning/thinking from assistant messages
+    if (message.role === "assistant" || message.role === "system" || message.role === "tool") {
+      const stripped = stripReasoningFromAssistantMessage(message);
+      if (stripped.changed) {
+        sanitizedMessage = stripped.message;
+        changed = true;
+        passesApplied.add("stripReasoning");
+      }
+    }
+
+    // Strip timestamp from message objects
+    if ("timestamp" in sanitizedMessage) {
+      const { timestamp, ...rest } = sanitizedMessage;
+      sanitizedMessage = rest;
+      changed = true;
+      passesApplied.add("stripTimestamps");
+    }
+
+    // Strip API metadata from assistant messages (keep usage but strip cost)
+    if (sanitizedMessage.role === "assistant") {
+      const { api, provider, model, stopReason, responseId, responseModel, usage, ...rest } = sanitizedMessage;
+      let stripped = false;
+      if (api !== undefined || provider !== undefined || model !== undefined ||
+          stopReason !== undefined || responseId !== undefined || responseModel !== undefined) {
+        stripped = true;
+      }
+      let cleanedUsage = usage;
+      if (usage && typeof usage === "object" && "cost" in usage) {
+        const { cost, ...usageWithoutCost } = usage as any;
+        cleanedUsage = usageWithoutCost;
+        stripped = true;
+      }
+      if (stripped) {
+        sanitizedMessage = { ...rest, ...(cleanedUsage !== undefined ? { usage: cleanedUsage } : {}) };
+        changed = true;
+        passesApplied.add("stripApiMetadata");
+      }
+    }
+
+    // Strip 'details' from tool/toolResult messages
+    if (sanitizedMessage.role === "tool" || sanitizedMessage.role === "toolResult") {
+      if ("details" in sanitizedMessage) {
+        const { details, ...rest } = sanitizedMessage;
+        sanitizedMessage = rest;
+        changed = true;
+        passesApplied.add("stripDetails");
+      }
+    }
+
+    if ("content" in sanitizedMessage) {
+      let modifiedContent = sanitizedMessage.content;
+
+      // Strip steering hints from message content
+      const afterSliding = stripSteeringHintFromContent(modifiedContent);
+      if (!isJsonEqual(afterSliding, modifiedContent)) {
+        modifiedContent = afterSliding;
+        changed = true;
+        passesApplied.add("stripSteeringHints");
+      }
+
+      // Strip strategic hints from tool result content
+      if (sanitizedMessage.role === "tool" || sanitizedMessage.role === "toolResult") {
+        const afterHints = stripStrategicHintsFromContent(modifiedContent);
+        if (!isJsonEqual(afterHints, modifiedContent)) {
+          modifiedContent = afterHints;
+          changed = true;
+          passesApplied.add("stripStrategicHints");
+        }
+      }
+
+      if (changed) {
+        sanitizedMessage = { ...sanitizedMessage, content: modifiedContent };
+      }
+    }
+
+    sanitized.push(sanitizedMessage);
+  }
+
+  return { messages: sanitized, passesApplied: Array.from(passesApplied) };
+}
 
 const SYSTEM_PROMPT = `You are a context transfer and execution planning assistant. Given a conversation history and the user's goal, generate a structured warp prompt that serves as a ready-to-execute project brief for a new session.
 
@@ -116,7 +227,11 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
       const agentMessages = branch
         .map((entry: any) => (entry.type === "message" ? entry.message : undefined))
         .filter((m: any) => m != null);
-      const messages = convertToLlm(agentMessages);
+      const { messages: sanitizedMessages, passesApplied } = sanitizeBranchForWarp(agentMessages);
+      if (process.env.PI_FLOW_DUMP_SNAPSHOT) {
+        logError(`[warp-sanitize] passes applied: ${passesApplied.join(", ")}`);
+      }
+      const messages = convertToLlm(sanitizedMessages);
       let conversation = serializeConversation(messages);
 
       // Truncate if too large (middle truncation: keep first 20% + last 80% of max)
