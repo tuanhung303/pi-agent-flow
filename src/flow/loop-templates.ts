@@ -22,7 +22,7 @@ Loop overall: {{sessionCount}} sessions, {{totalTokensAcrossSessions}} tokens to
 
 Latest user message: {{userMessage}}
 
-Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Only the user can end a goal. Keep finding improvements that advance the objective.
+Call the flow tool with an appropriate type to advance, or call the warp tool to hand off to a fresh session if budget is exceeded. Only the user can end a goal. Keep finding improvements that advance the objective.
 </flow-continuation>`;
 
 export const loopWakeupTemplate = `<flow-wakeup>
@@ -39,5 +39,5 @@ Guidance:
 - If you find potential issues, investigate with scout or audit before making changes.
 - You cannot end this goal. Only the user can end a goal.
 
-Call the flow tool with the appropriate flow type to continue.
+Call the flow tool with the appropriate flow type to continue, or call the warp tool to hand off to a fresh session if budget is exceeded.
 </flow-wakeup>`;
