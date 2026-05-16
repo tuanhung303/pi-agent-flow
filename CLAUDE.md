@@ -364,8 +364,19 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 | `edit` | `/flow:goal edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
 | `complete` | `/flow:goal complete` — Marks the current goal as completed. |
 | `status`, `show` | `/flow:goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
+| `warp` | `/flow:warp <goal>` — Distills conversation context into a focused prompt and spawns a new session with the goal auto-set. Preserves unresolved blockers, key files, and end-goal intent. |
 
 > **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow:goal complete`, by the orchestrator calling the `flow` tool with `type: "complete"`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
+
+#### Warp gotchas
+
+| Gotcha | Why |
+|--------|-----|
+| **No model selected** | Warp requires a configured LLM to distill context. Set a model in Pi settings first. |
+| **Empty conversation** | If the branch has no messages, there's nothing to warp. |
+| **Deep warp chains (>3)** | Consecutive warps dilute context. A warning is shown; consider consolidating instead. |
+| **User cancels editor** | No session is created; the current session remains unchanged. |
+| **Goal is required** | `/flow:warp` without a goal argument errors immediately. |
 
 ### How it works
 

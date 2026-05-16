@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 import { setupFlowCommand } from "./command.js";
 import { setupSettingsCommand } from "./settings-command.js";
+import { setupWarpCommand } from "./warp-command.js";
 import { setupContinuation } from "./continuation.js";
 import { recordFlowCompletion, addTokens } from "./store.js";
 
@@ -26,7 +27,7 @@ export {
   addTokens,
 } from "./store.js";
 
-export { setupFlowCommand, setupContinuation };
+export { setupFlowCommand, setupContinuation, setupWarpCommand };
 export { markFlowCompleted } from "./continuation.js";
 
 let _currentCwd: string | undefined;
@@ -38,5 +39,6 @@ export function registerFlow(pi: ExtensionAPI): void {
 
   setupFlowCommand(pi, () => _currentCwd);
   setupSettingsCommand(pi, () => _currentCwd);
+  setupWarpCommand(pi, () => _currentCwd);
   setupContinuation(pi, () => _currentCwd);
 }

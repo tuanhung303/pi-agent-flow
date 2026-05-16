@@ -138,3 +138,15 @@ export function addTokens(cwd: string, tokens: number): GoalEntry | undefined {
   writeState(cwd, state);
   return state.current;
 }
+
+export function getWarpCount(cwd: string): number {
+  const state = readState(cwd);
+  return state.warps?.length ?? 0;
+}
+
+export function recordWarp(cwd: string, warp: import("./types.js").WarpEntry): void {
+  const state = readState(cwd);
+  if (!state.warps) state.warps = [];
+  state.warps.push(warp);
+  writeState(cwd, state);
+}

@@ -44,6 +44,8 @@ declare module "@mariozechner/pi-coding-agent" {
 	export const DEFAULT_MAX_BYTES: number;
 	export const DEFAULT_MAX_LINES: number;
 	export function truncateHead(text: string, options: { maxBytes?: number; maxLines?: number }): { content: string };
+	export function convertToLlm(branch: unknown[]): any[];
+	export function serializeConversation(messages: any[]): string;
 	export function createBashToolDefinition(
 		cwd: string,
 		options?: {
@@ -92,6 +94,7 @@ declare module "@mariozechner/pi-coding-agent" {
 			find(provider: string, modelId: string): any;
 			hasConfiguredAuth(model: any): boolean;
 		};
+		model?: any;
 	}
 
 	/** Fresh command-capable context bound to the replacement session after a session switch. */
@@ -281,6 +284,7 @@ declare module "@mariozechner/pi-ai" {
 		stopReason?: string;
 		errorMessage?: string;
 	}
+	export function complete(opts: { model?: any; system?: string; messages: any[] }): Promise<{ content: string }>;
 }
 
 declare module "@sinclair/typebox" {
