@@ -139,14 +139,6 @@ export interface ValueFlashState {
 }
 
 // ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
-
-export function randomChar(): string {
-	return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
-}
-
-// ---------------------------------------------------------------------------
 // Fast random char pool — pre-filled to reduce Math.random() calls ~80%
 // ---------------------------------------------------------------------------
 
@@ -173,19 +165,6 @@ export function poolRandomChar(): string {
 		fillRandomPool();
 	}
 	return randomPool[randomPoolIndex++];
-}
-
-// ---------------------------------------------------------------------------
-// Pre-allocated segment buffer — reused across frames to reduce GC pressure
-// ---------------------------------------------------------------------------
-
-export let segmentBuffer: string[] = [];
-
-export function getSegmentBuffer(minSize: number): string[] {
-	if (segmentBuffer.length < minSize) {
-		segmentBuffer = new Array(Math.max(minSize, 512));
-	}
-	return segmentBuffer;
 }
 
 export const MAX_FLOW_ENTRIES = 128;

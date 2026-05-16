@@ -40,32 +40,10 @@ export function hashNoise(seed: number, charIndex: number, tick: number, depth: 
 // Character sets — depth-based esoteric scramble symbols
 // ---------------------------------------------------------------------------
 
-/** Deep glitch: fine dots, sparse sparkle, dense braille for inner glitch depths (1–2) */
-export function easeOutCubic(t: number): number {
-	const et = 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
-	return 0.7 * et + 0.3 * Math.min(1, Math.max(0, t));
-}
-
 /** Smoothstep interpolation for smooth color band transitions */
 export function smoothstep(min: number, max: number, value: number): number {
 	const x = Math.max(0, Math.min(1, (value - min) / (max - min)));
 	return x * x * (3 - 2 * x);
-}
-
-/** Linear interpolation between a and b by factor t (0..1) */
-export function lerp(a: number, b: number, t: number): number {
-	return Math.round(a + (b - a) * Math.max(0, Math.min(1, t)));
-}
-
-/** Ease-in quadratic: gentle start, accelerating into the main wave */
-export function easeInQuad(t: number): number {
-	return t * t;
-}
-
-/** Ease-out quadratic: fast start, gentle deceleration — used for
- *  distributing glitch start frames more evenly across the range. */
-export function easeOutQuad(t: number): number {
-	return 1 - (1 - t) * (1 - t);
 }
 
 // ---------------------------------------------------------------------------

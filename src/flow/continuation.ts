@@ -4,11 +4,6 @@ import { budgetLimitTemplate, goalCompletedTemplate } from "./template-strings.j
 import { logWarn } from '../config/log.js';
 
 let _currentSessionId: string | undefined;
-
-/** Expose current session ID for cross-module reads (e.g. warp goal binding). */
-export function getCurrentSessionId(): string | undefined {
-  return _currentSessionId;
-}
 const SPAWN_COOLDOWN_MS = 5000;
 const _lastSpawnAt = new Map<string, number>();
 

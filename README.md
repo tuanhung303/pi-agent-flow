@@ -495,10 +495,13 @@ per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings
 | `PI_FLOW_REMINDER_FILE` | Path to a file the parent writes warning messages into; the timed-bash wrapper reads it before each tool call |
 | `PI_FLOW_DEBUG_CONTEXT` | Set to `1` to emit context-compression telemetry to stderr |
 | `PI_OFFLINE` | Always set to `1` for child flow processes |
+| `PI_FLOW_NO_STEERING` | Set to `1` to disable orchestrator steering hint injection |
 | `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to suppress the strategic planning hints appended after tool calls |
-| `PI_ASK_USER_DISPLAY_MODE` | Default display mode for `ask_user`: `overlay` or `inline` |
-| `PI_ASK_USER_OVERLAY_TOGGLE_KEY` | Default shortcut for hiding/showing the overlay popup (e.g. `alt+o`) |
-| `PI_ASK_USER_COMMENT_TOGGLE_KEY` | Default shortcut for toggling the comment row (e.g. `ctrl+g`) |
+| `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render) |
+| `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect |
+| `PI_FLOW_LOG_FILE` | TUI-safe log file path (default: `$TMPDIR/pi-agent-flow.log`; set to `/dev/null` to suppress) |
+| `PI_FLOW_DUMP_MAX_AGE_HOURS` | Max age of dump files before auto-cleanup deletes them (default: `168` = 7 days) |
+| `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE` | Set to `1` to skip structured output directive if a provider rejects that prompt shape |
 
 ### Notifications
 
