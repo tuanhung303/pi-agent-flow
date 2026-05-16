@@ -1223,6 +1223,39 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
  * results causes strict API providers (e.g. kimi-coding, DeepSeek) to reject
  * the request with `tool_call_id is not found`.
  */
+/**
+ * Check if an assistant message is empty (continuation marker with no semantic value).
+ * Empty means: no substantive text, no tool calls.
+ */
+function isEmptyAssistantMessage(message: SnapshotMessage): boolean {
+	if (message.role !== "assistant") return false;
+
+	const content = message.content;
+
+	// Null/undefined/empty string
+	if (content === null || content === undefined || content === "") return true;
+
+	// Whitespace-only string
+	if (typeof content === "string" && content.trim() === "") return true;
+
+	// Array content: check for no text parts or only whitespace text parts, and NO tool calls
+	if (Array.isArray(content)) {
+		const hasToolCall = content.some((p) => (p as ContentPart).type === "toolCall");
+		if (hasToolCall) return false;
+
+		const textParts = content.filter(
+			(p): p is TextPart =>
+				(p as ContentPart).type === "text" && typeof (p as TextPart).text === "string",
+		);
+		if (textParts.length === 0) return true;
+
+		const allWhitespace = textParts.every((p) => p.text.trim() === "");
+		return allWhitespace;
+	}
+
+	return false;
+}
+
 export function stripBatchReadToolCalls(snapshot: string): string {
 	const lines = snapshot.trimEnd().split("\n");
 
@@ -1539,6 +1572,14 @@ export function sanitizeForkSnapshot(
 					changed = true;
 					subPasses.add("stripApiMetadata");
 				}
+			}
+
+			// Collapse empty assistant messages to a minimal continuation marker.
+			if (message.role === "assistant" && isEmptyAssistantMessage(message)) {
+				const { usage: _usage, ...rest } = message;
+				message = { ...rest, content: "[assistant:continuation]" };
+				changed = true;
+				subPasses.add("collapseEmptyAssistantMessages");
 			}
 
 			// Strip `details` from tool/toolResult messages — carries FlowDetails UI metadata

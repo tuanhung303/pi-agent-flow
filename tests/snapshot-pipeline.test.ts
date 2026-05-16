@@ -40,6 +40,7 @@ const VALID_PASS_NAMES = new Set([
 	"stripBatchRead",
 	"compressToolResults",
 	"compressParentActivation",
+	"collapseEmptyAssistantMessages",
 ]);
 
 const KNOWN_DEAD_PASS_NAMES = new Set(["sanitizeMessages"]);
@@ -492,6 +493,113 @@ describe("HEADER ROUND-TRIP TEST", () => {
 
 // ---------------------------------------------------------------------------
 // 4. CUSTOM MESSAGE / CONFIG EVENT DROP TEST
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 5. COLLAPSE EMPTY ASSISTANT MESSAGES TEST
+// ---------------------------------------------------------------------------
+
+describe("COLLAPSE EMPTY ASSISTANT MESSAGES", () => {
+	it("collapses empty, whitespace-only, and empty-array assistant messages and strips usage", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1", systemPrompt: "You are helpful" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-empty-string",
+					content: "",
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-whitespace",
+					content: "   \n\t  ",
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-empty-array",
+					content: [],
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-whitespace-array",
+					content: [{ type: "text", text: "  " }, { type: "text", text: "\n" }],
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-with-tool",
+					content: [
+						{ type: "text", text: "  " },
+						{ type: "toolCall", id: "tc1", name: "batch" },
+					],
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-with-text",
+					content: [{ type: "text", text: "Hello" }],
+					usage: { totalTokens: 10 },
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map());
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+
+		const emptyString = entries.find((e: any) => e?.message?.id === "msg-empty-string");
+		expect(emptyString?.message?.content).toBe("[assistant:continuation]");
+		expect(emptyString?.message?.usage).toBeUndefined();
+
+		const whitespace = entries.find((e: any) => e?.message?.id === "msg-whitespace");
+		expect(whitespace?.message?.content).toBe("[assistant:continuation]");
+		expect(whitespace?.message?.usage).toBeUndefined();
+
+		const emptyArray = entries.find((e: any) => e?.message?.id === "msg-empty-array");
+		expect(emptyArray?.message?.content).toBe("[assistant:continuation]");
+		expect(emptyArray?.message?.usage).toBeUndefined();
+
+		const whitespaceArray = entries.find((e: any) => e?.message?.id === "msg-whitespace-array");
+		expect(whitespaceArray?.message?.content).toBe("[assistant:continuation]");
+		expect(whitespaceArray?.message?.usage).toBeUndefined();
+
+		const withTool = entries.find((e: any) => e?.message?.id === "msg-with-tool");
+		expect(withTool?.message?.content).not.toBe("[assistant:continuation]");
+		expect(withTool?.message?.content).toEqual([
+			{ type: "text", text: "  " },
+			{ type: "toolCall", id: "tc1", name: "batch" },
+		]);
+		expect(withTool?.message?.usage).toBeDefined();
+
+		const withText = entries.find((e: any) => e?.message?.id === "msg-with-text");
+		expect(withText?.message?.content).toEqual([{ type: "text", text: "Hello" }]);
+		expect(withText?.message?.usage).toBeDefined();
+
+		expect(passesApplied).toContain("collapseEmptyAssistantMessages");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 6. CUSTOM MESSAGE / CONFIG EVENT DROP TEST
 // ---------------------------------------------------------------------------
 
 describe("CUSTOM MESSAGE / CONFIG EVENT DROP TEST", () => {
