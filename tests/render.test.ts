@@ -354,7 +354,7 @@ describe("formatFlowTypeName", () => {
 
 describe("formatCompactTokenPair", () => {
 	it("formats only input and output tokens", () => {
-		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("↑ 46.7k · ↓  4.6k");
+		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("↑ 46.7k ↓   4.6k");
 	});
 });
 
@@ -573,11 +573,11 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout - tps:");
+		expect(headerLine).toContain("scout   tps:");
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("↑ 46.7k");
 		expect(headerLine).not.toContain("↓  4.6k");
-		expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Flow timed out after 600s.");
+		expect(text).toContain("msg: ↑ 46.7k ↓   4.6k · Flow timed out after 600s.");
 	});
 
 	it("renders multi-flow aim countdown and msg token prefixes", () => {
@@ -604,7 +604,7 @@ describe("activity panel rendering", () => {
 			// Aim prefix is static, content may be scrambled
 			expect(text).toContain("aim: [00:45] -");
 			// Msg prefix is static, content may be scrambled
-			expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] -");
+			expect(text).toContain("msg: ↑ 46.7k ↓   4.6k ·");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -624,7 +624,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("act: [3] -");
+		expect(text).toContain("act: 3 ·");
 	});
 
 	it("renders ghost dashboard during zero state", () => {
@@ -642,7 +642,7 @@ describe("activity panel rendering", () => {
 		// Aim content is scrambled on first render
 		expect(text).not.toContain("refactor"); // fully scrambled on first render
 		expect(text).toContain("↑     0");
-		expect(text).toContain("↓     0");
+		expect(text).toContain("↓      0");
 		// Header stats are scrambled on first render, don't assert exact tps text
 		expect(text).not.toContain("ctx:");
 		expect(text).toContain("msg:");
@@ -716,7 +716,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
+		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: ↑     0 ↓      0 · "));
 		expect(scoutBlock).toContain("msg:");
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
@@ -734,7 +734,7 @@ describe("activity panel rendering", () => {
 				streamingText: longStreaming,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
-			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
+			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: ↑     0 ↓      0 · "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 
@@ -809,7 +809,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("├─ act: [0] - [n/a]");
+		expect(text).toContain("├─ act: 0 · [n/a]");
 		expect(text).toContain("└─ msg:");
 	});
 
@@ -872,7 +872,7 @@ describe("activity panel rendering", () => {
 				exitCode: -1,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
-			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: ↑     0 ↓      0 · "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 

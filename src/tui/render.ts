@@ -548,10 +548,10 @@ function renderFlowCollapsed(
 
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
-	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? ` - ${modelLabel} - ` : " - ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
+	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `   ${modelLabel}   ` : "   ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	// Scramble header on first render; show full styled header when complete
-	const plainHeader = typeName + (modelLabel ? ` - ${modelLabel} - ` : " - ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
+	const plainHeader = typeName + (modelLabel ? `   ${modelLabel}   ` : "   ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
 	container.addChild(new DynamicScrambleText(
 		header,
 		() => {
@@ -585,7 +585,7 @@ function renderFlowCollapsed(
 	const lastTool = getLastToolCall(r.messages);
 	const actStr = lastTool ? formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme)) : "[n/a]";
 	const actTree = "├─";
-	const actLabel = ` act: [${r.usage.toolCalls}] - `;
+	const actLabel = ` act: ${r.usage.toolCalls} · `;
 	const prefixStub = `${actTree}${actLabel}`;
 	const budget = getTruncationBudget(visibleLength(prefixStub));
 	const actFullText = stripAnsi(lowerFirstWord(actStr));
@@ -606,7 +606,7 @@ function renderFlowCollapsed(
 			if (scrambledActKpi !== actKpi) {
 				actKpi = scrambledActKpi;
 			}
-			const actLabel = ` act: [${actKpi}] - `;
+			const actLabel = ` act: ${actKpi} · `;
 			const actPrefix = `${actTree}${actLabel}`;
 			return `${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", actContent, theme, config)}`;
 		},
@@ -619,7 +619,7 @@ function renderFlowCollapsed(
 	if (scrambledMsgKpi !== msgKpi) {
 		msgKpi = scrambledMsgKpi;
 	}
-	const msgPrefixStub = `└─ msg: [${msgKpi}] - `;
+	const msgPrefixStub = `└─ msg: ${msgKpi} · `;
 	const msgBudget = getTruncationBudget(visibleLength(msgPrefixStub));
 
 	let rawMsg: string;
@@ -646,7 +646,7 @@ function renderFlowCollapsed(
 		? tailText(rawMsg, msgBudget)
 		: truncateChars(rawMsg, msgBudget);
 	const msgTree = "└─";
-	const msgLabel = ` msg: [${msgKpi}] - `;
+	const msgLabel = ` msg: ${msgKpi} · `;
 	const initialMsgPrefix = `${msgTree}${msgLabel}`;
 	container.addChild(new DynamicScrambleText(
 		`${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", initialMsgContent, theme, config)}`,
@@ -657,7 +657,7 @@ function renderFlowCollapsed(
 			if (scrambledMsgKpi !== msgKpi) {
 				msgKpi = scrambledMsgKpi;
 			}
-			const msgLabel = ` msg: [${msgKpi}] - `;
+			const msgLabel = ` msg: ${msgKpi} · `;
 			const msgPrefix = `${msgTree}${msgLabel}`;
 			const freshRawMsg = (r.exitCode === -1 ? getLiveTextWithFallback(id) : undefined) ?? rawMsg;
 			if (scrambleManager.getMode() === 'stream') {
@@ -852,11 +852,11 @@ function renderActivityPanel(
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
 		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
-		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? ` - ${modelLabel} - ` : " - ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
+		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `   ${modelLabel}   ` : "   ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
-		const plainHeader = headerPrefix + " " + typeName + (modelLabel ? ` - ${modelLabel} - ` : " - ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
+		const plainHeader = headerPrefix + " " + typeName + (modelLabel ? `   ${modelLabel}   ` : "   ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
 		container.addChild(new DynamicScrambleText(
 			headerLine,
 			() => {
@@ -893,7 +893,7 @@ function renderActivityPanel(
 		const lastTool = getLastToolCall(r.messages);
 		const actStr = lastTool ? formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme)) : "[n/a]";
 		const actTree = `${indent}├─`;
-		const actLabel = ` act: [${r.usage.toolCalls}] - `;
+		const actLabel = ` act: ${r.usage.toolCalls} · `;
 		const prefixStub = `${actTree}${actLabel}`;
 		const budget = getTruncationBudget(visibleLength(prefixStub));
 		const actFullText = stripAnsi(lowerFirstWord(actStr));
@@ -914,7 +914,7 @@ function renderActivityPanel(
 				if (scrambledActKpi !== actKpi) {
 					actKpi = scrambledActKpi;
 				}
-				const actLabel = ` act: [${actKpi}] - `;
+				const actLabel = ` act: ${actKpi} · `;
 				const actPrefix = `${actTree}${actLabel}`;
 				return `${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", actContent, theme, config)}`;
 			},
@@ -928,7 +928,7 @@ function renderActivityPanel(
 			msgKpi = scrambledMsgKpi;
 		}
 		const msgTree = `${indent}└─`;
-		const msgLabel = ` msg: [${msgKpi}] - `;
+		const msgLabel = ` msg: ${msgKpi} · `;
 		const msgPrefixStub = `${msgTree}${msgLabel}`;
 		const msgBudget = getTruncationBudget(visibleLength(msgPrefixStub));
 		const liveText = r.exitCode === -1 ? r.streamingText : undefined;
@@ -959,7 +959,7 @@ function renderActivityPanel(
 				if (scrambledMsgKpi !== msgKpi) {
 					msgKpi = scrambledMsgKpi;
 				}
-				const msgLabel = ` msg: [${msgKpi}] - `;
+				const msgLabel = ` msg: ${msgKpi} · `;
 				const msgPrefix = `${msgTree}${msgLabel}`;
 				const freshRawMsg = flowComplete ? rawMsg : (getLiveTextWithFallback(flowId) ?? rawMsg);
 				if (scrambleManager.getMode() === 'stream') {
