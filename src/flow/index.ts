@@ -30,7 +30,7 @@ export {
 } from "./store.js";
 
 export { setupFlowCommand, setupContinuation, setupWarpCommand };
-export { markFlowCompleted } from "./continuation.js";
+export { markFlowCompleted, shutdownWakeup } from "./continuation.js";
 export { sessionRegistry };
 
 export function registerFlow(pi: ExtensionAPI): void {

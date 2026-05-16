@@ -72,7 +72,7 @@ export function setupContinuation(pi: ExtensionAPI): void {
       if (!cwd) return;
       const goal = getGoal(cwd);
       if (!goal || goal.status !== "active") return;
-      const sessionId = goal.sessionId ?? sessionRegistry.getSessionId(cwd) ?? "none";
+      const sessionId = goal.sessionId ?? "none";
       const lastActivity = _lastTurnEndAt.get(sessionId);
       if (!lastActivity) return;
       const now = Date.now();

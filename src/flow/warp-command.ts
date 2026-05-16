@@ -169,7 +169,7 @@ IMPORTANT: You are a text generation assistant, not an agent. Do NOT attempt too
 
 const MAX_CONVERSATION_CHARS = 15000;
 
-function extractGoalFromPrompt(prompt: string): string {
+export function extractGoalFromPrompt(prompt: string): string {
   const MAX_GOAL_LEN = 200;
   // Helper: find first meaningful line and strip bullet/numbered prefixes
   const pickFirstLine = (text: string): string | undefined => {
@@ -182,6 +182,19 @@ function extractGoalFromPrompt(prompt: string): string {
     }
     return undefined;
   };
+
+  // Strategy 1: Parse end_goal from YAML frontmatter
+  const endGoalMatch = prompt.match(/^end_goal:\s*["']?(.+?)["']?\s*$/m);
+  if (endGoalMatch?.[1]) {
+    const endGoal = endGoalMatch[1].trim();
+    const contextMatch = prompt.match(/^context:\s*["']?(.+?)["']?\s*$/m);
+    if (contextMatch?.[1]) {
+      const context = contextMatch[1].trim();
+      const combined = `${endGoal}. Context: ${context}`;
+      if (combined.length <= MAX_GOAL_LEN) return combined;
+    }
+    return endGoal.length > MAX_GOAL_LEN ? endGoal.slice(0, MAX_GOAL_LEN).trimEnd() : endGoal;
+  }
 
   // Try to find ## Task section
   const taskMatch = prompt.match(/##\s*Task\s*\n([\s\S]*?)(?=\n##|$)/i);
@@ -429,6 +442,7 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
           // ctx.sessionManager.getSessionId() — guaranteed to be the new
           // session's ID. The handler then triggers the LLM to start working.
           // sendUserMessage is called last because it may trigger a turn.
+          await newCtx.sendUserMessage(warpedPrompt);
           newCtx.sendUserMessage(`/flow:goal set ${effectiveGoal}`);
         },
       });

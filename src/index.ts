@@ -34,7 +34,7 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoalForSession, recordFlowCompletion, addTokens } from "./flow/index.js";
+import { registerFlow, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
 import * as sessionRegistry from "./core/session-registry.js";
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
@@ -535,6 +535,7 @@ export default function (pi: ExtensionAPI) {
 				try { bashTracker.abortAll(); } catch { /* best-effort */ }
 			}
 			terminateAllChildGroups();
+			shutdownWakeup();
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}
