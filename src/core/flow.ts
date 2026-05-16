@@ -33,6 +33,7 @@ const AGENT_END_GRACE_MS = 2000;
 const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
 const FLOW_FINAL_URGE_MS = 135 * 1000; // final urge 135 s (2m15s) before kill (increased from 30s for wider summary window)
 const REPORTING_GRACE_MS = 90_000; // grace period after timeout for agent to report findings (increased from 10s to 90s)
+const SNAP_THRESHOLD_MS = 120_000; // threshold for proportional short-budget timer logic
 const FLOW_TOOL_SUMMARY_GRACE_MS = FLOW_FINAL_URGE_MS; // bash/tool abort lead time so the agent can summarize
 import {
 	FLOW_DEPTH_ENV,
@@ -393,7 +394,9 @@ function buildFlowArgs(
 
 	const timeBudgetHint =
 		sessionTimeoutMs > 0
-			? `Session mode: ${sessionMode}. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
+			? sessionMode === "snap"
+				? `Session mode: snap. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s. This is a quick-discovery sprint — prioritize Survey and Inspect, skip deep Trace, emit partial findings fast. Incomplete maps are acceptable.\n`
+				: `Session mode: ${sessionMode}. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
 			: "";
 
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
@@ -683,13 +686,23 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const { nextDepth, propagatedMaxDepth, propagatedStack } = computeChildPropagation(parentDepth, maxDepth, parentFlowStack, normalizedFlowName);
-			const proportionalGraceMs = Math.floor(effectiveTimeout * 0.1);
-			const minimumGraceMs = effectiveTimeout >= 10_000 ? 1_000 : Math.floor(effectiveTimeout / 2);
-			const toolSummaryGraceMs = Math.min(
-				FLOW_TOOL_SUMMARY_GRACE_MS,
-				Math.max(0, effectiveTimeout),
-				Math.max(minimumGraceMs, proportionalGraceMs),
-			);
+			const isShortBudget = effectiveTimeout <= SNAP_THRESHOLD_MS;
+			const warningMs = isShortBudget
+				? Math.floor(effectiveTimeout * 0.5)
+				: effectiveTimeout - FLOW_TIME_BUDGET_WARNING_MS;
+			const urgeMs = isShortBudget
+				? Math.floor(effectiveTimeout * 0.85)
+				: effectiveTimeout - FLOW_FINAL_URGE_MS;
+			const effectiveGraceMs = isShortBudget
+				? Math.max(5_000, Math.floor(effectiveTimeout * 0.15))
+				: REPORTING_GRACE_MS;
+			const toolSummaryGraceMs = isShortBudget
+				? Math.max(3_000, Math.floor(effectiveTimeout * 0.1))
+				: Math.min(
+					FLOW_TOOL_SUMMARY_GRACE_MS,
+					Math.max(0, effectiveTimeout),
+					Math.max(effectiveTimeout >= 10_000 ? 1_000 : Math.floor(effectiveTimeout / 2), Math.floor(effectiveTimeout * 0.1)),
+				);
 			const { command, prefixArgs } = resolveFlowSpawn();
 			if (dumpPath) {
 				const distDir = path.dirname(new URL(import.meta.url).pathname);
@@ -959,7 +972,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 						result.stopReason = "timeout";
 						result.errorMessage = `Flow timed out after ${Math.round(effectiveTimeout / 1000)}s.`;
 						terminateChild();
-					}, REPORTING_GRACE_MS);
+					}, effectiveGraceMs);
 					graceTimer.unref();
 				}, effectiveTimeout);
 				timeoutTimer.unref();

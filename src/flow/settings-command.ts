@@ -908,10 +908,10 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 					break;
 				}
 				case "session-mode": {
-					const validModes = ["fast", "default", "long", "extreme_long"] as const;
+					const validModes = ["snap", "fast", "default", "long", "extreme_long"] as const;
 					if (!validModes.includes(value as any)) {
 						ctx.ui.notify?.(
-							"Usage: /flow:settings session-mode <fast|default|long|extreme_long>",
+							"Usage: /flow:settings session-mode <snap|fast|default|long|extreme_long>",
 							"error",
 						);
 						return;

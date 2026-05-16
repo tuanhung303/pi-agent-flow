@@ -85,12 +85,13 @@ const FlowItem = Type.Object({
 	),
 	sessionMode: Type.Optional(
 		Type.Union([
+			Type.Literal("snap"),
 			Type.Literal("fast"),
 			Type.Literal("default"),
 			Type.Literal("long"),
 			Type.Literal("extreme_long"),
 		], {
-			description: "Agent session budget for this flow: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
+			description: "Agent session budget for this flow: snap=90s, fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
 		}),
 	),
 }, {
@@ -174,7 +175,7 @@ export default function (pi: ExtensionAPI) {
 		type: "string",
 	});
 	pi.registerFlag("flow-session-mode", {
-		description: "Default child-flow session mode: fast (300s), default (600s), long (900s), or extreme_long (1200s).",
+		description: "Default child-flow session mode: snap (90s), fast (300s), default (600s), long (900s), or extreme_long (1200s).",
 		type: "string",
 	});
 

@@ -280,7 +280,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_MAX_CONCURRENCY` | Override the default maximum concurrent flows (default 4, capped to CPU count). |
 | `PI_FLOW_IDLE_WAKEUP_MS` | Override the idle wake-up threshold in milliseconds (default 600000 = 10 minutes). |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
-| `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
+| `PI_FLOW_SESSION_MODE` | Override the default child-flow session mode (`snap`, `fast`, `default`, `long`, `extreme_long`). |
 | `PI_TUI_MODE` | Set to `1` to route `logWarn`/`logError` to a log file instead of stderr, preventing on-screen text flash. Detected automatically when stdout is a TTY or `PI_FLOW_DEPTH > 0`. |
 | `PI_FLOW_LOG_FILE` | Override the default log file path (`$TMPDIR/pi-agent-flow.log`) for TUI-safe logging. Set to `/dev/null` to suppress entirely. |
 | `PI_FLOW_NO_STEERING` | Set to `1` to disable orchestrator steering hint injection. |
@@ -304,7 +304,7 @@ Control runtime behavior via slash commands, CLI flags, environment variables, o
 | `glitch` | `/flow:settings glitch on\|off` — Enable/disable glitch/scramble effect. |
 | `tool-optimize` | `/flow:settings tool-optimize on\|off` — Enable/disable tool-call optimization. |
 | `structured-output` | `/flow:settings structured-output on\|off` — Enable/disable structured JSON output from flows. |
-| `session-mode` | `/flow:settings session-mode <default\|unsafe\|failsafe>` — Set the session safety mode. |
+| `session-mode` | `/flow:settings session-mode <snap\|fast\|default\|long\|extreme_long>` — Set the child-flow session budget mode. |
 | `max-concurrency` | `/flow:settings max-concurrency <n>` — Set maximum concurrent flows. |
 | `ask-user` | `/flow:settings ask-user enabled <on\|off>` — Enable/disable ask_user countdown. `/flow:settings ask-user timeout <seconds>` — Set auto-dismiss timeout. |
 | `reset` | `/flow:settings reset` — Reset all settings to their defaults. |

@@ -22,6 +22,7 @@ Include relevant snippets or evidence inline so citations are verifiable
 Show actual code or data not excessive summaries
 If something is not found say so directly do not guess
 Workflow: Scouts must complete 5 steps (Survey → Inspect → Trace → Report → Validate). Reject and resend if Validate is missing.
+Snap mode: when session mode is snap, prioritize Survey and Inspect. Skip deep Trace. Emit partial findings fast — incomplete maps are acceptable.
 Markers: Preserve exactly ([V] Verified, [I] Inferred, [A] Assumed, [U] Unknown). Never present [A] or [U] as facts to the user. Dispatch a validation scout if critical claims are [A]/[U].
 Output: Zero preamble or filler. Start immediately with the answer or tool call.
 See _conventions for batch reads and tmp scripts

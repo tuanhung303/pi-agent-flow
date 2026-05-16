@@ -78,8 +78,8 @@ export const GLITCH_MAX_LENGTH = 40;
 export const GLITCH_SHORT_MAX_START = 10;
 export const GLITCH_SHORT_MAX_LENGTH = 10;
 export const GLITCH_FADE_OUT_FRAMES = 18;
-export const GLITCH_COOLDOWN_MS = 1000;
-export const MSG_GLITCH_MIN_DURATION_MS = 2000;
+export const GLITCH_COOLDOWN_MS = 2000;
+export const MSG_GLITCH_MIN_DURATION_MS = 1500;
 export const MSG_GLITCH_MIN_FRAMES = Math.ceil(MSG_GLITCH_MIN_DURATION_MS / GLITCH_FRAME_MS);
 
 // TPS hysteresis

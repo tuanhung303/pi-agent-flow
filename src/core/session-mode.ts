@@ -1,4 +1,4 @@
-const AGENT_SESSION_MODES = ["fast", "default", "long", "extreme_long"] as const;
+const AGENT_SESSION_MODES = ["snap", "fast", "default", "long", "extreme_long"] as const;
 
 export type AgentSessionMode = typeof AGENT_SESSION_MODES[number];
 
@@ -7,6 +7,7 @@ export const MAX_AGENT_SESSION_TIMEOUT_MS = 1_200_000;
 export const PI_FLOW_SESSION_MODE_ENV = "PI_FLOW_SESSION_MODE";
 
 export const AGENT_SESSION_TIMEOUTS_MS: Record<AgentSessionMode, number> = {
+	snap: 90_000,
 	fast: 300_000,
 	default: 600_000,
 	long: 900_000,

@@ -25,7 +25,7 @@ export const STEERING_HINT =
 	`- Acts: [Route all git, bash, CLI, or terminal tasks to \`build\` flow, For major conflicts or misaligned goals use ask_user, For lengthy plans with many steps use ask_user to confirm main points before proceeding]\n` +
 	`- Mindset: Gather context before acting. Investigate, discuss, plan — then delegate.\n` +
 	`- Anti-patterns: [Never implement directly, Never ask what you can discover with tools, Never skip investigation]\n` +
-	`- Workflow: Scouts must complete 5 steps (Survey → Inspect → Trace → Report → Validate). Reject and resend if Validate is missing.\n` +
+	`- Workflow: Scouts must complete 5 steps (Survey → Inspect → Trace → Report → Validate). Reject and resend if Validate is missing. For quick directional signals use sessionMode snap (90s sprint).\n` +
 	`- Markers: Preserve exactly ([V] Verified, [I] Inferred, [A] Assumed, [U] Unknown). Never present [A] or [U] as facts to the user. Dispatch a validation scout if critical claims are [A]/[U].\n` +
 	`- Output: Zero preamble or filler. Start immediately with the answer or tool call.\n` +
 	`Note: Context is inherited automatically for child flow; write intents focusing only on new work.\n` +
