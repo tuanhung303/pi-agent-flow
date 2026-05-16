@@ -235,7 +235,7 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 			},
 		]);
 
-		const { result } = sanitizeForkSnapshot(snapshot, flowCache, {
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, flowCache, {
 			forkedFrom: "orchestrator",
 			forkedAt: new Date().toISOString(),
 			parentFlow: "root",
@@ -299,6 +299,15 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 				expect("details" in entry.message).toBe(false);
 			}
 		}
+
+		// (f) System events dropped and passes recorded.
+		expect(entries.some((e: any) => e?.type === "system")).toBe(false);
+		expect(passesApplied).toContain("dropSystemEvents");
+
+		// (g) Header systemPrompt stripped and pass recorded.
+		const headerEntry = entries[0];
+		expect(headerEntry?.systemPrompt).toMatch(/parent orchestrator system prompt stripped/);
+		expect(passesApplied).toContain("stripSystemPrompt");
 	});
 });
 
