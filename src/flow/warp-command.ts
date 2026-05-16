@@ -76,7 +76,11 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
       }
 
       // Convert and serialize
-      const messages = convertToLlm(branch);
+      // getBranch() returns wrapped session entries; convertToLlm expects AgentMessage objects.
+      const agentMessages = branch
+        .map((entry: any) => (entry.type === "message" ? entry.message : undefined))
+        .filter((m: any) => m != null);
+      const messages = convertToLlm(agentMessages);
       let conversation = serializeConversation(messages);
 
       // Truncate if too large (middle truncation: keep first 20% + last 80% of max)
@@ -186,7 +190,9 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
               messages: [
                 {
                   role: "user",
-                  content: `Conversation history:\n${conversation}\n${preWarpContext}\nUser's goal for new thread: ${goal}`,
+                  content: args.trim()
+                    ? `Conversation history:\n${conversation}\n${preWarpContext}\nUser's goal for new thread: ${goal}`
+                    : `Conversation history:\n${conversation}\n${preWarpContext}`,
                 },
               ],
             },
