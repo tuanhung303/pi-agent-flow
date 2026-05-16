@@ -617,17 +617,7 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 								tui.requestRender();
 							},
 						};
-					},
-					{
-						overlay: true,
-						overlayOptions: {
-							anchor: "center",
-							width: 60,
-							minWidth: 40,
-							maxHeight: "85%",
-							margin: 1,
-						},
-					},
+					}
 				);
 
 				return;
