@@ -1,5 +1,5 @@
 /**
- * Frame-by-frame simulation test for illuminate mode glitch behavior.
+ * Frame-by-frame simulation test for glitch behavior.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -12,12 +12,11 @@ function stripAnsi(s: string): string {
 const TEST_ID = 'debug-id';
 const FRAME_MS = 11;
 
-describe('ILLUMINATE debug — specific bug scenarios', () => {
+describe('Glitch debug — specific bug scenarios', () => {
 	let manager: ScrambleStateManager;
 
 	beforeEach(() => {
 		manager = new ScrambleStateManager();
-		manager.setMode('illuminate');
 	});
 
 	it('truncated text during active glitch does NOT show old queue chars beyond tail length', () => {

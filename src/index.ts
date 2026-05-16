@@ -198,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 		type: "boolean",
 	});
 	pi.registerFlag("no-glitch", {
-		description: "Disable glitch/scramble effect, keep ripple/pulse.",
+		description: "Disable glitch/scramble effect.",
 		type: "boolean",
 	});
 

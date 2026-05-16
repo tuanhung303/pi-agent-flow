@@ -9,7 +9,6 @@ import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { getGoal, setGoal, getWarpCount, recordWarp } from "./store.js";
-import { getCurrentSessionId } from "./continuation.js";
 
 const SYSTEM_PROMPT = `You are a context transfer and execution planning assistant. Given a conversation history and the user's goal, generate a structured warp prompt that serves as a ready-to-execute project brief for a new session.
 
@@ -301,9 +300,7 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
 
           // Bind goal to the new session immediately — eliminates the window where
           // the old parent session's goal persists as current after warp.
-          // getCurrentSessionId() returns the new session's ID because session_start
-          // fires before withSession in the Pi framework lifecycle.
-          const newSessionId = getCurrentSessionId();
+          const newSessionId = newCtx.sessionManager.getSessionId();
           if (newSessionId) {
             setGoal(cwd, effectiveGoal, { sessionId: newSessionId });
           }

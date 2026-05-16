@@ -63,7 +63,7 @@ pi install .
 
 ### TUI & Rendering
 - **Rich activity panel** — collapsed view with per-flow stats, live countdowns, and expanded view with full reports and tool traces
-- **Quad-mode scramble animations** — `stream`, `cascade`, `ripple`, and `illuminate` text animations on act, msg, TPS lines, and tool results (default: `illuminate`)
+- **Glitch scramble animations** — `glitch` text animation on act, msg, TPS lines, and tool results
 - **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
 - **Dynamic notifications** — terminal and desktop alerts adapt their title/body based on flow completion state or pending `ask_user` decisions
 

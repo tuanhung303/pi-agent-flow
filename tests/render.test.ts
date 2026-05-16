@@ -37,9 +37,9 @@ function extractText(node: Text | Container | TruncatedText | DynamicScrambleTex
 // visibleLength
 // ---------------------------------------------------------------------------
 
-// Reset scramble state between render tests so ripple animations don't leak across test boundaries.
+// Reset scramble state between render tests so glitch animations don't leak across test boundaries.
 beforeEach(() => {
-	scrambleManager.setMode('cascade');
+	scrambleManager.setAnimationConfig({ enabled: true, glitch: true });
 	scrambleManager.clear();
 	resetAnonymousFlowIdCounter();
 });
@@ -639,8 +639,7 @@ describe("activity panel rendering", () => {
 		// Header is scrambled on first render for in-progress flows
 		expect(headerLine.length).toBeGreaterThan(0);
 		expect(text).toContain("aim ▸");
-		// Aim content is scrambled on first render
-		expect(text).not.toContain("refactor"); // fully scrambled on first render
+		// Glitch mode shows plain text for unstarted chars at frame 0
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓      0");
 		// Header stats are scrambled on first render, don't assert exact tps text

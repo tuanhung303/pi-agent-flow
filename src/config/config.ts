@@ -49,7 +49,7 @@ export interface FlowSettings {
 	animation?: {
 		/** Master switch — false = instant render. Default: true. */
 		enabled?: boolean;
-		/** false = disable glitch/scramble cascade, keep ripple/pulse. Default: true. */
+		/** false = disable glitch/scramble effect. Default: true. */
 		glitch?: boolean;
 	};
 

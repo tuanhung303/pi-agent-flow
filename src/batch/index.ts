@@ -121,7 +121,7 @@ const FileOp = Type.Object({
 		Type.Number({
 			minimum: 0,
 			maximum: 3,
-			description: "Ignore level for o: 'rg' (0-3). Maps to -u, -uu, -uuu.",
+			description: "Ignore level for o: 'rg' (0-3). Maps to -u (0), -uu (1), -uuu (2-3).",
 		}),
 	),
 });
@@ -133,31 +133,66 @@ export const WeavePatchParams = Type.Object({
 	}),
 });
 
+const BatchReadOp = Type.Union([
+	Type.Object({
+		o: Type.Literal("read"),
+		p: Type.String({ description: "Path to the file (relative or absolute)" }),
+		s: Type.Optional(
+			Type.Number({
+				minimum: 1,
+				description:
+					"1-indexed line number to start reading from (offset). Used with o: 'read'.",
+			}),
+		),
+		l: Type.Optional(
+			Type.Number({
+				minimum: 1,
+				description:
+					"Maximum number of lines to read (limit). Used with o: 'read'.",
+			}),
+		),
+	}),
+	Type.Object({
+		o: Type.Literal("rg"),
+		p: Type.String({ description: "Path to search (relative or absolute). Use '.' for cwd." }),
+		q: Type.String({ description: "Search pattern for o: 'rg'." }),
+		l: Type.Optional(
+			Type.Boolean({
+				description:
+					"Files-with-matches flag for o: 'rg'. Default true.",
+			}),
+		),
+		i: Type.Optional(
+			Type.Boolean({
+				description: "Ignore-case flag for o: 'rg'.",
+			}),
+		),
+		t: Type.Optional(
+			Type.String({
+				description: "Type filter for o: 'rg' (e.g., 'ts', 'js').",
+			}),
+		),
+		n: Type.Optional(
+			Type.Number({
+				minimum: 1,
+				description: "Max-count for o: 'rg'.",
+			}),
+		),
+		u: Type.Optional(
+			Type.Number({
+				minimum: 0,
+				maximum: 3,
+				description: "Ignore level for o: 'rg' (0-3). Maps to -u (0), -uu (1), -uuu (2-3).",
+			}),
+		),
+	}),
+]);
+
 export const BatchReadParams = Type.Object({
-	o: Type.Array(
-		Type.Object({
-			o: Type.Literal("read"),
-			p: Type.String({ description: "Path to the file (relative or absolute)" }),
-			s: Type.Optional(
-				Type.Number({
-					minimum: 1,
-					description:
-						"1-indexed line number to start reading from (offset). Used with o: 'read'.",
-				}),
-			),
-			l: Type.Optional(
-				Type.Number({
-					minimum: 1,
-					description:
-						"Maximum number of lines to read (limit). Used with o: 'read'.",
-				}),
-			),
-		}),
-		{
-			description:
-				"Ordered list of read operations. Executed sequentially. On failure, remaining operations are skipped.",
-		},
-	),
+	o: Type.Array(BatchReadOp, {
+		description:
+			"Ordered list of read operations. Executed sequentially. On failure, remaining operations are skipped.",
+	}),
 });
 
 // ---------------------------------------------------------------------------

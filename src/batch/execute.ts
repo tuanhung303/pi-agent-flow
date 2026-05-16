@@ -408,7 +408,11 @@ export async function executeOperations(
 
 				case "rg": {
 					const rgOp = op as unknown as RgOpInput;
-					const args = buildRgArgs(rgOp);
+					if (!rgOp.q) {
+						throw new Error("q (search pattern) is required for rg operations.");
+					}
+					const searchPath = (rgOp.p.startsWith("~") || path.isAbsolute(rgOp.p)) ? resolvedPath : rgOp.p;
+					const args = buildRgArgs({ ...rgOp, p: searchPath });
 					const matches = await execRg(args, cwd);
 					const content = matches.join("\n");
 					results.push({
@@ -604,11 +608,15 @@ function buildContentText(summary: string, results: OpResult[]): string {
 
 function buildRgArgs(op: RgOpInput): string[] {
 	const args: string[] = [];
-	if (op.l !== false) args.push("-l");
-	if (op.i) args.push("-i");
-	if (op.t) args.push("-t", op.t);
-	if (op.n !== undefined) args.push("--max-count", String(op.n));
-	if (op.u !== undefined) args.push("-".repeat(op.u + 1));
+	if (op.l === true || op.l === undefined) args.push("-l");
+	if (op.i === true) args.push("-i");
+	if (typeof op.t === "string" && op.t) args.push("-t", op.t);
+	if (typeof op.n === "number" && Number.isFinite(op.n) && op.n >= 1) args.push("--max-count", String(Math.floor(op.n)));
+	if (typeof op.u === "number" && op.u >= 0) {
+		const uCount = Math.min(op.u + 1, 3); // ripgrep caps at -uuu
+		args.push("-" + "u".repeat(uCount));
+	}
+	args.push("--");
 	args.push(op.q);
 	args.push(op.p);
 	return args;
@@ -616,14 +624,23 @@ function buildRgArgs(op: RgOpInput): string[] {
 
 function execRg(args: string[], cwd: string): Promise<string[]> {
 	return new Promise((resolve, reject) => {
-		execFile("rg", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+		execFile("rg", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
 			if (err) {
 				// ripgrep exits with code 1 when no matches are found
 				if ((err as any).code === 1) {
 					resolve([]);
 					return;
 				}
-				reject(err);
+				if ((err as any).code === "ENOBUFS") {
+					reject(new Error("ripgrep output exceeded 10MB buffer limit. Use a more specific pattern or add max-count."));
+					return;
+				}
+				if ((err as any).code === "ENOENT") {
+					reject(new Error("ripgrep (rg) binary not found. Please install ripgrep."));
+					return;
+				}
+				const stderrMsg = stderr?.trim() ? ` — ${stderr.trim()}` : "";
+				reject(new Error(`ripgrep failed${stderrMsg}`));
 				return;
 			}
 			const lines = stdout.split("\n").filter((line) => line.length > 0);

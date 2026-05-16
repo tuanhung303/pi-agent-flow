@@ -584,7 +584,7 @@ function renderFlowCollapsed(
 		true,
 	));
 
-	// aim: line — cascade/ripple/illuminate on text change
+	// aim: line — glitch on text change
 	if (r.aim) {
 		const countdown = getLiveCountdown(r);
 		const aimTree = "├─";
@@ -625,13 +625,8 @@ function renderFlowCollapsed(
 		`${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", initialActContent, theme, config)}`,
 		() => {
 			const now = Date.now();
-			let actContent: string;
-			if (scrambleManager.getMode() === 'stream') {
-				actContent = scrambleManager.streamAct(id, actFullText, now, isComplete, budget);
-			} else {
-				const displayAct = truncateChars(actFullText, budget);
-				actContent = scrambleManager.updateAct(id, displayAct, now, isComplete, true).content;
-			}
+			const displayAct = truncateChars(actFullText, budget);
+			const actContent = scrambleManager.updateAct(id, displayAct, now, isComplete, true).content;
 			let actKpi = String(r.usage.toolCalls);
 			const scrambledActKpi = scrambleManager.updateActKpi(id, actKpi, now, isComplete, true);
 			if (scrambledActKpi !== actKpi) {
@@ -691,14 +686,10 @@ function renderFlowCollapsed(
 			const msgLabel = ` msg ▸ ${msgKpi} · `;
 			const msgPrefix = `${msgTree}${msgLabel}`;
 			const freshRawMsg = (r.exitCode === -1 ? getLiveTextWithFallback(id) : undefined) ?? rawMsg;
-			if (scrambleManager.getMode() === 'stream') {
-				return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", scrambleManager.streamMsg(id, freshRawMsg, now, isComplete, msgBudget), theme, config)}`;
-			} else {
-				const needsTail = r.exitCode === -1 || streamingText != null;
-				const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
-				const result = scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true);
-				return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", result.content, theme, config)}`;
-			}
+			const needsTail = r.exitCode === -1 || streamingText != null;
+			const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
+			const result = scrambleManager.updateMsg(id, displayMsg, now, isComplete, undefined, true);
+			return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", result.content, theme, config)}`;
 		},
 		true,
 	));
@@ -922,7 +913,7 @@ function renderActivityPanel(
 		// Continuation indent for sub-lines
 		const indent = isLast ? "   " : "│  ";
 
-		// aim: line — cascade/ripple/illuminate on text change
+		// aim: line — glitch on text change
 		if (r.aim) {
 			const countdown = getLiveCountdown(r);
 			const aimTree = indent + "├─";
@@ -971,13 +962,8 @@ function renderActivityPanel(
 				const actLabel = ` act ▸ ${actKpi} · `;
 				const actPrefix = `${actTree}${actLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(actPrefix));
-				let actContent: string;
-				if (scrambleManager.getMode() === 'stream') {
-					actContent = scrambleManager.streamAct(flowId, actFullText, now, flowComplete, freshBudget);
-				} else {
-					const displayAct = truncateChars(actFullText, freshBudget);
-					actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
-				}
+				const displayAct = truncateChars(actFullText, freshBudget);
+				const actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
 				return `${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", actContent, theme, config)}`;
 			},
 			true,
@@ -1025,14 +1011,10 @@ function renderActivityPanel(
 				const msgPrefix = `${msgTree}${msgLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(msgPrefix));
 				const freshRawMsg = flowComplete ? rawMsg : (getLiveTextWithFallback(flowId) ?? rawMsg);
-				if (scrambleManager.getMode() === 'stream') {
-					return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", scrambleManager.streamMsg(flowId, freshRawMsg, now, flowComplete, freshBudget), theme, config)}`;
-				} else {
-					const needsTail = Boolean(getLiveTextWithFallback(flowId) || liveText || lastText);
-					const displayMsg = needsTail ? tailText(freshRawMsg, freshBudget) : truncateChars(freshRawMsg, freshBudget);
-					const result = scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete, undefined, true);
-					return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", result.content, theme, config)}`;
-				}
+				const needsTail = Boolean(getLiveTextWithFallback(flowId) || liveText || lastText);
+				const displayMsg = needsTail ? tailText(freshRawMsg, freshBudget) : truncateChars(freshRawMsg, freshBudget);
+				const result = scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete, undefined, true);
+				return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", result.content, theme, config)}`;
 			},
 			true,
 		));

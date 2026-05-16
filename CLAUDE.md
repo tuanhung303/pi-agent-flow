@@ -284,7 +284,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_NO_STEERING` | Set to `1` to disable orchestrator steering hint injection. |
 | `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to disable `[Hint: Plan next step...]` after tool results. |
 | `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render). |
-| `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect, keep ripple/pulse. |
+| `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect. |
 | `PI_ASK_USER_TIMEOUT` | Override the ask_user default timeout in seconds (e.g., `60` for 1 minute). |
 
 ## Flow Settings
@@ -299,7 +299,7 @@ Control runtime behavior via slash commands, CLI flags, environment variables, o
 | `steering` | `/flow:settings steering on\|off` — Enable/disable orchestrator steering hint injection. |
 | `strategic-hint` | `/flow:settings strategic-hint on\|off` — Enable/disable `[Hint: Plan next step...]` after tool results. |
 | `animation` | `/flow:settings animation on\|off` — Enable/disable all flow animations. |
-| `glitch` | `/flow:settings glitch on\|off` — Enable/disable glitch/scramble effect (ripple/pulse remain). |
+| `glitch` | `/flow:settings glitch on\|off` — Enable/disable glitch/scramble effect. |
 | `tool-optimize` | `/flow:settings tool-optimize on\|off` — Enable/disable tool-call optimization. |
 | `structured-output` | `/flow:settings structured-output on\|off` — Enable/disable structured JSON output from flows. |
 | `session-mode` | `/flow:settings session-mode <default\|unsafe\|failsafe>` — Set the session safety mode. |
@@ -317,7 +317,7 @@ Pass these when starting `pi`:
 | `--steering-prompt <text>` | Provide a custom steering prompt (implies `--no-steering` override). |
 | `--no-strategic-hint` | Disable `[Hint: Plan next step...]` after tool results. |
 | `--no-animation` | Disable all flow animation (instant render). |
-| `--no-glitch` | Disable glitch/scramble effect; ripple/pulse are preserved. |
+| `--no-glitch` | Disable glitch/scramble effect. |
 
 ### Resolution priority
 

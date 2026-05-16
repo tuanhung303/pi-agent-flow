@@ -28,7 +28,6 @@ describe('ScrambleStateManager — timer scope & cleanup', () => {
 
 	beforeEach(() => {
 		manager = new ScrambleStateManager();
-		manager.setMode('illuminate');
 	});
 
 	it('hasActiveAnimations detects TPS glitch for the exact id', () => {

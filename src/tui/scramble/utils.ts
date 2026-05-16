@@ -1,8 +1,6 @@
 // Auto-generated from src/tui/scramble.ts split
 import {
 	FastRNG,
-	MIN_PHRASE_LENGTH,
-	MAX_PHRASE_BUFFER_TIME,
 	DEEP_GLITCH,
 	MID_GLITCH,
 	SHALLOW_GLITCH,
@@ -10,6 +8,7 @@ import {
 	SCRAMBLE_CHARS,
 	DECORATIVE_ICON_RE,
 } from './constants.js';
+
 export function makeAnimationSeed(text: string, timestamp: number): number {
 	let h = 2166136261;
 	for (let i = 0; i < text.length; i++) {
@@ -38,10 +37,10 @@ export function hashNoise(seed: number, charIndex: number, tick: number, depth: 
 }
 
 // ---------------------------------------------------------------------------
-// Character sets — depth-based esoteric scramble symbols (illuminate mode)
+// Character sets — depth-based esoteric scramble symbols
 // ---------------------------------------------------------------------------
 
-/** Deep glitch: fine dots, sparse sparkle, dense braille for inner ripple depths (1–2) */
+/** Deep glitch: fine dots, sparse sparkle, dense braille for inner glitch depths (1–2) */
 export function easeOutCubic(t: number): number {
 	const et = 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 	return 0.7 * et + 0.3 * Math.min(1, Math.max(0, t));
@@ -64,7 +63,7 @@ export function easeInQuad(t: number): number {
 }
 
 /** Ease-out quadratic: fast start, gentle deceleration — used for
- *  distributing cascade start frames more evenly across the range. */
+ *  distributing glitch start frames more evenly across the range. */
 export function easeOutQuad(t: number): number {
 	return 1 - (1 - t) * (1 - t);
 }
@@ -77,56 +76,6 @@ export function stripDecorativeIcons(text: string): string {
 	return text.replace(DECORATIVE_ICON_RE, '');
 }
 
-export function findPhraseBoundary(text: string, minLen: number = MIN_PHRASE_LENGTH): number {
-	// Sentence boundaries — flush regardless of length
-	const sentenceBoundaries = ['. ', '! ', '? ', '\n'];
-	for (const b of sentenceBoundaries) {
-		const idx = text.lastIndexOf(b);
-		if (idx >= 0) return idx + b.length;
-	}
-	// Other boundaries require min length
-	if (text.length < minLen) return -1;
-	const otherBoundaries = ['— ', '– '];
-	for (const b of otherBoundaries) {
-		const idx = text.lastIndexOf(b);
-		if (idx >= 0) return idx + b.length;
-	}
-	// Fallback: word boundary (space)
-	const spaceIdx = text.indexOf(' ', minLen);
-	if (spaceIdx >= 0) return spaceIdx + 1;
-	return -1;
-}
-
-export function shouldFlushPhrase(text: string, displayed: string, lastFlushTime: number, now: number): boolean {
-	if (text === displayed) return false;
-	// If text is completely different (not incremental), check if it's just a slide
-	if (!text.startsWith(displayed) && !displayed.startsWith(text)) {
-		// Tail-view windows slide: old suffix overlaps new prefix.
-		// If overlap is significant (>50%), treat as a slide, not a rewrite.
-		const overlap = computeOverlapLen(displayed, text);
-		const minLen = Math.min(displayed.length, text.length);
-		if (overlap > 0 && overlap >= minLen * 0.5) {
-			return now - lastFlushTime > MAX_PHRASE_BUFFER_TIME;
-		}
-		return true;
-	}
-	// Check buffer timeout
-	if (now - lastFlushTime > MAX_PHRASE_BUFFER_TIME) return true;
-	// Find new content added since displayed
-	let newContent = '';
-	if (text.startsWith(displayed)) {
-		newContent = text.slice(displayed.length);
-	} else {
-		newContent = text;
-	}
-	const boundaryPos = findPhraseBoundary(newContent);
-	if (boundaryPos >= 0) return true;
-	// Force flush: if enough new content accumulated, flush regardless of boundary
-	const newContentLen = text.startsWith(displayed) ? text.length - displayed.length : text.length;
-	if (newContentLen >= 40) return true;
-	return false;
-}
-
 export function randomizedCenter(length: number, jitterRatio?: number, rng?: FastRNG): number {
 	const min = Math.max(0, Math.floor(length * 0.2));
 	const max = Math.min(length - 1, Math.floor(length * 0.8));
@@ -136,71 +85,8 @@ export function randomizedCenter(length: number, jitterRatio?: number, rng?: Fas
 	return min + offset;
 }
 
-/**
- * Find sentence-start character positions in text.
- * Returns positions of the first non-space character after sentence
- * delimiters (. ! ? ... \n) plus position 0. If fewer than 2
- * positions are found, falls back to positions at ~30-char intervals.
- */
-export function findSentenceStarts(text: string): number[] {
-	const starts: number[] = [];
-	if (text.length === 0) return starts;
-	starts.push(0);
-
-	const delimiters = ['... ', '. ', '! ', '? ', '\n'];
-	let i = 0;
-	while (i < text.length) {
-		let bestD = '';
-		let bestLen = 0;
-		for (const d of delimiters) {
-			if (text.slice(i, i + d.length) === d && d.length > bestLen) {
-				bestD = d;
-				bestLen = d.length;
-			}
-		}
-		if (bestD) {
-			let pos = i + bestD.length;
-			while (pos < text.length && text[pos] === ' ') pos++;
-			if (pos < text.length && pos !== starts[starts.length - 1]) {
-				starts.push(pos);
-			}
-			i = pos;
-		} else {
-			i++;
-		}
-	}
-
-	// Fallback: if too few sentence starts, add positions at ~30-char intervals
-	if (starts.length < 2 && text.length > 30) {
-		const stride = Math.max(30, Math.floor(text.length / 3));
-		let pos = stride;
-		while (pos < text.length) {
-			while (pos < text.length && text[pos] === ' ') pos++;
-			if (pos < text.length && !starts.includes(pos)) {
-				starts.push(pos);
-			}
-			pos += stride;
-		}
-	}
-
-	return starts;
-}
-
-/**
- * Pick a random sentence-start position. Falls back to `randomizedCenter`
- * when the text has no sentence boundaries.
- */
-export function randomSentenceStart(text: string, rng?: FastRNG): number {
-	const starts = findSentenceStarts(text);
-	if (starts.length === 0 || (starts.length === 1 && starts[0] === 0)) {
-		return randomizedCenter(text.length, 0.2, rng);
-	}
-	const idx = rng ? rng.nextInt(starts.length) : Math.floor(Math.random() * starts.length);
-	return starts[idx];
-}
-
 // ---------------------------------------------------------------------------
-// Unified apply function (cascade/ripple/illuminate)
+// Unified apply function (glitch)
 // ---------------------------------------------------------------------------
 
 export function computeOverlapLen(oldStr: string, newStr: string): number {
@@ -291,8 +177,3 @@ export function selectSparkChar(seed: number, charIndex: number, tick: number): 
 	const idx = Math.floor(n * THIN_BRAILLE_SPARK.length);
 	return THIN_BRAILLE_SPARK[idx < 0 ? idx + THIN_BRAILLE_SPARK.length : idx];
 }
-
-// ---------------------------------------------------------------------------
-// ANSI truecolor neon glow constants (illuminate mode)
-// ---------------------------------------------------------------------------
-
