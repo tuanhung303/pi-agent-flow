@@ -4,7 +4,7 @@ This document tracks known misalignments between dump artifacts and the actual s
 
 ## Post-Sync Findings (2026-05-16)
 
-After running `./scripts/sync-dumps.sh`, **2,630** `pi-dump.*` files and **111** `snapshot-dump.*` files were synced from `/tmp` into `dump-artifacts/`. Manifests (`MANIFEST.md`, `manifest.json`) were regenerated.
+After running `./scripts/sync-dumps.sh`, **2,630** `pi-dump.*` files were synced from `/tmp` into `dump-artifacts/`; **0** legacy `snapshot-dump.*` files remain. Manifests (`MANIFEST.md`, `manifest.json`) were regenerated. Legacy `snapshot-dump.*` files were purged from both `/tmp` and `dump-artifacts/`.
 
 ### Misalignments Identified & Fixed
 
@@ -28,14 +28,14 @@ Two legacy `snapshot-dump.*.md` files (pre-batch-refactor) remained in `tests/fi
 **Fix:** Deleted all `snapshot-dump.*` files from `tests/fixtures/dumps/`.
 
 #### A2 — Stale docs/dump-analysis dumps
-**Status: NOT ADDRESSED IN THIS PASS**
+**Status: FIXED**
 
-`docs/dump-analysis/` still contains a mix of pre- and post-tier/pipeline files. Since no tests depend on them and they are reference material only, they were left as-is. A README note could be added in a future pass.
+`docs/dump-analysis/` contained a mix of pre- and post-tier/pipeline `pi-dump.*` files. They were removed, preserving only `VERSION-NOTES.md` and `manifest.json`.
 
 #### A4 — Orphan `.gitignore` entries
-**Status: NOT ADDRESSED IN THIS PASS**
+**Status: ALREADY FIXED**
 
-`.gitignore` still references `flow-artifacts/dumps/` and `dump-artifacts-representative/`, which do not exist. These are harmless and were left for a future housekeeping pass.
+The orphan references to `flow-artifacts/dumps/` and `dump-artifacts-representative/` were removed in a prior commit; no such entries exist in the current `.gitignore`.
 
 ## Historical Misalignments (Previously Fixed)
 
