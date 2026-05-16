@@ -211,7 +211,8 @@ function cleanupStaleDumps(dumpPath: string, maxAgeHours = 168): void {
 		let deleted = 0;
 		for (const entry of entries) {
 			// Match both pi-dump.* and snapshot-dump.* families, plus .txt twins
-			if (!entry.startsWith(base)) continue;
+			const isLegacyDump = entry.startsWith("snapshot-dump");
+			if (!entry.startsWith(base) && !isLegacyDump) continue;
 			const entryPath = path.join(dir, entry);
 			try {
 				const stats = fs.statSync(entryPath);
