@@ -150,7 +150,10 @@ export default function (pi: ExtensionAPI) {
         return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
       };
 
-      const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+      // Reset per-turn prompt hint state without overriding parent active tools.
+// Child flow tool restrictions are still controlled by the flow runner's --tools args.
+pi.on("turn_start", () => { if (currentDepth > 0 || !resolved) return; resetStrategicHintTracker(); });
+const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
       const goalContext = goal ? {
         objective: goal.objective,
         acceptance: goal.acceptance,
@@ -190,7 +193,10 @@ export default function (pi: ExtensionAPI) {
           confirmProjectFlows: params.confirmProjectFlows,
           goalContext,
           goalContinuationCallback: async (results) => {
-            const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+            // Reset per-turn prompt hint state without overriding parent active tools.
+// Child flow tool restrictions are still controlled by the flow runner's --tools args.
+pi.on("turn_start", () => { if (currentDepth > 0 || !resolved) return; resetStrategicHintTracker(); });
+const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
             if (!goal) return;
             for (const r of results) {
               recordFlowCompletion(ctx.cwd, { type: r.type, intent: r.intent, aim: r.aim });

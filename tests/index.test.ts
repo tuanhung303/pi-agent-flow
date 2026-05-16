@@ -1257,7 +1257,7 @@ describe("main agent tool restriction", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("restricts main agent to batch_read+flow+web+ask_user when toolOptimize is true", async () => {
+	it("does not restrict parent active tools on session_start when toolOptimize is true", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
 
 		const pi = createMockPi();
@@ -1265,85 +1265,58 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		expect(pi.setActiveTools).toHaveBeenCalled();
-		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user"]);
-	});
-
-	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
-		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
-
-		const pi = createMockPi();
-		registerExtension(pi as any);
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-
-		expect(pi.setActiveTools).toHaveBeenCalled();
-		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toContain("read");
-		expect(calledWith).toContain("write");
-		expect(calledWith).toContain("edit");
-		expect(calledWith).toContain("batch");
-		expect(calledWith).toContain("bash");
-		expect(calledWith).toContain("flow");
-		expect(calledWith).toContain("web");
-	});
-
-	it("defers setActiveTools to session_start, not extension loading", async () => {
-		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
-
-		const pi = createMockPi();
-		registerExtension(pi as any);
-
-		// Should NOT be called during extension loading
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-
-		// Should be called during session_start
-		expect(pi.setActiveTools).toHaveBeenCalled();
+		expect(pi.getTool("batch_read")).toBeDefined();
+		expect(pi.getTool("flow")).toBeDefined();
+		expect(pi.getTool("web")).toBeDefined();
+		expect(pi.getTool("ask_user")).toBeDefined();
 	});
 
-	it("re-applies batch_read+flow+web on turn_start when optimized", async () => {
-		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
-
-		const pi = createMockPi();
-		registerExtension(pi as any);
-
-		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-		const afterSession = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.length;
-
-		// Simulate a registry refresh
-		await pi.trigger("turn_start");
-
-		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
-		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user"]);
-	});
-
-	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
+	it("does not restrict parent active tools on session_start when toolOptimize is false", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 
 		const pi = createMockPi();
 		registerExtension(pi as any);
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
-		const afterSession = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.length;
 
-		await pi.trigger("turn_start");
-
-		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
-		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toContain("read");
-		expect(lastCall).toContain("write");
-		expect(lastCall).toContain("edit");
-		expect(lastCall).toContain("batch");
-		expect(lastCall).toContain("bash");
-		expect(lastCall).toContain("flow");
-		expect(lastCall).toContain("web");
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
-	it("parses env PI_FLOW_TOOL_OPTIMIZE via parseBoolean (yes/on/no/off)", async () => {
+	it("does not restrict parent active tools during extension loading", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
+
+	it("does not re-apply parent active tool restrictions on turn_start when optimized", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "1";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+		await pi.trigger("turn_start");
+
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
+
+	it("does not re-apply parent active tool restrictions on turn_start when toolOptimize is false", async () => {
+		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
+
+		const pi = createMockPi();
+		registerExtension(pi as any);
+
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+		await pi.trigger("turn_start");
+
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
+
+	it("parses env PI_FLOW_TOOL_OPTIMIZE while leaving parent active tools unrestricted", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "yes";
 
 		const pi = createMockPi();
@@ -1351,9 +1324,9 @@ describe("main agent tool restriction", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		expect(pi.setActiveTools).toHaveBeenCalled();
-		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user"]);
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
+		expect(pi.getTool("batch_read")).toBeDefined();
+		expect(pi.getTool("batch")).toBeUndefined();
 	});
 
 	it("registers batch_read for main agent; batch/batch_bash_poll reserved for children", async () => {
@@ -1370,9 +1343,8 @@ describe("main agent tool restriction", () => {
 		expect(pi.getTool("batch_bash_poll")).toBeUndefined();
 		expect(pi.getTool("bash")).toBeUndefined();
 
-		// Main agent active tools: batch_read + flow + web + ask_user (batch and batch_bash_poll registered but not active)
-		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user"]);
+		// Parent sessions do not restrict active tools, preserving MCP tools registered by Pi.
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
 	it("does NOT override active tools for child flows (depth > 0)", async () => {
@@ -1452,7 +1424,7 @@ describe("web tool integration", () => {
 		expect(tool.name).toBe("web");
 	});
 
-	it("includes web tool in active tools on session_start when not optimized", async () => {
+	it("registers web tool without restricting active tools on session_start when not optimized", async () => {
 		process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 
 		const pi = createMockPi();
@@ -1460,9 +1432,8 @@ describe("web tool integration", () => {
 
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
-		expect(pi.setActiveTools).toHaveBeenCalled();
-		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toContain("web");
+		expect(pi.getTool("web")).toBeDefined();
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
 	it("adds URL steering when prompt contains a URL and toolOptimize is false", async () => {

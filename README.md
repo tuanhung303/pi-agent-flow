@@ -347,10 +347,12 @@ The core delegation tool. Accepts an array of flow tasks and runs them in parall
 
 ### `batch` / `batch_read` — unified file operations
 
-When **tool optimization** is enabled (default), the separate `read` / `write` / `edit` tools are replaced by:
+When **tool optimization** is enabled (default), pi-agent-flow registers optimized batch tools without restricting the parent session's active tool list, so MCP and other extension tools remain available on startup:
 
-- **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings.
-- **`batch_read`** — read-only variant for multiple reads. Small full-file reads return raw content; large full-file reads return code/infra context maps or total line counts, and oversized targeted reads are capped with continuation guidance.
+- **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings. Reserved for child flows.
+- **`batch_read`** — read-only variant for multiple reads in the parent session. Small full-file reads return raw content; large full-file reads return code/infra context maps or total line counts, and oversized targeted reads are capped with continuation guidance.
+
+Child flows still receive a constrained tool set through their spawned `pi --tools ...` arguments.
 
 ### `batch_bash_poll` — poll pending bash commands
 

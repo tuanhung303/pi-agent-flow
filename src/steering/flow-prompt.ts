@@ -21,16 +21,6 @@ export interface BeforeAgentStartEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Active tools helper
-// ---------------------------------------------------------------------------
-
-export function computeActiveTools(optimize: boolean): string[] {
-	return optimize
-		? ["batch_read", "flow", "web", "ask_user"]
-		: ["read", "write", "edit", "batch", "bash", "flow", "web", "ask_user"];
-}
-
-// ---------------------------------------------------------------------------
 // System prompt builder
 // ---------------------------------------------------------------------------
 
