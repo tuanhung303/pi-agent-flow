@@ -26,13 +26,10 @@ const MAX_CONVERSATION_CHARS = 15000;
 
 export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
   pi.registerCommand("flow:warp", {
-    description: "Warp to a new session with distilled context. Usage: /flow:warp <goal>",
+    description: "Warp to a new session with distilled context. Usage: /flow:warp [goal]",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const goal = args.trim();
-      if (!goal) {
-        ctx.ui.notify?.("Usage: /flow:warp <goal>", "error");
-        return;
-      }
+      const DEFAULT_WARP_GOAL = "Continue where we left off — summarize what we've done, where we are, and what the natural next step is.";
+      const goal = args.trim() || DEFAULT_WARP_GOAL;
 
       const cwd = getCwd() ?? ctx.cwd;
 
