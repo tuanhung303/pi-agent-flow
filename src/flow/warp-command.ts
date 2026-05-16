@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
-import { getGoal, getGoalForSession, getWarpCount, recordWarp } from "./store.js";
+import { getGoalForSession, getWarpCount, recordWarp } from "./store.js";
 import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
 import {
   stripSteeringHintFromContent,

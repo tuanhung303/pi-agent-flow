@@ -102,7 +102,11 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
             break;
           }
           if (current.status === "active") {
-            ctx.ui.notify?.("Goal is already active", "info");
+            if (current.sessionId && current.sessionId !== sessionId) {
+              ctx.ui.notify?.("Goal is already active in another session", "info");
+            } else {
+              ctx.ui.notify?.("Goal is already active", "info");
+            }
             break;
           }
           if (current.sessionId && current.sessionId !== sessionId) {

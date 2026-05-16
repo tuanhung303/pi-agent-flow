@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
 import { getGoal, addTokens, updateGoalStatus } from "./store.js";
-import { budgetLimitTemplate, goalCompletedTemplate } from "./template-strings.js";
+import { budgetLimitTemplate, idleWakeupTemplate } from "./template-strings.js";
 import { logWarn } from '../config/log.js';
 import * as sessionRegistry from '../core/session-registry.js';
 
@@ -23,6 +23,18 @@ const FLOW_COMPLETE_HOLD_MS = 3000;
 const _lastFlowCompleteAt = new Map<string, number>();
 
 /**
+ * Idle wake-up — nudges the orchestrator to keep working when the user
+ * has been idle for a long period while a goal is active.
+ */
+const IDLE_WAKEUP_MS =
+  typeof process !== "undefined" && process.env.PI_FLOW_IDLE_WAKEUP_MS
+    ? parseInt(process.env.PI_FLOW_IDLE_WAKEUP_MS, 10)
+    : 600_000;
+const WAKEUP_CHECK_INTERVAL_MS = 60_000;
+const _lastTurnEndAt = new Map<string, number>();
+let _wakeupInterval: ReturnType<typeof setInterval> | undefined;
+
+/**
  * Mark that a flow just completed. Called by the executor after each flow
  * finishes. The continuation system uses this to enforce the post-completion
  * hold, giving the user time to read the result before the next flow spawns.
@@ -36,10 +48,49 @@ export function markFlowCompleted(sessionId?: string): void {
   }
 }
 
+/**
+ * Shut down the idle wake-up interval. Call during process exit cleanup.
+ */
+export function shutdownWakeup(): void {
+  if (_wakeupInterval) {
+    clearInterval(_wakeupInterval);
+    _wakeupInterval = undefined;
+  }
+}
+
 export function setupContinuation(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     sessionRegistry.register(ctx.cwd, ctx.sessionManager.getSessionId());
+    _lastTurnEndAt.set(ctx.sessionManager.getSessionId(), Date.now());
   });
+
+  // Idle wake-up: periodically check if the user has been idle while a goal
+  // is active, and nudge the orchestrator to keep making progress.
+  if (!_wakeupInterval) {
+    _wakeupInterval = setInterval(() => {
+      const cwd = sessionRegistry.getCwd();
+      if (!cwd) return;
+      const goal = getGoal(cwd);
+      if (!goal || goal.status !== "active") return;
+      const sessionId = goal.sessionId ?? sessionRegistry.getSessionId(cwd) ?? "none";
+      const lastActivity = _lastTurnEndAt.get(sessionId);
+      if (!lastActivity) return;
+      const now = Date.now();
+      if (now - lastActivity > IDLE_WAKEUP_MS) {
+        _lastTurnEndAt.set(sessionId, now);
+        const maxFlowsClause = goal.maxFlows !== undefined ? `/${goal.maxFlows}` : '';
+        const tokenInfo = `${goal.totalTokens}${goal.maxTokens !== undefined ? `/${goal.maxTokens}` : ''}`;
+        const acceptanceClause = goal.acceptance ? `\nAcceptance: ${goal.acceptance}` : '';
+        const prompt = idleWakeupTemplate
+          .replace("{{objective}}", goal.objective)
+          .replace("{{acceptanceClause}}", acceptanceClause)
+          .replace("{{flowCount}}", String(goal.completedFlows.length))
+          .replace("{{maxFlows}}", String(goal.maxFlows ?? "unlimited"))
+          .replace("{{totalTokens}}", tokenInfo);
+        pi.sendMessage({ content: prompt, display: false }, { triggerTurn: true });
+      }
+    }, WAKEUP_CHECK_INTERVAL_MS);
+  }
 
   pi.on("turn_end", async (event: TurnEndEvent) => {
     const cwd = sessionRegistry.getCwd();
@@ -53,41 +104,11 @@ export function setupContinuation(pi: ExtensionAPI): void {
       return;
     }
 
-    // Detect agent-driven completion: parse assistant message for flow tool call with type='complete'
-    const contentParts =
-      typeof event.message.content === "string"
-        ? [{ type: "text", text: event.message.content }]
-        : event.message.content;
-
-    for (const part of contentParts) {
-      if (part && typeof part === "object" && "type" in part && part.type === "toolCall" && "name" in part && part.name === "flow") {
-        const args = (part as { arguments?: Record<string, unknown> }).arguments;
-        if (args && Array.isArray(args.flow)) {
-          const hasComplete = args.flow.some(
-            (f: unknown) => {
-              if (!f || typeof f !== "object") return false;
-              const ft = (f as Record<string, unknown>).type;
-              return typeof ft === "string" && ft.toLowerCase() === "complete";
-            },
-          );
-          if (hasComplete) {
-            updateGoalStatus(cwd, "completed");
-            pi.sendMessage(
-              {
-                content: goalCompletedTemplate.replace("{{objective}}", goal.objective),
-                display: false,
-              },
-              { triggerTurn: true },
-            );
-            return;
-          }
-        }
-      }
-    }
+    const goalSessionId = goal.sessionId ?? "none";
+    _lastTurnEndAt.set(goalSessionId, Date.now());
 
     // Cooldown: don't re-fire within 5 seconds of last spawn for THIS goal's session
     const now = Date.now();
-    const goalSessionId = goal.sessionId ?? "none";
     if (now - (_lastSpawnAt.get(goalSessionId) ?? 0) < SPAWN_COOLDOWN_MS) return;
 
     // Post-completion hold: give the user time to read the flow result
@@ -126,12 +147,12 @@ export function setupContinuation(pi: ExtensionAPI): void {
       return;
     }
 
-    // Build a continuation prompt with goal context and completion audit
+    // Build a continuation prompt with goal context
     const maxFlowsClause = goal.maxFlows !== undefined ? `/${goal.maxFlows}` : '';
     const tokenInfo = `${goal.totalTokens}${goal.maxTokens !== undefined ? `/${goal.maxTokens}` : ''}`;
     const acceptanceClause = goal.acceptance ? `\nAcceptance: ${goal.acceptance}` : '';
 
-    const continuationPrompt = `<flow-continuation>\nContinue execution toward the active goal.\n\nObjective: ${goal.objective}${acceptanceClause}\nProgress: ${flowCount}${maxFlowsClause} flows, ${tokenInfo} tokens.\n\nCall the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Verify all acceptance criteria are met before marking complete.\n</flow-continuation>`;
+    const continuationPrompt = `<flow-continuation>\nContinue execution toward the active goal.\n\nObjective: ${goal.objective}${acceptanceClause}\nProgress: ${flowCount}${maxFlowsClause} flows, ${tokenInfo} tokens.\n\nCall the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Only the user can end a goal. Keep finding improvements that advance the objective.\n</flow-continuation>`;
 
     pi.sendMessage({ content: continuationPrompt, display: false }, { triggerTurn: true });
   });

@@ -1,18 +1,4 @@
-/**
- * Runtime template strings for flow prompts.
- * Kept in sync with the .md sources in templates/.
- */
-
-export const budgetLimitTemplate = `<flow-budget>
-The flow goal has exceeded its budget and has been auto-paused.
-
-Objective: {{objective}}
-Usage: {{totalTokens}}/{{maxTokens}} tokens, {{flowCount}}/{{maxFlows}} flows.
-
-Resume with \`/flow:goal resume\` if you want to continue.
-</flow-budget>`;
-
-export const idleWakeupTemplate = `<flow-wakeup>
+<flow-wakeup>
 The user has been idle. Review the active goal and find safe, conservative improvements that advance it.
 
 Objective: {{objective}}
@@ -26,4 +12,4 @@ Guidance:
 - You cannot end this goal. Only the user can end a goal.
 
 Call the flow tool with the appropriate flow type to continue.
-</flow-wakeup>`;
+</flow-wakeup>

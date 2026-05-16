@@ -13,11 +13,7 @@ Progress: {{flowCount}}/{{maxFlows}} flows completed, {{totalTokens}} tokens use
 - `debug` — investigate root cause and fix
 - `ideas` — diverge, evaluate, recommend
 
-**Completion audit:** Before considering the goal complete, verify EACH requirement:
-1. Re-read the original objective and acceptance criteria.
-2. For every stated requirement, confirm concrete evidence of completion.
-3. If ANY requirement lacks evidence, continue working rather than declaring victory.
-4. A goal is complete only when ALL acceptance criteria are met with verifiable results.
+**Goal termination:** You cannot end a goal. Only the user can end a goal via `/flow:goal complete` or `/flow:goal clear`. Keep working — find safe, conservative improvements that advance the objective.
 
 Call the flow tool with the appropriate flow type to advance the goal.
 </flow-continuation>

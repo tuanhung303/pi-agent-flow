@@ -278,6 +278,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_DUMP_MAX_AGE_HOURS` | Max age of dump files before auto-cleanup deletes them (default 168 = 7 days). |
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_MAX_CONCURRENCY` | Override the default maximum concurrent flows (default 4, capped to CPU count). |
+| `PI_FLOW_IDLE_WAKEUP_MS` | Override the idle wake-up threshold in milliseconds (default 600000 = 10 minutes). |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
 | `PI_TUI_MODE` | Set to `1` to route `logWarn`/`logError` to a log file instead of stderr, preventing on-screen text flash. Detected automatically when stdout is a TTY or `PI_FLOW_DEPTH > 0`. |
@@ -373,7 +374,7 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 | `status`, `show` | `/flow:goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
 | `warp` | `/flow:warp [goal]` — Distills conversation context into a structured project brief (YAML frontmatter + body) and spawns a new session with the goal auto-set. Preserves unresolved blockers, key files, and end-goal intent, plus an execution plan with phased flows. If no goal is provided, a default continuation goal is used. |
 
-> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow:goal complete`, by the orchestrator calling the `flow` tool with `type: "complete"`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
+> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow:goal complete`. The agent cannot self-terminate a goal — only the user can end it.
 
 #### Warp gotchas
 
@@ -455,14 +456,19 @@ Task: Complete the Discover phase by mapping middleware usage, then begin Conver
 
 ### How it works
 
-1. On `turn_end`, if a goal is **active**, the continuation hook first checks whether the orchestrator called the `flow` tool with `type: "complete"`. If so, it marks the goal `completed` and stops auto-continuation.
-2. Next, the hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, the goal is **auto-paused** and a hidden budget-limit message is sent to the orchestrator.
-3. If under budget, the hook sends a hidden message instructing the orchestrator to call the `flow` tool.
-4. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
-5. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
-6. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
-7. A **3-second post-completion hold** (`FLOW_COMPLETE_HOLD_MS`) delays the next spawn after a flow finishes, giving the user time to read the completed result before it scrolls off-screen.
-8. Goals are **session-scoped** via `sessionId`; resuming in a new session still works but clears the old session binding.
+1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, the goal is **auto-paused** and a hidden budget-limit message is sent to the orchestrator.
+2. If under budget, the hook sends a hidden message instructing the orchestrator to call the `flow` tool.
+3. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
+4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
+5. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
+6. A **3-second post-completion hold** (`FLOW_COMPLETE_HOLD_MS`) delays the next spawn after a flow finishes, giving the user time to read the completed result before it scrolls off-screen.
+7. Goals are **session-scoped** via `sessionId`; resuming in a new session still works but clears the old session binding.
+
+### Idle wake-up
+
+When a goal is active and the user has been idle for **~600 seconds** (10 minutes), the system sends a hidden `<flow-wakeup>` nudge to the orchestrator. The nudge prompts the agent to review the active goal and find safe, conservative improvements that advance it — such as verification, testing, or documentation — without making risky changes or refactoring large areas.
+
+The wake-up interval is checked every 60 seconds. It resets after any user turn or flow completion. Override the default idle threshold via the `PI_FLOW_IDLE_WAKEUP_MS` environment variable (value in milliseconds).
 
 ### Persistence
 
