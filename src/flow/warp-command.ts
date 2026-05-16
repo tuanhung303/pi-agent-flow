@@ -47,10 +47,28 @@ RULES:
 6. Success criteria should be testable — something an audit flow could verify.
 7. If an active goal from the prior session exists, include it in the frontmatter context.
 8. Preserve unresolved blockers, open questions, or "not done" items from prior flow results in open_items.
+9. OUTPUT TEXT ONLY. Do not make tool calls, do not attempt to run code, do not try to read or write files. Your only job is to produce the structured warp prompt as text. The conversation history is provided for context only — do not continue it.
+10. Your entire response must be the warp prompt starting with '---' (YAML frontmatter opening). No preamble, no explanations, no tool calls.
 
-Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here is the prompt" — just output the prompt itself.`;
+Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here is the prompt" — just output the prompt itself.
+
+IMPORTANT: You are a text generation assistant, not an agent. Do NOT attempt tool calls, file operations, code execution, or any actions. Output ONLY the structured prompt text.`;
 
 const MAX_CONVERSATION_CHARS = 15000;
+
+function extractGoalFromPrompt(prompt: string): string {
+  // Try to find ## Task section
+  const taskMatch = prompt.match(/##\s*Task\s*\n([\s\S]*?)(?=\n##|$)/i);
+  if (taskMatch?.[1]?.trim()) return taskMatch[1].trim();
+  // Fallback: first non-empty, non-header line after ---
+  const bodyStart = prompt.indexOf('---', 3);
+  if (bodyStart !== -1) {
+    const body = prompt.slice(bodyStart + 3);
+    const lines = body.split('\n').filter(l => l.trim() && !l.startsWith('#') && !l.startsWith('---'));
+    if (lines[0]) return lines[0].trim();
+  }
+  return 'Continue the work from the warped context';
+}
 
 export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
   pi.registerCommand("flow:warp", {
@@ -260,8 +278,8 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
       const { cancelled } = await ctx.newSession({
         parentSession: currentSessionFile,
         withSession: async (newCtx) => {
-          const userGoal = args.trim();
-          newCtx.ui.setEditorText?.(userGoal ? `/flow:goal set ${goal}\n\n${warpedPrompt}` : warpedPrompt);
+          const effectiveGoal = args.trim() ? goal : extractGoalFromPrompt(warpedPrompt);
+          newCtx.ui.setEditorText?.(`/flow:goal set ${effectiveGoal}\n\n${warpedPrompt}`);
 
           // Log warp (cwd captured in closure, no ctx needed)
           recordWarp(cwd, {

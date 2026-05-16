@@ -285,6 +285,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to disable `[Hint: Plan next step...]` after tool results. |
 | `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render). |
 | `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect, keep ripple/pulse. |
+| `PI_ASK_USER_TIMEOUT` | Override the ask_user default timeout in seconds (e.g., `60` for 1 minute). |
 
 ## Flow Settings
 
@@ -303,6 +304,7 @@ Control runtime behavior via slash commands, CLI flags, environment variables, o
 | `structured-output` | `/flow:settings structured-output on\|off` — Enable/disable structured JSON output from flows. |
 | `session-mode` | `/flow:settings session-mode <default\|unsafe\|failsafe>` — Set the session safety mode. |
 | `max-concurrency` | `/flow:settings max-concurrency <n>` — Set maximum concurrent flows. |
+| `ask-user` | `/flow:settings ask-user enabled <on\|off>` — Enable/disable ask_user countdown. `/flow:settings ask-user timeout <seconds>` — Set auto-dismiss timeout. |
 | `reset` | `/flow:settings reset` — Reset all settings to their defaults. |
 
 ### CLI flags
@@ -338,6 +340,10 @@ When the same setting is defined in multiple places, the value is resolved as:
     "animation": {
       "enabled": true,
       "glitch": true
+    },
+    "askUser": {
+      "enabled": false,
+      "timeout": 300
     },
     "toolOptimize": false,
     "structuredOutput": true,

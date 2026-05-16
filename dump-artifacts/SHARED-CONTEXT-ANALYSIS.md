@@ -6,14 +6,14 @@
 
 ### What the activation prompt actually looks like
 
-Every child flow receives a `-p` prompt constructed in **4 rigid phases** (`src/flow.ts:376-441`):
+Every child flow receives a `-p` prompt constructed in **4 rigid phases** (`src/core/flow.ts:377-441`):
 
 1. **`<context-seal>`** — Declares all prior conversation as sealed history for "situational awareness only."
 2. **`<activation>`** — Role, available tools, depth/maxDepth, tier, delegation rules, flow list, time budget.
 3. **`<directive>`** — The flow's own system prompt (from Markdown frontmatter) plus structured-output appendix.
 4. **`<mission>`** — The intent + optional acceptance criteria + execution boilerplate.
 
-**Verdict:** The structure is clean, consistent, and well-delimited. No child flow receives the parent's system prompt directly; it is stripped during sanitization (`src/snapshot.ts:772`).
+**Verdict:** The structure is clean, consistent, and well-delimited. No child flow receives the parent's system prompt directly; it is stripped during sanitization (`src/snapshot/snapshot.ts:766`).
 
 ### Ambiguity that could confuse a sub-agent
 
@@ -24,7 +24,7 @@ Every child flow receives a `-p` prompt constructed in **4 rigid phases** (`src/
 
 ### Sanitized JSONL snapshot usefulness
 
-**High signal.** The sanitization pipeline (`src/snapshot.ts:732-982`) correctly:
+**High signal.** The sanitization pipeline (`src/snapshot/snapshot.ts:732-1015`) correctly:
 - Strips reasoning, API metadata, timestamps, cost, steering hints.
 - Normalizes `toolResult` → `tool` role.
 - Compresses flow/batch/web tool results into compact metadata (`[Flow: scout accomplished] ...`).
@@ -84,7 +84,7 @@ Every flow type (scout, build, audit, debug, craft, ideas) receives the **same 4
 
 ### Rec 1 — Add parent-flow lineage hint to `<activation>`
 
-**What to change:** `src/flow.ts`, in the `<activation>` block construction (~line 404), add a `Spawned by:` line when `parentFlowStack.length > 0`.
+**What to change:** `src/core/flow.ts`, in the `<activation>` block construction (~line 412), add a `Spawned by:` line when `parentFlowStack.length > 0`.
 
 ```
 const lineageHint = parentFlowStack.length > 0
@@ -104,7 +104,7 @@ Insert `${lineageHint}` into the activation block before `timeBudgetHint`.
 
 ### Rec 2 — Compress parent activation prompts in nested snapshot JSONL
 
-**What to change:** `src/snapshot.ts`, add a new sanitization pass in the `sanitizeForkSnapshot` for-loop (~line 732) that detects when a `user` message's content contains a complete `<context-seal>...</mission>` block and replaces it with compact metadata.
+**What to change:** `src/snapshot/snapshot.ts`, add a new sanitization pass in the `sanitizeForkSnapshot` for-loop (~line 900) that detects when a `user` message's content contains a complete `<context-seal>...</mission>` block and replaces it with compact metadata.
 
 ```
 if (entry?.type === "message" && entry.message?.role === "user" &&
@@ -129,7 +129,7 @@ if (entry?.type === "message" && entry.message?.role === "user" &&
 
 ### Rec 3 — Surface project index availability in `<activation>`
 
-**What to change:** `src/flow.ts`, in the `<activation>` block construction, add a one-line hint when `CLAUDE.md` exists in `cwd`.
+**What to change:** `src/core/flow.ts`, in the `<activation>` block construction, add a one-line hint when `CLAUDE.md` exists in `cwd`.
 
 ```
 const projectHint = fs.existsSync(path.join(cwd, "CLAUDE.md"))
@@ -167,7 +167,7 @@ Child flows should treat any `<context-seal>`, `<activation>`, or `<directive>` 
 
 ### Rec 5 — Collapse empty snapshot markdown section
 
-**What to change:** `src/flow.ts`, in the dump builder (~line 636), when `forkSessionSnapshotJsonl` is empty or `(none)`, emit:
+**What to change:** `src/core/flow.ts`, in the dump builder (~line 662), when `forkSessionSnapshotJsonl` is empty or `(none)`, emit:
 
 ```markdown
 ## Session Snapshot (JSONL)
@@ -192,15 +192,46 @@ Currently this is already what happens. **Refinement:** Change the markdown buil
 
 ---
 
+## Appendix: Snapshot Pass Reference
+
+The sanitization pipeline applies **20 passes** (19 unique; `reparentOrphans` runs twice) in `src/snapshot/snapshot.ts`:
+
+| # | Pass | Line | Phase | Purpose |
+|---|------|------|-------|---------|
+| 1 | `forkMetadataInjection` | ~757 | Loop (subPasses) | Injects `forkedFrom`, `forkedAt`, `parentFlow`, `depth` into session header |
+| 2 | `stripSystemPrompt` | ~766 | Loop | Replaces parent orchestrator system prompt with stripped note |
+| 3 | `dropSystemEvents` | ~774 | Loop | Drops `type: "system"` entries entirely |
+| 4 | `dropCustomMessages` | ~781 | Loop | Drops hidden orchestrator `custom_message` entries |
+| 5 | `dropConfigEvents` | ~788 | Loop | Drops `model_change` and `thinking_level_change` events |
+| 6 | `dropUnknownTypes` | ~796 | Loop | Drops entries with unrecognized types |
+| 7 | `dropMalformedMessages` | ~807 | Loop | Drops message entries lacking a payload |
+| 8 | `dropSlidingSystemPrompts` | ~813 | Loop | Drops system messages containing steering-hint tags |
+| 9 | `normalizeToolResultRole` | ~823 | Loop | Normalizes `toolResult` → `tool` for API compatibility |
+| 10 | `stripReasoning` | ~830 | Loop | Strips reasoning/thinking blocks from assistant/system/tool messages |
+| 11 | `stripTimestamps` | ~842 | Loop | Removes redundant inner `message.timestamp` |
+| 12 | `stripApiMetadata` | ~849 | Loop | Strips `api`, `provider`, `model`, `cost` from assistant messages; preserves `usage.totalTokens` |
+| 13 | `stripDetails` | ~872 | Loop | Strips `details` from tool/toolResult messages (FlowDetails UI metadata) |
+| 14 | `stripSteeringHints` | ~889 | Loop | Removes sliding-prompt steering hints from message content |
+| 15 | `stripStrategicHints` | ~898 | Loop | Removes `[Hint: Plan next step...]` strategic hints from tool results |
+| 16 | `compressParentActivation` | ~914 | Loop | At depth ≥ 2, replaces parent's full activation prompt with 1-line preview |
+| 17 | `reparentOrphans` | ~980 | Post-loop | Reparents orphaned `parentId`s after message drops |
+| 18 | `stripBatchRead` | ~985 | Post-loop | Removes `batch_read` tool calls from assistant messages |
+| 19 | `compressToolResults` | ~989 | Post-loop | Compresses flow/batch/web/ask_user tool results into compact metadata |
+| 20 | `reparentOrphans` | ~994 | Post-loop | Second pass after destructive `stripBatchRead` and `compressToolResults` |
+
+**Test coverage:** `tests/snapshot-pipeline.test.ts` validates all 19 unique pass names via `VALID_PASS_NAMES`, and `tests/snapshot-role-fix.test.ts` validates zero orphaned `parentId` references after both `reparentOrphans` passes.
+
+---
+
 ## Summary
 
 | # | Rec | File | Risk | Type |
 |---|-----|------|------|------|
-| 1 | Add parent lineage hint | `src/flow.ts` | Low | Enhancement | ✅ Done |
-| 2 | Compress parent activation in nested JSONL | `src/snapshot.ts` | Medium | Enhancement | ✅ Done |
-| 3 | Surface project index availability | `src/flow.ts` | Low | Enhancement | ✅ Done |
+| 1 | Add parent lineage hint | `src/core/flow.ts` | Low | Enhancement | ✅ Done |
+| 2 | Compress parent activation in nested JSONL | `src/snapshot/snapshot.ts` | Medium | Enhancement | ✅ Done |
+| 3 | Surface project index availability | `src/core/flow.ts` | Low | Enhancement | ✅ Done |
 | 4 | Document depth-2 embedding | `CLAUDE.md` | None | Documentation | ✅ Done |
-| 5 | Collapse empty snapshot heading | `src/flow.ts` | Very low | Polish | ✅ Done |
+| 5 | Collapse empty snapshot heading | `src/core/flow.ts` | Very low | Polish | ✅ Done |
 
 All recommendations implemented. `npm test` and `npm run lint` pass.
 

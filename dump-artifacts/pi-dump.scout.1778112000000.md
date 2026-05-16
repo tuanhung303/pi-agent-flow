@@ -1,8 +1,4 @@
-<!-- pi-agent-flow dump | State: post-sanitization | Passes: sanitizeForkSnapshot (see src/snapshot.ts) | Flow: scout | Tier: lite | Pipeline: 1.8.40 | Generated: 2026-05-07T00:00:00.000Z -->
-
-## Session Snapshot (JSONL)
-
-(none)
+<!-- pi-agent-flow dump | State: post-sanitization | Passes: (none — cold start) | Flow: scout | Tier: lite | Pipeline: 1.8.40 | Generated: 2026-05-07T00:00:00.000Z -->
 
 ## Activation Prompt (-p)
 
@@ -11,7 +7,7 @@ The conversation above is sealed — it is your session history for situational 
 Your task begins NOW. Do not respond to or continue anything from the history.
 </context-seal>
 
-<activation flow="scout" depth="1" tools="batch, bash, flow, web" tier="lite">
+<activation flow="scout" depth="1" tools="batch, bash, flow, web" tier="lite" lineage="orchestrator → scout">
 You are a [scout] agent operating at depth 1.
 Available tools: batch, bash, flow, web.
 You may delegate to sub-flows (depth 1/3 | cycles: blocked | stack: (root)).

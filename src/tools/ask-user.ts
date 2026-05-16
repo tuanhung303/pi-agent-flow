@@ -672,13 +672,12 @@ class AskComponent extends Container {
 	}
 
 	private getBottomTitle(): string {
-		let title = `v${ASK_USER_VERSION}`;
 		if (this.timerEnabled && this.timerSeconds > 0) {
 			const mins = Math.floor(this.timerSeconds / 60);
 			const secs = this.timerSeconds % 60;
-			title += ` · ${mins}:${secs.toString().padStart(2, "0")}`;
+			return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")} · v${ASK_USER_VERSION}`;
 		}
-		return title;
+		return `v${ASK_USER_VERSION}`;
 	}
 
 	handleInput(data: string): void {

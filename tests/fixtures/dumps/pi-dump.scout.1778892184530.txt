@@ -7,7 +7,7 @@ Your task begins NOW. Do not respond to or continue anything from the history.
 You are a [scout] agent operating at depth 1.
 Available tools: batch, bash, find, grep, ls, web.
 You may NOT delegate to sub-flows (depth 1/0 | cycles: blocked | stack: (root)).
-Session mode: fast. Time budget: 300s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
+Session mode: default. Time budget: 600s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
 Do not attempt to use any tool outside the available set — it will fail.
 </activation>
 
@@ -37,7 +37,7 @@ End with a ```json block: { version, status, summary, files[], actions[], notDon
 </directive>
 
 <mission>
-Find the implementation of getFlowSummaryText in src/runner-events.ts and makeDetails in src/executor.ts. These two functions build the text and structured data returned by the flow tool. I need to see exactly what fields they include - specifically whether they leak goal state, raw internal objects, or continuation prompt content into the tool result that gets sent back to the orchestrator/model.
+Read the full source of ToolExecutionComponent.updateDisplay() method in pi-coding-agent. I need to see exactly how call and result renderers are invoked, how their output is added to renderContainer, and critically - whether both renderers share the same args.state object (which would cause them to share the same __rootContainer). Also check if the same Component reference can be added to renderContainer multiple times. The file is at /Users/__blitzzz/.hermes/node/lib/node_modules/pi-provider-kimi-code/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 
 Execute this mission. Use only your available tools. If blocked, report why — do not guess.
 Follow the output format specified in your directive.

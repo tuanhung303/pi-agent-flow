@@ -257,7 +257,7 @@ export class SettingsList implements Component {
 // Menu item builders
 // ---------------------------------------------------------------------------
 
-type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session" | "model-config";
+type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session" | "ask-user" | "model-config";
 
 interface TooltipSelectItem extends SelectItem {
 	tooltip?: string;
@@ -269,6 +269,8 @@ function getMainMenuItems(settings: FlowSettings, cwd: string): TooltipSelectIte
 	const toolOptimize = settings.toolOptimize ?? true;
 	const structuredOutput = settings.structuredOutput ?? true;
 	const sessionMode = settings.sessionMode ?? "default";
+	const askUserEnabled = settings.askUser?.enabled ?? false;
+	const askUserTimeout = settings.askUser?.timeout ?? 300;
 
 	const loaded = loadFlowModelConfigs(cwd);
 	const strategyName = loaded.selectedName;
@@ -299,6 +301,12 @@ function getMainMenuItems(settings: FlowSettings, cwd: string): TooltipSelectIte
 			label: "Session Settings",
 			description: `mode: ${sessionMode}`,
 			tooltip: "Set default session mode and concurrency",
+		},
+		{
+			value: "ask-user",
+			label: "Ask User Settings",
+			description: `enabled: ${askUserEnabled ? "on" : "off"}, timeout: ${askUserTimeout}s`,
+			tooltip: "Configure ask_user timeout and countdown",
 		},
 		{
 			value: "model-config",
@@ -409,6 +417,30 @@ function getSessionItems(settings: FlowSettings): SettingItem[] {
 	];
 }
 
+function getAskUserItems(settings: FlowSettings): SettingItem[] {
+	const askUser = settings.askUser ?? {};
+	return [
+		{
+			id: "askUser.enabled",
+			label: "enabled",
+			description: "Show countdown timer in ask_user prompt",
+			currentValue: (askUser.enabled ?? false) ? "on" : "off",
+			values: ["on", "off"],
+		},
+		{
+			id: "askUser.timeout",
+			label: "timeout",
+			description: "Auto-dismiss timeout in seconds",
+			currentValue: String(askUser.timeout ?? 300),
+			values: ["30", "60", "120", "300", "600"],
+			submenu: buildInputSubmenu("Timeout in seconds (10-3600)", (v) => {
+				const n = Number(v.trim());
+				if (!Number.isSafeInteger(n) || n < 10 || n > 3600) return null;
+				return String(n);
+			}),
+		},
+	];
+}
 
 function getModelConfigItems(settings: FlowSettings, cwd: string): SettingItem[] {
 	const loaded = loadFlowModelConfigs(cwd);
@@ -537,7 +569,7 @@ function buildModelPickerSubmenu(
 export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
 	pi.registerCommand("flow:settings", {
 		description:
-			"Manage flow settings. Subcommands: steering <on|off>, strategic-hint <on|off>, animation <on|off>, glitch <on|off>, tool-optimize <on|off>, structured-output <on|off>, session-mode <mode>, max-concurrency <n>, reset. Call with no args for interactive TUI.",
+			"Manage flow settings. Subcommands: steering <on|off>, strategic-hint <on|off>, animation <on|off>, glitch <on|off>, tool-optimize <on|off>, structured-output <on|off>, session-mode <mode>, max-concurrency <n>, ask-user {enabled <on|off> | timeout <seconds>}, reset. Call with no args for interactive TUI.",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const cwd = getCwd() ?? ctx.cwd;
 			const trimmed = args.trim().toLowerCase();
@@ -697,6 +729,17 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 											writeFlowSetting(cwd, "sessionMode", value);
 										} else if (id === "maxConcurrency") {
 											writeFlowSetting(cwd, "maxConcurrency", Number(value));
+										}
+										rebuild();
+										tui.requestRender();
+									};
+								} else if (currentCategory === "ask-user") {
+									items = getAskUserItems(currentSettings);
+									handleChange = (id, value) => {
+										if (id === "askUser.enabled") {
+											writeFlowSetting(cwd, "askUser.enabled", value === "on");
+										} else if (id === "askUser.timeout") {
+											writeFlowSetting(cwd, "askUser.timeout", Number(value));
 										}
 										rebuild();
 										tui.requestRender();
@@ -887,6 +930,31 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 					ctx.ui.notify?.(`maxConcurrency = ${n}`, "info");
 					break;
 				}
+				case "ask-user": {
+					const askParts = trimmed.split(/\s+/);
+					const askSub = askParts[1] ?? "";
+					const askValue = askParts[2] ?? "";
+					if (askSub === "enabled") {
+						const parsed = parseOnOff(askValue);
+						if (parsed === null) {
+							ctx.ui.notify?.("Usage: /flow:settings ask-user enabled <on|off>", "error");
+							return;
+						}
+						writeFlowSetting(cwd, "askUser.enabled", parsed);
+						ctx.ui.notify?.(`askUser.enabled = ${parsed}`, "info");
+					} else if (askSub === "timeout") {
+						const n = Number(askValue);
+						if (!Number.isSafeInteger(n) || n < 10) {
+							ctx.ui.notify?.("Usage: /flow:settings ask-user timeout <seconds>", "error");
+							return;
+						}
+						writeFlowSetting(cwd, "askUser.timeout", n);
+						ctx.ui.notify?.(`askUser.timeout = ${n}`, "info");
+					} else {
+						ctx.ui.notify?.("Usage: /flow:settings ask-user {enabled <on|off> | timeout <seconds>}", "error");
+					}
+					break;
+				}
 				case "reset": {
 					writeFlowSetting(cwd, "", {});
 					ctx.ui.notify?.("Flow settings reset to defaults", "info");
@@ -894,7 +962,7 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 				}
 				default: {
 					ctx.ui.notify?.(
-						"Unknown subcommand. Usage: /flow:settings {steering|strategic-hint|animation|glitch|tool-optimize|structured-output|session-mode|max-concurrency|reset}",
+						"Unknown subcommand. Usage: /flow:settings {steering|strategic-hint|animation|glitch|tool-optimize|structured-output|session-mode|max-concurrency|ask-user|reset}",
 						"error",
 					);
 				}

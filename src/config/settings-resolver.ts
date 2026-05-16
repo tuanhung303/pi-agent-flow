@@ -48,6 +48,8 @@ export interface ResolvedSettings {
 	steeringStrategicHint: boolean;
 	animationEnabled: boolean;
 	animationGlitch: boolean;
+	askUserEnabled: boolean;
+	askUserTimeout: number;
 	discoveredFlows: FlowConfig[];
 	loadedFlowModelConfigs: LoadedFlowModelConfigs;
 	activeRuntimeFlowMode: string | undefined;
@@ -78,6 +80,8 @@ export function resolveSettings(
 	let steeringStrategicHint = true;
 	let animationEnabled = true;
 	let animationGlitch = true;
+	let askUserEnabled = false;
+	let askUserTimeout = 300000; // 5 minutes in ms
 
 	const envToolOptimize = process.env[FLOW_TOOL_OPTIMIZE_ENV];
 	if (envToolOptimize !== undefined) {
@@ -262,6 +266,21 @@ export function resolveSettings(
 		if (parsed !== null) animationGlitch = !parsed;
 	}
 
+	// Resolve askUser: settings.json > env var > default
+	if (typeof flowSettings.askUser?.enabled === "boolean") {
+		askUserEnabled = flowSettings.askUser.enabled;
+	}
+	if (typeof flowSettings.askUser?.timeout === "number") {
+		askUserTimeout = flowSettings.askUser.timeout * 1000;
+	}
+	const envAskUserTimeout = process.env["PI_ASK_USER_TIMEOUT"];
+	if (envAskUserTimeout !== undefined) {
+		const parsed = Number(envAskUserTimeout);
+		if (Number.isSafeInteger(parsed) && parsed >= 1) {
+			askUserTimeout = parsed * 1000;
+		}
+	}
+
 	// Resolve custom steering prompt: CLI flag only (path to file)
 	const cliSteeringPrompt = pi.getFlag("steering-prompt");
 	if (typeof cliSteeringPrompt === "string" && cliSteeringPrompt.trim()) {
@@ -283,6 +302,8 @@ export function resolveSettings(
 		steeringStrategicHint,
 		animationEnabled,
 		animationGlitch,
+		askUserEnabled,
+		askUserTimeout,
 		discoveredFlows,
 		loadedFlowModelConfigs,
 		activeRuntimeFlowMode,

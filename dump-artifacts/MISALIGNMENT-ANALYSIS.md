@@ -4,7 +4,18 @@ This document tracks known misalignments between dump artifacts and the actual s
 
 ## Post-Sync Findings (2026-05-16)
 
-After running `./scripts/sync-dumps.sh`, **2,630** `pi-dump.*` files were synced from `/tmp` into `dump-artifacts/`; **0** legacy `snapshot-dump.*` files remain. Manifests (`MANIFEST.md`, `manifest.json`) were regenerated. Legacy `snapshot-dump.*` files were purged from both `/tmp` and `dump-artifacts/`.
+After running `./scripts/sync-dumps.sh`, **2,792** `pi-dump.*` files were synced from `/tmp` into `dump-artifacts/`; **0** legacy `snapshot-dump.*` files remain. Manifests (`MANIFEST.md`, `manifest.json`) were regenerated. Legacy `snapshot-dump.*` files were purged from both `/tmp` and `dump-artifacts/`.
+
+### Today's Scout Runs (Sequential)
+
+Two sequential scout flows ran on 2026-05-16, generating representative dumps:
+
+| Timestamp | Dump | Size (pre → post) | Reduction | Finding |
+|-----------|------|-------------------|-----------|---------|
+| 00:13:09 | `pi-dump.scout.1778890389209.md` | 1,040,129 → 8,962 bytes | **99%** | Mapped 3 TUI leak vectors (session-scoping bypass, `console.warn` flash, tracked `.pi/` files) + 1 missing safeguard (silent state corruption). |
+| 00:43:04 | `pi-dump.scout.1778892184530.md` | 1,340,644 → 7,048 bytes | **99%** | Traced TUI glow render duplication to pi-tui widget lifecycle; identified `ToolExecutionComponent.updateDisplay` shared-state risk. |
+
+Both dumps show identical pass signatures: `forkMetadataInjection, dropConfigEvents, stripTimestamps, stripReasoning, stripApiMetadata, normalizeToolResultRole, stripDetails, stripStrategicHints, reparentOrphans, stripBatchRead, compressToolResults, reparentOrphans`.
 
 ### Misalignments Identified & Fixed
 

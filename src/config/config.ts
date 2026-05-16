@@ -52,6 +52,13 @@ export interface FlowSettings {
 		/** false = disable glitch/scramble cascade, keep ripple/pulse. Default: true. */
 		glitch?: boolean;
 	};
+
+	askUser?: {
+		/** Enable visual countdown timer and auto-dismiss. Default: false. */
+		enabled?: boolean;
+		/** Auto-dismiss timeout in seconds. Default: 300 (5 min). */
+		timeout?: number;
+	};
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
@@ -277,6 +284,18 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 			animation.glitch = obj.animation.glitch;
 		}
 		result.animation = animation;
+	}
+
+	// Parse nested askUser settings
+	if (isPlainObject(obj.askUser)) {
+		const askUser: FlowSettings["askUser"] = {};
+		if (typeof obj.askUser.enabled === "boolean") {
+			askUser.enabled = obj.askUser.enabled;
+		}
+		if (typeof obj.askUser.timeout === "number" && Number.isSafeInteger(obj.askUser.timeout) && obj.askUser.timeout >= 1) {
+			askUser.timeout = obj.askUser.timeout;
+		}
+		result.askUser = askUser;
 	}
 
 	return result;
