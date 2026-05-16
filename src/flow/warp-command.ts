@@ -6,7 +6,8 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
-import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble.js";
 import { getGoal, getWarpCount, recordWarp } from "./store.js";
 
 const SYSTEM_PROMPT = `You are a context transfer and execution planning assistant. Given a conversation history and the user's goal, generate a structured warp prompt that serves as a ready-to-execute project brief for a new session.
@@ -106,9 +107,64 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
 
       let warpError: string | undefined;
 
-      const distilledPrompt = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-        const loader = new BorderedLoader(tui, theme, "Generating warp prompt...");
-        loader.onAbort = () => done(null);
+      const distilledPrompt = await ctx.ui.custom<string | null>((tui, _theme, _kb, done) => {
+        const abortController = new AbortController();
+        const id = `warp-${Date.now()}`;
+        let completed = false;
+
+        class WarpingComponent {
+          private scramble: DynamicScrambleText;
+          private timer: ReturnType<typeof setTimeout> | undefined;
+          onAbort?: () => void;
+
+          constructor() {
+            this.scramble = new DynamicScrambleText("warping...", () => {
+              const now = Date.now();
+              const result = scrambleManager.updateText(id, "warp", "warping...", now, completed);
+              return result.content;
+            });
+            this.onAbort = () => {
+              abortController.abort();
+              this.cleanup();
+              done(null);
+            };
+            this.scheduleNext();
+          }
+
+          private scheduleNext() {
+            if (this.timer) clearTimeout(this.timer);
+            if (completed) return;
+            const now = Date.now();
+            const result = scrambleManager.updateText(id, "warp", "warping...", now, completed);
+            if (result.isAnimating) {
+              this.timer = setTimeout(() => {
+                this.timer = undefined;
+                tui.requestRender();
+                this.scheduleNext();
+              }, 100);
+            }
+          }
+
+          render(width: number): string[] {
+            const now = Date.now();
+            const result = scrambleManager.updateText(id, "warp", "warping...", now, completed);
+            if (result.isAnimating && !this.timer && !completed) {
+              this.scheduleNext();
+            }
+            return this.scramble.render(width);
+          }
+
+          cleanup() {
+            if (this.timer) {
+              clearTimeout(this.timer);
+              this.timer = undefined;
+            }
+            this.scramble.invalidate();
+            scrambleManager.completeFlow(id);
+          }
+        }
+
+        const component = new WarpingComponent();
 
         const doGenerate = async () => {
           const response = await complete(
@@ -122,7 +178,7 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
                 },
               ],
             },
-            { apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+            { apiKey: auth.apiKey, headers: auth.headers, signal: abortController.signal },
           );
 
           if (response.stopReason === "aborted") {
@@ -141,13 +197,19 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
         };
 
         doGenerate()
-          .then(done)
+          .then((result) => {
+            completed = true;
+            component.cleanup();
+            done(result);
+          })
           .catch((err) => {
+            completed = true;
+            component.cleanup();
             warpError = err.message || "Unknown error";
             done(null);
           });
 
-        return loader;
+        return component;
       });
 
       if (distilledPrompt === null || distilledPrompt === undefined) {
