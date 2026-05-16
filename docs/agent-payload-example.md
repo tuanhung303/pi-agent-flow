@@ -2,7 +2,7 @@
 
 This document shows the **exact payload** passed to a child flow when the orchestrator delegates. Every byte, every tag, every compression artifact is reproduced from the actual code.
 
-> Generated from: `src/flow.ts` (`buildFlowArgs`, `runFlow`), `src/snapshot.ts` (`buildForkSessionSnapshotJsonl`, `sanitizeForkSnapshot`), `agents/scout.md`
+> Generated from: `src/core/flow.ts` (`buildFlowArgs`, `runFlow`), `src/snapshot/snapshot.ts` (`buildForkSessionSnapshotJsonl`, `sanitizeForkSnapshot`), `agents/scout.md`
 
 ---
 
@@ -30,7 +30,7 @@ Key flags:
 
 ## 2. The `-p` Prompt (Activation Prompt)
 
-This is built by `buildFlowArgs()` in `src/flow.ts:281-401`. It is **not** the system prompt — it is a special message that appears **after** all session history, sealed off by `<context-seal>`.
+This is built by `buildFlowArgs()` in `src/core/flow.ts:281-401`. It is **not** the system prompt — it is a special message that appears **after** all session history, sealed off by `<context-seal>`.
 
 ```
 <context-seal>
@@ -95,14 +95,14 @@ This is what `sessionManager.getHeader()` + `sessionManager.getBranch()` produce
 {"systemPrompt":"You are pi, an orchestrator...","model":"..."}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"Review the shared context and tell me how it works"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll delegate this to a scout flow."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_001","arguments":{"flow":[{"type":"scout","intent":"Map the shared context mechanism..."}]}}]}}
-{"type":"message","message":{"role":"tool","toolCallId":"call_001","content":[{"type":"text","text":"[Flow: scout accomplished]\\n  Files: src/snapshot.ts\\n  Commands: grep -r 'compress' src/\\n  Summary: Full compression pipeline mapped."}]}}
+{"type":"message","message":{"role":"tool","toolCallId":"call_001","content":[{"type":"text","text":"[Flow: scout accomplished]\\n  Files: src/snapshot/snapshot.ts\\n  Commands: grep -r 'compress' src/\\n  Summary: Full compression pipeline mapped."}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Now let me build the fix."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_002","arguments":{"flow":[{"type":"build","intent":"Fix the cache miss placeholder..."}]}}]}}
-{"type":"message","message":{"role":"tool","toolCallId":"call_002","content":[{"type":"text","text":"[Flow: build accomplished]\\n  Files: src/snapshot.ts (modified)\\n  Commands: npm test\\n  Summary: All 971 tests pass."}]}}
+{"type":"message","message":{"role":"tool","toolCallId":"call_002","content":[{"type":"text","text":"[Flow: build accomplished]\\n  Files: src/snapshot/snapshot.ts (modified)\\n  Commands: npm test\\n  Summary: All 971 tests pass."}]}}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"how do we handle sessions of multiple flows?"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"<thinking>\\nThe user is asking about sequential flows...\\n</thinking>\\nWhen scout runs first, then build runs in a separate turn, the build sees the scout's compressed result via the flow result cache."}]}}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"for edge case do we need to fix anything"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Let me audit the edge cases."},{"type":"toolCall","type":"toolCall","name":"batch_read","id":"call_003","arguments":{"o":[{"p":"src/snapshot.ts","s":1,"l":100},{"p":"src/executor.ts","s":150,"l":50}]}}]}}
-{"type":"message","message":{"role":"tool","toolCallId":"call_003","content":[{"type":"text","text":"--- src/snapshot.ts (100 lines) ---\\nexport function buildForkSession...\\n--- src/executor.ts (50 lines) ---\\nconst FLOW_RESULT_CACHE_MAX_ENTRIES = 100;\\n"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Let me audit the edge cases."},{"type":"toolCall","type":"toolCall","name":"batch_read","id":"call_003","arguments":{"o":[{"p":"src/snapshot/snapshot.ts","s":1,"l":100},{"p":"src/core/executor.ts","s":150,"l":50}]}}]}}
+{"type":"message","message":{"role":"tool","toolCallId":"call_003","content":[{"type":"text","text":"--- src/snapshot/snapshot.ts (100 lines) ---\\nexport function buildForkSession...\\n--- src/core/executor.ts (50 lines) ---\\nconst FLOW_RESULT_CACHE_MAX_ENTRIES = 100;\\n"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The edge cases look manageable. The cache overflow at 100 entries is handled with a placeholder."}]}}
 ```
 
@@ -114,9 +114,9 @@ This is what actually gets written to the temp file and loaded by the child.
 {"systemPrompt":"You are pi, an orchestrator..."}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"Review the shared context and tell me how it works"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll delegate this to a scout flow."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_001","arguments":{"flow":[{"type":"scout","intent":"Map the shared context mechanism..."}]}}]}}
-{"type":"message","message":{"role":"tool","toolCallId":"call_001","content":[{"type":"text","text":"[Flow: scout accomplished]\\nFiles:\\n  src/snapshot.ts\\nCommands:\\n  grep: grep -r 'compress' src/\\n\\nSummary: Full compression pipeline mapped."}]}}
+{"type":"message","message":{"role":"tool","toolCallId":"call_001","content":[{"type":"text","text":"[Flow: scout accomplished]\\nFiles:\\n  src/snapshot/snapshot.ts\\nCommands:\\n  grep: grep -r 'compress' src/\\n\\nSummary: Full compression pipeline mapped."}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Now let me build the fix."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_002","arguments":{"flow":[{"type":"build","intent":"Fix the cache miss placeholder..."}]}}]}}
-{"type":"message","message":{"role":"tool","toolCallId":"call_002","content":[{"type":"text","text":"[Flow: build accomplished]\\nFiles:\\n  src/snapshot.ts (modified)\\nCommands:\\n  cmd: npm test\\n\\nSummary: All 971 tests pass."}]}}
+{"type":"message","message":{"role":"tool","toolCallId":"call_002","content":[{"type":"text","text":"[Flow: build accomplished]\\nFiles:\\n  src/snapshot/snapshot.ts (modified)\\nCommands:\\n  cmd: npm test\\n\\nSummary: All 971 tests pass."}]}}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"how do we handle sessions of multiple flows?"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"When scout runs first, then build runs in a separate turn, the build sees the scout's compressed result via the flow result cache."}]}}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"for edge case do we need to fix anything"}]}}
@@ -239,4 +239,4 @@ The cache is keyed by `toolCallId` (e.g. `call_001`). It is a **module-level sin
 
 ---
 
-*End of document. This matches the actual implementation in `src/flow.ts`, `src/snapshot.ts`, and `src/executor.ts` as of the current codebase.*
+*End of document. This matches the actual implementation in `src/core/flow.ts`, `src/snapshot/snapshot.ts`, and `src/core/executor.ts` as of the current codebase.*

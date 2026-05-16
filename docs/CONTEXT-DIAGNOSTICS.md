@@ -48,14 +48,14 @@ Every sanitized snapshot ends with a trailing metadata line:
 
 | Vector | Symptom | Fix / Mitigation | Code |
 |--------|---------|------------------|------|
-| **Flow cache miss** | `[flow] prior result · 150000 chars (not cached or evicted)` | Increase `PI_FLOW_CACHE_MAX_ENTRIES` (default 100). Eviction is FIFO. | `src/snapshot.ts:~462` |
-| **Flow cache corruption** | `undefined` in `[Flow: …]` output → fallback to raw | Fix the flow’s structured-output JSON so `renderCompressedFlowResult` produces valid text. | `src/snapshot.ts:~94` |
-| **Batch file reads** | `--- file.ts (2000 lines) ---` repeated in child | Normal. `compressBatchResult` keeps bash verbatim; file reads are truncated to headers. Child can re-read with `batch`. | `src/snapshot.ts:~217` |
-| **Web search/fetch** | Raw page HTML in snapshot | Should compress to `[web:search] …` or `[web:fetch] …`. If not, check `compressWebResult` regex mismatch. | `src/snapshot.ts:~268` |
-| **ask_user results** | Full Q&A transcript in child | Should compress to `[ask_user] "Q" → "A"`. | `src/snapshot.ts:~306` |
-| **Reasoning / thinking** | `<thinking>` blocks visible in child | Stripped by `sanitizeForkSnapshot`. If present, check `stripReasoningFromAssistantMessage`. | `src/snapshot.ts:~710`, `src/reasoning-strip.ts` |
-| **Steering hints** | `<pi-flow-steering-hint>` tags in child | Stripped by `stripSteeringHintFromContent`. If present, hint tag constants changed. | `src/snapshot.ts:~710`, `src/sliding-prompt.ts` |
-| **batch_read orphans** | API rejects with `tool_call_id is not found` | `stripBatchReadToolCalls` removes calls + results. If failure persists, a toolCallId is mismatched. | `src/snapshot.ts:~593` |
+| **Flow cache miss** | `[flow] prior result · 150000 chars (not cached or evicted)` | Increase `PI_FLOW_CACHE_MAX_ENTRIES` (default 100). Eviction is FIFO. | `src/snapshot/snapshot.ts:~462` |
+| **Flow cache corruption** | `undefined` in `[Flow: …]` output → fallback to raw | Fix the flow’s structured-output JSON so `renderCompressedFlowResult` produces valid text. | `src/snapshot/snapshot.ts:~94` |
+| **Batch file reads** | `--- file.ts (2000 lines) ---` repeated in child | Normal. `compressBatchResult` keeps bash verbatim; file reads are truncated to headers. Child can re-read with `batch`. | `src/snapshot/snapshot.ts:~217` |
+| **Web search/fetch** | Raw page HTML in snapshot | Should compress to `[web:search] …` or `[web:fetch] …`. If not, check `compressWebResult` regex mismatch. | `src/snapshot/snapshot.ts:~268` |
+| **ask_user results** | Full Q&A transcript in child | Should compress to `[ask_user] "Q" → "A"`. | `src/snapshot/snapshot.ts:~306` |
+| **Reasoning / thinking** | `<thinking>` blocks visible in child | Stripped by `sanitizeForkSnapshot`. If present, check `stripReasoningFromAssistantMessage`. | `src/snapshot/snapshot.ts:~710`, `src/snapshot/reasoning-strip.ts` |
+| **Steering hints** | `<pi-flow-steering-hint>` tags in child | Stripped by `stripSteeringHintFromContent`. If present, hint tag constants changed. | `src/snapshot/snapshot.ts:~710`, `src/steering/sliding-prompt.ts` |
+| **batch_read orphans** | API rejects with `tool_call_id is not found` | `stripBatchReadToolCalls` removes calls + results. If failure persists, a toolCallId is mismatched. | `src/snapshot/snapshot.ts:~593` |
 
 ---
 
@@ -92,15 +92,15 @@ Every sanitized snapshot ends with a trailing metadata line:
 
 | Pass | Function | File |
 |------|----------|------|
-| Strip steering hints | `stripSteeringHintFromContent`, `stripSteeringHintText` | `src/sliding-prompt.ts` |
-| Strip reasoning | `stripReasoningFromAssistantMessage` | `src/reasoning-strip.ts` |
-| Strip batch_read | `stripBatchReadToolCalls` | `src/snapshot.ts:~593` |
-| Compress flow | `compressToolResults` → `renderCompressedFlowResult` | `src/snapshot.ts:~355`, `~94` |
-| Compress batch | `compressBatchResult` | `src/snapshot.ts:~217` |
-| Compress web | `compressWebResult` | `src/snapshot.ts:~268` |
-| Compress ask_user | `compressAskUserResult` | `src/snapshot.ts:~306` |
-| Snapshot assembly | `sanitizeForkSnapshot` | `src/snapshot.ts:~680` |
-| Dump writer | `makeUniqueDumpPath` + atomic write | `src/flow.ts:~565` |
+| Strip steering hints | `stripSteeringHintFromContent`, `stripSteeringHintText` | `src/steering/sliding-prompt.ts` |
+| Strip reasoning | `stripReasoningFromAssistantMessage` | `src/snapshot/reasoning-strip.ts` |
+| Strip batch_read | `stripBatchReadToolCalls` | `src/snapshot/snapshot.ts:~593` |
+| Compress flow | `compressToolResults` → `renderCompressedFlowResult` | `src/snapshot/snapshot.ts:~355`, `~94` |
+| Compress batch | `compressBatchResult` | `src/snapshot/snapshot.ts:~217` |
+| Compress web | `compressWebResult` | `src/snapshot/snapshot.ts:~268` |
+| Compress ask_user | `compressAskUserResult` | `src/snapshot/snapshot.ts:~306` |
+| Snapshot assembly | `sanitizeForkSnapshot` | `src/snapshot/snapshot.ts:~680` |
+| Dump writer | `makeUniqueDumpPath` + atomic write | `src/core/flow.ts:~565` |
 
 ---
 

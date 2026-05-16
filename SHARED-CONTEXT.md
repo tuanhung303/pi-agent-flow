@@ -1,7 +1,7 @@
 # Shared Context Pipeline — Formal Synthesis
 
 > **Document type:** Conservative architectural specification  
-> **Scope:** What IS, not what could be. Based on source-code evidence (`src/flow.ts`, `src/snapshot.ts`, `src/flow-prompt.ts`, `src/depth.ts`) and actual dump artifacts (`dump-artifacts/`).  
+> **Scope:** What IS, not what could be. Based on source-code evidence (`src/core/flow.ts`, `src/snapshot/snapshot.ts`, `src/steering/flow-prompt.ts`, `src/core/depth.ts`) and actual dump artifacts (`dump-artifacts/`).  
 > **Date:** 2026-05-16  
 > **Pipeline version:** 1.8.40
 
@@ -11,7 +11,7 @@
 
 ### 1.1 The Four-Part Activation Prompt (`-p`)
 
-When the orchestrator spawns a child flow, it constructs a single prompt string passed via `pi -p`. This prompt has **four sequential phases**, hard-coded in `src/flow.ts` (`buildFlowArgs`, lines ~321–495):
+When the orchestrator spawns a child flow, it constructs a single prompt string passed via `pi -p`. This prompt has **four sequential phases**, hard-coded in `src/core/flow.ts` (`buildFlowArgs`, lines ~321–495):
 
 | Phase | XML Tag | Purpose | Source |
 |-------|---------|---------|--------|
@@ -26,7 +26,7 @@ When the orchestrator spawns a child flow, it constructs a single prompt string 
 
 ### 1.2 The Sanitized JSONL Fork Snapshot (`--session`)
 
-The child process receives a `--session <tmpfile>.jsonl` argument containing a **replayable transcript** of the parent session. This is built by `buildForkSessionSnapshotJsonl` (`src/snapshot.ts`, lines ~44–81) and then sanitized by `sanitizeForkSnapshot` (lines ~731–977).
+The child process receives a `--session <tmpfile>.jsonl` argument containing a **replayable transcript** of the parent session. This is built by `buildForkSessionSnapshotJsonl` (`src/snapshot/snapshot.ts`, lines ~44–81) and then sanitized by `sanitizeForkSnapshot` (lines ~731–977).
 
 **What the snapshot contains (post-sanitization):**
 - A `session` header with `forkedFrom`, `forkedAt`, `parentFlow`, `depth` metadata injected.
@@ -58,7 +58,7 @@ Before the snapshot reaches the child, three global passes mutate the JSONL **af
    - `ask_user` results → `[ask_user] "question" → "answer"`
    - `batch_read` results → `[batch_read] N ops → paths: file1.ts, file2.ts, …`
 
-**Evidence:** `src/snapshot.ts` lines 366–595 define `compressToolResults`; lines 597–675 define `stripBatchReadToolCalls`; lines 677–729 define `reparentOrphans`.
+**Evidence:** `src/snapshot/snapshot.ts` lines 366–595 define `compressToolResults`; lines 597–675 define `stripBatchReadToolCalls`; lines 677–729 define `reparentOrphans`.
 
 ### 1.4 Depth / Tier / Guard Propagation
 
@@ -69,7 +69,7 @@ Delegation state travels via **two channels**:
 | **Env vars** | `process.env` propagated to child | `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES`, `PI_FLOW_TOOL_OPTIMIZE`, `PI_FLOW_DEADLINE_MS`, `PI_FLOW_TOOL_SUMMARY_GRACE_MS`, `PI_OFFLINE=1` |
 | **Activation prompt** | Inline in `-p` | `depth="current/max"`, `cycles: blocked/off`, `stack: (root)` or `a -> b -> c` |
 
-**Key constants** (`src/depth.ts`):
+**Key constants** (`src/core/depth.ts`):
 - `DEFAULT_MAX_DELEGATION_DEPTH = 3`
 - `DEFAULT_PREVENT_CYCLE_DELEGATION = true`
 
@@ -77,7 +77,7 @@ Delegation state travels via **two channels**:
 
 ### 1.5 Env-Var Propagation as Control Plane
 
-The orchestrator spawns the child with a **fresh environment** that inherits the parent process env but overrides specific flow-control variables (`src/flow.ts`, lines ~700–720):
+The orchestrator spawns the child with a **fresh environment** that inherits the parent process env but overrides specific flow-control variables (`src/core/flow.ts`, lines ~700–720):
 
 ```
 PI_FLOW_DEPTH       = nextDepth          (parentDepth + 1)
@@ -97,24 +97,24 @@ PI_FLOW_REMINDER_FILE_ENV = reminderFilePath
 
 ## 2. ACTUAL DUMPS — What They Confirm vs. What Could Drift
 
-### 2.1 Confirmed Behaviors (verified against `src/flow.ts` and artifacts)
+### 2.1 Confirmed Behaviors (verified against `src/core/flow.ts` and artifacts)
 
 | Behavior | Evidence | Location in Code |
 |----------|----------|-------------------|
-| Dump writes **before** child spawns | `atomicWriteFileSync` called before `spawn()` | `src/flow.ts` ~670 |
-| Two files per dump: `.md` + `.txt` | `makeUniqueDumpPath` + `makeUniqueDumpTxtPath` | `src/flow.ts` ~230–240 |
-| HTML comment header with metadata | `<!-- pi-agent-flow dump \| State: post-sanitization \| Passes: … \| Pipeline: 1.8.40 -->` | `src/flow.ts` ~642 |
-| Compression stats included | `## Compression Stats` section with pre/post bytes | `src/flow.ts` ~630 |
-| TTL cleanup of stale dumps | `cleanupStaleDumps` runs before each write | `src/flow.ts` ~210 |
-| `pipelineVersion` from `package.json` | `const { version: pipelineVersion } = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"))` | `src/flow.ts` ~36 |
-| Source-vs-dist stale warning | `checkStale("snapshot.ts", "snapshot.js")` | `src/flow.ts` ~685 |
+| Dump writes **before** child spawns | `atomicWriteFileSync` called before `spawn()` | `src/core/flow.ts` ~670 |
+| Two files per dump: `.md` + `.txt` | `makeUniqueDumpPath` + `makeUniqueDumpTxtPath` | `src/core/flow.ts` ~230–240 |
+| HTML comment header with metadata | `<!-- pi-agent-flow dump \| State: post-sanitization \| Passes: … \| Pipeline: 1.8.40 -->` | `src/core/flow.ts` ~642 |
+| Compression stats included | `## Compression Stats` section with pre/post bytes | `src/core/flow.ts` ~630 |
+| TTL cleanup of stale dumps | `cleanupStaleDumps` runs before each write | `src/core/flow.ts` ~210 |
+| `pipelineVersion` from `package.json` | `const { version: pipelineVersion } = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"))` | `src/core/flow.ts` ~36 |
+| Source-vs-dist stale warning | `checkStale("snapshot.ts", "snapshot.js")` | `src/core/flow.ts` ~685 |
 
 ### 2.2 Fixed Misalignments (verified in actual artifacts)
 
 | Issue | Severity | Root Cause | Fix Applied |
 |-------|----------|------------|-------------|
-| `custom_message` entries leaked into child snapshots | **P0** | `sanitizeForkSnapshot` had no branch for `type === "custom_message"` | Added `dropCustomMessages` pass (`src/snapshot.ts` ~791) |
-| `model_change` / `thinking_level_change` leaked | **P1** | No branch for config events | Added `dropConfigEvents` pass (`src/snapshot.ts` ~798) |
+| `custom_message` entries leaked into child snapshots | **P0** | `sanitizeForkSnapshot` had no branch for `type === "custom_message"` | Added `dropCustomMessages` pass (`src/snapshot/snapshot.ts` ~791) |
+| `model_change` / `thinking_level_change` leaked | **P1** | No branch for config events | Added `dropConfigEvents` pass (`src/snapshot/snapshot.ts` ~798) |
 | `pipelineVersion: null` in compression-stats | **P1** | `sanitizeForkSnapshot` doesn't know package version | Removed from stats entry (already in dump header) |
 
 ### 2.3 What Could Still Drift (conservative watchlist)
@@ -182,7 +182,7 @@ const VALID_PASS_NAMES = new Set([
 ```
 
 **Procedure for adding a pass:**
-1. Add pass logic to `src/snapshot.ts`.
+1. Add pass logic to `src/snapshot/snapshot.ts`.
 2. Add name to `VALID_PASS_NAMES` in `tests/snapshot-pipeline.test.ts`.
 3. Add regression test covering the new branch.
 4. Run `npm test` — the "unknown pass name found" assertion will catch desyncs.
@@ -230,11 +230,11 @@ The current architecture (JSONL snapshot + reconstructed `-p` prompt) has served
 
 | Feature | Condition | Evidence |
 |---------|-----------|----------|
-| Flow-goal context injection | Only when `goalContext?.objective` is set | `src/flow.ts` ~490 |
-| Structured output appendix | Only when `structuredOutput === true` and not opted out via `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE` | `src/flow.ts` ~460 |
-| Web steering hints in directive | Only when `toolOptimize === false` and prompt looks like URL/search | `src/flow-prompt.ts` ~56 |
-| Reminder file for timeout warnings | Only when `effectiveTimeout > 0` | `src/flow.ts` ~535 |
-| Compression stats in dump | Always emitted in JSONL, but `## Compression Stats` section only when `lastEntry.type === "compression-stats"` | `src/flow.ts` ~625 |
+| Flow-goal context injection | Only when `goalContext?.objective` is set | `src/core/flow.ts` ~490 |
+| Structured output appendix | Only when `structuredOutput === true` and not opted out via `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE` | `src/core/flow.ts` ~460 |
+| Web steering hints in directive | Only when `toolOptimize === false` and prompt looks like URL/search | `src/steering/flow-prompt.ts` ~56 |
+| Reminder file for timeout warnings | Only when `effectiveTimeout > 0` | `src/core/flow.ts` ~535 |
+| Compression stats in dump | Always emitted in JSONL, but `## Compression Stats` section only when `lastEntry.type === "compression-stats"` | `src/core/flow.ts` ~625 |
 
 ### 4.3 Compressed (Not Guaranteed to Survive)
 
@@ -254,10 +254,10 @@ The current architecture (JSONL snapshot + reconstructed `-p` prompt) has served
 
 | File | Role | Lines of Interest |
 |------|------|-------------------|
-| `src/flow.ts` | Spawn logic, dump writing, env propagation, `-p` construction | ~30–40 (pipelineVersion), ~210–240 (dump helpers), ~321–495 (buildFlowArgs), ~625–670 (dump write block), ~700–720 (env propagation) |
-| `src/snapshot.ts` | JSONL building, sanitization passes, compression | ~44–81 (buildForkSessionSnapshotJsonl), ~366–595 (compressToolResults), ~597–675 (stripBatchRead), ~677–729 (reparentOrphans), ~731–977 (sanitizeForkSnapshot) |
-| `src/flow-prompt.ts` | Before-agent-start prompt augmentation, web steering | ~34–143 (buildBeforeAgentStartPrompt) |
-| `src/depth.ts` | Depth config parsing, env var constants | ~1–210 |
+| `src/core/flow.ts` | Spawn logic, dump writing, env propagation, `-p` construction | ~30–40 (pipelineVersion), ~210–240 (dump helpers), ~321–495 (buildFlowArgs), ~625–670 (dump write block), ~700–720 (env propagation) |
+| `src/snapshot/snapshot.ts` | JSONL building, sanitization passes, compression | ~44–81 (buildForkSessionSnapshotJsonl), ~366–595 (compressToolResults), ~597–675 (stripBatchRead), ~677–729 (reparentOrphans), ~731–977 (sanitizeForkSnapshot) |
+| `src/steering/flow-prompt.ts` | Before-agent-start prompt augmentation, web steering | ~34–143 (buildBeforeAgentStartPrompt) |
+| `src/core/depth.ts` | Depth config parsing, env var constants | ~1–210 |
 | `tests/snapshot-pipeline.test.ts` | Regression tests, `VALID_PASS_NAMES` canonical set | ~1–380 |
 
 ---

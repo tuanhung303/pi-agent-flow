@@ -9,7 +9,7 @@ import {
 	loadFlowSettings,
 	resolveFlowModelCandidates,
 	writeGlobalFlowMode,
-} from "../src/config.js";
+} from "../src/config/config.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;

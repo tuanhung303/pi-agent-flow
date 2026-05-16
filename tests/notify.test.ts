@@ -3,8 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as childProcess from "node:child_process";
-import { FLOW_DEPTH_ENV } from "../src/depth.js";
-import { resetNotifyState, setPendingDecision, setFlowComplete } from "../src/notify-state.js";
+import { FLOW_DEPTH_ENV } from "../src/core/depth.js";
+import { resetNotifyState, setPendingDecision, setFlowComplete } from "../src/notify/notify-state.js";
 
 vi.mock("node:child_process", async (importOriginal) => {
 	const original = (await importOriginal()) as typeof import("node:child_process");
@@ -41,7 +41,7 @@ describe("setupNotify depth guard", () => {
 
 	it("registers agent_end and turn_start listeners when depth is 0 (root orchestrator)", async () => {
 		process.env[FLOW_DEPTH_ENV] = "0";
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const on = vi.fn();
 		const pi = { on } as any;
 		setupNotify(pi);
@@ -51,7 +51,7 @@ describe("setupNotify depth guard", () => {
 
 	it("registers agent_end and turn_start listeners when PI_FLOW_DEPTH is unset", async () => {
 		delete process.env[FLOW_DEPTH_ENV];
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const on = vi.fn();
 		const pi = { on } as any;
 		setupNotify(pi);
@@ -61,7 +61,7 @@ describe("setupNotify depth guard", () => {
 
 	it("skips registering agent_end listener when depth > 0 (child flow)", async () => {
 		process.env[FLOW_DEPTH_ENV] = "1";
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const on = vi.fn();
 		const pi = { on } as any;
 		setupNotify(pi);
@@ -70,7 +70,7 @@ describe("setupNotify depth guard", () => {
 
 	it("skips registering agent_end listener for deeper nesting (depth=2)", async () => {
 		process.env[FLOW_DEPTH_ENV] = "2";
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const on = vi.fn();
 		const pi = { on } as any;
 		setupNotify(pi);
@@ -79,7 +79,7 @@ describe("setupNotify depth guard", () => {
 
 	it("treats invalid PI_FLOW_DEPTH as 0 (registers listener)", async () => {
 		process.env[FLOW_DEPTH_ENV] = "abc";
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const on = vi.fn();
 		const pi = { on } as any;
 		setupNotify(pi);
@@ -115,7 +115,7 @@ describe("setupNotify dynamic content", () => {
 	});
 
 	async function triggerAgentEnd(cwd: string, setupState?: () => void) {
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const listeners: Record<string, Function[]> = {};
 		const on = vi.fn((event: string, handler: Function) => {
 			(listeners[event] ||= []).push(handler);
@@ -182,7 +182,7 @@ describe("setupNotify dynamic content", () => {
 	it("includes 'Decision Required' in title for ask_user on desktop", async () => {
 		tempDir = createTempProject({ channels: { terminal: false, desktop: true, bell: false, sound: false } });
 		setPendingDecision();
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const listeners: Record<string, Function[]> = {};
 		const on = vi.fn((event: string, handler: Function) => {
 			(listeners[event] ||= []).push(handler);
@@ -244,7 +244,7 @@ describe("setupNotify deduplication", () => {
 		for (const [k, v] of Object.entries(envVars)) {
 			process.env[k] = v;
 		}
-		const { setupNotify } = await import("../src/notify.js");
+		const { setupNotify } = await import("../src/notify/notify.js");
 		const listeners: Record<string, Function[]> = {};
 		const on = vi.fn((event: string, handler: Function) => {
 			(listeners[event] ||= []).push(handler);

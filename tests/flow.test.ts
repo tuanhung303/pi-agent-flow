@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/flow.js";
-import type { FlowConfig } from "../src/agents.js";
+import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/core/flow.js";
+import type { FlowConfig } from "../src/core/agents.js";
 import type { FlowDetails } from "../src/types.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";

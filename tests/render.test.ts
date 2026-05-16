@@ -11,9 +11,9 @@ import {
 	visibleLength,
 	getTruncationBudget,
 	stripAnsi,
-} from "../src/render-utils.js";
-import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/render.js";
-import { scrambleManager, DynamicScrambleText } from "../src/scramble.js";
+} from "../src/tui/render-utils.js";
+import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/tui/render.js";
+import { scrambleManager, DynamicScrambleText } from "../src/tui/scramble.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
 import type { Text, TruncatedText } from "@mariozechner/pi-tui";
 import { Container } from "@mariozechner/pi-tui";

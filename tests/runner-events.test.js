@@ -9,7 +9,7 @@ import {
   getFlowFinalText,
   getFlowSummaryText,
   stableStringify,
-} from "../src/runner-events.js";
+} from "../src/snapshot/runner-events.js";
 
 function makeResult() {
   return {

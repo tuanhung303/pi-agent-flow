@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { __resetBashToolMock, __setBashToolExecuteImpl, bashToolExecuteCalls } from "@mariozechner/pi-coding-agent";
-import { classifyDuration, createTimedBashToolDefinition, formatTimingAppendix, type TimingReport } from "../src/timed-bash.js";
+import { classifyDuration, createTimedBashToolDefinition, formatTimingAppendix, type TimingReport } from "../src/tools/timed-bash.js";
 
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";

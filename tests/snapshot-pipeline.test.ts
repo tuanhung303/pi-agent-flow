@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeForkSnapshot } from "../src/snapshot.js";
+import { sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
 import type { CompressedFlowResult } from "../src/types.js";
 import * as fs from "node:fs";
 import * as path from "node:path";

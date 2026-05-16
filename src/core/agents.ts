@@ -78,7 +78,7 @@ function getBundledFlowsDir(): string {
 		if (import.meta.url) {
 			const pluginDir = path.dirname(new URL(import.meta.url).pathname);
 			// Check same directory first, then parent (for src/ layout)
-			for (const base of [pluginDir, path.dirname(pluginDir)]) {
+			for (const base of [pluginDir, path.dirname(pluginDir), path.dirname(path.dirname(pluginDir))]) {
 				const dir = path.join(base, "agents");
 				if (fs.existsSync(dir)) return dir;
 			}
@@ -88,7 +88,7 @@ function getBundledFlowsDir(): string {
 	// Method 2: __dirname (CommonJS / jiti)
 	try {
 		if (typeof __dirname !== "undefined") {
-			for (const base of [__dirname, path.dirname(__dirname)]) {
+			for (const base of [__dirname, path.dirname(__dirname), path.dirname(path.dirname(__dirname))]) {
 				const dir = path.join(base, "agents");
 				if (fs.existsSync(dir)) return dir;
 			}

@@ -29,7 +29,7 @@ import {
 	findSentenceStarts,
 	randomSentenceStart,
 	DynamicScrambleText,
-} from '../src/scramble.js';
+} from '../src/tui/scramble.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

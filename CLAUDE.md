@@ -14,7 +14,7 @@
 | **Dump Analysis** | [`docs/dump-analysis/VERSION-NOTES.md`](docs/dump-analysis/VERSION-NOTES.md) — version notes for collected artifacts • [`docs/dump-artifacts/ANALYSIS.md`](docs/dump-artifacts/ANALYSIS.md) — cross-reference of dumps against source • [`docs/dump-artifacts/README.md`](docs/dump-artifacts/README.md) — catalog of representative dump files |
 | **Workflows** | [`ci.yml`](.github/workflows/ci.yml) — lint + test on PR/push • [`bump-version.yml`](.github/workflows/bump-version.yml) — version bump → commit → tag → push • [`publish.yml`](.github/workflows/publish.yml) — npm publish with provenance |
 | **Scripts** | [`dev-start.sh`](scripts/dev-start.sh) — start `pi` with `PI_FLOW_DUMP_SNAPSHOT` preset • [`switch.sh`](scripts/switch.sh) — toggle local ↔ remote install • [`sync-dumps.sh`](scripts/sync-dumps.sh) — sync `/tmp` dumps into `dump-artifacts/` • [`example-autonomous-pi.expect`](scripts/example-autonomous-pi.expect) — PTY test harness template |
-| **Key Source** | `src/index.ts` — entrypoint • `src/flow.ts` — core flow orchestration & snapshotting • `src/snapshot.ts` — session fork & sanitization pipeline • `src/agents.ts` — bundled flow definitions & loading • `src/batch.ts` / `src/batch/` — unified file/batch tools • `src/render.ts` — TUI rendering & animations • `src/structured-output.ts` — JSON output validation & enrichment • `src/web-tool.ts` — search & fetch • `src/ask-user.ts` — interactive prompts • `src/config.ts` — settings resolution • `src/notify.ts` — desktop/terminal notifications |
+| **Key Source** | `src/index.ts` — entrypoint • `src/core/flow.ts` — core flow orchestration & snapshotting • `src/snapshot/snapshot.ts` — session fork & sanitization pipeline • `src/core/agents.ts` — bundled flow definitions & loading • `src/batch.ts` / `src/batch/` — unified file/batch tools • `src/tui/render.ts` — TUI rendering & animations • `src/structured-output.ts` — JSON output validation & enrichment • `src/tools/web-tool.ts` — search & fetch • `src/tools/ask-user.ts` — interactive prompts • `src/config/config.ts` — settings resolution • `src/notify/notify.ts` — desktop/terminal notifications |
 
 ## CI/CD
 
@@ -98,7 +98,7 @@ Once linked locally, your daily loop is just:
 2. `npm run build`
 3. Quit `pi` and restart it
 
-> ⚠️ **Source vs. dist mismatch:** After editing `src/snapshot.ts` or `src/flow.ts`, you **MUST** `npm run build` and restart `pi` before dumps reflect the changes. Child flows run the compiled `dist/` code, not the TypeScript source.
+> ⚠️ **Source vs. dist mismatch:** After editing `src/snapshot/snapshot.ts` or `src/core/flow.ts`, you **MUST** `npm run build` and restart `pi` before dumps reflect the changes. Child flows run the compiled `dist/` code, not the TypeScript source.
 
 ### `pi update` danger
 > 🚫 **Never run `pi update` while linked locally.** It installs the published npm package
@@ -171,7 +171,7 @@ This script is **idempotent** — safe to run multiple times. It:
 
 **Never use `console.warn()` or `console.error()` in flow code.** During TUI rendering, stderr output briefly flashes on-screen before being overwritten by the next frame — this causes the "text appears then disappears" glitch.
 
-Instead, use the `logWarn` / `logError` functions from `src/log.ts`:
+Instead, use the `logWarn` / `logError` functions from `src/config/log.ts`:
 
 | Function | TUI mode | Non-TUI mode (tests, CLI) |
 |----------|----------|---------------------------|

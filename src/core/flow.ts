@@ -48,7 +48,7 @@ const PI_OFFLINE_ENV = "PI_OFFLINE";
 const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
 const FLOW_DUMP_SNAPSHOT_ENV = "PI_FLOW_DUMP_SNAPSHOT";
 
-const packageJsonPath = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "package.json");
+const packageJsonPath = path.join(path.dirname(new URL(import.meta.url).pathname), "../..", "package.json");
 const { version: pipelineVersion } = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 
 // ---------------------------------------------------------------------------

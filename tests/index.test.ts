@@ -3,11 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import registerExtension, { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "../src/index.js";
-import { runFlow, mapFlowConcurrent } from "../src/flow.js";
+import { runFlow, mapFlowConcurrent } from "../src/core/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types.js";
 
-vi.mock("../src/flow.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../src/flow.js")>();
+vi.mock("../src/core/flow.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../src/core/flow.js")>();
 	return {
 		...actual,
 		runFlow: vi.fn(),

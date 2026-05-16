@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults } from "../src/snapshot.js";
-import { evictCacheOverflow } from "../src/executor.js";
-import { stripStrategicHints } from "../src/tool-utils.js";
+import { compressToolResults } from "../src/snapshot/snapshot.js";
+import { evictCacheOverflow } from "../src/core/executor.js";
+import { stripStrategicHints } from "../src/steering/tool-utils.js";
 
 // ---------------------------------------------------------------------------
 // stripStrategicHints

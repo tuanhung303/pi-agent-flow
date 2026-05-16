@@ -3,8 +3,8 @@ import {
 	compressToolResults,
 	stripBatchReadToolCalls,
 	sanitizeForkSnapshot,
-} from "../src/snapshot.js";
-import { STEERING_HINT } from "../src/sliding-prompt.js";
+} from "../src/snapshot/snapshot.js";
+import { STEERING_HINT } from "../src/steering/sliding-prompt.js";
 import type { CompressedFlowResult } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
