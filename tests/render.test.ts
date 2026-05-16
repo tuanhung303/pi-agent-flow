@@ -573,7 +573,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout   tps:");
+		expect(headerLine).toContain("scout    tps:");
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("↑ 46.7k");
 		expect(headerLine).not.toContain("↓  4.6k");
