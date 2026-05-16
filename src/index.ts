@@ -51,7 +51,6 @@ import { createFlowRunnerFromEnv, type FlowRunner } from "./flow-runner.js";
 const flowResultCache = new Map<string, CompressedFlowResult[]>();
 
 import {
-	computeActiveTools,
 	buildBeforeAgentStartPrompt,
 } from "./flow-prompt.js";
 
@@ -193,13 +192,6 @@ export default function (pi: ExtensionAPI) {
 		resolved = resolveSettings(pi, ctx.cwd);
 		flowRunner = createFlowRunnerFromEnv();
 
-		// Only restrict tools for the main orchestrator (depth 0).
-		// Child flows (depth > 0) receive their tools via --tools CLI arg;
-		// overriding them here would strip bash/batch from children.
-		if (currentDepth === 0) {
-			pi.setActiveTools(computeActiveTools(resolved.toolOptimize));
-		}
-
 		// Register tools based on depth.
 		// Depth 0 (main orchestrator): only batch_read — no bash ops, only reads + flow tool.
 		// Depth > 0 (child flows): batch (with bash), batch_bash_poll — they need bash ops.
@@ -227,11 +219,10 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// Re-apply active tools every turn to survive registry refreshes.
-	// Skip for child flows — they get tools from --tools CLI arg.
+	// Reset per-turn prompt hint state without overriding parent active tools.
+	// Child flow tool restrictions are still controlled by the flow runner's --tools args.
 	pi.on("turn_start", () => {
 		if (currentDepth > 0 || !resolved) return;
-		pi.setActiveTools(computeActiveTools(resolved.toolOptimize));
 		resetStrategicHintTracker();
 	});
 

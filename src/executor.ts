@@ -160,7 +160,6 @@ function resolveCacheMaxEntries(): number {
 }
 
 const FLOW_RESULT_CACHE_MAX_ENTRIES = resolveCacheMaxEntries();
-const DEFAULT_LOCAL_FLOW_RUNNER = new LocalFlowRunner();
 
 /** Evict oldest entries from the cache when it exceeds the cap. */
 export function evictCacheOverflow(cache: Map<string, unknown>): void {
