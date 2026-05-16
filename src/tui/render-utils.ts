@@ -117,7 +117,7 @@ export function formatCountdownRemaining(deadlineAtMs?: number): string | undefi
 
 export function formatContextLabel(ctxTokens: number, maxCtxTokens?: number): string {
 	if (maxCtxTokens === undefined) {
-		return `${formatFixedTokens(ctxTokens)} ctx`;
+		return formatFixedTokens(ctxTokens);
 	}
 	if (ctxTokens === 0) {
 		return `--/${formatFixedTokens(maxCtxTokens)}`;

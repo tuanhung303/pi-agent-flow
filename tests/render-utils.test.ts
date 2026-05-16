@@ -177,7 +177,7 @@ describe('formatCountdownRemaining', () => {
 
 describe('formatContextLabel', () => {
   it('returns formatted tokens when max is unknown', () => {
-    expect(formatContextLabel(32000)).toBe('32.0k ctx');
+    expect(formatContextLabel(32000)).toBe('32.0k');
   });
 
   it('returns ratio when max is provided', () => {
