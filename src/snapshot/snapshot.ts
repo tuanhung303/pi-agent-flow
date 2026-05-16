@@ -2,8 +2,7 @@
  * Two JSONL protocols are used in this codebase:
  *
  * 1. Fork Snapshot Protocol (snapshot.ts):
- *    Types: session, model_change, thinking_level_change, system, message,
- *           compression-stats
+ *    Types: session, model_change, thinking_level_change, system, message
  *    Purpose: Serialized session state passed to child flows via --session.
  *              Emitted by buildForkSessionSnapshotJsonl() and consumed by
  *              sanitizeForkSnapshot() before forking.
@@ -132,15 +131,6 @@ interface SystemEntry {
 	type: "system";
 	content: string;
 	[key: string]: unknown;
-}
-
-/** A compression-stats telemetry entry. */
-interface CompressionStatsEntry {
-	type: "compression-stats";
-	preBytes: number;
-	postBytes: number;
-	reductionPercent: number;
-	passesApplied: string[];
 }
 
 /** Config change entries that are dropped during sanitization. */
