@@ -22,7 +22,7 @@ import {
 	isFlowError,
 	isFlowSuccess,
 } from "./types.js";
-import { formatBatchOpsSummary } from "./batch/render.js";
+import { formatBatchOpsSummary } from "./batch/summary.js";
 import { scrambleManager, runScrambleTimer } from "./scramble.js";
 import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi } from "./render-utils.js";
 

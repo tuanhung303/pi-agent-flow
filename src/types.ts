@@ -3,7 +3,7 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
-import { getFlowFinalText } from "./runner-events.js";
+function getFlowFinalText(messages: Message[]): string { if (!Array.isArray(messages)) return ""; for (let i = messages.length - 1; i >= 0; i--) { const message = messages[i]; if (!message || message.role !== "assistant") { continue; } if (typeof message.content === "string" && message.content.length > 0) { return message.content; } if (!Array.isArray(message.content)) { continue; } for (let j = message.content.length - 1; j >= 0; j--) { const part = message.content[j]; if (part?.type === "text" && typeof part.text === "string" && part.text.length > 0) { return part.text; } } } return ""; }
 
 /** Aggregated token usage from a flow run. */
 export interface UsageStats {
