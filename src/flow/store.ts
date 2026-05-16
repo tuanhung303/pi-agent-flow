@@ -173,21 +173,4 @@ export function addTokens(cwd: string, tokens: number): GoalEntry | undefined {
   return state.current;
 }
 
-const MAX_WARP_ENTRIES = 20;
-
-export function getWarpCount(cwd: string): number {
-  const state = readState(cwd);
-  return state.warps?.length ?? 0;
-}
-
-export function recordWarp(cwd: string, warp: import("./types.js").WarpEntry): void {
-  const state = readState(cwd);
-  if (!state.warps) state.warps = [];
-  state.warps.push(warp);
-  if (state.warps.length > MAX_WARP_ENTRIES) {
-    state.warps = state.warps.slice(-MAX_WARP_ENTRIES);
-  }
-  writeState(cwd, state);
-}
-
 

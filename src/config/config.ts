@@ -59,6 +59,11 @@ export interface FlowSettings {
 		/** Auto-dismiss timeout in seconds. Default: 300 (5 min). */
 		timeout?: number;
 	};
+
+	loop?: {
+		/** Enable endless loop behavior. Default: false. */
+		enabled?: boolean;
+	};
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
@@ -296,6 +301,15 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 			askUser.timeout = obj.askUser.timeout;
 		}
 		result.askUser = askUser;
+	}
+
+	// Parse nested loop settings
+	if (isPlainObject(obj.loop)) {
+		const loop: FlowSettings["loop"] = {};
+		if (typeof obj.loop.enabled === "boolean") {
+			loop.enabled = obj.loop.enabled;
+		}
+		result.loop = loop;
 	}
 
 	return result;

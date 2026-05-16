@@ -50,21 +50,11 @@ export interface LoopState {
   pendingWarpSessionId?: string;
 }
 
-export interface WarpEntry {
-  id: string;
-  parentSession: string;
-  goal: string;
-  createdAt: string;
-  depth: number;
-}
-
 export interface GoalState {
   /** Currently active goal, if any. */
   current?: GoalEntry;
   /** Previously completed or abandoned goals. */
   history: GoalEntry[];
-  /** Recorded session warps. */
-  warps?: WarpEntry[];
   /** Endless loop state, if any. */
   loop?: LoopState;
 }

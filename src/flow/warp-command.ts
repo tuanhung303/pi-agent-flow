@@ -9,7 +9,7 @@ import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { getGoalForSession } from "./store.js";
-import { getLoop, recordSessionWarp } from "./loop.js";
+import { getLoop, recordSessionWarp, terminateLoop } from "./loop.js";
 import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
 import {
   stripSteeringHintFromContent,
@@ -404,46 +404,58 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
         return;
       }
 
-      // Present for review
-      const reviewedPrompt = await ctx.ui.editor("Edit warp prompt", distilledPrompt);
-
-      if (reviewedPrompt === undefined) {
-        ctx.ui.notify?.("Warp cancelled by user.", "info");
-        return;
-      }
-
-      const warpedPrompt = (reviewedPrompt ?? distilledPrompt).trim();
-
-      // Warn on deep warp chains
+      let warpedPrompt: string;
       const loop = getLoop(cwd);
-      const sessionCount = loop?.sessionCount ?? 0;
-      if (sessionCount >= 3) {
-        ctx.ui.notify?.(`Warning: Deep warp chain (depth ${sessionCount + 1}). Proceed with caution.`, "warning");
+
+      if (loop?.status === "active") {
+        warpedPrompt = distilledPrompt.trim();
+      } else {
+        // Present for review
+        const reviewedPrompt = await ctx.ui.editor("Edit warp prompt", distilledPrompt);
+        if (reviewedPrompt === undefined) {
+          ctx.ui.notify?.("Warp cancelled by user.", "info");
+          return;
+        }
+        warpedPrompt = (reviewedPrompt ?? distilledPrompt).trim();
       }
 
       // Spawn new session
       const currentSessionFile = ctx.sessionManager.getSessionFile();
-      const { cancelled } = await ctx.newSession({
-        parentSession: currentSessionFile,
-        withSession: async (newCtx) => {
-          const effectiveGoal = args.trim() ? goal : extractGoalFromPrompt(warpedPrompt);
+      let cancelled: boolean | undefined;
+      try {
+        const result = await ctx.newSession({
+          parentSession: currentSessionFile,
+          withSession: async (newCtx) => {
+            let effectiveGoal = args.trim() ? goal : extractGoalFromPrompt(warpedPrompt);
 
-          // Record session warp if loop is active
-          if (loop?.status === "active") {
-            recordSessionWarp(cwd);
-          }
+            // Record session warp if loop is active
+            if (loop?.status === "active") {
+              recordSessionWarp(cwd);
+              effectiveGoal = loop.objective;
+              warpedPrompt += `\n\n[Loop: session ${loop.sessionCount}, total tokens ≈ ${loop.totalTokensAcrossSessions}]`;
+            }
 
-          newCtx.ui.notify?.("Warped to new session.", "info");
+            newCtx.ui.notify?.("Warped to new session.", "info");
 
-          // Execute /flow:goal set as a real user message in the new session.
-          // This triggers the command handler which calls setGoal() with
-          // ctx.sessionManager.getSessionId() — guaranteed to be the new
-          // session's ID. The handler then triggers the LLM to start working.
-          // sendUserMessage is called last because it may trigger a turn.
-          await newCtx.sendUserMessage(warpedPrompt);
-          newCtx.sendUserMessage(`/flow:goal set ${effectiveGoal}`);
-        },
-      });
+            // Execute /flow:goal set as a real user message in the new session.
+            // This triggers the command handler which calls setGoal() with
+            // ctx.sessionManager.getSessionId() — guaranteed to be the new
+            // session's ID. The handler then triggers the LLM to start working.
+            // sendUserMessage is called last because it may trigger a turn.
+            await newCtx.sendUserMessage(warpedPrompt);
+            newCtx.sendUserMessage(`/flow:goal set ${effectiveGoal}`);
+          },
+        });
+        cancelled = result.cancelled;
+      } catch (err) {
+        if (loop?.status === "active") {
+          terminateLoop(cwd, "budget_exhausted");
+          ctx.ui.notify?.("Loop terminated: session budget exhausted.", "error");
+        } else {
+          ctx.ui.notify?.("Warp failed: could not create new session.", "error");
+        }
+        return;
+      }
 
       if (cancelled) {
         // Can't use ctx.ui.notify here — ctx is stale after newSession.
