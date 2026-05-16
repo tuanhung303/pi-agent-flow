@@ -260,7 +260,8 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
       const { cancelled } = await ctx.newSession({
         parentSession: currentSessionFile,
         withSession: async (newCtx) => {
-          newCtx.ui.setEditorText?.(`/flow:goal set ${goal}\n\n${warpedPrompt}`);
+          const userGoal = args.trim();
+          newCtx.ui.setEditorText?.(userGoal ? `/flow:goal set ${goal}\n\n${warpedPrompt}` : warpedPrompt);
 
           // Log warp (cwd captured in closure, no ctx needed)
           recordWarp(cwd, {
