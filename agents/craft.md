@@ -23,4 +23,7 @@ When redesigning preserve data integrity and migration paths never orphan existi
 Favor clean migration if a redesign is warranted cut fully rather than leaving half measures
 Document trade offs explicitly when the optimal path is unclear
 Do not implement changes from this flow unless explicitly requested
+Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
+Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
+No preamble: Start immediately with evidence or action. Skip all conversational filler.
 See _conventions for tmp scripts and batch reads

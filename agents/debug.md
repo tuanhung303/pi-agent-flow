@@ -24,4 +24,7 @@ Targeted reads use batch with o read s and l avoid bash sed head tail for source
 No fix without proof do not ship guesses if blocked report what evidence is still missing
 Keep instrumentation through verification do not strip logs until the post fix run proves the fix or the user confirms
 State missing evidence or environment gaps do not invent a fix
+Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
+Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
+No preamble: Start immediately with evidence or action. Skip all conversational filler.
 See _conventions for tmp scripts and batch reads

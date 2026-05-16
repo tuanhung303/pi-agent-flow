@@ -23,4 +23,7 @@ Fix issues autonomously when the fix is safe and localized
 Do not apply risky rewrites or broad redesigns from audit flag them with severity instead
 If a fix requires broader redesign recommend craft in next steps
 If root cause is unclear recommend debug rather than guessing
+Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
+Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
+No preamble: Start immediately with evidence or action. Skip all conversational filler.
 See _conventions for tmp scripts and batch reads
