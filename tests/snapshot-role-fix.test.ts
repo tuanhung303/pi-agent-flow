@@ -1091,8 +1091,10 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		// Collect surviving IDs
 		const survivingIds = new Set<string>();
 		for (const entry of entries) {
-			const id = entry?.message?.id ?? entry?.id;
+			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string") survivingIds.add(id);
+			const parentId = entry?.parentId ?? entry?.parentMessageId ?? entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			if (typeof parentId === "string") survivingIds.add(parentId);
 		}
 
 		// No parentId should reference a non-existent message
@@ -1162,8 +1164,10 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		// Collect surviving IDs (excluding compression-stats)
 		const survivingIds = new Set<string>();
 		for (const entry of entries) {
-			const id = entry?.message?.id ?? entry?.id;
+			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string") survivingIds.add(id);
+			const parentId = entry?.parentId ?? entry?.parentMessageId ?? entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			if (typeof parentId === "string") survivingIds.add(parentId);
 		}
 
 		// No parentId should reference a non-existent message

@@ -677,6 +677,8 @@ function reparentOrphans(snapshot: string): string {
 			const entry = JSON.parse(line);
 			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string" && id) survivingIds.add(id);
+			const parentId = entry?.parentId ?? entry?.parentMessageId ?? entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			if (typeof parentId === "string" && parentId && !(typeof id === "string" && id)) survivingIds.add(parentId);
 		} catch { /* ignore */ }
 	}
 	for (let i = 0; i < lines.length; i++) {
@@ -768,6 +770,16 @@ export function sanitizeForkSnapshot(
 				entry = { ...entry, systemPrompt: "[parent orchestrator system prompt stripped — child receives its own directive]" };
 				changed = true;
 				subPasses.add("stripSystemPrompt");
+			}
+
+			// Prevent child from inheriting parent's session identity.
+			// Rename id → parentId so lineage is preserved but the child
+			// generates its own session identifier.
+			if ('id' in entry) {
+				entry = { ...entry, parentId: entry.id };
+				delete entry.id;
+				changed = true;
+				subPasses.add('stripSessionId');
 			}
 		}
 

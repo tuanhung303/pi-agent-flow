@@ -23,6 +23,7 @@ function parseSnapshot(snapshot: string): any[] {
 const VALID_PASS_NAMES = new Set([
 	"forkMetadataInjection",
 	"stripSystemPrompt",
+	"stripSessionId",
 	"dropSlidingSystemPrompts",
 	"dropSystemEvents",
 	"dropCustomMessages",
@@ -248,8 +249,10 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 		// (a) Zero parentId references pointing to IDs that don't exist in the output.
 		const survivingIds = new Set<string>();
 		for (const entry of entries) {
-			const id = entry?.message?.id ?? entry?.id;
+			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string") survivingIds.add(id);
+			const parentId = entry?.parentId ?? entry?.parentMessageId ?? entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			if (typeof parentId === "string") survivingIds.add(parentId);
 		}
 		for (const entry of entries) {
 			const entryParentId = entry?.parentId ?? entry?.parentMessageId;
@@ -308,6 +311,11 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 		const headerEntry = entries[0];
 		expect(headerEntry?.systemPrompt).toMatch(/parent orchestrator system prompt stripped/);
 		expect(passesApplied).toContain("stripSystemPrompt");
+
+		// (h) Session id renamed to parentId and id removed.
+		expect(headerEntry?.parentId).toBe("session-1");
+		expect("id" in headerEntry).toBe(false);
+		expect(passesApplied).toContain("stripSessionId");
 	});
 });
 
@@ -604,8 +612,10 @@ describe("ORPHAN PARENTID REGRESSION TEST (batch_read behavioral)", () => {
 		// (c) Collect surviving IDs
 		const survivingIds = new Set<string>();
 		for (const entry of entries) {
-			const id = entry?.message?.id ?? entry?.id;
+			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string") survivingIds.add(id);
+			const parentId = entry?.parentId ?? entry?.parentMessageId ?? entry?.message?.parentId ?? entry?.message?.parentMessageId;
+			if (typeof parentId === "string") survivingIds.add(parentId);
 		}
 
 		// (d) NO surviving message has a parentId referencing a dropped message

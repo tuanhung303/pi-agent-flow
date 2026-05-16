@@ -399,8 +399,10 @@ export default function (pi: ExtensionAPI) {
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
 					{
+						forkedFrom: ctx.sessionManager.getSessionId(),
 						forkedAt: new Date().toISOString(),
 						depth: currentDepth + 1,
+						...(ancestorFlowStack.length > 0 ? { parentFlow: ancestorFlowStack[ancestorFlowStack.length - 1] } : {}),
 					},
 				);
 

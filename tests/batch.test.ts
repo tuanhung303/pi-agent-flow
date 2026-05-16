@@ -439,6 +439,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
+			expect(result.details.results[0].status).toBe("ok");
 			const lines = result.details.results[0].content.split("\n").filter(Boolean);
 			expect(lines.length).toBeLessThanOrEqual(1);
 		});

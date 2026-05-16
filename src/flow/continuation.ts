@@ -59,13 +59,16 @@ export function setupContinuation(pi: ExtensionAPI): void {
         ? [{ type: "text", text: event.message.content }]
         : event.message.content;
 
-    for (const part of contentParts as any[]) {
-      if (part.type === "toolCall" && part.name === "flow") {
-        const args = part.arguments;
+    for (const part of contentParts) {
+      if (part && typeof part === "object" && "type" in part && part.type === "toolCall" && "name" in part && part.name === "flow") {
+        const args = (part as { arguments?: Record<string, unknown> }).arguments;
         if (args && Array.isArray(args.flow)) {
           const hasComplete = args.flow.some(
-            (f: any) =>
-              f && typeof f.type === "string" && f.type.toLowerCase() === "complete",
+            (f: unknown) => {
+              if (!f || typeof f !== "object") return false;
+              const ft = (f as Record<string, unknown>).type;
+              return typeof ft === "string" && ft.toLowerCase() === "complete";
+            },
           );
           if (hasComplete) {
             updateGoalStatus(cwd, "completed");
