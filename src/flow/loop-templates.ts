@@ -3,7 +3,7 @@
  */
 
 export const autoWarpTriggerTemplate = `<flow-loop-warp>
-The active goal has exceeded its budget, but the endless loop is active. Call /flow:warp to continue in a new session.
+The active goal has exceeded its budget, but the endless loop is active. Call the warp tool to continue in a new session.
 
 Objective: {{objective}}
 {{acceptanceClause}}

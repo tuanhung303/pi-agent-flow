@@ -32,14 +32,17 @@ describe("auto-warp orchestration", () => {
   }
 
   it("shouldAutoWarp returns false when no active loop", () => {
-    const goal = setGoal(tmpDir, "Test", { maxTokens: 100, maxFlows: 10 });
-    // Simulate budget exceeded
-    for (let i = 0; i < 10; i++) {
-      // We need to exceed maxFlows; store doesn't have a direct way to add flows without recordFlowCompletion
-      // but we can test via shouldAutoWarp by passing a modified goal or by testing the logic differently.
-      // Actually shouldAutoWarp reads goal from args, not from store. So we can construct one.
-    }
-    const exceededGoal = { ...goal, completedFlows: Array(10).fill({ type: "build", intent: "x", aim: "x", completedAt: "2026-01-01T00:00:00Z" }) };
+    const exceededGoal = {
+      id: "goal-test",
+      objective: "Test",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      status: "active" as const,
+      completedFlows: Array(10).fill({ type: "build", intent: "x", aim: "x", completedAt: "2026-01-01T00:00:00Z" }),
+      totalTokens: 0,
+      maxTokens: 100,
+      maxFlows: 10,
+    };
     expect(shouldAutoWarp(tmpDir, exceededGoal)).toBe(false);
   });
 

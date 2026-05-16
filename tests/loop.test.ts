@@ -148,4 +148,29 @@ describe("loop state management", () => {
     const fromFile = getLoop(tmpDir);
     expect(fromFile?.pendingWarpSessionId).toBeUndefined();
   });
+
+  it("(15) setGoal with maxTokens auto-enables loop", () => {
+    const entry = setGoal(tmpDir, "test objective", { maxTokens: 1000 });
+    const loop = getLoop(tmpDir);
+    expect(loop).toBeDefined();
+    expect(loop?.status).toBe("active");
+    expect(loop?.objective).toBe("test objective");
+    expect(loop?.sessionCount).toBe(1);
+    expect(loop?.totalTokensAcrossSessions).toBe(0);
+    expect(loop?.totalFlowsAcrossSessions).toBe(0);
+  });
+
+  it("(16) setGoal with maxFlows auto-enables loop", () => {
+    setGoal(tmpDir, "test objective", { maxFlows: 10 });
+    const loop = getLoop(tmpDir);
+    expect(loop).toBeDefined();
+    expect(loop?.status).toBe("active");
+    expect(loop?.objective).toBe("test objective");
+  });
+
+  it("(17) setGoal without budgets does not auto-enable loop", () => {
+    setGoal(tmpDir, "test objective");
+    const loop = getLoop(tmpDir);
+    expect(loop).toBeUndefined();
+  });
 });

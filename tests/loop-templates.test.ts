@@ -36,6 +36,10 @@ describe("loop templates placeholder coverage", () => {
     }
   });
 
+  it("autoWarpTriggerTemplate mentions the warp tool", () => {
+    expect(autoWarpTriggerTemplate).toContain("warp tool");
+  });
+
   it("loopWakeupTemplate covers all required placeholders", () => {
     const placeholders = [
       "{{objective}}",

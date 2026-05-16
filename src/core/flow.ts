@@ -299,7 +299,6 @@ function buildFlowArgs(
 	parentFlowStack: string[] = [],
 	preventCycles: boolean = true,
 	goalContext?: GoalContext,
-	maxContextTokens?: number,
 	cwd?: string,
 ): string[] {
 	const args: string[] = [
@@ -332,7 +331,6 @@ function buildFlowArgs(
 
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
 	if (resolvedModel) args.push("--model", resolvedModel);
-	if (maxContextTokens !== undefined) args.push("--max-context-tokens", String(maxContextTokens));
 
 	// Opt out of appending the structured JSON appendix to the child `-p` mission.
 	// Set `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE=1` if a provider rejects that prompt shape.
@@ -615,7 +613,6 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			parentFlowStack,
 			preventCycles,
 			opts.goalContext,
-			resolvedMaxContextTokens,
 			cwd,
 		);
 

@@ -375,8 +375,7 @@ export default function (pi: ExtensionAPI) {
 				"Flow states are isolated π processes with forked session snapshots. They run in parallel.",
 				'Invoke: { "flow": [{ "type": "scout", "intent": "...", "aim": "...", "sessionMode": "default" }, ...] }',
 				"Session modes: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
-				"States: scout, debug, build, craft, audit, ideas, warp.",
-				"warp — distill context and hand off to a fresh session; used by the endless loop when budget is exceeded, or when explicitly requested by the user.",
+				"States: scout, debug, build, craft, audit, ideas.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,
@@ -495,6 +494,24 @@ export default function (pi: ExtensionAPI) {
 				renderFlowResult(result, expanded, theme, args),
 		});
 	}
+
+	// Register the warp tool (routes to /flow:warp command handler)
+	pi.registerTool({
+		name: "warp",
+		label: "Warp",
+		description: "Distill conversation context and hand off to a fresh session. Use this when the endless loop budget is exceeded or when explicitly requested by the user to continue in a new session.",
+		parameters: Type.Object({
+			goal: Type.Optional(Type.String({ description: "Optional goal for the new session." })),
+		}),
+		async execute(_toolCallId, params) {
+			const goal = (params as any).goal?.trim?.() ?? "";
+			pi.sendUserMessage(`/flow:warp${goal ? " " + goal : ""}`);
+			return {
+				content: [{ type: "text", text: "Warp command sent. A new session will be created with distilled context." }],
+				isError: false,
+			};
+		},
+	});
 
 	// -------------------------------------------------------------------------
 	// Public plugin API — expose for third-party extensions

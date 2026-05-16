@@ -11,6 +11,7 @@ import * as path from "node:path";
 import { parseAgentSessionMode, type AgentSessionMode } from "../core/session-mode.js";
 import { type FlowTier } from "../core/agents.js";
 import { logWarn } from "./log.js";
+import { resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
 
 
 export interface FlowModelTierConfig {
@@ -527,6 +528,10 @@ export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStr
 
 export function resolveModelContextWindow(model?: string): number | undefined {
 	if (!model) return undefined;
+	// Prefer live models.json lookup (supports any provider/modelId format).
+	const fromModels = resolveModelContextWindowFromModels(model);
+	if (fromModels !== undefined) return fromModels;
+	// Fallback to hardcoded heuristics for bare model names without a provider prefix.
 	const m = model.toLowerCase();
 	// Claude
 	if (m.includes("claude-3.7-sonnet")) return 200_000;

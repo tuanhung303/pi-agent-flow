@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { setupContinuation, markFlowCompleted } from "../src/flow/continuation.js";
 import { setGoal, clearGoal, getGoal } from "../src/flow/store.js";
-import { setLoop, clearLoop } from "../src/flow/loop.js";
+import { setLoop, clearLoop, disableLoop } from "../src/flow/loop.js";
 import * as sessionRegistry from "../src/core/session-registry.js";
 import type { TurnEndEvent } from "@mariozechner/pi-coding-agent";
 
@@ -65,6 +65,7 @@ describe("continuation loop integration", () => {
     // Re-create with fresh state
     clearGoal(tmpDir);
     setGoal(tmpDir, "Test goal", { maxTokens: 100, sessionId: "session-a" });
+    disableLoop(tmpDir);
     // Manually write state to exceed budget
     const statePath = path.join(tmpDir, ".pi", "flow.json");
     const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));

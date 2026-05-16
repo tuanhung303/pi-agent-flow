@@ -100,6 +100,15 @@ export function setGoal(
     pruneHistory(state);
   }
   state.current = entry;
+  if (opts?.maxTokens || opts?.maxFlows) {
+    state.loop = {
+      objective,
+      status: "active",
+      sessionCount: 1,
+      totalTokensAcrossSessions: 0,
+      totalFlowsAcrossSessions: 0,
+    };
+  }
   writeState(cwd, state);
   return entry;
 }
