@@ -116,7 +116,7 @@ npm test -- --run tests/snapshot-integration.test.ts
 npm test -- --run
 ```
 
-**Assertion:** `971 passed` (current baseline). Any drop means a regression elsewhere in the codebase.
+**Assertion:** `980 passed` (current baseline). Any drop means a regression elsewhere in the codebase.
 
 ### Step 4 — Live Dump Verification
 
