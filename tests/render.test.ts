@@ -193,15 +193,15 @@ describe("getTruncationBudget", () => {
 		}
 	});
 
-	it("floors terminal width at 40", () => {
+	it("floors terminal width at 20", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 30;
-			expect(getTruncationBudget(0)).toBe(37);
+			expect(getTruncationBudget(0)).toBe(27);
 
-			(process.stdout as any).columns = 20;
-			// width floored to 40, then 40 - 10 = 30, but floor of 8 means 30
-			expect(getTruncationBudget(10)).toBe(27);
+			(process.stdout as any).columns = 15;
+			// width floored to 20, then 20 - 10 = 10, but floor of 8 means 10
+			expect(getTruncationBudget(10)).toBe(8);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}

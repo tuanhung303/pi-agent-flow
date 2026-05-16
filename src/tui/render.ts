@@ -553,7 +553,7 @@ function renderFlowCollapsed(
 	const maxWidth = process.stdout.columns ?? 80;
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
-	const headerPrefixLen = visibleLength(typeName) + visibleLength(modelLabel ? f'    {modelLabel} · ' : "    ");
+	const headerPrefixLen = visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 	const stats = formatCompactStats(r.usage, r.model, Math.max(maxWidth - headerPrefixLen, 20), { skipTokens: true, skipContext: true, hideModel: true });
 
 	const isComplete = r.exitCode !== -1;
@@ -881,7 +881,11 @@ function renderActivityPanel(
 		const r = results[i];
 		const isLast = i === results.length - 1;
 		const flowId = `${idPrefix}#${i}`;
-		const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
+		const typeName = formatCollapsedFlowHeaderTypeName(r.type);
+		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
+		const headerPrefix = isLast ? "└─" : "├─";
+		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
+		const stats = formatCompactStats(r.usage, r.model, Math.max(maxWidth - headerPrefixLen, 20), { skipTokens: true, skipContext: true, hideModel: true });
 
 		// Flash TPS value when it changes
 		const tpsMatch = stats.match(/tps:\s*(\S+)/);
@@ -895,11 +899,8 @@ function renderActivityPanel(
 		}
 
 		const error = isFlowError(r);
-		const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 
 		// Header line
-		const headerPrefix = isLast ? "└─" : "├─";
-		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
 		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
@@ -930,8 +931,16 @@ function renderActivityPanel(
 			container.addChild(new DynamicScrambleText(
 				`${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", aimLabel, theme, config)}${applyRole("aimContent", displayAim, theme, config)}`,
 				() => {
-					const result = scrambleManager.updateAim(flowId, displayAim, Date.now(), flowComplete, true);
-					return `${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", aimLabel, theme, config)}${applyRole("aimContent", result.content, theme, config)}`;
+					const now = Date.now();
+					const freshCountdown = getLiveCountdown(r);
+					const freshAimLabel = freshCountdown
+						? ` aim ▸ ${freshCountdown} · `
+						: ` aim ▸ `;
+					const freshAimPrefix = `${aimTree}${freshAimLabel}`;
+					const freshBudget = getTruncationBudget(visibleLength(freshAimPrefix));
+					const freshText = truncateChars(lowerFirstWord(r.aim), freshBudget);
+					const result = scrambleManager.updateAim(flowId, freshText, now, flowComplete, true);
+					return `${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", freshAimLabel, theme, config)}${applyRole("aimContent", result.content, theme, config)}`;
 				},
 				true,
 			));
