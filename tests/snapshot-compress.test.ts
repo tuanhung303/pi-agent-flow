@@ -36,7 +36,7 @@ function makeSnapshot(lines: any[]): string {
 }
 
 describe("compressToolResults — batch", () => {
-	it("truncates read content but keeps bash sections verbatim", () => {
+	it("truncates read content and compresses bash sections", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -59,9 +59,12 @@ describe("compressToolResults — batch", () => {
 		expect(result).toContain("2 operations: 1 read, 1 bash");
 		expect(result).toContain("--- src/file.ts (42 lines, content truncated) ---");
 		expect(result).not.toContain("line 1\nline 2");
-		expect(result).toContain("--- bash [abc] exit 0 ---");
-		expect(result).toContain("[Execution time: 0.5s (avg)]");
-		expect(result).toContain("output");
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[bash:ok] abc · exit 0 · 0.5s (avg) · 1 line\n> head:\noutput");
+		expect(result).not.toContain("--- bash [abc] exit 0 ---");
 	});
 
 	it("truncates context map sections", () => {
@@ -111,7 +114,7 @@ describe("compressToolResults — batch", () => {
 		expect(result).toContain("--- edit: src/index.ts (2 blocks) ---");
 	});
 
-	it("truncates oversized bash sections in snapshots", () => {
+	it("compresses oversized bash sections in snapshots at depth 1", () => {
 		const longOutput = Array.from({ length: 1000 }, (_, i) => `output line ${i + 1}`).join("\n");
 		const snapshot = makeSnapshot([
 			{
@@ -131,15 +134,17 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- bash [big] exit 0 ---");
-		expect(result).toContain("[Execution time: 0.5s (avg)]");
-		expect(result).toContain("output line 1");
-		expect(result).toContain("output line 1000");
-		// Bash sections are kept verbatim — no truncation marker expected
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[bash:ok] big · exit 0 · 0.5s (avg) · 1000 lines\n> head:\noutput line 1\noutput line 2\noutput line 3");
+		expect(text).not.toContain("output line 1000");
+		expect(result).not.toContain("--- bash [big] exit 0 ---");
 	});
 
-	it("truncates pending bash sections in snapshots", () => {
+	it("compresses pending bash sections in snapshots at depth 1", () => {
 		const longOutput = Array.from({ length: 1000 }, (_, i) => `pending line ${i + 1}`).join("\n");
 		const snapshot = makeSnapshot([
 			{
@@ -159,11 +164,14 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- bash [pending1] pending ---");
-		expect(result).toContain("pending line 1");
-		expect(result).toContain("pending line 1000");
-		// Bash sections are kept verbatim — no truncation marker expected
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[bash:pending] pending1 · still running · 1000 lines partial\n> head:\npending line 1\npending line 2\npending line 3");
+		expect(text).not.toContain("pending line 1000");
+		expect(result).not.toContain("--- bash [pending1] pending ---");
 	});
 
 	it("does not truncate on --- lines inside file content", () => {
@@ -188,9 +196,322 @@ describe("compressToolResults — batch", () => {
 		const result = compressToolResults(snapshot, new Map());
 		expect(result).toContain("--- README.md (10 lines, content truncated) ---");
 		expect(result).not.toContain("Some content after horizontal rule");
-		expect(result).toContain("--- bash [abc] exit 0 ---");
-		expect(result).toContain("[Execution time: 0.1s]");
-		expect(result).toContain("output");
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[bash:ok] abc · exit 0 · 0.1s · 1 line\n> head:\noutput");
+		expect(result).not.toContain("--- bash [abc] exit 0 ---");
+	});
+});
+
+describe("compressToolResults — X1 bash compression (depth 1)", () => {
+	function getBatchText(result: string): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("Scenario 1: successful bash with output", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [npm-test-abc] exit 0 ---\n[Execution time: 2.3s (avg)]\nPASS src/utils/parse.test.ts\nPASS src/core/flow.test.ts\nTests: 15 passed, 15 total",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:ok] npm-test-abc · exit 0 · 2.3s (avg) · 3 lines\n> head:\nPASS src/utils/parse.test.ts\nPASS src/core/flow.test.ts\nTests: 15 passed, 15 total");
+	});
+
+	it("Scenario 2: successful bash with large output", () => {
+		const longOutput = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm run build" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `1 operation: 1 bash\n\n--- bash [build-def] exit 0 ---\n[Execution time: 8.1s (long)]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:ok] build-def · exit 0 · 8.1s (long) · 100 lines\n> head:\nline 1\nline 2\nline 3");
+		expect(text).not.toContain("line 100");
+	});
+
+	it("Scenario 3: pending bash", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "grep -r foo src/", i: "long-grep-ghi" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '1 operation: 1 bash\n\n--- bash [long-grep-ghi] pending ---\n[partial output]\nsrc/core/flow.ts:234\nsrc/core/agents.ts:89\nsrc/snapshot/snapshot.ts:176\n[Use batch_bash_poll with i: ["long-grep-ghi"] to check results]',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:pending] long-grep-ghi · still running · 3 lines partial\n> head:\nsrc/core/flow.ts:234\nsrc/core/agents.ts:89\nsrc/snapshot/snapshot.ts:176");
+	});
+
+	it("Scenario 4: error bash with stderr", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm run lint" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [lint-jkl] error ---\n[Execution time: 1.2s (avg)]\n[stderr]\nsrc/core/flow.ts:45:3: Error: Unexpected token. (eslint)\nsrc/index.ts:12:1: Warning: Missing return type.",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:err] lint-jkl · 1.2s (avg) · 2 lines stderr\n> stderr:\nsrc/core/flow.ts:45:3: Error: Unexpected token. (eslint)\nsrc/index.ts:12:1: Warning: Missing return type.");
+	});
+
+	it("Scenario 5: bash with no output", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "git status" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [git-status-mno] exit 0 ---\n[Execution time: 0.1s (normal)]",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:ok] git-status-mno · exit 0 · 0.1s (normal) · 0 lines");
+	});
+
+	it("Scenario 6: multi-bash batch result", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "node -v", i: "check-node-pqr" }, { o: "bash", p: ".", c: "git status", i: "check-git-stu" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "2 operations: 2 bash\n\n--- bash [check-node-pqr] exit 0 ---\n[Execution time: 0.1s (normal)]\nv20.12.2\n\n--- bash [check-git-stu] exit 0 ---\n[Execution time: 0.2s (normal)]\nOn branch main\nYour branch is up to date with 'origin/main'.",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:ok] check-node-pqr · exit 0 · 0.1s (normal) · 1 line\n> head:\nv20.12.2");
+		expect(text).toContain("[bash:ok] check-git-stu · exit 0 · 0.2s (normal) · 2 lines\n> head:\nOn branch main\nYour branch is up to date with 'origin/main'.");
+	});
+});
+
+describe("compressToolResults — X1 bash compression (depth 2+)", () => {
+	it("Scenario 1: successful bash with output → status only", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [npm-test-abc] exit 0 ---\n[Execution time: 2.3s (avg)]\nPASS src/utils/parse.test.ts\nPASS src/core/flow.test.ts\nTests: 15 passed, 15 total",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:ok] npm-test-abc · exit 0");
+		expect(result).not.toContain("PASS src/utils/parse.test.ts");
+		expect(result).not.toContain("> head:");
+	});
+
+	it("Scenario 2: successful bash with large output → status only", () => {
+		const longOutput = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm run build" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `1 operation: 1 bash\n\n--- bash [build-def] exit 0 ---\n[Execution time: 8.1s (long)]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:ok] build-def · exit 0");
+		expect(result).not.toContain("line 1");
+		expect(result).not.toContain("> head:");
+	});
+
+	it("Scenario 3: pending bash → status only", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "grep -r foo src/", i: "long-grep-ghi" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '1 operation: 1 bash\n\n--- bash [long-grep-ghi] pending ---\n[partial output]\nsrc/core/flow.ts:234\nsrc/core/agents.ts:89\nsrc/snapshot/snapshot.ts:176\n[Use batch_bash_poll with i: ["long-grep-ghi"] to check results]',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:pending] long-grep-ghi · still running");
+		expect(result).not.toContain("src/core/flow.ts:234");
+		expect(result).not.toContain("> head:");
+	});
+
+	it("Scenario 4: error bash with stderr → status only", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm run lint" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [lint-jkl] error ---\n[Execution time: 1.2s (avg)]\n[stderr]\nsrc/core/flow.ts:45:3: Error: Unexpected token. (eslint)\nsrc/index.ts:12:1: Warning: Missing return type.",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:err] lint-jkl");
+		expect(result).not.toContain("src/core/flow.ts:45:3");
+		expect(result).not.toContain("> stderr:");
+	});
+
+	it("Scenario 5: bash with no output → status only", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "git status" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [git-status-mno] exit 0 ---\n[Execution time: 0.1s (normal)]",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:ok] git-status-mno · exit 0");
+		expect(result).not.toContain("0 lines");
+	});
+
+	it("Scenario 6: multi-bash batch result → status only lines", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "node -v", i: "check-node-pqr" }, { o: "bash", p: ".", c: "git status", i: "check-git-stu" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "2 operations: 2 bash\n\n--- bash [check-node-pqr] exit 0 ---\n[Execution time: 0.1s (normal)]\nv20.12.2\n\n--- bash [check-git-stu] exit 0 ---\n[Execution time: 0.2s (normal)]\nOn branch main\nYour branch is up to date with 'origin/main'.",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:ok] check-node-pqr · exit 0");
+		expect(result).toContain("[bash:ok] check-git-stu · exit 0");
+		expect(result).not.toContain("v20.12.2");
+		expect(result).not.toContain("On branch main");
+		expect(result).not.toContain("> head:");
 	});
 });
 

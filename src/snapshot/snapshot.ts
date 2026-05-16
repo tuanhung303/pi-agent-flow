@@ -161,6 +161,8 @@ const KNOWN_SECTION_HEADERS = [
 	/^--- (.+) \((\d+) lines\) ---$/,
 	/^--- (.+) (context map|file summary) ---$/,
 	/^--- bash \[.+\] exit (\d+) ---$/,
+	/^--- bash \[.+\] pending ---$/,
+	/^--- bash \[.+\] error ---$/,
 	/^--- edit: .+ ---$/,
 	/^--- write: .+ ---$/,
 	/^--- delete: .+ ---$/,
@@ -172,14 +174,110 @@ function isKnownSectionHeader(line: string): boolean {
 	return KNOWN_SECTION_HEADERS.some((re) => re.test(line));
 }
 
-/** Compress batch tool result: keep bash sections verbatim, truncate read content. */
-function compressBatchResult(text: string): string {
+/** Compress a single bash block into the X1 compact format. */
+function compressBashSection(
+	bashId: string,
+	status: "ok" | "pending" | "error",
+	exitCode: number | undefined,
+	timingTier: string | undefined,
+	stdoutLines: string[],
+	stderrLines: string[],
+	depth: number,
+): string {
+	const isDepth1 = depth < 2;
+	const tier = timingTier ? ` · ${timingTier}` : "";
+	// Trim trailing empty lines inserted by multi-bash formatting
+	while (stdoutLines.length > 0 && stdoutLines[stdoutLines.length - 1] === "") stdoutLines.pop();
+	while (stderrLines.length > 0 && stderrLines[stderrLines.length - 1] === "") stderrLines.pop();
+
+	if (status === "ok") {
+		const lineCount = stdoutLines.length;
+		const linesLabel = lineCount === 1 ? "1 line" : `${lineCount} lines`;
+		if (isDepth1) {
+			if (lineCount === 0) {
+				return `[bash:ok] ${bashId} · exit ${exitCode}${tier} · 0 lines`;
+			}
+			const head = stdoutLines.slice(0, 3).join("\n");
+			return `[bash:ok] ${bashId} · exit ${exitCode}${tier} · ${linesLabel}\n> head:\n${head}`;
+		}
+		return `[bash:ok] ${bashId} · exit ${exitCode}`;
+	}
+
+	if (status === "pending") {
+		const lineCount = stdoutLines.length;
+		const linesLabel = lineCount === 1 ? "1 line partial" : `${lineCount} lines partial`;
+		if (isDepth1) {
+			if (lineCount === 0) {
+				return `[bash:pending] ${bashId} · still running · 0 lines partial`;
+			}
+			const head = stdoutLines.slice(0, 3).join("\n");
+			return `[bash:pending] ${bashId} · still running · ${linesLabel}\n> head:\n${head}`;
+		}
+		return `[bash:pending] ${bashId} · still running`;
+	}
+
+	if (status === "error") {
+		const lineCount = stderrLines.length;
+		const linesLabel = lineCount === 1 ? "1 line stderr" : `${lineCount} lines stderr`;
+		const exit = exitCode !== undefined ? ` · exit ${exitCode}` : "";
+		if (isDepth1) {
+			if (lineCount === 0) {
+				return `[bash:err] ${bashId}${exit}${tier} · 0 lines`;
+			}
+			const head = stderrLines.slice(0, 3).join("\n");
+			return `[bash:err] ${bashId}${exit}${tier} · ${linesLabel}\n> stderr:\n${head}`;
+		}
+		return `[bash:err] ${bashId}${exit}`;
+	}
+
+	return `[bash] ${bashId} · status unknown`;
+}
+
+/** Compress batch tool result: compress bash sections, truncate read content. */
+function compressBatchResult(text: string, depth: number = 1): string {
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
 	const out: string[] = [];
 	let i = 0;
 
 	while (i < lines.length) {
 		const line = lines[i];
+
+		// Bash section — compress with X1 protocol
+		const bashMatch = line.match(/^--- bash \[([^\]]+)\] (exit (\d+)|pending|error) ---$/);
+		if (bashMatch) {
+			const bashId = bashMatch[1];
+			const rawStatus = bashMatch[2];
+			const status: "ok" | "pending" | "error" = rawStatus.startsWith("exit") ? "ok" : rawStatus as "pending" | "error";
+			const exitCode = bashMatch[3] !== undefined ? Number(bashMatch[3]) : undefined;
+			i++;
+			let timingTier: string | undefined;
+			const stdoutLines: string[] = [];
+			const stderrLines: string[] = [];
+			let inStderr = false;
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				const contentLine = lines[i];
+				const timingMatch = contentLine.match(/^\[Execution time: (.+)\]$/);
+				if (timingMatch) {
+					timingTier = timingMatch[1];
+				} else if (contentLine === "[stderr]") {
+					inStderr = true;
+				} else if (contentLine === "[partial output]") {
+					// pending partial output marker — stdout follows
+					inStderr = false;
+				} else if (contentLine.startsWith("[Use batch_bash_poll")) {
+					// skip poll hint lines
+				} else {
+					if (inStderr) {
+						stderrLines.push(contentLine);
+					} else {
+						stdoutLines.push(contentLine);
+					}
+				}
+				i++;
+			}
+			out.push(compressBashSection(bashId, status, exitCode, timingTier, stdoutLines, stderrLines, depth));
+			continue;
+		}
 
 		// File read section with content — truncate
 		const readMatch = line.match(/^--- (.+) \((\d+) lines\) ---$/);
@@ -215,7 +313,7 @@ function compressBatchResult(text: string): string {
 			continue;
 		}
 
-		// Everything else (bash, edit, write, delete, error, summary) — keep as-is
+		// Everything else (edit, write, delete, error, summary) — keep as-is
 		out.push(line);
 		i++;
 	}
@@ -322,7 +420,7 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
  * - `batch_read` results: replaced with compact metadata (paths + op count)
  *   since children have `batch` and can re-read files themselves.
  */
-export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
+export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>, depth: number = 1): string {
 	const lines = snapshot.trimEnd().split("\n");
 
 	// Quick check: if there are no flow cache entries and no compressible tool calls,
@@ -445,10 +543,10 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			}
 		}
 
-		// --- Compress batch tool results (selective: keep bash, truncate reads) ---
+		// --- Compress batch tool results (selective: compress bash, truncate reads) ---
 		else if (toolName === "batch") {
 			originalText = extractToolResultText(entry) ?? "";
-			rendered = compressBatchResult(originalText);
+			rendered = compressBatchResult(originalText, depth);
 		}
 
 		// --- Compress web tool results ---
@@ -945,7 +1043,7 @@ export function sanitizeForkSnapshot(
 	passesApplied.push("stripBatchRead");
 
 	// Compress tool results (flow, batch, web, ask_user).
-	sanitized = compressToolResults(sanitized, cache);
+	sanitized = compressToolResults(sanitized, cache, options?.depth ?? 1);
 	passesApplied.push("compressToolResults");
 
 	// Reparent again after stripBatchRead and compressToolResults may have
