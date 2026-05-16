@@ -114,6 +114,17 @@ export function formatCountdownRemaining(deadlineAtMs?: number): string | undefi
 	return formatCountdown(remaining);
 }
 
+/** Format a context-token label for flow headers. */
+export function formatContextLabel(contextTokens: number, maxContextTokens?: number): string | undefined {
+	if (maxContextTokens) {
+		return `${formatFixedTokens(contextTokens).trim()}/${formatFixedTokens(maxContextTokens).trim()}`;
+	}
+	if (contextTokens > 0) {
+		return `${formatFixedTokens(contextTokens).trim()} ctx`;
+	}
+	return undefined;
+}
+
 /** Regex matching ANSI escape sequences. */
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 

@@ -604,7 +604,7 @@ describe("activity panel rendering", () => {
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
 		expect(headerLine).toContain("scout");
-		expect(headerLine).not.toContain("ctx:");
+		expect(headerLine).toContain("50.0k ctx");
 		expect(headerLine).not.toContain("▲ 46.7k");
 		expect(text).toContain("msg ▸ Flow timed out after 600s.");
 	});
@@ -622,12 +622,12 @@ describe("activity panel rendering", () => {
 				usage: { input: 46_700, output: 4_600, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 50_000, turns: 2, toolCalls: 0 },
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+			scrambleManager.setAnimationConfig({ enabled: false, glitch: false });
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			const firstHeaderLine = text.split("\n")[0];
-			// Header is scrambled on first render for in-progress flows
-			expect(firstHeaderLine.length).toBeGreaterThan(0);
-			expect(firstHeaderLine).not.toContain("ctx:");
+			expect(firstHeaderLine).toContain("scout");
+			expect(firstHeaderLine).toContain("50.0k ctx");
 			expect(firstHeaderLine).not.toContain("▲ 46.7k");
 			// Aim prefix is static, content may be scrambled
 			expect(text).toContain("aim ▸");

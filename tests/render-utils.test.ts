@@ -8,6 +8,7 @@ import {
   lowerFirstWord,
   formatModelLabel,
   formatCountdownRemaining,
+  formatContextLabel,
 } from '../src/tui/render-utils.js';
 
 describe('visibleLength', () => {
@@ -171,5 +172,27 @@ describe('formatCountdownRemaining', () => {
 
   it('returns undefined for past deadlines', () => {
     expect(formatCountdownRemaining(Date.now() - 1000)).toBeUndefined();
+  });
+});
+
+describe('formatContextLabel', () => {
+  it('returns undefined when contextTokens is 0 and no max', () => {
+    expect(formatContextLabel(0)).toBeUndefined();
+  });
+
+  it('returns token count with ctx suffix when no max', () => {
+    expect(formatContextLabel(500)).toBe('500 ctx');
+    expect(formatContextLabel(1300)).toBe('1.3k ctx');
+    expect(formatContextLabel(32000)).toBe('32.0k ctx');
+  });
+
+  it('returns ratio when maxContextTokens is provided', () => {
+    expect(formatContextLabel(500, 4000)).toBe('500/4.0k');
+    expect(formatContextLabel(1300, 8000)).toBe('1.3k/8.0k');
+    expect(formatContextLabel(32000, 200000)).toBe('32.0k/0.20M');
+  });
+
+  it('shows 0/max ratio when max is provided even if context is 0', () => {
+    expect(formatContextLabel(0, 128000)).toBe('0/0.13M');
   });
 });

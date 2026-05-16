@@ -48,7 +48,7 @@ function getLiveTextWithFallback(id: string): string | undefined {
 	const fallbackId = id.includes("#") ? "collapsed" + id.slice(id.indexOf("#")) : "collapsed";
 	return getLiveText(fallbackId);
 }
-import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatCountdownRemaining } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatCountdownRemaining, formatContextLabel } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -554,10 +554,12 @@ function renderFlowCollapsed(
 
 	const isComplete = r.exitCode !== -1;
 
-	// Build header stats: countdown · tok/s
+	// Build header stats: countdown · ctxLabel · tok/s
 	const countdown = formatCountdownRemaining(r.deadlineAtMs);
+	const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 	const statsParts: string[] = [];
 	if (countdown) statsParts.push(countdown);
+	if (ctxLabel) statsParts.push(ctxLabel);
 	const tpsValue = r.usage.smoothedTps;
 	const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 	if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
@@ -860,10 +862,12 @@ function renderActivityPanel(
 		const headerPrefix = isLast ? "└─" : "├─";
 		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 
-		// Build header stats: countdown · tok/s
+		// Build header stats: countdown · ctxLabel · tok/s
 		const countdown = formatCountdownRemaining(r.deadlineAtMs);
+		const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 		const statsParts: string[] = [];
 		if (countdown) statsParts.push(countdown);
+		if (ctxLabel) statsParts.push(ctxLabel);
 		const tpsValue = r.usage.smoothedTps;
 		const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 		if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
