@@ -111,6 +111,7 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
         const abortController = new AbortController();
         const id = `warp-${Date.now()}`;
         let completed = false;
+        const RESTART_DELAY_MS = 1500;
 
         class WarpingComponent {
           private scramble: DynamicScrambleText;
@@ -142,6 +143,17 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
                 tui.requestRender();
                 this.scheduleNext();
               }, 100);
+            } else {
+              this.timer = setTimeout(() => {
+                this.timer = undefined;
+                if (completed) return;
+                // Reset scramble state and restart animation
+                scrambleManager.completeFlow(id);
+                const restartNow = Date.now();
+                scrambleManager.updateText(id, "warp", "warping...", restartNow, false);
+                tui.requestRender();
+                this.scheduleNext();
+              }, RESTART_DELAY_MS);
             }
           }
 
