@@ -1,8 +1,8 @@
 # Shared Context Compression Pipeline — Living Improvement Prompt
 
-> **Version:** 1.0.0  
-> **Scope:** `src/snapshot/snapshot.ts` sanitization pipeline  
-> **Goal:** Continuously improve the shared context passed from parent → child flows while maintaining zero regression risk.  
+> **Version:** 1.0.0
+> **Scope:** `src/snapshot/snapshot.ts` sanitization pipeline
+> **Goal:** Continuously improve the shared context passed from parent → child flows while maintaining zero regression risk.
 > **Target audience:** Any future agent (craft / build / audit) tasked with compression pipeline work.
 
 ---
