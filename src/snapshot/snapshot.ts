@@ -167,7 +167,8 @@ const KNOWN_SECTION_HEADERS = [
 	/^--- write: .+ ---$/,
 	/^--- delete: .+ ---$/,
 	/^--- read: .+ ---$/,
-	/^--- (?!bash \[|edit:|write:|delete:|read:)(.+) ---$/,
+	/^--- rg: .+ ---$/,
+	/^--- (?!bash \[|edit:|write:|delete:|read:|rg:)(.+) ---$/,
 ];
 
 function isKnownSectionHeader(line: string): boolean {
@@ -233,11 +234,151 @@ function compressBashSection(
 	return `[bash] ${bashId} · status unknown`;
 }
 
-/** Compress batch tool result: compress bash sections, truncate read content. */
-function compressBatchResult(text: string, depth: number = 1): string {
+
+// ---------------------------------------------------------------------------
+// Dedup index for batch tool results (W1 + E1)
+// ---------------------------------------------------------------------------
+
+interface DedupIndex {
+	latestWrite: Map<string, string>;
+	latestEdit: Map<string, string>;
+	latestDelete: Map<string, string>;
+}
+
+function extractToolResultTextInline(entry: any): string | undefined {
+	if (typeof entry.message?.content === "string") {
+		return entry.message.content;
+	}
+	if (Array.isArray(entry.message?.content)) {
+		for (const part of entry.message.content) {
+			if (part.type === "text" && typeof part.text === "string") {
+				return part.text;
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Scan all batch tool results in the snapshot and build a DedupIndex.
+ * Only successful writes/edits/deletes are tracked; error operations are exempt.
+ */
+function buildDedupIndex(lines: string[], toolCallIdToName: Map<string, string>): DedupIndex {
+	const latestWrite = new Map<string, string>();
+	const latestEdit = new Map<string, string>();
+	const latestDelete = new Map<string, string>();
+
+	for (const line of lines) {
+		let entry: any;
+		try { entry = JSON.parse(line); } catch { continue; }
+		if (entry?.type !== "message" || (entry.message?.role !== "tool" && entry.message?.role !== "toolResult")) continue;
+
+		const toolCallId = entry.message?.toolCallId;
+		if (typeof toolCallId !== "string") continue;
+		if (toolCallIdToName.get(toolCallId) !== "batch") continue;
+
+		const text = extractToolResultTextInline(entry) ?? "";
+		const textLines = text.replace(/\r\n/g, "\n").split("\n");
+
+		for (let i = 0; i < textLines.length; i++) {
+			const l = textLines[i];
+
+			// Successful write
+			const writeMatch = l.match(/^--- write: (.+) \((\d+) bytes\) ---$/);
+			if (writeMatch) {
+				const path = writeMatch[1].trim();
+				latestWrite.set(path, toolCallId);
+				latestEdit.delete(path); // write supersedes earlier edits
+				continue;
+			}
+
+			// Error write — exempt from dedup
+			const errorWriteMatch = l.match(/^--- write: (.+) ---$/);
+			if (errorWriteMatch) {
+				continue;
+			}
+
+			// Successful edit
+			const editMatch = l.match(/^--- edit: (.+) \(([^)]*)\) ---$/);
+			if (editMatch) {
+				const path = editMatch[1].trim();
+				latestEdit.set(path, toolCallId);
+				continue;
+			}
+
+			// Error edit — exempt from dedup
+			const errorEditMatch = l.match(/^--- edit: (.+) ---$/);
+			if (errorEditMatch) {
+				continue;
+			}
+
+			// Delete
+			const deleteMatch = l.match(/^--- delete: (.+) ---$/);
+			if (deleteMatch) {
+				const path = deleteMatch[1].trim();
+				latestDelete.set(path, toolCallId);
+				latestWrite.delete(path); // delete supersedes earlier writes
+				latestEdit.delete(path);   // delete supersedes earlier edits
+			}
+		}
+	}
+
+	return { latestWrite, latestEdit, latestDelete };
+}
+
+/** Compress batch tool result: compress bash sections, truncate read content, dedup writes/edits/deletes (W1 + E1). */
+function compressBatchResult(
+	text: string,
+	options: {
+		depth?: number;
+		toolCallId?: string;
+		latestWrite?: Map<string, string>;
+		latestEdit?: Map<string, string>;
+		latestDelete?: Map<string, string>;
+	} = {},
+): string {
+	const depth = options.depth ?? 1;
+	const isDepth1 = depth < 2;
+	const { toolCallId, latestWrite, latestEdit, latestDelete } = options;
+
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
+
+	// Pre-scan to find the last occurrence of each operation within this result.
+	// This handles the edge case where a single batch result contains multiple
+	// writes/edits/deletes to the same path.
+	const lastWriteIndex = new Map<string, number>();
+	const lastEditIndex = new Map<string, number>();
+	const lastDeleteIndex = new Map<string, number>();
+	for (let j = 0; j < lines.length; j++) {
+		const w = lines[j].match(/^--- write: (.+) \((\d+) bytes\) ---$/);
+		if (w) lastWriteIndex.set(w[1].trim(), j);
+		const e = lines[j].match(/^--- edit: (.+) \(([^)]*)\) ---$/);
+		if (e) lastEditIndex.set(e[1].trim(), j);
+		const d = lines[j].match(/^--- delete: (.+) ---$/);
+		if (d) lastDeleteIndex.set(d[1].trim(), j);
+	}
+
 	const out: string[] = [];
 	let i = 0;
+
+	const isSupersededWrite = (path: string, index: number) => {
+		if (!toolCallId) return false;
+		const latestTc = latestWrite?.get(path);
+		if (latestTc !== toolCallId) return true;
+		return lastWriteIndex.get(path) !== index;
+	};
+	const isSupersededEdit = (path: string, index: number) => {
+		if (!toolCallId) return false;
+		const latestTc = latestEdit?.get(path);
+		if (latestTc !== toolCallId) return true;
+		return lastEditIndex.get(path) !== index;
+	};
+	const isSupersededDelete = (path: string, index: number) => {
+		if (!toolCallId) return false;
+		const latestTc = latestDelete?.get(path);
+		if (latestTc !== toolCallId) return true;
+		return lastDeleteIndex.get(path) !== index;
+	};
 
 	while (i < lines.length) {
 		const line = lines[i];
@@ -252,9 +393,20 @@ function compressBatchResult(text: string, depth: number = 1): string {
 			i++;
 			let timingTier: string | undefined;
 			const stdoutLines: string[] = [];
-			const stderrLines: string[] = [];
+			let stderrLines: string[] = [];
 			let inStderr = false;
-			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+			// Stricter section-end check for bash content: don't treat generic
+			// `--- text ---` lines as section headers (they could be bash output).
+			const isBashSectionEnd = (l: string) =>
+				/^--- bash \[.+\]/.test(l) ||
+				/^--- (.+) \((\d+) lines\) ---$/.test(l) ||
+				/^--- (.+) (context map|file summary) ---$/.test(l) ||
+				/^--- edit: .+ ---$/.test(l) ||
+				/^--- write: .+ ---$/.test(l) ||
+				/^--- delete: .+ ---$/.test(l) ||
+				/^--- read: .+ ---$/.test(l) ||
+				/^--- rg: .+ ---$/.test(l);
+			while (i < lines.length && !isBashSectionEnd(lines[i])) {
 				const contentLine = lines[i];
 				const timingMatch = contentLine.match(/^\[Execution time: (.+)\]$/);
 				if (timingMatch) {
@@ -274,6 +426,11 @@ function compressBatchResult(text: string, depth: number = 1): string {
 					}
 				}
 				i++;
+			}
+			// If error bash has no stderr but produced stdout, preserve the stdout
+			// as the error output so it isn't silently lost.
+			if (status === "error" && stderrLines.length === 0 && stdoutLines.length > 0) {
+				stderrLines = stdoutLines;
 			}
 			out.push(compressBashSection(bashId, status, exitCode, timingTier, stdoutLines, stderrLines, depth));
 			continue;
@@ -313,7 +470,109 @@ function compressBatchResult(text: string, depth: number = 1): string {
 			continue;
 		}
 
-		// Everything else (edit, write, delete, error, summary) — keep as-is
+		// Write section — W1 dedup and compression
+		const writeMatch = line.match(/^--- write: (.+) \((\d+) bytes\) ---$/);
+		if (writeMatch) {
+			const path = writeMatch[1].trim();
+			const bytes = writeMatch[2];
+			if (isSupersededWrite(path, i)) {
+				if (isDepth1) {
+					out.push(`[batch:write] ${path} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+			if (isDepth1) {
+				out.push(`[batch:write] ${path} (${bytes} bytes)`);
+			} else {
+				out.push(`[batch:write] ${path}`);
+			}
+			i++;
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				i++;
+			}
+			continue;
+		}
+
+		// Error write — exempt from dedup, keep verbatim
+		const errorWriteMatch = line.match(/^--- write: (.+) ---$/);
+		if (errorWriteMatch) {
+			out.push(line);
+			i++;
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				out.push(lines[i]);
+				i++;
+			}
+			continue;
+		}
+
+		// Edit section — E1 dedup and compression
+		const editMatch = line.match(/^--- edit: (.+) \(([^)]*)\) ---$/);
+		if (editMatch) {
+			const path = editMatch[1].trim();
+			const blockInfo = editMatch[2];
+			if (isSupersededEdit(path, i)) {
+				if (isDepth1) {
+					out.push(`[batch:edit] ${path} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+			if (isDepth1) {
+				const blocksLabel = blockInfo ? ` (${blockInfo})` : "";
+				out.push(`[batch:edit] ${path}${blocksLabel}`);
+			} else {
+				out.push(`[batch:edit] ${path}`);
+			}
+			i++;
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				i++;
+			}
+			continue;
+		}
+
+		// Error edit — exempt from dedup, keep verbatim
+		const errorEditMatch = line.match(/^--- edit: (.+) ---$/);
+		if (errorEditMatch) {
+			out.push(line);
+			i++;
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				out.push(lines[i]);
+				i++;
+			}
+			continue;
+		}
+
+		// Delete section — keep existing format for non-superseded, skip superseded
+		const deleteMatch = line.match(/^--- delete: (.+) ---$/);
+		if (deleteMatch) {
+			const path = deleteMatch[1].trim();
+			if (isSupersededDelete(path, i)) {
+				if (isDepth1) {
+					out.push(`[batch:delete] ${path} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+			out.push(line);
+			i++;
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				out.push(lines[i]);
+				i++;
+			}
+			continue;
+		}
+
+		// Everything else (summary, error generic, etc.) — keep as-is
 		out.push(line);
 		i++;
 	}
@@ -467,6 +726,9 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		}
 	}
 
+	// === PASS 1 (pre-scan): Build DedupIndex for batch tool results (W1 + E1) ===
+	const dedupIndex = buildDedupIndex(lines, toolCallIdToName);
+
 	const result: string[] = [];
 
 	// Second pass: compress matching tool results
@@ -543,10 +805,16 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			}
 		}
 
-		// --- Compress batch tool results (selective: compress bash, truncate reads) ---
+		// --- Compress batch tool results (selective: compress bash, truncate reads, dedup writes/edits/deletes) ---
 		else if (toolName === "batch") {
 			originalText = extractToolResultText(entry) ?? "";
-			rendered = compressBatchResult(originalText, depth);
+			rendered = compressBatchResult(originalText, {
+				depth,
+				toolCallId,
+				latestWrite: dedupIndex.latestWrite,
+				latestEdit: dedupIndex.latestEdit,
+				latestDelete: dedupIndex.latestDelete,
+			});
 		}
 
 		// --- Compress web tool results ---

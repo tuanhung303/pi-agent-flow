@@ -91,7 +91,7 @@ describe("compressToolResults — batch", () => {
 		expect(result).not.toContain("Use targeted reads");
 	});
 
-	it("keeps edit/write/delete sections as-is", () => {
+	it("compresses edit sections to compact format at depth 1", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -111,7 +111,55 @@ describe("compressToolResults — batch", () => {
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- edit: src/index.ts (2 blocks) ---");
+		expect(result).toContain("[batch:edit] src/index.ts (2 blocks)");
+		expect(result).not.toContain("--- edit: src/index.ts (2 blocks) ---");
+	});
+
+	it("compresses write sections to compact format at depth 1", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/config.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: src/config.ts (1234 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("[batch:write] src/config.ts (1234 bytes)");
+		expect(result).not.toContain("--- write: src/config.ts (1234 bytes) ---");
+	});
+
+	it("keeps delete sections in existing format", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "delete", p: "src/old.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 delete\n\n--- delete: src/old.ts ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- delete: src/old.ts ---");
 	});
 
 	it("compresses oversized bash sections in snapshots at depth 1", () => {
@@ -205,6 +253,437 @@ describe("compressToolResults — batch", () => {
 	});
 });
 
+
+describe("compressToolResults — W1 write dedup + E1 edit dedup", () => {
+	function getBatchText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`)
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("deduplicates 3 writes to same file → only latest kept", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/config.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: src/config.ts (100 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/config.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/config.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "write", p: "src/config.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 write\n\n--- write: src/config.ts (300 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		// Latest write preserved
+		expect(result).toContain("[batch:write] src/config.ts (300 bytes)");
+		// Earlier writes superseded at depth 1 (breadcrumb)
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[batch:write] src/config.ts (superseded)");
+		expect(tc2Text).toContain("[batch:write] src/config.ts (superseded)");
+		expect(result).not.toContain("(100 bytes)");
+		expect(result).not.toContain("(200 bytes)");
+	});
+
+	it("write-then-delete → write superseded by later delete", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/temp.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: src/temp.ts (50 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "delete", p: "src/temp.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 delete\n\n--- delete: src/temp.ts ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		// Write superseded
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toContain("[batch:write] src/temp.ts (superseded)");
+		// Delete kept in original format
+		expect(result).toContain("--- delete: src/temp.ts ---");
+	});
+
+	it("deduplicates 3 edits to same file → only latest kept", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "edit", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 edit\n\n--- edit: src/index.ts (1 block) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "edit", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 edit\n\n--- edit: src/index.ts (2 blocks) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "edit", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 edit\n\n--- edit: src/index.ts (3 blocks) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("[batch:edit] src/index.ts (3 blocks)");
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[batch:edit] src/index.ts (superseded)");
+		expect(tc2Text).toContain("[batch:edit] src/index.ts (superseded)");
+		expect(result).not.toContain("(1 block)");
+		expect(result).not.toContain("(2 blocks)");
+	});
+
+	it("edit-then-write → edit superseded by later write", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "edit", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 edit\n\n--- edit: src/index.ts (2 blocks) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/index.ts (500 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toContain("[batch:edit] src/index.ts (superseded)");
+		expect(result).toContain("[batch:write] src/index.ts (500 bytes)");
+	});
+
+	it("write-after-delete → both kept", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "delete", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 delete\n\n--- delete: src/index.ts ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/index.ts (400 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- delete: src/index.ts ---");
+		expect(result).toContain("[batch:write] src/index.ts (400 bytes)");
+	});
+
+	it("edit-after-write → both kept", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: src/index.ts (400 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "edit", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 edit\n\n--- edit: src/index.ts (1 block) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("[batch:write] src/index.ts (400 bytes)");
+		expect(result).toContain("[batch:edit] src/index.ts (1 block)");
+	});
+
+	it("error writes/edits are exempt from dedup", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/missing.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: src/missing.ts ---\nError: ENOENT",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/missing.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/missing.ts ---\nError: ENOENT",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "edit", p: "src/bad.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 edit\n\n--- edit: src/bad.ts ---\nError: No changes",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map());
+		// Error writes kept verbatim
+		expect(result).toContain("--- write: src/missing.ts ---");
+		expect(result).toContain("Error: ENOENT");
+		// Error edits kept verbatim
+		expect(result).toContain("--- edit: src/bad.ts ---");
+		expect(result).toContain("Error: No changes");
+	});
+
+	it("depth 2+ removes superseded entries entirely", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/config.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: src/config.ts (100 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/config.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/config.ts (200 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		// Latest write kept at depth 2+ (compact, no bytes)
+		expect(result).toContain("[batch:write] src/config.ts");
+		expect(result).not.toContain("(200 bytes)");
+		// Superseded write removed entirely at depth 2+
+		expect(result).not.toContain("(superseded)");
+		expect(result).not.toContain("(100 bytes)");
+	});
+});
 describe("compressToolResults — X1 bash compression (depth 1)", () => {
 	function getBatchText(result: string): string {
 		const lines = result.trimEnd().split("\n");
@@ -358,6 +837,79 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] check-node-pqr · exit 0 · 0.1s (normal) · 1 line\n> head:\nv20.12.2");
 		expect(text).toContain("[bash:ok] check-git-stu · exit 0 · 0.2s (normal) · 2 lines\n> head:\nOn branch main\nYour branch is up to date with 'origin/main'.");
+	});
+
+	it("error bash with stdout but no stderr preserves stdout", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "node -e 'console.log(\"fail stdout\"); process.exit(1)'" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [err-stdout] error ---\n[Execution time: 0.3s (avg)]\nfail stdout",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:err] err-stdout · 0.3s (avg) · 1 line stderr\n> stderr:\nfail stdout");
+	});
+
+	it("pending bash with no partial output shows 0 lines", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "sleep 30", i: "pending-empty" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '1 operation: 1 bash\n\n--- bash [pending-empty] pending ---\n[Use batch_bash_poll with i: ["pending-empty"] to check results]',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:pending] pending-empty · still running · 0 lines partial");
+	});
+
+	it("does not misinterpret --- inside bash output as section headers", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "echo '--- hello ---'" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [echo-test] exit 0 ---\n[Execution time: 0.1s (normal)]\n--- hello ---\ntrailing line",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getBatchText(result);
+		expect(text).toContain("[bash:ok] echo-test · exit 0 · 0.1s (normal) · 2 lines\n> head:\n--- hello ---\ntrailing line");
+		expect(text).not.toContain("(content truncated)");
 	});
 });
 

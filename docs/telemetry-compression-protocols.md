@@ -175,7 +175,7 @@ Tests: 15 passed, 15 total
 
 **AFTER — Depth 1:**
 ```
-[bash:ok] npm-test-abc · exit 0 · 2.3s (avg) · 4 lines
+[bash:ok] npm-test-abc · exit 0 · 2.3s (avg) · 3 lines
 > head:
 PASS src/utils/parse.test.ts
 PASS src/core/flow.test.ts
@@ -264,7 +264,7 @@ src/index.ts:12:1: Warning: Missing return type.
 
 **AFTER — Depth 1:**
 ```
-[bash:err] lint-jkl · exit 1 · 1.2s (avg) · 2 lines stderr
+[bash:err] lint-jkl · 1.2s (avg) · 2 lines stderr
 > stderr:
 src/core/flow.ts:45:3: Error: Unexpected token. (eslint)
 src/index.ts:12:1: Warning: Missing return type.
@@ -272,7 +272,7 @@ src/index.ts:12:1: Warning: Missing return type.
 
 **AFTER — Depth 2+:**
 ```
-[bash:err] lint-jkl · exit 1
+[bash:err] lint-jkl
 ```
 
 ### Scenario 5: Bash with no output
