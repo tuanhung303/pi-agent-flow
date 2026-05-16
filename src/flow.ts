@@ -22,6 +22,7 @@ import {
 } from "./types.js";
 import { extractStructuredOutput, generateCommandsFromHistory } from "./structured-output.js";
 import { setLiveText } from './scramble.js';
+import { logWarn, logError } from './log.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
 import type { GoalContext } from "./flow/types.js";
 
@@ -223,7 +224,7 @@ function cleanupStaleDumps(dumpPath: string, maxAgeHours = 168): void {
 			} catch { /* ignore per-entry errors */ }
 		}
 		if (deleted > 0) {
-			console.error(`[pi-agent-flow] Cleaned ${deleted} stale dump file(s) from ${dir}`);
+			logError(`[pi-agent-flow] Cleaned ${deleted} stale dump file(s) from ${dir}`);
 		}
 	} catch { /* ignore all errors silently */ }
 }
@@ -289,6 +290,7 @@ function buildFlowArgs(
 	parentFlowStack: string[] = [],
 	preventCycles: boolean = true,
 	goalContext?: GoalContext,
+	cwd?: string,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -399,13 +401,18 @@ function buildFlowArgs(
 			: "";
 
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
+	const lineage = ["orchestrator", ...parentFlowStack, flow.name].join(" → ");
+	const projectHint = cwd && fs.existsSync(path.join(cwd, "CLAUDE.md"))
+		? `Project index available at CLAUDE.md (read for architecture context if needed).\n`
+		: "";
 	const activation =
-		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}">\n` +
+		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}" lineage="${lineage}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
 		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
 		`${flowListSection}` +
 		`${timeBudgetHint}` +
+		`${projectHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
 
@@ -613,6 +620,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			parentFlowStack,
 			preventCycles,
 			opts.goalContext,
+			cwd,
 		);
 
 		// Dump verbatim child payload to disk for debugging when requested.
@@ -643,26 +651,35 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "sanitizeForkSnapshot (see src/snapshot.ts)";
 			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${effectiveTier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
 
-			const markdown = [
+			const markdownParts: string[] = [
 				sanitizationHeader,
 				``,
-				`## Session Snapshot (JSONL)`,
-				``,
-				...(forkSessionSnapshotJsonl ? forkSessionSnapshotJsonl.split("\n") : ["(none)"]),
-				``,
+			];
+			if (forkSessionSnapshotJsonl) {
+				markdownParts.push(
+					`## Session Snapshot (JSONL)`,
+					``,
+					...forkSessionSnapshotJsonl.split("\n"),
+					``,
+				);
+			} else {
+				markdownParts.push(`_No prior session context exists._`, ``);
+			}
+			markdownParts.push(
 				`## Activation Prompt (-p)`,
 				``,
 				prompt,
 				compressionStats,
-			].join("\n");
+			);
+			const markdown = markdownParts.join("\n");
 			const uniqueDumpPath = makeUniqueDumpPath(dumpPath, flow.name);
 			const uniqueTxtPath = makeUniqueDumpTxtPath(uniqueDumpPath);
 			try {
 				atomicWriteFileSync(uniqueDumpPath, markdown);
 				atomicWriteFileSync(uniqueTxtPath, prompt);
-				console.error(`[pi-agent-flow] Snapshot dumped to ${uniqueDumpPath}`);
+				logError(`[pi-agent-flow] Snapshot dumped to ${uniqueDumpPath}`);
 			} catch (err) {
-				console.error("[pi-agent-flow] Snapshot dump FAILED:", err);
+				logError(`[pi-agent-flow] Snapshot dump FAILED: ${err}`);
 			}
 		}
 
@@ -691,7 +708,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					} catch { return false; }
 				};
 				if (checkStale("snapshot.ts", "snapshot.js") || checkStale("flow.ts", "flow.js")) {
-					console.warn("⚠️ Source newer than dist — run npm run build for accurate dumps");
+					logWarn("⚠️ Source newer than dist — run npm run build for accurate dumps");
 				}
 			}
 			const proc = spawn(command, [...prefixArgs, ...piArgs], {
