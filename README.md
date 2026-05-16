@@ -466,6 +466,18 @@ The Hatchet SDK is dynamically imported and is not required for local-only users
 
 **Hatchet payload trust boundary:** Hatchet task payloads include the selected flow configuration, prompt text, inherited session snapshot, working directory, and project flow directory path. Treat the queue and workers as trusted infrastructure: do not route these payloads through untrusted tenants, logs, or retention policies, and configure Hatchet access controls accordingly.
 
+#### Durable resume
+
+When `PI_FLOW_RUNNER=hatchet` is enabled, Pi records submitted Hatchet flow attempts in `.pi/hatchet-runs.json`. If Pi exits after a Hatchet run is submitted, the worker can continue the task. On the next Pi session, use `/flow:hatchet status` or `/flow:hatchet reconcile` to recover state. Completed recovered runs update the active flow goal once (idempotent — will not double-record goal progress).
+
+Commands:
+- `/flow:hatchet status` — list all recorded Hatchet runs for this workspace
+- `/flow:hatchet reconcile` — query Hatchet for current status of active runs and update local records
+- `/flow:hatchet attach <runId>` — show details and result for a specific run
+- `/flow:hatchet cancel <runId>` — request cancellation of a running Hatchet task (requires adapter support)
+
+The registry stores metadata, run handles, statuses, and final results only. It does not store forked session snapshots, full Hatchet payloads, or API secrets. The file is written with `0600` permissions. On startup, Pi automatically reconciles any active Hatchet runs in the background when `PI_FLOW_RUNNER=hatchet` is set.
+
 Operational hardening: the parent validates returned Hatchet results against the expected `SingleResult` shape before marking a flow complete, and workers validate `PI_FLOW_SPAWN_COMMAND`, the queued `cwd`/`taskCwd` workspace, and the final `runFlow()` result before returning to Hatchet. Worker checkouts should run the same `pi-agent-flow` package version as the parent, provide required Pi/provider/Hatchet secrets explicitly, and avoid inheriting unrelated worker secrets into child `pi` processes. Payloads are limited to 1,500,000 serialized bytes by default to leave room for larger inherited session snapshots; set `PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES` only for trusted private queues with appropriate retention. Keep Hatchet task retries disabled or bounded so a queue retry does not duplicate `executeFlows()` model failover attempts.
 
 Session mode precedence is:
