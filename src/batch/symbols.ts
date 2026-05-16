@@ -69,17 +69,21 @@ function extractTsJsSymbols(lines: string[]): ContextMapEntry[] {
 	const entries: ContextMapEntry[] = [];
 	const classes: ContextMapEntry[] = [];
 
+	function makeSignature(line: string): string {
+		return line.trim().replace(/\s*\{\s*$/, "").trim();
+	}
+
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		let match = line.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
 		if (match) {
-			entries.push({ kind: "function", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i) });
+			entries.push({ kind: "function", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i), signature: makeSignature(line) });
 			continue;
 		}
 
 		match = line.match(/^\s*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)\b/);
 		if (match) {
-			const entry = { kind: "class", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i) };
+			const entry = { kind: "class", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i), signature: makeSignature(line) };
 			entries.push(entry);
 			classes.push(entry);
 			continue;
@@ -87,25 +91,25 @@ function extractTsJsSymbols(lines: string[]): ContextMapEntry[] {
 
 		match = line.match(/^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\b/);
 		if (match) {
-			entries.push({ kind: "interface", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i) });
+			entries.push({ kind: "interface", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i), signature: makeSignature(line) });
 			continue;
 		}
 
 		match = line.match(/^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\b/);
 		if (match) {
-			entries.push({ kind: "type", name: match[1], startLine: i + 1, endLine: line.includes("{") ? findBraceBlockEnd(lines, i) : findStatementEnd(lines, i) });
+			entries.push({ kind: "type", name: match[1], startLine: i + 1, endLine: line.includes("{") ? findBraceBlockEnd(lines, i) : findStatementEnd(lines, i), signature: line.trim() });
 			continue;
 		}
 
 		match = line.match(/^\s*(?:export\s+)?enum\s+([A-Za-z_$][\w$]*)\b/);
 		if (match) {
-			entries.push({ kind: "enum", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i) });
+			entries.push({ kind: "enum", name: match[1], startLine: i + 1, endLine: findBraceBlockEnd(lines, i), signature: makeSignature(line) });
 			continue;
 		}
 
 		match = line.match(/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)/);
 		if (match) {
-			entries.push({ kind: "function", name: match[1], startLine: i + 1, endLine: line.includes("{") ? findBraceBlockEnd(lines, i) : findStatementEnd(lines, i) });
+			entries.push({ kind: "function", name: match[1], startLine: i + 1, endLine: line.includes("{") ? findBraceBlockEnd(lines, i) : findStatementEnd(lines, i), signature: line.trim() });
 		}
 	}
 
@@ -120,6 +124,7 @@ function extractTsJsSymbols(lines: string[]): ContextMapEntry[] {
 				parent: classEntry.name,
 				startLine: i + 1,
 				endLine: findBraceBlockEnd(lines, i),
+				signature: makeSignature(lines[i]),
 			});
 		}
 	}
@@ -135,7 +140,7 @@ function extractPythonSymbols(lines: string[]): ContextMapEntry[] {
 		const match = lines[i].match(/^(\s*)class\s+([A-Za-z_]\w*)\b/);
 		if (!match) continue;
 		const indent = match[1].length;
-		const entry = { kind: "class", name: match[2], startLine: i + 1, endLine: findIndentedBlockEnd(lines, i, indent), indent };
+		const entry = { kind: "class", name: match[2], startLine: i + 1, endLine: findIndentedBlockEnd(lines, i, indent), indent, signature: lines[i].trim() };
 		classes.push(entry);
 		entries.push(entry);
 	}
@@ -151,6 +156,7 @@ function extractPythonSymbols(lines: string[]): ContextMapEntry[] {
 			parent: parent?.name,
 			startLine: i + 1,
 			endLine: findIndentedBlockEnd(lines, i, indent),
+			signature: lines[i].trim(),
 		});
 	}
 

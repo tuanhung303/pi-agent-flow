@@ -20,6 +20,7 @@ import {
 	TARGETED_READ_LINE_LIMIT,
 	MAX_TOTAL_RESULT_LINES,
 	BATCH_READ_MAX_TOTAL_BYTES,
+	RG_SIGNATURES_MAX_FILES,
 } from "./constants.js";
 import {
 	normalizeToLF,
@@ -415,12 +416,21 @@ export async function executeOperations(
 					const args = buildRgArgs({ ...rgOp, p: searchPath });
 					const matches = await execRg(args, cwd);
 					const content = matches.join("\n");
+
+					// Try to attach enclosing signatures (only when we have line numbers)
+					let enclosingSignatures: Map<string, string> | undefined;
+					const uniqueFiles = extractUniqueFilesFromRg(matches);
+					if (uniqueFiles.size > 0 && uniqueFiles.size <= RG_SIGNATURES_MAX_FILES && !isFilesOnlyRg(matches)) {
+						enclosingSignatures = await buildEnclosingSignatures(uniqueFiles, matches, cwd);
+					}
+
 					results.push({
 						op: "rg",
 						path: rgOp.p,
 						status: "ok",
 						content,
 						totalLines: matches.length,
+						enclosingSignatures,
 					});
 					counts.rg++;
 					break;
@@ -593,7 +603,12 @@ function buildContentText(summary: string, results: OpResult[]): string {
 		} else if (r.op === "delete" && r.status === "ok") {
 			sections.push(`\n--- delete: ${r.path} ---`);
 		} else if (r.op === "rg" && r.status === "ok") {
-			sections.push(`\n--- rg: ${r.path} ---\n${r.content}`);
+			if (r.enclosingSignatures && r.enclosingSignatures.size > 0) {
+				const grouped = groupRgMatchesByFile(r.content ?? "", r.enclosingSignatures);
+				sections.push(`\n--- rg: ${r.path} ---\n${grouped}`);
+			} else {
+				sections.push(`\n--- rg: ${r.path} ---\n${r.content}`);
+			}
 		} else if (r.status === "error") {
 			sections.push(`\n--- ${r.op}: ${r.path} ---\nError: ${r.error}`);
 		}
@@ -608,6 +623,7 @@ function buildContentText(summary: string, results: OpResult[]): string {
 
 function buildRgArgs(op: RgOpInput): string[] {
 	const args: string[] = [];
+	args.push("-n");
 	if (op.l === true || op.l === undefined) args.push("-l");
 	if (op.i === true) args.push("-i");
 	if (typeof op.t === "string" && op.t) args.push("-t", op.t);
@@ -620,6 +636,109 @@ function buildRgArgs(op: RgOpInput): string[] {
 	args.push(op.q);
 	args.push(op.p);
 	return args;
+}
+
+function isFilesOnlyRg(matches: string[]): boolean {
+	// When rg runs with -l, matches are just filenames with no line numbers
+	return matches.length > 0 && !matches.some((m) => m.includes(":"));
+}
+
+function extractUniqueFilesFromRg(matches: string[]): Set<string> {
+	const files = new Set<string>();
+	for (const m of matches) {
+		const colonIdx = m.indexOf(":");
+		if (colonIdx > 0) files.add(m.substring(0, colonIdx));
+	}
+	return files;
+}
+
+function parseRgLineNumber(match: string): number | null {
+	// format: path:line:content
+	const parts = match.split(":");
+	if (parts.length < 3) return null;
+	const lineNum = parseInt(parts[1], 10);
+	return Number.isFinite(lineNum) ? lineNum : null;
+}
+
+function parseRgFilePath(match: string): string | null {
+	const colonIdx = match.indexOf(":");
+	return colonIdx > 0 ? match.substring(0, colonIdx) : null;
+}
+
+async function buildEnclosingSignatures(
+	files: Set<string>,
+	matches: string[],
+	cwd: string,
+): Promise<Map<string, string>> {
+	const sigMap = new Map<string, string>();
+	for (const filePath of files) {
+		try {
+			const abs = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
+			const raw = await fs.readFile(abs, "utf-8");
+			const lines = raw.split("\n");
+			const ctxMap = buildFileContextMap(filePath, lines);
+			if (!ctxMap.symbols || ctxMap.symbols.length === 0) continue;
+
+			// For each match line in this file, find enclosing symbol
+			for (const match of matches) {
+				const lineNum = parseRgLineNumber(match);
+				if (lineNum === null) continue;
+				const matchPath = parseRgFilePath(match);
+				if (matchPath !== filePath) continue;
+
+				const enclosing = ctxMap.symbols
+				.filter(
+					(s) => lineNum >= s.startLine && lineNum <= s.endLine,
+				)
+				.sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0];
+			if (enclosing?.signature) {
+					sigMap.set(match, enclosing.signature);
+				}
+			}
+		} catch {
+			// File not readable, skip
+		}
+	}
+	return sigMap;
+}
+
+function groupRgMatchesByFile(content: string, sigMap: Map<string, string>): string {
+	// Group matches by file, deduplicate signatures per file
+	const fileGroups = new Map<string, { sigs: Set<string>; lines: string[] }>();
+	for (const match of content.split("\n").filter(Boolean)) {
+		const filePath = parseRgFilePath(match);
+		if (!filePath) {
+			// Fallback: keep bare match as-is
+			const fallbackKey = "";
+			const group = fileGroups.get(fallbackKey) ?? { sigs: new Set<string>(), lines: [] };
+			group.lines.push(match);
+			fileGroups.set(fallbackKey, group);
+			continue;
+		}
+		const group = fileGroups.get(filePath) ?? { sigs: new Set<string>(), lines: [] };
+		const sig = sigMap.get(match);
+		if (sig) group.sigs.add(sig);
+		group.lines.push(match);
+		fileGroups.set(filePath, group);
+	}
+
+	const out: string[] = [];
+	for (const [filePath, { sigs, lines }] of fileGroups) {
+		if (!filePath) {
+			out.push(...lines);
+			continue;
+		}
+		out.push(filePath);
+		for (const sig of sigs) {
+			out.push(`  ${sig}`);
+		}
+		for (const line of lines) {
+			const colonIdx = line.indexOf(":");
+			const afterPath = colonIdx > 0 ? line.substring(colonIdx + 1) : line;
+			out.push(`  → ${afterPath}`);
+		}
+	}
+	return out.join("\n");
 }
 
 function execRg(args: string[], cwd: string): Promise<string[]> {
