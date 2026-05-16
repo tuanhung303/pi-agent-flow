@@ -8,6 +8,7 @@ import { setupFlowCommand } from "./command.js";
 import { setupSettingsCommand } from "./settings-command.js";
 import { setupWarpCommand } from "./warp-command.js";
 import { setupContinuation } from "./continuation.js";
+import { setupHatchetCommand } from "./hatchet-command.js";
 import { recordFlowCompletion, addTokens } from "./store.js";
 import * as sessionRegistry from "../core/session-registry.js";
 
@@ -29,11 +30,11 @@ export {
   addTokens,
 } from "./store.js";
 
-export { setupFlowCommand, setupContinuation, setupWarpCommand };
+export { setupFlowCommand, setupContinuation, setupWarpCommand, setupHatchetCommand };
 export { markFlowCompleted, shutdownWakeup } from "./continuation.js";
 export { sessionRegistry };
 
-export function registerFlow(pi: ExtensionAPI): void {
+export function registerFlow(pi: ExtensionAPI, hatchetAdapterFactory?: () => import("../hatchet-run-adapter.js").HatchetRunAdapter | undefined): void {
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     sessionRegistry.register(ctx.cwd, ctx.sessionManager.getSessionId());
   });
@@ -42,4 +43,5 @@ export function registerFlow(pi: ExtensionAPI): void {
   setupSettingsCommand(pi);
   setupWarpCommand(pi);
   setupContinuation(pi);
+  setupHatchetCommand(pi, { getAdapter: hatchetAdapterFactory });
 }

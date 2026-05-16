@@ -272,6 +272,16 @@ export async function main(options: RunFlowOptions): Promise<SingleResult> {
 	const runner = new HatchetFlowRunner();
 	return await runner.run(options);
 }
+
+/**
+ * Returns a HatchetRunAdapter if PI_FLOW_RUNNER=hatchet is configured, otherwise undefined.
+ * The returned adapter uses the default SDK submitter.
+ */
+export function createHatchetAdapterFromEnv(env: NodeJS.ProcessEnv = process.env): import("./hatchet-run-adapter.js").HatchetRunAdapter | undefined {
+	const requested = env["PI_FLOW_RUNNER"]?.trim().toLowerCase();
+	if (requested !== "hatchet") return undefined;
+	return new SubmitterAdapter(defaultSubmitHatchetTask);
+}
 function makeHatchetLifecycleResult(
 	options: RunFlowOptions,
 	status: string,

@@ -27,6 +27,9 @@ import { buildForkSessionSnapshotJsonl, sanitizeForkSnapshot, compressToolResult
 import { resolveSettings, type ResolvedSettings } from "./config/settings-resolver.js";
 import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
 import { createFlowRunnerFromEnv, type FlowRunner } from "./flow-runner.js";
+import { createHatchetAdapterFromEnv } from "./hatchet-runner.js";
+import { listActiveHatchetRuns } from "./hatchet-run-registry.js";
+import { reconcileHatchetRuns } from "./hatchet-reconcile.js";
 export { logWarn, logError } from "./config/log.js";
 export { type FlowColorConfig } from "./tui/flow-colors.js";
 
@@ -73,7 +76,7 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls };
 
 export default function (pi: ExtensionAPI) {
-  registerFlow(pi);
+  registerFlow(pi, () => createHatchetAdapterFromEnv());
   const depthConfig: FlowDepthConfig = resolveFlowDepthConfig(pi);
   const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } = depthConfig;
 
@@ -93,6 +96,28 @@ export default function (pi: ExtensionAPI) {
     setAnimationConfig({ enabled: resolved.animationEnabled, glitch: resolved.glitchEnabled });
     setupNotify(pi, ctx.cwd);
     bashTracker = new BashProcessTracker();
+
+    // Startup reconciliation: if there are active Hatchet runs and an adapter is configured,
+    // reconcile them in the background without blocking session start.
+    try {
+      const activeRuns = listActiveHatchetRuns(ctx.cwd);
+      if (activeRuns.length > 0) {
+        const adapter = createHatchetAdapterFromEnv();
+        if (adapter) {
+          const sessionId = ctx.sessionManager.getSessionId();
+          reconcileHatchetRuns({ cwd: ctx.cwd, sessionId, adapter, includeOtherSessions: true }).then((summary) => {
+            if (summary.completed > 0 || summary.failed > 0) {
+              const msg = `[pi-agent-flow] Hatchet startup reconciliation: ${summary.completed} completed, ${summary.failed} failed, ${summary.running} still running.`;
+              console.info(msg);
+            }
+          }).catch(() => {
+            // Best-effort — startup reconciliation must not break startup
+          });
+        }
+      }
+    } catch {
+      // Best-effort — startup reconciliation must not break startup
+    }
 
     const baseTools = [
       createBatchTool(pi, ctx),
