@@ -5,6 +5,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 import { setupFlowCommand } from "./command.js";
+import { setupSettingsCommand } from "./settings-command.js";
 import { setupContinuation } from "./continuation.js";
 import { recordFlowCompletion, addTokens } from "./store.js";
 
@@ -26,6 +27,7 @@ export {
 } from "./store.js";
 
 export { setupFlowCommand, setupContinuation };
+export { markFlowCompleted } from "./continuation.js";
 
 let _currentCwd: string | undefined;
 
@@ -35,5 +37,6 @@ export function registerFlow(pi: ExtensionAPI): void {
   });
 
   setupFlowCommand(pi, () => _currentCwd);
+  setupSettingsCommand(pi, () => _currentCwd);
   setupContinuation(pi, () => _currentCwd);
 }

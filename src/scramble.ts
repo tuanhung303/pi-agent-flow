@@ -30,6 +30,15 @@ import type { Component } from '@mariozechner/pi-tui';
 import { Text, truncateToWidth } from '@mariozechner/pi-tui';
 
 // ---------------------------------------------------------------------------
+// Animation config
+// ---------------------------------------------------------------------------
+
+export interface AnimationConfig {
+	enabled: boolean;
+	glitch: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Live text store — mutable source for DynamicScrambleText closures
 // ---------------------------------------------------------------------------
 
@@ -1306,7 +1315,7 @@ function computePulseIntensity(state: LineState, now: number): number | undefine
 	return undefined;
 }
 
-function applyScramble(text: string, state: LineState, now: number, mode: ScrambleMode, lineKey?: LineKey, rng?: () => string): string {
+function applyScramble(text: string, state: LineState, now: number, mode: ScrambleMode, lineKey?: LineKey, rng?: () => string, glitchEnabled: boolean = true): string {
 	if (mode === 'cascade') {
 		if (!state.queue.length) return text;
 		const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
@@ -1321,7 +1330,7 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 			: lineKey === 'act'
 				? ILLUMINATE_CONFIGS.actLabel
 				: undefined;
-		if (state.glitchQueue.length > 0) {
+		if (state.glitchQueue.length > 0 && glitchEnabled) {
 			const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
 			if (isGlitchComplete(state.glitchQueue, frame)) {
 				state.glitchQueue = [];
@@ -1383,6 +1392,7 @@ function processLine(
 	now: number,
 	mode: ScrambleMode,
 	lineKey?: LineKey,
+	glitchEnabled: boolean = true,
 ): void {
 	if (state.completed) return;
 
@@ -1464,17 +1474,21 @@ function processLine(
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
-				if (glitchCooledDown && glitchComplete) {
-					state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.startTime = now;
-					state.glitchFrame = 0;
-					state.lastGlitchTime = now;
-				} else if (state.glitchQueue.length > 0) {
-					// Queue pending glitch for when current one completes
-					state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.pendingOldDisplayed = oldDisplayed;
-					state.pendingNewDisplayed = newText;
-					state.pendingStartTime = now;
+				if (glitchEnabled) {
+					if (glitchCooledDown && glitchComplete) {
+						state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.startTime = now;
+						state.glitchFrame = 0;
+						state.lastGlitchTime = now;
+					} else if (state.glitchQueue.length > 0) {
+						// Queue pending glitch for when current one completes
+						state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.pendingOldDisplayed = oldDisplayed;
+						state.pendingNewDisplayed = newText;
+						state.pendingStartTime = now;
+					}
+				} else {
+					state.displayedText = newText;
 				}
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && shouldFlushPhrase(newText, state.displayedText, state.lastFlushTime, now)) {
 				const oldDisplayed = state.displayedText || previousText;
@@ -1482,17 +1496,21 @@ function processLine(
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
-				if (glitchCooledDown && glitchComplete) {
-					state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.startTime = now;
-					state.glitchFrame = 0;
-					state.lastGlitchTime = now;
-				} else if (state.glitchQueue.length > 0) {
-					// Queue pending glitch for when current one completes
-					state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.pendingOldDisplayed = oldDisplayed;
-					state.pendingNewDisplayed = newText;
-					state.pendingStartTime = now;
+				if (glitchEnabled) {
+					if (glitchCooledDown && glitchComplete) {
+						state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.startTime = now;
+						state.glitchFrame = 0;
+						state.lastGlitchTime = now;
+					} else if (state.glitchQueue.length > 0) {
+						// Queue pending glitch for when current one completes
+						state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.pendingOldDisplayed = oldDisplayed;
+						state.pendingNewDisplayed = newText;
+						state.pendingStartTime = now;
+					}
+				} else {
+					state.displayedText = newText;
 				}
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && now - state.lastTextChangeTime > MSG_CHUNK_DRAIN_MS) {
 				// Drain: text stopped arriving and we have unrippled content —
@@ -1502,17 +1520,21 @@ function processLine(
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
-				if (glitchCooledDown && glitchComplete) {
-					state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.startTime = now;
-					state.glitchFrame = 0;
-					state.lastGlitchTime = now;
-				} else if (state.glitchQueue.length > 0) {
-					// Queue pending glitch for when current one completes
-					state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.pendingOldDisplayed = oldDisplayed;
-					state.pendingNewDisplayed = newText;
-					state.pendingStartTime = now;
+				if (glitchEnabled) {
+					if (glitchCooledDown && glitchComplete) {
+						state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.startTime = now;
+						state.glitchFrame = 0;
+						state.lastGlitchTime = now;
+					} else if (state.glitchQueue.length > 0) {
+						// Queue pending glitch for when current one completes
+						state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.pendingOldDisplayed = oldDisplayed;
+						state.pendingNewDisplayed = newText;
+						state.pendingStartTime = now;
+					}
+				} else {
+					state.displayedText = newText;
 				}
 			} else if ((state.ripples.length < 6 || state.charsSinceLastFlush >= 80) && newText !== state.displayedText && gap > STREAMING_RESUME_GAP_MS) {
 				// Streaming resumed after a long pause (e.g., tool call) —
@@ -1522,17 +1544,21 @@ function processLine(
 				state.lastAnimTime = now;
 				state.charsSinceLastFlush = 0;
 				state.ripples = [];
-				if (glitchCooledDown && glitchComplete) {
-					state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.startTime = now;
-					state.glitchFrame = 0;
-					state.lastGlitchTime = now;
-				} else if (state.glitchQueue.length > 0) {
-					// Queue pending glitch for when current one completes
-					state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
-					state.pendingOldDisplayed = oldDisplayed;
-					state.pendingNewDisplayed = newText;
-					state.pendingStartTime = now;
+				if (glitchEnabled) {
+					if (glitchCooledDown && glitchComplete) {
+						state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.startTime = now;
+						state.glitchFrame = 0;
+						state.lastGlitchTime = now;
+					} else if (state.glitchQueue.length > 0) {
+						// Queue pending glitch for when current one completes
+						state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, newText);
+						state.pendingOldDisplayed = oldDisplayed;
+						state.pendingNewDisplayed = newText;
+						state.pendingStartTime = now;
+					}
+				} else {
+					state.displayedText = newText;
 				}
 			}
 			return;
@@ -1570,10 +1596,12 @@ function processLine(
 		state.lastText = newText;
 		state.lastFlushTime = now;
 		state.lastAnimTime = now;
-		state.glitchQueue = buildGlitchQueue(oldDisplayed || '', newText);
-		state.startTime = now;
-		state.glitchFrame = 0;
-		state.lastGlitchTime = now;
+		if (glitchEnabled) {
+			state.glitchQueue = buildGlitchQueue(oldDisplayed || '', newText);
+			state.startTime = now;
+			state.glitchFrame = 0;
+			state.lastGlitchTime = now;
+		}
 		state.ripples = [];
 		return;
 	}
@@ -1745,6 +1773,7 @@ export class ScrambleStateManager {
 	private genericCache = new Map<string, LineState>();
 	private randomPool: string[] = [];
 	private randomPoolIndex = 0;
+	private animationConfig: AnimationConfig = { enabled: true, glitch: true };
 
 	private fillRandomPool(): void {
 		this.randomPool = new Array(RANDOM_POOL_SIZE);
@@ -1771,6 +1800,10 @@ export class ScrambleStateManager {
 
 	getMode(): ScrambleMode {
 		return this.mode;
+	}
+
+	setAnimationConfig(config: AnimationConfig): void {
+		this.animationConfig = config;
 	}
 
 	private getState(id: string, key: LineKey): LineState {
@@ -1807,6 +1840,9 @@ export class ScrambleStateManager {
 	}
 
 	updateText(id: string, key: string, text: string, now: number, isComplete: boolean = false, staticLine: boolean = false): ScrambleResult {
+		if (!this.animationConfig.enabled) {
+			return { label: key, content: text, isAnimating: false };
+		}
 		if (isComplete) {
 			const state = this.genericCache.get(`${id}#${key}`);
 			if (!state) return { label: key, content: text, isAnimating: false };
@@ -1896,19 +1932,24 @@ export class ScrambleStateManager {
 						state.startTime = now;
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.fadeOutEnd ?? item.end), 0);
 					} else if (this.mode === 'illuminate') {
-						const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
-						const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
-						if (glitchComplete) {
+						if (this.animationConfig.glitch) {
+							const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+							const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
+							if (glitchComplete) {
+								state.ripples = [];
+								state.glitchQueue = buildGlitchQueue(oldDisplayed, text);
+								state.startTime = now;
+								state.lastGlitchTime = now;
+								state.glitchFrame = 0;
+							} else if (state.glitchQueue.length > 0) {
+								state.pendingGlitch = buildGlitchQueue(oldDisplayed, text);
+								state.pendingOldDisplayed = oldDisplayed;
+								state.pendingNewDisplayed = text;
+								state.pendingStartTime = now;
+							}
+						} else {
 							state.ripples = [];
-							state.glitchQueue = buildGlitchQueue(oldDisplayed, text);
-							state.startTime = now;
-							state.lastGlitchTime = now;
-							state.glitchFrame = 0;
-						} else if (state.glitchQueue.length > 0) {
-							state.pendingGlitch = buildGlitchQueue(oldDisplayed, text);
-							state.pendingOldDisplayed = oldDisplayed;
-							state.pendingNewDisplayed = text;
-							state.pendingStartTime = now;
+							state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, true));
 						}
 					} else {
 						state.ripples = [];
@@ -1917,9 +1958,9 @@ export class ScrambleStateManager {
 				}
 			}
 		} else {
-			processLine(state, text, now, this.mode);
+			processLine(state, text, now, this.mode, undefined, this.animationConfig.glitch);
 		}
-		const content = applyScramble(text, state, now, this.mode, undefined, () => this.poolRandomChar());
+		const content = applyScramble(text, state, now, this.mode, undefined, () => this.poolRandomChar(), this.animationConfig.glitch);
 		const isAnimating = this.isLineAnimating(state, now);
 		return { label: key, content, isAnimating };
 	}
@@ -1929,6 +1970,9 @@ export class ScrambleStateManager {
 	// -----------------------------------------------------------------------
 
 	updateAim(id: string, text: string, now: number, isComplete: boolean = false, staticLine: boolean = false): ScrambleResult {
+		if (!this.animationConfig.enabled) {
+			return { label: 'aim:', content: text, isAnimating: false };
+		}
 		if (isComplete) {
 			const record = this.cache.get(id);
 			if (!record) return { label: 'aim:', content: text, isAnimating: false };
@@ -2021,19 +2065,24 @@ export class ScrambleStateManager {
 						state.startTime = now;
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.fadeOutEnd ?? item.end), 0);
 					} else if (this.mode === 'illuminate') {
-						const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
-						const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
-						if (glitchComplete) {
+						if (this.animationConfig.glitch) {
+							const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+							const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
+							if (glitchComplete) {
+								state.ripples = [];
+								state.glitchQueue = buildGlitchQueue(oldDisplayed, text);
+								state.startTime = now;
+								state.lastGlitchTime = now;
+								state.glitchFrame = 0;
+							} else if (state.glitchQueue.length > 0) {
+								state.pendingGlitch = buildGlitchQueue(oldDisplayed, text);
+								state.pendingOldDisplayed = oldDisplayed;
+								state.pendingNewDisplayed = text;
+								state.pendingStartTime = now;
+							}
+						} else {
 							state.ripples = [];
-							state.glitchQueue = buildGlitchQueue(oldDisplayed, text);
-							state.startTime = now;
-							state.lastGlitchTime = now;
-							state.glitchFrame = 0;
-						} else if (state.glitchQueue.length > 0) {
-							state.pendingGlitch = buildGlitchQueue(oldDisplayed, text);
-							state.pendingOldDisplayed = oldDisplayed;
-							state.pendingNewDisplayed = text;
-							state.pendingStartTime = now;
+							state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, false));
 						}
 					} else {
 						state.ripples = [];
@@ -2051,9 +2100,9 @@ export class ScrambleStateManager {
 				state.pendingStartTime = 0;
 			}
 		} else {
-			processLine(state, text, now, this.mode);
+			processLine(state, text, now, this.mode, undefined, this.animationConfig.glitch);
 		}
-		const content = applyScramble(text, state, now, this.mode, undefined, () => this.poolRandomChar());
+		const content = applyScramble(text, state, now, this.mode, undefined, () => this.poolRandomChar(), this.animationConfig.glitch);
 		const isAnimating = this.isLineAnimating(state, now);
 		return { label: 'aim:', content, isAnimating };
 	}
@@ -2063,6 +2112,9 @@ export class ScrambleStateManager {
 	// -----------------------------------------------------------------------
 
 	updateAct(id: string, text: string, now: number, isComplete: boolean = false, staticLine: boolean = false): ScrambleResult {
+		if (!this.animationConfig.enabled) {
+			return { label: 'act:', content: text, isAnimating: false };
+		}
 		if (isComplete) {
 			const record = this.cache.get(id);
 			if (!record) return { label: 'act:', content: text, isAnimating: false };
@@ -2149,19 +2201,24 @@ export class ScrambleStateManager {
 						state.startTime = now;
 						state.queueMaxEnd = state.queue.reduce((max, item) => Math.max(max, item.fadeOutEnd ?? item.end), 0);
 					} else if (this.mode === 'illuminate') {
-						const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
-						const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
-						if (glitchComplete) {
+						if (this.animationConfig.glitch) {
+							const frame = Math.floor((now - state.startTime) / CASCADE_FRAME_MS);
+							const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
+							if (glitchComplete) {
+								state.ripples = [];
+								state.glitchQueue = buildGlitchQueue(oldDisplayed, text);
+								state.startTime = now;
+								state.lastGlitchTime = now;
+								state.glitchFrame = 0;
+							} else if (state.glitchQueue.length > 0) {
+								state.pendingGlitch = buildGlitchQueue(oldDisplayed, text);
+								state.pendingOldDisplayed = oldDisplayed;
+								state.pendingNewDisplayed = text;
+								state.pendingStartTime = now;
+							}
+						} else {
 							state.ripples = [];
-							state.glitchQueue = buildGlitchQueue(oldDisplayed, text);
-							state.startTime = now;
-							state.lastGlitchTime = now;
-							state.glitchFrame = 0;
-						} else if (state.glitchQueue.length > 0) {
-							state.pendingGlitch = buildGlitchQueue(oldDisplayed, text);
-							state.pendingOldDisplayed = oldDisplayed;
-							state.pendingNewDisplayed = text;
-							state.pendingStartTime = now;
+							state.ripples.push(...spawnRippleForText(randomizedCenter(text.length), now, text.length, undefined, false));
 						}
 					} else {
 						state.ripples = [];
@@ -2179,9 +2236,9 @@ export class ScrambleStateManager {
 				state.pendingStartTime = 0;
 			}
 		} else {
-			processLine(state, text, now, this.mode, 'act');
+			processLine(state, text, now, this.mode, 'act', this.animationConfig.glitch);
 		}
-		const content = applyScramble(text, state, now, this.mode, 'act', () => this.poolRandomChar());
+		const content = applyScramble(text, state, now, this.mode, 'act', () => this.poolRandomChar(), this.animationConfig.glitch);
 		const isAnimating = this.isLineAnimating(state, now);
 		return { label: 'act:', content, isAnimating };
 	}
@@ -2193,6 +2250,9 @@ export class ScrambleStateManager {
 	updateMsg(id: string, text: string, now: number, isComplete: boolean = false, budget?: number, staticLine: boolean = false): ScrambleResult {
 		const visibleText = budget !== undefined ? tailText(text, budget) : text;
 
+		if (!this.animationConfig.enabled) {
+			return { label: 'msg:', content: visibleText, isAnimating: false };
+		}
 		if (isComplete) {
 			const record = this.cache.get(id);
 			if (!record) return { label: 'msg:', content: visibleText, isAnimating: false };
@@ -2292,7 +2352,7 @@ export class ScrambleStateManager {
 						state.glitchQueue = [];
 						state.glitchFrame = 0;
 						state.charsSinceLastFlush = 0;
-						if (hasDiverged && enoughChars) {
+						if (this.animationConfig.glitch && hasDiverged && enoughChars) {
 							state.glitchQueue = buildMsgGlitchQueue(resolvedTarget, state.lastText);
 							state.targetText = state.lastText;
 							state.startTime = now;
@@ -2329,17 +2389,22 @@ export class ScrambleStateManager {
 					state.lastAnimTime = now;
 					state.charsSinceLastFlush = 0;
 					state.ripples = [];
-					if (glitchCooledDown && glitchComplete) {
-						state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, visibleText);
-						state.targetText = visibleText;
-						state.startTime = now;
-						state.glitchFrame = 0;
-						state.lastGlitchTime = now;
-					} else if (state.glitchQueue.length > 0) {
-						state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, visibleText);
-						state.pendingOldDisplayed = oldDisplayed;
-						state.pendingNewDisplayed = visibleText;
-						state.pendingStartTime = now;
+					if (this.animationConfig.glitch) {
+						if (glitchCooledDown && glitchComplete) {
+							state.glitchQueue = buildMsgGlitchQueue(oldDisplayed, visibleText);
+							state.targetText = visibleText;
+							state.startTime = now;
+							state.glitchFrame = 0;
+							state.lastGlitchTime = now;
+						} else if (state.glitchQueue.length > 0) {
+							state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, visibleText);
+							state.pendingOldDisplayed = oldDisplayed;
+							state.pendingNewDisplayed = visibleText;
+							state.pendingStartTime = now;
+						}
+					} else {
+						state.displayedText = visibleText;
+						state.ripples.push(...spawnRippleForText(randomizedCenter(visibleText.length), now, visibleText.length, undefined, true));
 					}
 				};
 
@@ -2410,7 +2475,7 @@ export class ScrambleStateManager {
 				}
 			}
 		} else {
-			processLine(state, visibleText, now, this.mode, 'msg');
+			processLine(state, visibleText, now, this.mode, 'msg', this.animationConfig.glitch);
 		}
 		let displayText: string;
 		if (this.mode === 'illuminate' && staticLine && state.glitchQueue.length > 0) {
@@ -2428,7 +2493,7 @@ export class ScrambleStateManager {
 			const suppressTailSlide = this.mode === 'illuminate' && staticLine && !isComplete && state.displayedText !== '' && state.displayedText !== visibleText && isTailSlide;
 			displayText = suppressTailSlide ? state.displayedText : visibleText;
 		}
-		const content = applyScramble(displayText, state, now, this.mode, 'msg', () => this.poolRandomChar());
+		const content = applyScramble(displayText, state, now, this.mode, 'msg', () => this.poolRandomChar(), this.animationConfig.glitch);
 		const isAnimating = this.isLineAnimating(state, now);
 		return { label: 'msg:', content, isAnimating };
 	}
@@ -2446,6 +2511,10 @@ export class ScrambleStateManager {
 	 * resolved and only newly-entered chars are scrambled.
 	 */
 	streamMsg(id: string, fullText: string, now: number, isComplete: boolean, budget: number): string {
+		if (!this.animationConfig.enabled) {
+			const cleanText = stripAnsi(fullText);
+			return tailText(cleanText, budget);
+		}
 		if (isComplete) {
 			const record = this.streamState.get(id);
 			if (!record) {
@@ -2534,6 +2603,10 @@ export class ScrambleStateManager {
 	 * Budget controls truncation (truncateChars, shows beginning).
 	 */
 	streamAct(id: string, fullText: string, now: number, isComplete: boolean, budget: number): string {
+		if (!this.animationConfig.enabled) {
+			const cleanText = stripAnsi(fullText);
+			return cleanText.length > budget ? cleanText.slice(0, budget) : cleanText;
+		}
 		if (isComplete) {
 			const record = this.streamState.get(id);
 			if (!record) {
@@ -2725,6 +2798,7 @@ export class ScrambleStateManager {
 	// -----------------------------------------------------------------------
 
 	updateTps(id: string, tpsText: string, now: number, isComplete: boolean = false, staticLine: boolean = false): string {
+		if (!this.animationConfig.enabled) return tpsText;
 		if (!tpsText || tpsText.trim() === '-') return tpsText;
 		if (isComplete) {
 			const s = this.tpsState.get(id);
@@ -2784,11 +2858,13 @@ export class ScrambleStateManager {
 	}
 
 	updateActKpi(id: string, value: string, now: number, isComplete: boolean = false, staticLine: boolean = false): string {
+		if (!this.animationConfig.enabled) return value;
 		const state = this._updateValueKpi(this.actKpiState, id, value, now, isComplete, staticLine);
 		return this._renderValueFlash(state, value, now);
 	}
 
 	updateMsgKpi(id: string, value: string, now: number, isComplete: boolean = false, staticLine: boolean = false): string {
+		if (!this.animationConfig.enabled) return value;
 		const state = this._updateValueKpi(this.msgKpiState, id, value, now, isComplete, staticLine);
 		return this._renderValueFlash(state, value, now);
 	}
@@ -3140,6 +3216,11 @@ export class DynamicScrambleText implements Component {
 		this.base.setText(this.truncated ? truncateToWidth(safeContent, width) : safeContent);
 		return this.base.render(width);
 	}
+}
+
+/** Standalone setter that delegates to the singleton manager. */
+export function setAnimationConfig(config: AnimationConfig): void {
+	scrambleManager.setAnimationConfig(config);
 }
 
 /** Module-level singleton for use across render calls. */

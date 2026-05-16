@@ -32,7 +32,7 @@ export const DEFAULT_FLOW_COLORS: FlowColorConfig = {
   treeChars: { color: "dim" },
   prefixLabel: { color: "muted" },
   aimContent: { color: "dim", italic: true },
-  actContent: { color: "toolOutput", italic: true },
+  actContent: { color: "dim", italic: true },
   msgContent: { color: "dim", italic: true },
   msgError: { color: "muted", italic: true },
 };

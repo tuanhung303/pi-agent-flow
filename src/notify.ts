@@ -12,6 +12,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { FLOW_DEPTH_ENV, parseNonNegativeInt } from "./depth.js";
 import { getNotifyState, resetNotifyState } from "./notify-state.js";
+import { logError } from "./log.js";
 
 type TerminalBackend = "auto" | "osc777" | "osc99" | "none";
 type DesktopBackend = "auto" | "macos" | "linux" | "windows-toast" | "none";
@@ -80,7 +81,7 @@ function readConfigFile(filePath: string): Partial<NotifyConfig> {
 	try {
 		return JSON.parse(readFileSync(filePath, "utf-8")) as Partial<NotifyConfig>;
 	} catch (error) {
-		console.error(`Warning: Could not parse ${filePath}: ${error}`);
+		logError(`Warning: Could not parse ${filePath}: ${error}`);
 		return {};
 	}
 }

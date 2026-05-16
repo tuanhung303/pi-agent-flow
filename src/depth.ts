@@ -5,6 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { logWarn } from "./log.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -111,7 +112,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 	const depthRaw = process.env[FLOW_DEPTH_ENV];
 	const parsedDepth = parseNonNegativeInt(depthRaw);
 	if (depthRaw !== undefined && parsedDepth === null) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid ${FLOW_DEPTH_ENV}="${depthRaw}". Expected a non-negative integer.`,
 		);
 	}
@@ -120,7 +121,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 	const stackRaw = process.env[FLOW_STACK_ENV];
 	const ancestorFlowStack = parseFlowStack(stackRaw);
 	if (stackRaw !== undefined && ancestorFlowStack === null) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid ${FLOW_STACK_ENV} value. Expected a JSON array of flow names.`,
 		);
 	}
@@ -128,7 +129,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 	const envMaxDepthRaw = process.env[FLOW_MAX_DEPTH_ENV];
 	const envMaxDepth = parseNonNegativeInt(envMaxDepthRaw);
 	if (envMaxDepthRaw !== undefined && envMaxDepth === null) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid ${FLOW_MAX_DEPTH_ENV}="${envMaxDepthRaw}". Expected a non-negative integer.`,
 		);
 	}
@@ -137,7 +138,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 	const argvFlagMaxDepth =
 		argvFlagRaw !== null ? parseNonNegativeInt(argvFlagRaw) : null;
 	if (argvFlagRaw !== null && argvFlagMaxDepth === null) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid --flow-max-depth value "${argvFlagRaw}". Expected a non-negative integer.`,
 		);
 	}
@@ -152,7 +153,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 		typeof runtimeFlagValue === "string" &&
 		runtimeFlagMaxDepth === null
 	) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid --flow-max-depth value "${runtimeFlagValue}". Expected a non-negative integer.`,
 		);
 	}
@@ -160,7 +161,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 	const envPreventCyclesRaw = process.env[FLOW_PREVENT_CYCLES_ENV];
 	const envPreventCycles = parseBoolean(envPreventCyclesRaw);
 	if (envPreventCyclesRaw !== undefined && envPreventCycles === null) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid ${FLOW_PREVENT_CYCLES_ENV}="${envPreventCyclesRaw}". Expected true/false.`,
 		);
 	}
@@ -174,7 +175,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 		typeof argvPreventCyclesRaw === "string" &&
 		argvPreventCycles === null
 	) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid --flow-prevent-cycles value "${argvPreventCyclesRaw}". Expected true/false.`,
 		);
 	}
@@ -186,7 +187,7 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 		runtimePreventCyclesRaw !== undefined &&
 		runtimePreventCycles === null
 	) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid --flow-prevent-cycles value "${String(runtimePreventCyclesRaw)}". Expected true/false.`,
 		);
 	}

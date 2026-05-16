@@ -137,11 +137,27 @@ export function stripSteeringHintsFromMessages(messages: any[]): { messages: any
 	return { messages: result, changed };
 }
 
-/** Build a system message containing the steering hint. */
-export function makeSteeringHintMessage(referenceMessage?: any): any {
+// ---------------------------------------------------------------------------
+// Configurable steering
+// ---------------------------------------------------------------------------
+
+let steeringConfig = { enabled: true, customPrompt: undefined as string | undefined };
+
+export function configureSteering(config: { enabled: boolean; customPrompt?: string }): void {
+	steeringConfig = { enabled: config.enabled, customPrompt: config.customPrompt };
+}
+
+/** Build a system message containing the steering hint.
+ *  Returns null when steering is disabled so the caller can skip injection.
+ */
+export function makeSteeringHintMessage(referenceMessage?: any): any | null {
+	if (!steeringConfig.enabled) {
+		return null;
+	}
+	const body = steeringConfig.customPrompt ?? STEERING_HINT;
 	return {
 		role: "system",
-		content: STEERING_HINT,
+		content: body,
 		timestamp: referenceMessage?.timestamp,
 	};
 }

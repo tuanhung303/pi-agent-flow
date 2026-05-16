@@ -22,7 +22,8 @@ import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrat
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "./notify-state.js";
 import { setLiveText } from './scramble.js';
-import * as fs from 'fs';
+import { logWarn } from './log.js';
+import { markFlowCompleted } from './flow/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -166,7 +167,7 @@ const FLOW_RESULT_CACHE_MAX_ENTRIES = resolveCacheMaxEntries();
 export function evictCacheOverflow(cache: Map<string, unknown>): void {
 	if (cache.size <= FLOW_RESULT_CACHE_MAX_ENTRIES) return;
 	const excess = cache.size - FLOW_RESULT_CACHE_MAX_ENTRIES;
-	console.warn(
+	logWarn(
 		`[pi-agent-flow] Flow result cache overflow: evicting ${excess} oldest entries. ` +
 		`Raising PI_FLOW_CACHE_MAX_ENTRIES (currently ${FLOW_RESULT_CACHE_MAX_ENTRIES}) may help for long sessions.`,
 	);
@@ -251,7 +252,7 @@ export async function executeFlows(
 	const cliFlowMode = normalizeFlowModeName(getFlag("flow-mode"));
 	const cliFlowModelConfig = normalizeFlowModeName(getFlag("flow-model-config"));
 	if (cliFlowMode !== undefined && cliFlowModelConfig !== undefined && cliFlowMode !== cliFlowModelConfig) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Both --flow-mode "${cliFlowMode}" and --flow-model-config "${cliFlowModelConfig}" were provided. Using --flow-mode.`,
 		);
 	}
@@ -286,10 +287,7 @@ export async function executeFlows(
 			.at(-1);
 		const text = streamingText ?? activeStreamingText ?? "";
 
-		// DEBUG TRACE — check /tmp/pi-flow-debug.log after running a flow
-		const ts = new Date().toISOString();
-		const debugMsg = `[${ts}] emitProgress called | streamingText="${(streamingText || '').slice(0, 60)}" | text="${text.slice(0, 60)}" | onUpdate=${!!onUpdate}\n`;
-		try { fs.appendFileSync('/tmp/pi-flow-debug.log', debugMsg); } catch {}
+// (debug trace removed — was writing to /tmp/pi-flow-debug.log on every emitProgress call)
 
 		// Update live text store FIRST — always
 		const key = toolCallId || 'collapsed';
@@ -449,6 +447,10 @@ export async function executeFlows(
 		);
 	}
 
+	// Mark flow completion for the continuation hold — gives the user
+	// time to read the result before the next flow auto-spawns.
+	markFlowCompleted();
+
 	// Goal continuation callback
 	if (deps.goalContinuationCallback) {
 		await deps.goalContinuationCallback(results);
@@ -458,7 +460,7 @@ export async function executeFlows(
 	for (const result of results) {
 		const so = result.structuredOutput;
 		if (!so) {
-			console.warn(`[pi-agent-flow] Flow result for toolCallId=${toolCallId} type=${result.type} has no structuredOutput — cache entry skipped. This means child flows will see placeholder text instead of compressed results.`);
+			logWarn(`[pi-agent-flow] Flow result for toolCallId=${toolCallId} type=${result.type} has no structuredOutput — cache entry skipped. This means child flows will see placeholder text instead of compressed results.`);
 			continue;
 		}
 		const compressed: CompressedFlowResult = {

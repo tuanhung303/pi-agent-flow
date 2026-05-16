@@ -402,6 +402,9 @@ function buildFlowArgs(
 
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 	const lineage = ["orchestrator", ...parentFlowStack, flow.name].join(" → ");
+	const parentLineageHint = parentFlowStack.length > 0
+		? `Spawned by: ${parentFlowStack.join(" → ")}.\n`
+		: "";
 	const projectHint = cwd && fs.existsSync(path.join(cwd, "CLAUDE.md"))
 		? `Project index available at CLAUDE.md (read for architecture context if needed).\n`
 		: "";
@@ -411,6 +414,7 @@ function buildFlowArgs(
 		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
 		`${flowListSection}` +
+		`${parentLineageHint}` +
 		`${timeBudgetHint}` +
 		`${projectHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
@@ -648,7 +652,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			}
 
 			const effectiveTier = flow.tier ?? getFlowTier(flow.name);
-			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "sanitizeForkSnapshot (see src/snapshot.ts)";
+			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : forkSessionSnapshotJsonl ? "sanitizeForkSnapshot (see src/snapshot.ts)" : "(none — cold start)";
 			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${effectiveTier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
 
 			const markdownParts: string[] = [
@@ -662,8 +666,6 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 					...forkSessionSnapshotJsonl.split("\n"),
 					``,
 				);
-			} else {
-				markdownParts.push(`_No prior session context exists._`, ``);
 			}
 			markdownParts.push(
 				`## Activation Prompt (-p)`,

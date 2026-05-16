@@ -14,6 +14,7 @@ import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { logWarn } from "./log.js";
 
 export type FlowScope = "user" | "project" | "both" | "bundled" | "all";
 
@@ -127,7 +128,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		parsed = parseFrontmatter<Record<string, unknown>>(content);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		console.warn(`[pi-agent-flow] Skipping invalid flow file "${filePath}": ${message}`);
+		logWarn(`[pi-agent-flow] Skipping invalid flow file "${filePath}": ${message}`);
 		return null;
 	}
 
@@ -137,8 +138,8 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 	const name = typeof frontmatter.name === "string" ? frontmatter.name.trim().toLowerCase() : "";
 	const description = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
 	if (!name || !description) {
-		if (!name) console.warn(`[pi-agent-flow] Skipping flow file "${filePath}": missing or empty 'name' field.`);
-		if (!description) console.warn(`[pi-agent-flow] Skipping flow file "${filePath}": missing or empty 'description' field.`);
+		if (!name) logWarn(`[pi-agent-flow] Skipping flow file "${filePath}": missing or empty 'name' field.`);
+		if (!description) logWarn(`[pi-agent-flow] Skipping flow file "${filePath}": missing or empty 'description' field.`);
 		return null;
 	}
 
@@ -149,7 +150,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 	]);
 	for (const key of Object.keys(frontmatter)) {
 		if (!knownKeys.has(key)) {
-			console.warn(`[pi-agent-flow] Unknown frontmatter key "${key}" in "${filePath}". This field will be ignored.`);
+			logWarn(`[pi-agent-flow] Unknown frontmatter key "${key}" in "${filePath}". This field will be ignored.`);
 		}
 	}
 
@@ -167,7 +168,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 			.filter(Boolean);
 		if (parsedTools.length > 0) tools = parsedTools;
 	} else if (frontmatter.tools !== undefined) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid tools field in "${filePath}". Expected a comma-separated string or string array.`,
 		);
 	}
@@ -190,12 +191,12 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		} else if (normalized === "false" || normalized === "no" || normalized === "0") {
 			inheritContext = false;
 		} else {
-			console.warn(
+			logWarn(
 				`[pi-agent-flow] Ignoring invalid inheritContext value "${frontmatter.inheritContext}" in "${filePath}". Expected true/false.`,
 			);
 		}
 	} else if (frontmatter.inheritContext !== undefined) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid inheritContext field in "${filePath}". Expected boolean or string.`,
 		);
 	}
@@ -207,7 +208,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 		if (normalized === "lite" || normalized === "flash" || normalized === "full") {
 			tier = normalized;
 		} else {
-			console.warn(`[pi-agent-flow] Ignoring invalid tier "${frontmatter.tier}" in "${filePath}". Expected lite, flash, or full.`);
+			logWarn(`[pi-agent-flow] Ignoring invalid tier "${frontmatter.tier}" in "${filePath}". Expected lite, flash, or full.`);
 		}
 	}
 

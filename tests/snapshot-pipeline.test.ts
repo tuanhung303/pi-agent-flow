@@ -39,6 +39,7 @@ const VALID_PASS_NAMES = new Set([
 	"reparentOrphans",
 	"stripBatchRead",
 	"compressToolResults",
+	"compressParentActivation",
 ]);
 
 const KNOWN_DEAD_PASS_NAMES = new Set(["sanitizeMessages"]);
@@ -417,7 +418,7 @@ describe("HEADER ROUND-TRIP TEST", () => {
 		const pipelineVersion = getPackageVersion();
 		const passesList = passesApplied.length > 0
 			? passesApplied.join(", ")
-			: "sanitizeForkSnapshot (see src/snapshot.ts)";
+			: "(none — cold start)";
 		const generatedIso = new Date().toISOString();
 
 		const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flowName} | Tier: ${tier} | Pipeline: ${pipelineVersion} | Generated: ${generatedIso} -->`;
@@ -618,5 +619,96 @@ describe("ORPHAN PARENTID REGRESSION TEST (batch_read behavioral)", () => {
 		if (msg2ParentId !== undefined) {
 			expect(survivingIds.has(msg2ParentId)).toBe(true);
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 6. PARENT ACTIVATION COMPRESSION TEST
+// ---------------------------------------------------------------------------
+
+describe("PARENT ACTIVATION COMPRESSION TEST", () => {
+	it("compresses parent activation prompts at depth >= 2 and extracts mission preview", () => {
+		const parentActivation =
+			`<context-seal>\n` +
+			`The conversation above is sealed.\n` +
+			`</context-seal>\n\n` +
+			`<activation flow=\"scout\" depth=\"1\" tools=\"batch, bash\" tier=\"lite\">\n` +
+			`You are a [scout] agent.\n` +
+			`</activation>\n\n` +
+			`<directive>\n## Mission\nDiscovery flow.\n</directive>\n\n` +
+			`<mission>\nMap the auth module and trace JWT validation path.\nAcceptance: All files identified.\n\nExecute this mission.\n</mission>`;
+
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1", systemPrompt: "You are helpful" },
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: [{ type: "text", text: parentActivation }],
+					id: "msg-user-parent",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "I found the files." }],
+					id: "msg-assistant-1",
+					parentId: "msg-user-parent",
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 2 });
+		expect(result).toBeDefined();
+		expect(passesApplied).toContain("compressParentActivation");
+
+		const entries = parseSnapshot(result!);
+		const userEntry = entries.find((e: any) => e?.message?.role === "user");
+		expect(userEntry).toBeDefined();
+
+		const text = typeof userEntry.message.content === "string"
+			? userEntry.message.content
+			: userEntry.message.content?.find((p: any) => p.type === "text")?.text ?? "";
+
+		expect(text).toMatch(/^\[Parent flow activation stripped\] Mission preview:/);
+		// Should contain the actual mission content, not <context-seal> boilerplate
+		expect(text).toContain("Map the auth module");
+		expect(text).not.toContain("<context-seal>");
+	});
+
+	it("falls back to content after </context-seal> when <mission> is missing", () => {
+		const parentActivation =
+			`<context-seal>\n` +
+			`Sealed context.\n` +
+			`</context-seal>\n\n` +
+			`<activation flow=\"build\" depth=\"1\" tools=\"batch\" tier=\"flash\">\n` +
+			`You are a [build] agent.\n` +
+			`</activation>\n\n` +
+			`<directive>\nBuild things.\n</directive>`;
+
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1" },
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: [{ type: "text", text: parentActivation }],
+					id: "msg-user-parent",
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 2 });
+		expect(passesApplied).toContain("compressParentActivation");
+
+		const entries = parseSnapshot(result!);
+		const userEntry = entries.find((e: any) => e?.message?.role === "user");
+		const text = typeof userEntry.message.content === "string"
+			? userEntry.message.content
+			: userEntry.message.content?.find((p: any) => p.type === "text")?.text ?? "";
+
+		expect(text).toMatch(/^\[Parent flow activation stripped\] Mission preview:/);
+		expect(text).not.toContain("<context-seal>");
 	});
 });

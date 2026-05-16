@@ -34,6 +34,7 @@ import {
 	isJsonEqual,
 } from "./sliding-prompt.js";
 import { stripStrategicHints, stripStrategicHintsFromContent } from "./tool-utils.js";
+import { logError } from "./log.js";
 import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------
@@ -195,7 +196,7 @@ const DEBUG_CONTEXT = typeof process !== "undefined" && process.env.PI_FLOW_DEBU
 function logCompress(toolName: string, before: number, after: number) {
 	if (!DEBUG_CONTEXT) return;
 	const reduction = before > 0 ? ((1 - after / before) * 100).toFixed(0) : "0";
-	console.error(`[context-compress] ${toolName}: ${before} → ${after} bytes (${reduction}% reduction)`);
+	logError(`[context-compress] ${toolName}: ${before} → ${after} bytes (${reduction}% reduction)`);
 }
 
 const KNOWN_SECTION_HEADERS = [
@@ -918,6 +919,44 @@ export function sanitizeForkSnapshot(
 					}
 				}
 
+				// Compress parent activation prompts in nested snapshot JSONL
+				// (detect user messages containing <context-seal> at depth >= 2).
+				if (message.role === "user" && options?.depth !== undefined && options.depth >= 2) {
+					let hasParentActivation = false;
+					let previewText = "";
+					const parentActivationRegex = /<context-seal>[\s\S]*?<\/context-seal>/;
+					let fullText = "";
+					if (typeof modifiedContent === "string") {
+						fullText = modifiedContent;
+					} else if (Array.isArray(modifiedContent)) {
+						fullText = modifiedContent
+							.filter((p: any) => p.type === "text" && typeof p.text === "string")
+							.map((p: any) => p.text)
+							.join("");
+					}
+					if (parentActivationRegex.test(fullText)) {
+						hasParentActivation = true;
+						// Extract mission content for preview; fall back to content after </context-seal>
+						const missionMatch = fullText.match(/<mission>([\s\S]*?)<\/mission>/);
+						if (missionMatch) {
+							previewText = missionMatch[1].trim().replace(/\s+/g, " ").slice(0, 200).trim();
+						} else {
+							const afterSeal = fullText.split(/<\/context-seal>/).pop() ?? fullText;
+							previewText = afterSeal.trim().slice(0, 200).trim();
+						}
+					}
+					if (hasParentActivation) {
+						const compact = `[Parent flow activation stripped] Mission preview: ${previewText}`;
+						if (typeof modifiedContent === "string") {
+							modifiedContent = compact;
+						} else {
+							modifiedContent = [{ type: "text", text: compact }];
+						}
+						changed = true;
+						subPasses.add("compressParentActivation");
+					}
+				}
+
 				if (changed) {
 					message = { ...message, content: modifiedContent };
 				}
@@ -959,7 +998,7 @@ export function sanitizeForkSnapshot(
 	const postBytes = sanitized.length;
 	const reduction = preBytes > 0 ? ((1 - postBytes / preBytes) * 100).toFixed(0) : "0";
 	if (DEBUG_CONTEXT) {
-		console.error(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
+		logError(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
 	}
 	// Always emit compression-stats as a trailing metadata entry so the dump contains
 	// observability data regardless of DEBUG_CONTEXT setting.

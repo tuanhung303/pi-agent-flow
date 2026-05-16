@@ -341,7 +341,16 @@ export interface PiAgentFlowAPI {
 	/** Determine the model tier for a given flow name. */
 	getFlowTier: (name: string) => string;
 	/** Get current flow settings. */
-	getSettings: () => { toolOptimize: boolean; structuredOutput: boolean; maxConcurrency: number };
+	getSettings: () => {
+		toolOptimize: boolean;
+		structuredOutput: boolean;
+		maxConcurrency: number;
+		steeringEnabled: boolean;
+		steeringCustomPrompt: string | undefined;
+		steeringStrategicHint: boolean;
+		animationEnabled: boolean;
+		animationGlitch: boolean;
+	};
 }
 
 // ---------------------------------------------------------------------------

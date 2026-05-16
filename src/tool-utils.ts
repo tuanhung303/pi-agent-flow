@@ -18,10 +18,20 @@ export function appendTextToToolResult(result: any, text: string): void {
 	}
 }
 
-const NO_STRATEGIC_HINT =
+let strategicHintEnabled = true;
+
+export function configureStrategicHint(enabled: boolean): void {
+	strategicHintEnabled = enabled;
+}
+
+// Initialize from legacy env var (overrides default true)
+if (
 	typeof process !== "undefined" &&
 	typeof process.env !== "undefined" &&
-	process.env.PI_FLOW_NO_STRATEGIC_HINT === "1";
+	process.env.PI_FLOW_NO_STRATEGIC_HINT === "1"
+) {
+	strategicHintEnabled = false;
+}
 
 const STRATEGIC_HINT =
 	"\n\n[Hint: Plan next step. Batch ALL pending edits/reads/commands into ONE batch call. Execute decisively.]";
@@ -66,7 +76,7 @@ export function resetStrategicHintTracker(): void {
 }
 
 export function appendStrategicHintOnce(result: any): void {
-	if (NO_STRATEGIC_HINT) return;
+	if (!strategicHintEnabled) return;
 	if (result?.isError) return;
 	if (hintAppendedThisTurn) return;
 	hintAppendedThisTurn = true;

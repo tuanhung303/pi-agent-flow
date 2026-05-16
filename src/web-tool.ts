@@ -11,6 +11,7 @@ import TurndownService from "turndown";
 import { appendStrategicHintOnce } from "./tool-utils.js";
 import { scrambleManager, runScrambleTimer } from "./scramble.js";
 import { stripAnsi } from "./render-utils.js";
+import { logWarn } from "./log.js";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -239,7 +240,7 @@ async function searchKeyless(
 	}
 
 	if (errors.length > 0) {
-		console.warn(`[web] searchKeyless failed:\n${errors.join("\n")}`);
+		logWarn(`[web] searchKeyless failed:\n${errors.join("\n")}`);
 	}
 
 	return { results: [], errors };

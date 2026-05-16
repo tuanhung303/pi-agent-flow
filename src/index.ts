@@ -13,7 +13,7 @@ import { getInheritedCliArgs } from "./cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./render.js";
 import { terminateAllChildGroups } from "./flow.js";
 import { executeFlows } from "./executor.js";
-import { appendStrategicHintOnce, resetStrategicHintTracker } from "./tool-utils.js";
+import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./tool-utils.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -27,6 +27,7 @@ import {
 	stripSteeringHintText,
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
+	configureSteering,
 } from "./sliding-prompt.js";
 import { registerFlow, getGoal, recordFlowCompletion, addTokens } from "./flow/index.js";
 import { createTimedBashToolDefinition } from "./timed-bash.js";
@@ -42,6 +43,7 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./settings-resolver.js";
+import { scrambleManager, setAnimationConfig } from "./scramble.js";
 
 // ---------------------------------------------------------------------------
 // Persistent flow result cache — shared across execute() calls so historical
@@ -125,6 +127,7 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 
 // Re-export compressToolResults and stripBatchReadToolCalls for tests
 export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot.js";
+export { type FlowColorConfig } from "./flow-colors.js";
 
 // ---------------------------------------------------------------------------
 // Extension entry point
@@ -172,6 +175,26 @@ export default function (pi: ExtensionAPI) {
 		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
 		type: "boolean",
 	});
+	pi.registerFlag("no-steering", {
+		description: "Disable orchestrator steering hint injection.",
+		type: "boolean",
+	});
+	pi.registerFlag("steering-prompt", {
+		description: "Path to file containing custom steering prompt.",
+		type: "string",
+	});
+	pi.registerFlag("no-strategic-hint", {
+		description: "Disable strategic [Hint: ...] after tool results.",
+		type: "boolean",
+	});
+	pi.registerFlag("no-animation", {
+		description: "Disable all flow animation (instant render).",
+		type: "boolean",
+	});
+	pi.registerFlag("no-glitch", {
+		description: "Disable glitch/scramble effect, keep ripple/pulse.",
+		type: "boolean",
+	});
 
 	// Wire up bundled notification channel
 	setupNotify(pi);
@@ -192,6 +215,11 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
+
+		// Wire resolved settings to modules
+		configureSteering({ enabled: resolved.steeringEnabled, customPrompt: resolved.steeringCustomPrompt });
+		configureStrategicHint(resolved.steeringStrategicHint);
+		scrambleManager.setAnimationConfig({ enabled: resolved.animationEnabled, glitch: resolved.animationGlitch });
 
 		// Only restrict tools for the main orchestrator (depth 0).
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
@@ -302,13 +330,17 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
-		const modified = [
-			...messages.slice(0, lastUserIndex),
-			makeSteeringHintMessage(messages[lastUserIndex]),
-			...messages.slice(lastUserIndex),
-		];
+		const hintMessage = makeSteeringHintMessage(messages[lastUserIndex]);
+		const modified = hintMessage
+			? [
+					...messages.slice(0, lastUserIndex),
+					hintMessage,
+					...messages.slice(lastUserIndex),
+				]
+			: messages;
 
-		const result: any = { messages: modified };
+		const result: any = {};
+		if (hintMessage || messagesChanged) result.messages = modified;
 		if (systemPromptChanged) {
 			result.systemPrompt = systemPrompt;
 		}
@@ -443,8 +475,26 @@ export default function (pi: ExtensionAPI) {
 		discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
 		getFlowTier: (name: string) => getFlowTier(name),
 		getSettings: () => resolved
-			? { toolOptimize: resolved.toolOptimize, structuredOutput: resolved.structuredOutput, maxConcurrency: resolved.maxConcurrency }
-			: { toolOptimize: true, structuredOutput: true, maxConcurrency: 4 },
+			? {
+					toolOptimize: resolved.toolOptimize,
+					structuredOutput: resolved.structuredOutput,
+					maxConcurrency: resolved.maxConcurrency,
+					steeringEnabled: resolved.steeringEnabled,
+					steeringCustomPrompt: resolved.steeringCustomPrompt,
+					steeringStrategicHint: resolved.steeringStrategicHint,
+					animationEnabled: resolved.animationEnabled,
+					animationGlitch: resolved.animationGlitch,
+				}
+			: {
+					toolOptimize: true,
+					structuredOutput: true,
+					maxConcurrency: 4,
+					steeringEnabled: true,
+					steeringCustomPrompt: undefined,
+					steeringStrategicHint: true,
+					animationEnabled: true,
+					animationGlitch: true,
+				},
 	};
 
 	if (typeof pi.emit === "function") {

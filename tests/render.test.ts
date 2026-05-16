@@ -15,7 +15,8 @@ import {
 import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/render.js";
 import { scrambleManager, DynamicScrambleText } from "../src/scramble.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
-import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
+import type { Text, TruncatedText } from "@mariozechner/pi-tui";
+import { Container } from "@mariozechner/pi-tui";
 
 // Helper to extract text from Text, TruncatedText, Container, or DynamicScrambleText objects
 function extractText(node: Text | Container | TruncatedText | DynamicScrambleText): string {
@@ -860,32 +861,6 @@ describe("activity panel rendering", () => {
 		}
 	});
 
-	it("shows the live tail of streaming msg text in single flow collapsed", () => {
-		const originalColumns = process.stdout.columns;
-		try {
-			(process.stdout as any).columns = 40; // narrow terminal
-			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
-			const result = makeResult({
-				intent: "test",
-				messages: [],
-			});
-			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
-			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
-			const text = extractText(rendered);
-			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
-			expect(logLine).toBeDefined();
-			// Content is a moving tail window so new characters visibly shift into view.
-			const expectedPrefix = "[↑     0 · ↓     0] - ";
-			expect(logLine).toContain(`msg: ${expectedPrefix}`);
-			const logContent = logLine.split(expectedPrefix)[1].trim();
-			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
-			expect(logContent).toBe(tailText(longStreaming, expectedBudget));
-			expect(visibleLength(logContent)).toBeLessThanOrEqual(expectedBudget);
-		} finally {
-			(process.stdout as any).columns = originalColumns;
-		}
-	});
-
 	it("passes the live tail window to msg animation in single flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
@@ -1277,6 +1252,19 @@ describe("formatFlowToolCall — batch", () => {
 		spy.mockRestore();
 	});
 
+	it("does not leak streamingText into msg line for completed flow when structuredOutput and flowOutput are missing", () => {
+		const streamingText = "Internal raw model text with JSON fragments";
+		const result = makeResult({
+			exitCode: 0,
+			messages: [],
+			structuredOutput: undefined,
+		});
+		const rendered = renderSingleFlowResult(result, false, makeTheme(), streamingText);
+		const text = extractText(rendered);
+		expect(text).not.toContain(streamingText);
+		expect(text).toContain("└─ msg:");
+	});
+
 	it("collapsed view does not fall back to flowOutput when streamingText is empty", () => {
 		const flowOutput = "flow output from messages";
 		const result = makeResult({
@@ -1307,6 +1295,46 @@ describe("in-place mutation pattern", () => {
 
 		expect(rendered1).toBe(rendered2);
 		expect(state.__rootContainer).toBe(rendered1);
+	});
+
+	it("transfers all children during container reuse even when addChild removes from source", () => {
+		// Simulate real pi-tui behavior where addChild removes the child from its old parent.
+		const originalAddChild = Container.prototype.addChild;
+		Container.prototype.addChild = function (child: any) {
+			if (child.parent && child.parent !== this) {
+				const idx = child.parent.children.indexOf(child);
+				if (idx !== -1) child.parent.children.splice(idx, 1);
+			}
+			child.parent = this;
+			this.children.push(child);
+		};
+
+		try {
+			const state: Record<string, any> = {};
+			const args = { flow: [{ type: "scout", intent: "test" }], state };
+			const result = makeResult({
+				messages: [
+					makeToolCallMessage("bash", { command: "echo 1" }),
+					makeTextMessage("line 1"),
+					makeToolCallMessage("read", { file_path: "src/a.ts" }),
+					makeTextMessage("line 2"),
+				],
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+			const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+			const rendered2 = renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
+
+			expect(rendered1).toBe(rendered2);
+			const text = extractText(rendered2);
+			// All tool calls and text lines from the new render must be present.
+			expect(text).toContain("read");
+			expect(text).toContain("line 2");
+			// Verify all 4 children (header, aim, act, msg) were transferred to the reused root.
+			expect((rendered2 as any).children.length).toBe(4);
+		} finally {
+			Container.prototype.addChild = originalAddChild;
+		}
 	});
 
 	it("renderFlowResult works without state (backwards compatible)", () => {
