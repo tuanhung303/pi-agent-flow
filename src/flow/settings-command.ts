@@ -13,6 +13,7 @@ import { loadFlowSettings, writeFlowSetting, loadFlowModelConfigs, writeGlobalFl
 import { configureSteering } from "../steering/sliding-prompt.js";
 import { configureStrategicHint } from "../steering/tool-utils.js";
 import { scrambleManager } from "../tui/scramble/index.js";
+import { getLoop } from "./loop.js";
 import {
 	Container,
 	type Component,
@@ -257,7 +258,7 @@ export class SettingsList implements Component {
 // Menu item builders
 // ---------------------------------------------------------------------------
 
-type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session" | "ask-user" | "model-config";
+type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session" | "ask-user" | "model-config" | "loop";
 
 interface TooltipSelectItem extends SelectItem {
 	tooltip?: string;
@@ -276,6 +277,9 @@ function getMainMenuItems(settings: FlowSettings, cwd: string): TooltipSelectIte
 	const strategyName = loaded.selectedName;
 	const litePrimary = loaded.strategy.lite?.primary ?? "(default)";
 	const primaryModelShort = litePrimary.includes("/") ? litePrimary.split("/").pop()! : litePrimary;
+
+	const loop = getLoop(cwd);
+	const loopDescription = loop ? `${loop.status} • ${loop.sessionCount} sessions` : "none";
 
 	return [
 		{
@@ -313,6 +317,12 @@ function getMainMenuItems(settings: FlowSettings, cwd: string): TooltipSelectIte
 			label: "Model Config",
 			description: `${strategyName} ▸ lite: ${primaryModelShort}`,
 			tooltip: "Configure LLM models for lite, flash, and full flow tiers",
+		},
+		{
+			value: "loop",
+			label: "Loop Status",
+			description: loopDescription,
+			tooltip: "Endless loop state and statistics",
 		},
 		{
 			value: "reset",
@@ -438,6 +448,52 @@ function getAskUserItems(settings: FlowSettings): SettingItem[] {
 				if (!Number.isSafeInteger(n) || n < 10 || n > 3600) return null;
 				return String(n);
 			}),
+		},
+	];
+}
+
+function getLoopItems(_settings: FlowSettings, cwd: string): SettingItem[] {
+	const loop = getLoop(cwd);
+	if (!loop) {
+		return [
+			{
+				id: "loop.status",
+				label: "status",
+				description: "No active loop",
+				currentValue: "none",
+			},
+		];
+	}
+	return [
+		{
+			id: "loop.status",
+			label: "status",
+			description: "Current loop status",
+			currentValue: loop.status,
+		},
+		{
+			id: "loop.objective",
+			label: "objective",
+			description: "Loop objective",
+			currentValue: loop.objective,
+		},
+		{
+			id: "loop.sessions",
+			label: "sessions",
+			description: "Number of warped sessions",
+			currentValue: String(loop.sessionCount),
+		},
+		{
+			id: "loop.flows",
+			label: "flows",
+			description: "Total flows across sessions",
+			currentValue: String(loop.totalFlowsAcrossSessions),
+		},
+		{
+			id: "loop.tokens",
+			label: "tokens",
+			description: "Total tokens across sessions",
+			currentValue: String(loop.totalTokensAcrossSessions),
 		},
 	];
 }
@@ -778,6 +834,9 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 										rebuild();
 										tui.requestRender();
 									};
+								} else if (currentCategory === "loop") {
+									items = getLoopItems(currentSettings, cwd);
+									handleChange = () => {};
 								} else {
 									items = [];
 									handleChange = () => {};
@@ -960,9 +1019,36 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 					ctx.ui.notify?.("Flow settings reset to defaults", "info");
 					break;
 				}
+				case "show": {
+					const currentSettings = loadFlowSettings(cwd);
+					const loop = getLoop(cwd);
+					const lines = [
+						`toolOptimize: ${currentSettings.toolOptimize ?? true}`,
+						`structuredOutput: ${currentSettings.structuredOutput ?? true}`,
+						`sessionMode: ${currentSettings.sessionMode ?? "default"}`,
+						`maxConcurrency: ${currentSettings.maxConcurrency ?? 4}`,
+						`steering.enabled: ${currentSettings.steering?.enabled ?? true}`,
+						`steering.strategicHint: ${currentSettings.steering?.strategicHint ?? true}`,
+						`animation.enabled: ${currentSettings.animation?.enabled ?? true}`,
+						`animation.glitch: ${currentSettings.animation?.glitch ?? true}`,
+						`askUser.enabled: ${currentSettings.askUser?.enabled ?? false}`,
+						`askUser.timeout: ${currentSettings.askUser?.timeout ?? 300}`,
+					];
+					if (loop) {
+						lines.push("");
+						lines.push(`loop.status: ${loop.status}`);
+						lines.push(`loop.objective: ${loop.objective}`);
+						lines.push(`loop.sessions: ${loop.sessionCount}`);
+						lines.push(`loop.flows: ${loop.totalFlowsAcrossSessions}`);
+						lines.push(`loop.tokens: ${loop.totalTokensAcrossSessions}`);
+						if (loop.terminationReason) lines.push(`loop.terminationReason: ${loop.terminationReason}`);
+					}
+					ctx.ui.notify?.(lines.join("\n"), "info");
+					break;
+				}
 				default: {
 					ctx.ui.notify?.(
-						"Unknown subcommand. Usage: /flow:settings {steering|strategic-hint|animation|glitch|tool-optimize|structured-output|session-mode|max-concurrency|ask-user|reset}",
+						"Unknown subcommand. Usage: /flow:settings {steering|strategic-hint|animation|glitch|tool-optimize|structured-output|session-mode|max-concurrency|ask-user|reset|show}",
 						"error",
 					);
 				}
