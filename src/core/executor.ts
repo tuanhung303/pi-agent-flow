@@ -10,11 +10,11 @@ import type { FlowConfig } from "./agents.js";
 import type {
 	SingleResult,
 	FlowDetails,
-	CompressedFlowResult,
 	FlowMetrics,
-} from "../types.js";
-import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsage } from "../types.js";
-import { extractStructuredOutput } from "../structured-output.js";
+} from "../types/flow.js";
+import type { CompressedFlowResult } from "../types/output.js";
+import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsage } from "../types/flow.js";
+import { extractStructuredOutput } from "../snapshot/structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
 import { getFlowSummaryText } from "../snapshot/runner-events.js";

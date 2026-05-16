@@ -6,7 +6,7 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
-import type { Action, CommandEntry, FileEntry, FlowStructuredOutput, NotDoneItem } from "./types.js";
+import type { Action, CommandEntry, FileEntry, FlowStructuredOutput, NotDoneItem } from "../types/output.js";
 
 type FlowStatus = FlowStructuredOutput["status"];
 

@@ -19,8 +19,8 @@ import {
 	emptyFlowUsage,
 	getFlowOutput,
 	normalizeFlowResult,
-} from "../types.js";
-import { extractStructuredOutput, generateCommandsFromHistory } from "../structured-output.js";
+} from "../types/flow.js";
+import { extractStructuredOutput, generateCommandsFromHistory } from "../snapshot/structured-output.js";
 import { setLiveText } from '../tui/scramble.js';
 import { logWarn, logError } from '../config/log.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
