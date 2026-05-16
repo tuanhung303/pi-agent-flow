@@ -633,6 +633,50 @@ function compressBatchResult(
 			continue;
 		}
 
+		// R1: rg output compression
+		const rgMatch = line.match(/^--- rg: (.+) ---$/);
+		if (rgMatch) {
+			const rgPath = rgMatch[1].trim();
+			i++;
+			const rgLines: string[] = [];
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				rgLines.push(lines[i]);
+				i++;
+			}
+			// Trim trailing empty lines
+			while (rgLines.length > 0 && rgLines[rgLines.length - 1] === "") rgLines.pop();
+			const matchCount = rgLines.length;
+			// Detect error: batch tool outputs "Error: <msg>" for failed rg ops
+			const firstNonEmpty = rgLines.find((l) => l.trim() !== "");
+			const isError = firstNonEmpty?.startsWith("Error:") ?? false;
+			if (isError) {
+				const lineCount = rgLines.filter((l) => l.trim() !== "").length;
+				const linesLabel = lineCount === 1 ? "1 line" : `${lineCount} lines`;
+				out.push(`[rg:err] ${rgPath} · ${linesLabel}`);
+			} else if (matchCount === 0) {
+				out.push(`[rg:ok] ${rgPath} · 0 matches`);
+			} else {
+				// Extract unique file paths from rg output (format: path:line:content)
+				const fileSet = new Set(
+					rgLines
+						.map((l) => {
+							const colonIdx = l.indexOf(":");
+							return colonIdx > 0 ? l.slice(0, colonIdx) : "";
+						})
+						.filter(Boolean),
+				);
+				const fileCount = fileSet.size;
+				if (isDepth1) {
+					const head = rgLines.slice(0, 3).join("\n");
+					out.push(`[rg:ok] ${rgPath} · ${matchCount} matches · ${fileCount} files\n> head:\n${head}`);
+				} else {
+					out.push(`[rg:ok] ${rgPath} · ${matchCount} matches · ${fileCount} files`);
+				}
+			}
+			i--; // will be incremented by loop
+			continue;
+		}
+
 		// File read section with content — truncate
 		const readMatch = line.match(/^--- (.+) \((\d+) lines\) ---$/);
 		if (readMatch) {
@@ -1280,12 +1324,18 @@ export interface SanitizeForkSnapshotOptions {
 	depth?: number;
 }
 
+export interface SanitizeForkSnapshotResult {
+	result: string | null;
+	passesApplied: string[];
+	stats: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
+}
+
 export function sanitizeForkSnapshot(
 	snapshot: string | null,
 	cache: Map<string, CompressedFlowResult[]> = new Map(),
 	options?: SanitizeForkSnapshotOptions,
-): { result: string | null; passesApplied: string[] } {
-	if (!snapshot) return { result: snapshot, passesApplied: [] };
+): SanitizeForkSnapshotResult {
+	if (!snapshot) return { result: snapshot, passesApplied: [], stats: null };
 
 	const preBytes = snapshot.length;
 	const lines = snapshot.trimEnd().split("\n");
@@ -1304,21 +1354,8 @@ export function sanitizeForkSnapshot(
 
 		let changed = false;
 
-		// Header (first line): merge fork metadata and replace parent system prompt.
+		// Header (first line): replace parent system prompt.
 		if (i === 0 && entry && typeof entry === "object") {
-			// Inject fork metadata so children know their lineage.
-			if (options && (options.forkedFrom || options.forkedAt || options.parentFlow || options.depth !== undefined)) {
-				entry = {
-					...entry,
-					...(options.forkedFrom !== undefined ? { forkedFrom: options.forkedFrom } : {}),
-					...(options.forkedAt !== undefined ? { forkedAt: options.forkedAt } : {}),
-					...(options.parentFlow !== undefined ? { parentFlow: options.parentFlow } : {}),
-					...(options.depth !== undefined ? { depth: options.depth } : {}),
-				};
-				changed = true;
-				subPasses.add("forkMetadataInjection");
-			}
-
 			// Replace the parent orchestrator system prompt with a brief note.
 			// Children receive their own directive in the <activation> block.
 			if (entry.systemPrompt && typeof entry.systemPrompt === "string") {
@@ -1423,10 +1460,11 @@ export function sanitizeForkSnapshot(
 			}
 
 			// Strip API metadata fields that children don't need (~5-7 KB per assistant message).
-			// IMPORTANT: keep `usage` (including `totalTokens`). The child `pi` process replays
+			// IMPORTANT: keep `usage.totalTokens` ONLY. The child `pi` process replays
 			// this JSONL and core/session code reads `message.usage.totalTokens`; stripping
 			// `usage` causes: Cannot read properties of undefined (reading 'totalTokens').
-			// Strip `cost` from `usage` — it's always zeros in forked context and children never need it.
+			// Other fields (input, output, cacheRead, cacheWrite) are consumed only from
+			// live child stdout events (runner-events.ts), never from fork snapshot replay.
 			if (message.role === "assistant") {
 				const { api, provider, model, stopReason, responseId, responseModel, usage, ...rest } = message;
 				let stripped = false;
@@ -1434,12 +1472,16 @@ export function sanitizeForkSnapshot(
 					stopReason !== undefined || responseId !== undefined || responseModel !== undefined) {
 					stripped = true;
 				}
-				// Strip cost sub-object from usage while preserving totalTokens and other fields.
-				let cleanedUsage = usage;
-				if (usage && typeof usage === "object" && "cost" in usage) {
-					const { cost, ...usageWithoutCost } = usage;
-					cleanedUsage = usageWithoutCost;
-					stripped = true;
+				// Compress usage to totalTokens only — child pi replay requires totalTokens.
+				// Other fields (input, output, cacheRead, cacheWrite) are consumed only from
+				// live child stdout events (runner-events.ts), never from fork snapshot replay.
+				let cleanedUsage: { totalTokens?: number } | undefined;
+				if (usage && typeof usage === "object") {
+					const ttl = (usage as Record<string, unknown>).totalTokens;
+					if (typeof ttl === "number") {
+						cleanedUsage = { totalTokens: ttl };
+						stripped = true;
+					}
 				}
 				if (stripped) {
 					message = { ...rest, ...(cleanedUsage !== undefined ? { usage: cleanedUsage } : {}) };
@@ -1561,16 +1603,14 @@ export function sanitizeForkSnapshot(
 	if (DEBUG_CONTEXT) {
 		logError(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
 	}
-	// Always emit compression-stats as a trailing metadata entry so the dump contains
-	// observability data regardless of DEBUG_CONTEXT setting.
-	sanitized = sanitized.trimEnd() + "\n" + JSON.stringify({
-		type: "compression-stats",
+	// Stats are returned out-of-band for dump consumers only.
+	// Do NOT append to child-visible JSONL — it's telemetry noise for the model.
+	const stats = {
 		preBytes,
 		postBytes,
 		reductionPercent: Number(reduction),
 		passesApplied,
+	};
 
-	}) + "\n";
-
-	return { result: sanitized, passesApplied };
+	return { result: sanitized, passesApplied, stats };
 }

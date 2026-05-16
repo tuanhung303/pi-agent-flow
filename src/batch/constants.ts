@@ -29,12 +29,21 @@ export const COMPRESS_SAFETY_SCAN_TAIL = 5;
 export const COMPRESS_SAFETY_SCAN_MAX_NEEDLES = 20;
 export const COMPRESS_TERSE_MIN_SAVINGS_PCT = 3;
 export const COMPRESS_PASSTHROUGH_PATTERNS: RegExp[] = [
-	/\bnpm\s+(run\s+dev|start)\b/,
+	/\bnpm\s+(run\s+(dev|watch|serve)|start)\b/,
+	/\byarn\s+(run\s+(dev|watch|serve)|start)\b/,
+	/\bpnpm\s+(run\s+(dev|watch|serve)|start)\b/,
 	/\bcargo\s+(watch|run)\b/,
 	/\bpython\s+-m\s+http\.server\b/,
 	/\blive-server\b/,
 	/\bpi\b/,
 	/\blean-ctx\b/,
+	/\b(az|gcloud|firebase)\s+(login|auth)\b/,
+	/\bnext\s+dev\b/,
+	/\bnuxt\s+dev\b/,
+	/\bsvelte-kit\s+dev\b/,
+	/\bastro\s+dev\b/,
+	/\bnodemon\b/,
+	/\bwebpack-dev-server\b/,
 ];
 export const COMPRESS_VERBATIM_PATTERNS: RegExp[] = [
 	/\b(cat|curl|jq|yq|head|tail|less|more)\b/,
@@ -53,6 +62,7 @@ export const COMPRESS_SAFETY_NEEDLES: string[] = [
 	"aborted",
 	"warning",
 	"critical",
+	"ERR",
 ];
 export const RG_SIGNATURES_MAX_FILES = 10;
 
@@ -115,7 +125,7 @@ export interface OpResult {
 	warning?: string;
 	truncated?: boolean;
 	nextOffset?: number;
-	enclosingSignatures?: Map<string, string>;
+	enclosingSignatures?: Record<string, string>;
 	error?: string;
 	hint?: string;
 	id?: string;

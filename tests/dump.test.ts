@@ -68,14 +68,12 @@ describe("dump mechanism — end-to-end", () => {
 		const prev = process.env.PI_FLOW_DUMP_SNAPSHOT;
 		process.env.PI_FLOW_DUMP_SNAPSHOT = dumpEnv;
 
-		// Include compression-stats so the dump has all expected sections.
 		const jsonl =
 			'{"type":"session","systemPrompt":"test"}\n' +
 			'{"type":"model_change","model":"test-model"}\n' +
 			'{"type":"thinking_level_change","level":"medium"}\n' +
 			'{"type":"system","content":"test system"}\n' +
-			'{"type":"message","message":{"role":"user","content":"hello"}}\n' +
-			'{"type":"compression-stats","preBytes":1000,"postBytes":500,"reductionPercent":50}\n';
+			'{"type":"message","message":{"role":"user","content":"hello"}}\n';
 
 		const opts: RunFlowOptions = {
 			cwd: "/tmp",
@@ -84,6 +82,7 @@ describe("dump mechanism — end-to-end", () => {
 			intent: "Test intent",
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: jsonl,
+			compressionStats: { preBytes: 1000, postBytes: 500, reductionPercent: 50, passesApplied: ["forkMetadataInjection"] },
 			parentDepth: 0,
 			parentFlowStack: [],
 			maxDepth: 3,
@@ -302,7 +301,6 @@ const FORK_SNAPSHOT_CANONICAL_TYPES = new Set([
 	"thinking_level_change",
 	"system",
 	"message",
-	"compression-stats",
 ]);
 
 const STREAMING_STDOUT_ALLOWED_TYPES = new Set([
@@ -372,14 +370,13 @@ function validateStreamingStdout(lines: string[]): string[] {
 }
 
 describe("protocol schema validation", () => {
-	it("accepts all 6 canonical fork snapshot types", () => {
+	it("accepts all 5 canonical fork snapshot types", () => {
 		const jsonl = [
 			{ type: "session", systemPrompt: "test" },
 			{ type: "model_change", model: "m" },
 			{ type: "thinking_level_change", level: "low" },
 			{ type: "system", content: "sys" },
 			{ type: "message", message: { role: "user", content: "hi" } },
-			{ type: "compression-stats", preBytes: 10, postBytes: 5, reductionPercent: 50 },
 		]
 			.map((o) => JSON.stringify(o))
 			.join("\n") + "\n";

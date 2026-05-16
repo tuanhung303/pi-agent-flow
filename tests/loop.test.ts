@@ -9,6 +9,8 @@ import {
   resetLoop,
   terminateLoop,
   recordSessionWarp,
+  setPendingWarpSessionId,
+  clearPendingWarpSessionId,
 } from "../src/flow/loop.js";
 import { setGoal, readState } from "../src/flow/store.js";
 import type { LoopState, LoopTerminationReason } from "../src/flow/types.js";
@@ -124,5 +126,26 @@ describe("loop state management", () => {
     const loop = terminateLoop(tmpDir, "goal_completed");
     expect(loop?.status).toBe("terminated");
     expect(loop?.terminationReason).toBe("goal_completed" as LoopTerminationReason);
+  });
+
+  it("(13) setPendingWarpSessionId writes pendingWarpSessionId and ensures active", () => {
+    setGoal(tmpDir, "test objective");
+    enableLoop(tmpDir, "test objective");
+    disableLoop(tmpDir);
+    const loop = setPendingWarpSessionId(tmpDir, "session-x");
+    expect(loop?.status).toBe("active");
+    expect(loop?.pendingWarpSessionId).toBe("session-x");
+    const fromFile = getLoop(tmpDir);
+    expect(fromFile?.pendingWarpSessionId).toBe("session-x");
+  });
+
+  it("(14) clearPendingWarpSessionId removes pendingWarpSessionId", () => {
+    setGoal(tmpDir, "test objective");
+    enableLoop(tmpDir, "test objective");
+    setPendingWarpSessionId(tmpDir, "session-x");
+    const loop = clearPendingWarpSessionId(tmpDir);
+    expect(loop?.pendingWarpSessionId).toBeUndefined();
+    const fromFile = getLoop(tmpDir);
+    expect(fromFile?.pendingWarpSessionId).toBeUndefined();
   });
 });

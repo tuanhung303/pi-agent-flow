@@ -88,6 +88,50 @@ describe("classify", () => {
 // Helpers
 // ---------------------------------------------------------------------------
 
+	it("returns Compressible for grep auth (no false positive)", () => {
+		expect(classify("grep authentication")).toBe(OutputPolicy.Compressible);
+	});
+
+	it("returns Compressible for cat server.log (no false positive)", () => {
+		expect(classify("cat server.log")).toBe(OutputPolicy.Verbatim);
+	});
+
+	it("returns Compressible for echo watch this (no false positive)", () => {
+		expect(classify('echo "watch this"')).toBe(OutputPolicy.Compressible);
+	});
+
+	it("returns Passthrough for vite", () => {
+		expect(classify("vite")).toBe(OutputPolicy.Passthrough);
+	});
+
+	it("returns Compressible for vite build", () => {
+		expect(classify("vite build")).toBe(OutputPolicy.Compressible);
+	});
+
+	it("returns Passthrough for next dev", () => {
+		expect(classify("next dev")).toBe(OutputPolicy.Passthrough);
+	});
+
+	it("returns Passthrough for nodemon", () => {
+		expect(classify("nodemon server.js")).toBe(OutputPolicy.Passthrough);
+	});
+
+	it("returns Passthrough for npm run serve", () => {
+		expect(classify("npm run serve")).toBe(OutputPolicy.Passthrough);
+	});
+
+	it("returns Passthrough for yarn run watch", () => {
+		expect(classify("yarn run watch")).toBe(OutputPolicy.Passthrough);
+	});
+
+	it("returns Passthrough for az login", () => {
+		expect(classify("az login")).toBe(OutputPolicy.Passthrough);
+	});
+
+	it("returns Compressible for az list", () => {
+		expect(classify("az account list")).toBe(OutputPolicy.Compressible);
+	});
+
 describe("estimateTokens", () => {
 	it("returns ceil(length / 4)", () => {
 		expect(estimateTokens("")).toBe(0);
@@ -132,6 +176,11 @@ describe("terseFilter", () => {
 		expect(terseFilter(raw)).toBe("header\ncontent");
 	});
 
+	it("strips missing box-drawing chars (┌ ┐ ┘ ┤ ├ ┴ ┬)", () => {
+		const raw = "header\n┌───┐\n├─┴─┤\n┘ ┬\ncontent";
+		expect(terseFilter(raw)).toBe("header\ncontent");
+	});
+
 	it("strips trailing whitespace", () => {
 		const raw = "line1   \nline2\t";
 		expect(terseFilter(raw)).toBe("line1\nline2");
@@ -166,14 +215,14 @@ describe("lightweightCleanup", () => {
 
 describe("truncateWithSafetyScan", () => {
 	it("returns null when lines are too short", () => {
-		expect(truncateWithSafetyScan(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"], 100)).toBeNull();
+		expect(truncateWithSafetyScan(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"])).toBeNull();
 	});
 
 	it("keeps head, tail, and safety lines", () => {
 		const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
 		lines[15] = "error: something broke";
 		lines[16] = "warning: deprecated";
-		const result = truncateWithSafetyScan(lines, estimateTokens(lines.join("\n")));
+		const result = truncateWithSafetyScan(lines);
 		expect(result).toContain("line 1");
 		expect(result).toContain("line 5");
 		expect(result).toContain("line 26");
@@ -186,7 +235,7 @@ describe("truncateWithSafetyScan", () => {
 	it("does not match safety needles inside longer words", () => {
 		const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
 		lines[15] = "errorBoundary handled";
-		const result = truncateWithSafetyScan(lines, estimateTokens(lines.join("\n")));
+		const result = truncateWithSafetyScan(lines);
 		expect(result).not.toContain("errorBoundary");
 		expect(result).toContain("20 lines omitted");
 	});
@@ -196,14 +245,14 @@ describe("truncateWithSafetyScan", () => {
 		for (let i = 10; i < 40; i++) {
 			lines[i] = `error ${i}`;
 		}
-		const result = truncateWithSafetyScan(lines, estimateTokens(lines.join("\n")));
+		const result = truncateWithSafetyScan(lines);
 		const matches = result!.split("\n").filter((l) => l.startsWith("error"));
 		expect(matches.length).toBe(20);
 	});
 
 	it("returns null if result is not shorter", () => {
 		const lines = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`);
-		const result = truncateWithSafetyScan(lines, estimateTokens(lines.join("\n")));
+		const result = truncateWithSafetyScan(lines);
 		expect(result).toBeNull();
 	});
 });

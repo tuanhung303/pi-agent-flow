@@ -37,8 +37,43 @@ export function classify(command: string): OutputPolicy {
 function isPassthroughCommand(cmd: string): boolean {
 	const lower = cmd.toLowerCase();
 	if (COMPRESS_PASSTHROUGH_PATTERNS.some((p) => p.test(lower))) return true;
-	// Broad keyword matches as specified
-	if (lower.includes("login") || lower.includes("auth") || lower.includes("serve") || lower.includes("watch")) return true;
+
+	const tokens = lower.trim().split(/\s+/);
+	const base = tokens[0] ?? "";
+
+	// Base commands that are always passthrough
+	const alwaysPassthrough = new Set(["pi", "lean-ctx", "live-server", "nodemon", "webpack-dev-server", "watch"]);
+	if (alwaysPassthrough.has(base)) return true;
+
+	// CLI auth tools — only login/auth subcommands
+	if (base === "az" || base === "gcloud" || base === "firebase") {
+		return tokens.slice(1).some((t) => t === "login" || t === "auth");
+	}
+
+	// Package managers — specific subcommands only
+	if (base === "npm" || base === "yarn" || base === "pnpm") {
+		for (let i = 1; i < tokens.length; i++) {
+			if (tokens[i] === "start") return true;
+			if (tokens[i] === "run" && ["dev", "watch", "serve"].includes(tokens[i + 1])) return true;
+		}
+		return false;
+	}
+
+	// Cargo
+	if (base === "cargo") {
+		return tokens.slice(1).some((t) => t === "watch" || t === "run");
+	}
+
+	// Python http.server
+	if (base === "python" || base === "python3") {
+		return tokens.includes("-m") && tokens.includes("http.server");
+	}
+
+	// Vite — dev server when invoked as 'vite' or 'vite dev'
+	if (base === "vite") {
+		return tokens.length === 1 || tokens[1] === "dev";
+	}
+
 	return false;
 }
 
@@ -112,8 +147,8 @@ export function compressOutput(
 	}
 
 	// Tier 3: safety-scan truncation on lightweight-cleanup result
-	const sOut = truncateWithSafetyScan(lOut.split("\n"), estimateTokens(stdout)) ?? lOut;
-	const sErr = truncateWithSafetyScan(lErr.split("\n"), estimateTokens(stderr)) ?? lErr;
+	const sOut = truncateWithSafetyScan(lOut.split("\n")) ?? lOut;
+	const sErr = truncateWithSafetyScan(lErr.split("\n")) ?? lErr;
 	if (shorterThan(sOut + sErr, original, 0)) {
 		return {
 			stdout: sOut,
@@ -179,7 +214,7 @@ export function terseFilter(output: string): string {
 	lines = collapseBlankLines(lines, 3);
 
 	// 4. Strip pure decoration lines
-	const decorationRe = /^[\s\u2500\u2550\u2502\u258C\u2504\u2508\u256D\u2570\u2503\u2523\u2517\u2533\u253B\u252B\u2554\u2557\u255A\u255D\u2551]+$/;
+	const decorationRe = /^[\s\u2500\u2550\u2502\u258C\u2504\u2508\u256D\u2570\u2503\u2523\u2517\u2533\u253B\u252B\u2554\u2557\u255A\u255D\u2551\u250C\u2510\u2518\u2524\u251C\u2534\u252C]+$/;
 	lines = lines.filter((line) => !decorationRe.test(line));
 
 	// 5. Strip trailing whitespace per line
@@ -239,7 +274,7 @@ export function lightweightCleanup(output: string): string {
 // Safety-scan truncation
 // ---------------------------------------------------------------------------
 
-export function truncateWithSafetyScan(lines: string[], originalTokens: number): string | null {
+export function truncateWithSafetyScan(lines: string[]): string | null {
 	if (lines.length <= COMPRESS_SAFETY_SCAN_HEAD + COMPRESS_SAFETY_SCAN_TAIL) {
 		return null;
 	}
@@ -561,7 +596,7 @@ function npmInstallCompress(_command: string, output: string): string {
 
 function npmTestCompress(_command: string, output: string): string {
 	const keepRe = /^(PASS|FAIL|Test Suites:|Tests:|Snapshots:|Time:)/;
-	const errorBlockRe = /\b(error|failed|fail|ERR!)\b/i;
+	const errorBlockRe = /\b(error|failed|fail)\b|ERR!/i;
 
 	const lines = output.split("\n");
 	const kept: string[] = [];

@@ -397,7 +397,7 @@ export default function (pi: ExtensionAPI) {
 				// artifacts before passing it to child flows.
 				// Uses the persistent module-level cache so historical flow results
 				// are properly compressed (not passed through verbatim).
-				const { result: forkSessionSnapshotJsonl } = sanitizeForkSnapshot(
+				const { result: forkSessionSnapshotJsonl, stats: forkSessionSnapshotStats } = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
 					{
@@ -457,6 +457,7 @@ export default function (pi: ExtensionAPI) {
 						tierOverrideResolver: getTierOverride,
 						fallbackModel: inheritedCliArgs.fallbackModel,
 						forkSessionSnapshotJsonl,
+						forkSessionSnapshotStats,
 						flowResultCache,
 						projectFlowsDir: discovery.projectFlowsDir,
 						sessionManager: ctx.sessionManager,

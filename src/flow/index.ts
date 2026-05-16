@@ -39,6 +39,8 @@ export {
   resetLoop,
   terminateLoop,
   recordSessionWarp,
+  setPendingWarpSessionId,
+  clearPendingWarpSessionId,
 } from "./loop.js";
 
 export { setupFlowCommand, setupContinuation, setupWarpCommand, setupLoopCommand };

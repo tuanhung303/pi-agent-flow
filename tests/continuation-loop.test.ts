@@ -153,7 +153,7 @@ describe("continuation loop integration", () => {
     expect(sentMessages[0].opts.triggerTurn).toBe(true);
   });
 
-  it("when loop has pendingWarpSessionId that differs from current session, turn_end skips", async () => {
+  it("pendingWarpSessionId blocks turn_end from old session", async () => {
     registerSession("session-e");
     setGoal(tmpDir, "Loop goal", { sessionId: "session-e" });
     setLoop(tmpDir, {

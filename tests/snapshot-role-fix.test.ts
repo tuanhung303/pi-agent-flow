@@ -1023,7 +1023,10 @@ describe("sanitizeForkSnapshot preserves assistant usage", () => {
 		const assistant = entries.find((e: any) => e?.message?.role === "assistant");
 
 		expect(assistant?.message?.usage?.totalTokens).toBe(8821);
-		expect(assistant?.message?.usage?.input).toBe(10);
+		expect(assistant?.message?.usage?.input).toBeUndefined();
+		expect(assistant?.message?.usage?.output).toBeUndefined();
+		expect(assistant?.message?.usage?.cacheRead).toBeUndefined();
+		expect(assistant?.message?.usage?.cacheWrite).toBeUndefined();
 		expect(assistant?.message?.api).toBeUndefined();
 		expect(assistant?.message?.provider).toBeUndefined();
 		expect(assistant?.message?.model).toBeUndefined();
@@ -1161,7 +1164,7 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		expect(entries.some((e: any) => Array.isArray(e?.message?.content) && e.message.content.some((c: any) => c?.name === "batch_read"))).toBe(false);
 		expect(entries.some((e: any) => e?.message?.toolCallId === "br-1")).toBe(false);
 
-		// Collect surviving IDs (excluding compression-stats)
+		// Collect surviving IDs
 		const survivingIds = new Set<string>();
 		for (const entry of entries) {
 			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;

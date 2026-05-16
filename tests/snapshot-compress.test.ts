@@ -251,6 +251,124 @@ describe("compressToolResults — batch", () => {
 		expect(text).toContain("[bash:ok] abc · exit 0 · 0.1s · 1 line\n> head:\noutput");
 		expect(result).not.toContain("--- bash [abc] exit 0 ---");
 	});
+
+	it("compresses rg sections at depth 1 with head preview", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\nsrc/core/flow.ts:10:export function run()\nsrc/core/flow.ts:20:export const x\nsrc/core/flow.ts:30:export class Flow\nsrc/core/flow.ts:40:export interface Options\nsrc/core/agents.ts:5:export interface Agent\nsrc/core/agents.ts:15:export class Builder\nsrc/core/agents.ts:25:export function create()\nsrc/core/agents.ts:35:export type Config\nsrc/config/config.ts:8:export interface Config\nsrc/config/config.ts:18:export function load()\nsrc/config/config.ts:28:export const defaults\nsrc/tools/web-tool.ts:12:export async function search()\nsrc/tools/web-tool.ts:22:export function fetch()\nsrc/tools/web-tool.ts:32:export function post()\nsrc/tools/web-tool.ts:42:export function put()",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:ok] src/core · 15 matches · 4 files");
+		expect(text).toContain("> head:");
+		expect(text).toContain("src/core/flow.ts:10:export function run()");
+		expect(text).toContain("src/core/flow.ts:20:export const x");
+		expect(text).toContain("src/core/flow.ts:30:export class Flow");
+		expect(text).not.toContain("src/tools/web-tool.ts:32:export function post()");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
+
+	it("compresses rg sections at depth 2+ without head preview", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\nsrc/core/flow.ts:10:export function run()\nsrc/core/flow.ts:20:export const x\nsrc/core/flow.ts:30:export class Flow\nsrc/core/flow.ts:40:export interface Options\nsrc/core/agents.ts:5:export interface Agent\nsrc/core/agents.ts:15:export class Builder\nsrc/core/agents.ts:25:export function create()\nsrc/core/agents.ts:35:export type Config\nsrc/config/config.ts:8:export interface Config\nsrc/config/config.ts:18:export function load()\nsrc/config/config.ts:28:export const defaults\nsrc/tools/web-tool.ts:12:export async function search()\nsrc/tools/web-tool.ts:22:export function fetch()\nsrc/tools/web-tool.ts:32:export function post()\nsrc/tools/web-tool.ts:42:export function put()",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:ok] src/core · 15 matches · 4 files");
+		expect(text).not.toContain("> head:");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
+
+	it("compresses rg error sections", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\nError: ENOENT",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:err] src/core · 1 line");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
+
+	it("compresses empty rg sections as 0 matches", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\n",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:ok] src/core · 0 matches");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
 });
 
 

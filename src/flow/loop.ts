@@ -71,6 +71,23 @@ export function recordSessionWarp(cwd: string): LoopState | undefined {
   return state.loop;
 }
 
+export function setPendingWarpSessionId(cwd: string, sessionId: string): LoopState | undefined {
+  const state = readState(cwd);
+  if (!state.loop) return undefined;
+  state.loop.pendingWarpSessionId = sessionId;
+  state.loop.status = "active";
+  writeState(cwd, state);
+  return state.loop;
+}
+
+export function clearPendingWarpSessionId(cwd: string): LoopState | undefined {
+  const state = readState(cwd);
+  if (!state.loop) return undefined;
+  delete state.loop.pendingWarpSessionId;
+  writeState(cwd, state);
+  return state.loop;
+}
+
 /** Directly set loop state (test helper). */
 export function setLoop(cwd: string, loop: LoopState): void {
   const state = readState(cwd);

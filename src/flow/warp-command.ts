@@ -9,7 +9,7 @@ import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { getGoalForSession } from "./store.js";
-import { getLoop, recordSessionWarp, terminateLoop } from "./loop.js";
+import { getLoop, recordSessionWarp, terminateLoop, setPendingWarpSessionId, clearPendingWarpSessionId } from "./loop.js";
 import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
 import {
   stripSteeringHintFromContent,
@@ -421,6 +421,8 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
 
       // Spawn new session
       const currentSessionFile = ctx.sessionManager.getSessionFile();
+      const currentSessionId = ctx.sessionManager.getSessionId();
+      setPendingWarpSessionId(cwd, currentSessionId);
       let cancelled: boolean | undefined;
       try {
         const result = await ctx.newSession({
@@ -455,6 +457,8 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
           ctx.ui.notify?.("Warp failed: could not create new session.", "error");
         }
         return;
+      } finally {
+        clearPendingWarpSessionId(cwd);
       }
 
       if (cancelled) {

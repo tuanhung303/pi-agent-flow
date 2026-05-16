@@ -491,6 +491,8 @@ export interface RunFlowOptions {
 	sessionMode?: AgentSessionMode;
 	/** Optional flow goal context to inject into the child prompt. */
 	goalContext?: GoalContext;
+	/** Compression statistics from sanitizeForkSnapshot for dump header generation. */
+	compressionStats?: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
 }
 
 /**
@@ -630,19 +632,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const promptIndex = piArgs.indexOf("-p");
 			const prompt = promptIndex >= 0 ? piArgs[promptIndex + 1] : "";
 
-			// Extract compression stats and applied passes from the trailing JSONL entry if present.
+			// Use out-of-band compression stats provided via RunFlowOptions.
 			let compressionStats = "";
 			let passesApplied: string[] = [];
-			if (forkSessionSnapshotJsonl) {
-				const lines = forkSessionSnapshotJsonl.trimEnd().split("\n");
-				const lastLine = lines[lines.length - 1];
-				try {
-					const lastEntry = JSON.parse(lastLine);
-					if (lastEntry?.type === "compression-stats") {
-						compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${lastEntry.preBytes} bytes\n- Post-sanitization: ${lastEntry.postBytes} bytes\n- Reduction: ${lastEntry.reductionPercent}%`;
-						passesApplied = Array.isArray(lastEntry.passesApplied) ? lastEntry.passesApplied : [];
-					}
-				} catch { /* ignore */ }
+			if (opts.compressionStats) {
+				compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${opts.compressionStats.preBytes} bytes\n- Post-sanitization: ${opts.compressionStats.postBytes} bytes\n- Reduction: ${opts.compressionStats.reductionPercent}%`;
+				passesApplied = Array.isArray(opts.compressionStats.passesApplied) ? opts.compressionStats.passesApplied : [];
 			}
 
 			const effectiveTier = flow.tier ?? getFlowTier(flow.name);

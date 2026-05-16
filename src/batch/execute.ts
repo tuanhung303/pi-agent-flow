@@ -418,7 +418,7 @@ export async function executeOperations(
 					const content = matches.join("\n");
 
 					// Try to attach enclosing signatures (only when we have line numbers)
-					let enclosingSignatures: Map<string, string> | undefined;
+					let enclosingSignatures: Record<string, string> | undefined;
 					const uniqueFiles = extractUniqueFilesFromRg(matches);
 					if (uniqueFiles.size > 0 && uniqueFiles.size <= RG_SIGNATURES_MAX_FILES && !isFilesOnlyRg(matches)) {
 						enclosingSignatures = await buildEnclosingSignatures(uniqueFiles, matches, cwd);
@@ -603,7 +603,7 @@ function buildContentText(summary: string, results: OpResult[]): string {
 		} else if (r.op === "delete" && r.status === "ok") {
 			sections.push(`\n--- delete: ${r.path} ---`);
 		} else if (r.op === "rg" && r.status === "ok") {
-			if (r.enclosingSignatures && r.enclosingSignatures.size > 0) {
+			if (r.enclosingSignatures && Object.keys(r.enclosingSignatures).length > 0) {
 				const grouped = groupRgMatchesByFile(r.content ?? "", r.enclosingSignatures);
 				sections.push(`\n--- rg: ${r.path} ---\n${grouped}`);
 			} else {
@@ -669,8 +669,8 @@ async function buildEnclosingSignatures(
 	files: Set<string>,
 	matches: string[],
 	cwd: string,
-): Promise<Map<string, string>> {
-	const sigMap = new Map<string, string>();
+): Promise<Record<string, string>> {
+	const sigMap: Record<string, string> = {};
 	for (const filePath of files) {
 		try {
 			const abs = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
@@ -692,7 +692,7 @@ async function buildEnclosingSignatures(
 				)
 				.sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0];
 			if (enclosing?.signature) {
-					sigMap.set(match, enclosing.signature);
+					sigMap[match] = enclosing.signature;
 				}
 			}
 		} catch {
@@ -702,7 +702,7 @@ async function buildEnclosingSignatures(
 	return sigMap;
 }
 
-function groupRgMatchesByFile(content: string, sigMap: Map<string, string>): string {
+function groupRgMatchesByFile(content: string, sigMap: Record<string, string>): string {
 	// Group matches by file, deduplicate signatures per file
 	const fileGroups = new Map<string, { sigs: Set<string>; lines: string[] }>();
 	for (const match of content.split("\n").filter(Boolean)) {
@@ -716,7 +716,7 @@ function groupRgMatchesByFile(content: string, sigMap: Map<string, string>): str
 			continue;
 		}
 		const group = fileGroups.get(filePath) ?? { sigs: new Set<string>(), lines: [] };
-		const sig = sigMap.get(match);
+		const sig = sigMap[match];
 		if (sig) group.sigs.add(sig);
 		group.lines.push(match);
 		fileGroups.set(filePath, group);

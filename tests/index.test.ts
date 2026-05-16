@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import registerExtension, { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "../src/index.js";
+import { sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
 import { runFlow, mapFlowConcurrent } from "../src/core/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
 
@@ -244,13 +245,17 @@ describe("flow tool execute", () => {
 
 		expect(lines[0]).toContain('"version":1');
 		expect(lines[0]).toContain('"meta"');
-		expect(lines[0]).toContain('forkedAt');
-		expect(lines[0]).toContain('"depth"');
+		// forkMetadataInjection removed: forkedAt/depth are in <activation> XML only
+		expect(lines[0]).not.toContain('forkedAt');
+		expect(lines[0]).not.toContain('"depth"');
 		expect(lines).toContain(JSON.stringify(unchangedUserExpected));
 		expect(lines).toContain(JSON.stringify(unchangedAssistantExpected));
 		expect(lines).toContain(normalizedToolLine);
 		expect(lines).not.toContain(JSON.stringify({ type: "system", content: header.systemPrompt }));
-		expect(lines.some((l: string) => l.includes('"type":"compression-stats"'))).toBe(true);
+		const { stats } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(stats).toBeDefined();
+		expect(stats!.preBytes).toBeGreaterThan(0);
+		expect(stats!.postBytes).toBeGreaterThan(0);
 		expect(lines).not.toContain(JSON.stringify(changedAssistant));
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
 		expect(snapshot).toContain("Visible answer");

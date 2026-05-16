@@ -21,7 +21,6 @@ function parseSnapshot(snapshot: string): any[] {
 }
 
 const VALID_PASS_NAMES = new Set([
-	"forkMetadataInjection",
 	"stripSystemPrompt",
 	"stripSessionId",
 	"dropSlidingSystemPrompts",
@@ -413,21 +412,22 @@ describe("HEADER ROUND-TRIP TEST", () => {
 			},
 		]);
 
-		const { result } = sanitizeForkSnapshot(snapshot, flowCache);
+		const { result, stats } = sanitizeForkSnapshot(snapshot, flowCache);
 		expect(result).toBeDefined();
+		expect(stats).toBeDefined();
 
-		// Extract compression-stats from the trailing entry (same pipeline as flow.ts)
+		// Stats are returned out-of-band; the JSONL must NOT contain compression-stats.
 		const lines = result!.trimEnd().split("\n");
 		const lastLine = lines[lines.length - 1];
 		const lastEntry = JSON.parse(lastLine);
-		expect(lastEntry?.type).toBe("compression-stats");
+		expect(lastEntry?.type).not.toBe("compression-stats");
 
-		const passesApplied: string[] = Array.isArray(lastEntry.passesApplied)
-			? lastEntry.passesApplied
+		const passesApplied: string[] = Array.isArray(stats?.passesApplied)
+			? stats!.passesApplied
 			: [];
-		const preBytes = lastEntry.preBytes;
-		const postBytes = lastEntry.postBytes;
-		const reductionPercent = lastEntry.reductionPercent;
+		const preBytes = stats!.preBytes;
+		const postBytes = stats!.postBytes;
+		const reductionPercent = stats!.reductionPercent;
 
 		// Replicate the exact dump-building logic from src/flow.ts
 		const flowName = "scout";
@@ -451,7 +451,7 @@ describe("HEADER ROUND-TRIP TEST", () => {
 			``,
 			`## Session Snapshot (JSONL)`,
 			``,
-			...result!.split("\n"),
+			...result!.trimEnd().split("\n"),
 			``,
 			`## Activation Prompt (-p)`,
 			``,

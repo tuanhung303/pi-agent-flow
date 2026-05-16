@@ -509,10 +509,10 @@ describe("batch tool", () => {
 		expect(result.details.results[0].status).toBe("ok");
 		expect(result.details.results[0].enclosingSignatures).toBeDefined();
 		const sigs = result.details.results[0].enclosingSignatures;
-		expect(sigs?.size).toBe(1);
-		const matchKey = Array.from(sigs!.keys())[0];
+		expect(Object.keys(sigs!).length).toBe(1);
+		const matchKey = Object.keys(sigs!)[0];
 		expect(matchKey).toContain("sig.ts");
-		expect(sigs?.get(matchKey)).toBe("bar(): number");
+		expect(sigs![matchKey]).toBe("bar(): number");
 		expect(result.content[0].text).toContain("bar(): number");
 		expect(result.content[0].text).toContain("→");
 	});

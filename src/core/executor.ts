@@ -68,6 +68,8 @@ export interface FlowExecutorDeps {
 	fallbackModel?: string;
 	/** Fork session snapshot JSONL. */
 	forkSessionSnapshotJsonl: string | null;
+	/** Compression statistics from sanitizeForkSnapshot for dump header generation. */
+	forkSessionSnapshotStats?: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
 	/** Flow result cache for compression. */
 	flowResultCache: Map<string, CompressedFlowResult[]>;
 	/** Project flows directory. */
@@ -381,6 +383,7 @@ export async function executeFlows(
 				acceptance: item.acceptance,
 				taskCwd: item.cwd,
 				forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+				compressionStats: shouldInheritContext ? deps.forkSessionSnapshotStats : null,
 				parentDepth: currentDepth,
 				parentFlowStack: ancestorFlowStack,
 				maxDepth: effectiveMaxDepth,
