@@ -10,6 +10,7 @@ import {
 	type HatchetFlowPayload,
 } from "./hatchet-payload.js";
 import { emptyFlowUsage, type FlowDetails, type SingleResult } from "./types/flow.js";
+import { SubmitterAdapter, type HatchetRunAdapter } from "./hatchet-run-adapter.js";
 export {
 	DEFAULT_HATCHET_MAX_PAYLOAD_BYTES,
 	HATCHET_FLOW_TASK_NAME,
@@ -294,8 +295,26 @@ function emitHatchetLifecycleUpdate(
 ): void {
 	options.onUpdate?.({ content: [{ type: "text", text }], details: makeFlowDetails(projectFlowsDir)([result]) });
 }
+export interface HatchetFlowRunnerOptions {
+	adapter: HatchetRunAdapter;
+}
+
 export class HatchetFlowRunner implements FlowRunner {
-	constructor(private readonly submitTask: HatchetSubmitter = defaultSubmitHatchetTask) {}
+	private readonly adapter: HatchetRunAdapter;
+
+	constructor(submitterOrOptions?: HatchetSubmitter | HatchetFlowRunnerOptions) {
+		if (!submitterOrOptions) {
+			// Default: wrap the SDK-based submitter in the compatibility adapter
+			this.adapter = new SubmitterAdapter(defaultSubmitHatchetTask);
+		} else if (typeof submitterOrOptions === "function") {
+			// Backward-compat: accept a plain submitter function
+			this.adapter = new SubmitterAdapter(submitterOrOptions);
+		} else {
+			// New: accept a full adapter options object
+			this.adapter = submitterOrOptions.adapter;
+		}
+	}
+
 	async run(options: RunFlowOptions, context?: FlowRunContext): Promise<SingleResult> {
 		const projectFlowsDir = context?.projectFlowsDir ?? null;
 		const payload = serializeHatchetFlowPayload(options, projectFlowsDir);
@@ -307,20 +326,37 @@ export class HatchetFlowRunner implements FlowRunner {
 			`Hatchet queued/running flow ${payload.flowName}.`,
 			makeHatchetLifecycleResult(options, "queued/running"),
 		);
-		try {
-			const result = validateSingleResult(
-				await awaitHatchetResult(this.submitTask(HATCHET_FLOW_TASK_NAME, payload), timeoutMs),
-				"Hatchet runner result",
-			);
-			emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet completed flow ${payload.flowName}.`, result);
-			return result;
-		} catch (error) {
+		let failureEmitted = false;
+		const emitFailure = () => {
+			if (failureEmitted) return;
+			failureEmitted = true;
 			emitHatchetLifecycleUpdate(
 				options,
 				projectFlowsDir,
 				`Hatchet failed flow ${payload.flowName}.`,
 				makeHatchetFailureLifecycleResult(options),
 			);
+		};
+		try {
+			const handle = await this.adapter.submit(HATCHET_FLOW_TASK_NAME, payload);
+			const remoteStatus = await awaitHatchetResult(
+				this.adapter.getResult(handle),
+				timeoutMs,
+			);
+			if (remoteStatus.status === "completed") {
+				const result = validateSingleResult(remoteStatus.result, "Hatchet runner result");
+				emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet completed flow ${payload.flowName}.`, result);
+				return result;
+			}
+			// failed, cancelled, or unknown
+			const errMsg =
+				remoteStatus.status === "failed" || remoteStatus.status === "cancelled"
+					? remoteStatus.errorMessage
+					: (remoteStatus.errorMessage ?? `Hatchet flow returned status: ${remoteStatus.status}`);
+			emitFailure();
+			throw new Error(errMsg);
+		} catch (error) {
+			emitFailure();
 			throw error;
 		}
 	}

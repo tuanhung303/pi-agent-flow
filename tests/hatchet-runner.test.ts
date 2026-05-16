@@ -18,6 +18,7 @@ import {
 	validateHatchetFlowPayloadSize,
 } from "../src/hatchet-payload.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
+import type { HatchetRunAdapter } from "../src/hatchet-run-adapter.js";
 
 vi.mock("../src/core/flow.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../src/core/flow.js")>();
@@ -351,5 +352,69 @@ describe("Hatchet runner", () => {
 		expect(readme).toContain("trusted infrastructure");
 		expect(adr).toContain("Hatchet payload trust boundary");
 		expect(adr).toContain("trusted infrastructure");
+	});
+});
+
+describe("Hatchet runner adapter", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("adapter submit and getResult round-trip produces the correct result", async () => {
+		const singleResult: SingleResult = {
+			type: "build",
+			agentSource: "project",
+			intent: "Implement durable resume",
+			aim: "Durable Hatchet resume",
+			exitCode: 0,
+			messages: [],
+			stderr: "done from adapter",
+			usage: emptyFlowUsage(),
+		};
+
+		const adapter: HatchetRunAdapter = {
+			submit: vi.fn(async () => ({ runId: "remote-1" })),
+			getResult: vi.fn(async () => ({ status: "completed" as const, result: singleResult })),
+		};
+
+		const runner = new HatchetFlowRunner({ adapter });
+		const result = await runner.run(options());
+
+		expect(adapter.submit).toHaveBeenCalledOnce();
+		expect(adapter.getResult).toHaveBeenCalledWith({ runId: "remote-1" });
+		expect(result.stderr).toBe("done from adapter");
+	});
+
+	it("adapter failed status causes runner to throw", async () => {
+		const adapter: HatchetRunAdapter = {
+			submit: vi.fn(async () => ({ runId: "remote-fail" })),
+			getResult: vi.fn(async () => ({
+				status: "failed" as const,
+				errorMessage: "worker crashed",
+			})),
+		};
+
+		const runner = new HatchetFlowRunner({ adapter });
+		await expect(runner.run(options())).rejects.toThrow("worker crashed");
+	});
+
+	it("adapter submit error causes runner to throw and emit failure update", async () => {
+		const updates: any[] = [];
+		const adapter: HatchetRunAdapter = {
+			submit: vi.fn(async () => {
+				throw new Error("submission failed");
+			}),
+			getResult: vi.fn(async () => ({ status: "unknown" as const })),
+		};
+
+		const runner = new HatchetFlowRunner({ adapter });
+		await expect(
+			runner.run(options({ onUpdate: (u) => updates.push(u) })),
+		).rejects.toThrow("submission failed");
+
+		expect(updates.map((u) => u.content[0].text)).toEqual([
+			"Hatchet queued/running flow build.",
+			"Hatchet failed flow build.",
+		]);
 	});
 });
