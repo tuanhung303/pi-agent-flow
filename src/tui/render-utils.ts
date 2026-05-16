@@ -120,7 +120,7 @@ export function formatContextLabel(ctxTokens: number, maxCtxTokens?: number): st
 		return formatFixedTokens(ctxTokens);
 	}
 	if (ctxTokens === 0) {
-		return `----/${formatFixedTokens(maxCtxTokens)}`;
+		return `-----/${formatFixedTokens(maxCtxTokens)}`;
 	}
 	return `${formatFixedTokens(ctxTokens)}/${formatFixedTokens(maxCtxTokens)}`;
 }

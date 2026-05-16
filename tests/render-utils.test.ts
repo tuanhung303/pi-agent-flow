@@ -193,6 +193,6 @@ describe('formatContextLabel', () => {
   });
 
   it('returns placeholder when ctxTokens is 0 and max is known', () => {
-    expect(formatContextLabel(0, 200000)).toBe('----/0.20M');
+    expect(formatContextLabel(0, 200000)).toBe('-----/0.20M');
   });
 });
