@@ -192,6 +192,7 @@ const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
           flowRunner,
           confirmProjectFlows: params.confirmProjectFlows,
           goalContext,
+          goalId: goal?.id,
           goalContinuationCallback: async (results) => {
             // Reset per-turn prompt hint state without overriding parent active tools.
 // Child flow tool restrictions are still controlled by the flow runner's --tools args.

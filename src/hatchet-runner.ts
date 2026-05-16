@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import type { RunFlowOptions } from "./core/flow.js";
 import type { FlowRunContext, FlowRunner } from "./flow-runner.js";
 import {
@@ -11,6 +12,13 @@ import {
 } from "./hatchet-payload.js";
 import { emptyFlowUsage, type FlowDetails, type SingleResult } from "./types/flow.js";
 import { SubmitterAdapter, type HatchetRunAdapter } from "./hatchet-run-adapter.js";
+import {
+	createHatchetRunRecord,
+	appendHatchetRunRecord,
+	markHatchetRunSubmitted,
+	updateHatchetRunResult,
+	updateHatchetRunFailure,
+} from "./hatchet-run-registry.js";
 export {
 	DEFAULT_HATCHET_MAX_PAYLOAD_BYTES,
 	HATCHET_FLOW_TASK_NAME,
@@ -326,6 +334,31 @@ export class HatchetFlowRunner implements FlowRunner {
 			`Hatchet queued/running flow ${payload.flowName}.`,
 			makeHatchetLifecycleResult(options, "queued/running"),
 		);
+
+		// Compute payload hash (without snapshot or secrets)
+		const payloadHash = "sha256:" + crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
+
+		// Create and persist registry record before submission (best-effort; never throws)
+		const record = createHatchetRunRecord({
+			cwd: options.cwd,
+			sessionId: context?.sessionId,
+			goalId: context?.goalId,
+			toolCallId: context?.toolCallId,
+			flowType: payload.flowName,
+			intent: options.intent,
+			aim: options.aim,
+			paramIndex: context?.paramIndex ?? 0,
+			attemptIndex: context?.attemptIndex ?? 0,
+			payloadHash,
+		});
+		let registryEnabled = false;
+		try {
+			appendHatchetRunRecord(options.cwd, record);
+			registryEnabled = true;
+		} catch {
+			// Registry write failed (e.g. missing cwd) — continue without persistence
+		}
+
 		let failureEmitted = false;
 		const emitFailure = () => {
 			if (failureEmitted) return;
@@ -337,14 +370,20 @@ export class HatchetFlowRunner implements FlowRunner {
 				makeHatchetFailureLifecycleResult(options),
 			);
 		};
+		const registryUpdate = (fn: () => void) => { if (registryEnabled) { try { fn(); } catch { /* best-effort */ } } };
+
 		try {
 			const handle = await this.adapter.submit(HATCHET_FLOW_TASK_NAME, payload);
+			// Persist the remote handle immediately after submission
+			registryUpdate(() => markHatchetRunSubmitted(options.cwd, record.id, { hatchetRunId: handle.runId, status: "running" }));
+
 			const remoteStatus = await awaitHatchetResult(
 				this.adapter.getResult(handle),
 				timeoutMs,
 			);
 			if (remoteStatus.status === "completed") {
 				const result = validateSingleResult(remoteStatus.result, "Hatchet runner result");
+				registryUpdate(() => updateHatchetRunResult(options.cwd, record.id, result));
 				emitHatchetLifecycleUpdate(options, projectFlowsDir, `Hatchet completed flow ${payload.flowName}.`, result);
 				return result;
 			}
@@ -353,9 +392,12 @@ export class HatchetFlowRunner implements FlowRunner {
 				remoteStatus.status === "failed" || remoteStatus.status === "cancelled"
 					? remoteStatus.errorMessage
 					: (remoteStatus.errorMessage ?? `Hatchet flow returned status: ${remoteStatus.status}`);
+			registryUpdate(() => updateHatchetRunFailure(options.cwd, record.id, remoteStatus.status === "cancelled" ? "cancelled" : "failed", errMsg));
 			emitFailure();
 			throw new Error(errMsg);
 		} catch (error) {
+			// Record a generic failure for unexpected errors
+			registryUpdate(() => updateHatchetRunFailure(options.cwd, record.id, "failed", error instanceof Error ? error.message : String(error)));
 			emitFailure();
 			throw error;
 		}

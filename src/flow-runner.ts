@@ -9,6 +9,16 @@ import type { SingleResult } from "./types/flow.js";
 export interface FlowRunContext {
   /** Project-local flow directory discovered by the parent process, or null when unavailable. */
   projectFlowsDir: string | null;
+  /** Session ID of the current Pi session, for Hatchet run registry. */
+  sessionId?: string;
+  /** Goal ID of the active goal, for idempotent completion tracking. */
+  goalId?: string;
+  /** Tool call ID from the executor, for stable deduplication. */
+  toolCallId?: string;
+  /** Index of this flow param in the batch (0-based). */
+  paramIndex?: number;
+  /** Attempt/failover index for this flow param (0-based). */
+  attemptIndex?: number;
 }
 
 /**

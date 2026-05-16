@@ -99,6 +99,8 @@ export interface FlowExecutorDeps {
   goalContext?: GoalContext;
   /** Backend used each resolved flow attempt. Defaults to the local fork runner. */
   flowRunner?: FlowRunner;
+  /** Active goal ID, if any — used by the Hatchet registry for idempotent goal completion. */
+  goalId?: string;
 }
 
 export interface ExecuteFlowParams {
@@ -400,6 +402,11 @@ export async function executeFlows(
         makeDetails,
       }, {
         projectFlowsDir,
+        sessionId: sessionManager.getSessionId(),
+        goalId: deps.goalId,
+        toolCallId,
+        paramIndex: index,
+        attemptIndex: attempt,
       });
 
       allResults[index] = result;

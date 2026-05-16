@@ -1,4 +1,7 @@
 import { readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunFlowOptions } from "../src/core/flow.js";
 import { runFlow } from "../src/core/flow.js";
@@ -416,5 +419,43 @@ describe("Hatchet runner adapter", () => {
 			"Hatchet queued/running flow build.",
 			"Hatchet failed flow build.",
 		]);
+	});
+
+	it("persists run record to registry when cwd is a real directory", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "hatchet-persist-"));
+		const singleResult: SingleResult = {
+			type: "build",
+			agentSource: "project",
+			intent: "Implement durable resume",
+			aim: "Durable Hatchet resume",
+			exitCode: 0,
+			messages: [],
+			stderr: "done",
+			usage: emptyFlowUsage(),
+		};
+
+		const adapter: HatchetRunAdapter = {
+			submit: vi.fn(async () => ({ runId: "remote-1" })),
+			getResult: vi.fn(async () => ({ status: "completed" as const, result: singleResult })),
+		};
+
+		const runner = new HatchetFlowRunner({ adapter });
+		await runner.run(
+			options({ cwd }),
+			{ projectFlowsDir: null, sessionId: "session-1", goalId: "goal-1", toolCallId: "tool-1", paramIndex: 0, attemptIndex: 0 },
+		);
+
+		const { loadHatchetRunRegistry } = await import("../src/hatchet-run-registry.js");
+		const registry = loadHatchetRunRegistry(cwd);
+		expect(registry.runs).toHaveLength(1);
+		expect(registry.runs[0]).toMatchObject({
+			status: "completed",
+			hatchetRunId: "remote-1",
+			sessionId: "session-1",
+			goalId: "goal-1",
+		});
+		expect(registry.runs[0].result?.exitCode).toBe(0);
+		// Ensure no snapshot data in registry
+		expect(JSON.stringify(registry)).not.toContain("forkSessionSnapshotJsonl");
 	});
 });
