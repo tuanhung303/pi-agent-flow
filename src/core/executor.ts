@@ -245,17 +245,17 @@ export async function executeFlows(
   // Project flow confirmation
   const projectFlows = getRequestedProjectFlows(flows, requested);
   if (projectFlows.length > 0 && confirmProjectFlows !== false) {
-    const { ok, blocked } = await confirmProjectFlowsIfNeeded(
+    const confirmation = await confirmProjectFlowsIfNeeded(
       projectFlows,
       projectFlowsDir,
       hasUI,
       uiConfirm,
     );
-    if (!ok) {
+    if (!confirmation.ok) {
       return {
-        content: [{ type: "text", text: blocked ?? "Canceled: project-local flows not approved." }],
+        content: [{ type: "text", text: confirmation.blocked ?? "Canceled: project-local flows not approved." }],
         details: makeDetails([]),
-        isError: !blocked,
+        isError: !confirmation.blocked,
       };
     }
   }
