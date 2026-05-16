@@ -9,7 +9,7 @@ function shortenPath(p: string): string {
 	return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
-function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: string; e?: unknown[]; c?: string; s?: number; l?: number }> {
+function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: string; e?: unknown[]; c?: string; s?: number; l?: number; q?: string; t?: string }> {
 	let rawOps: unknown[];
 	if (Array.isArray(args.o)) rawOps = args.o;
 	else if (Array.isArray(args.op)) rawOps = args.op;
@@ -26,11 +26,13 @@ function extractBatchOps(args: Record<string, unknown>): Array<{ o: string; p: s
 			const cmd = typeof op.c === "string" ? op.c : typeof op.command === "string" ? op.command : undefined;
 			const offset = typeof op.s === "number" ? op.s : typeof op.offset === "number" ? op.offset : undefined;
 			const limit = typeof op.l === "number" ? op.l : typeof op.limit === "number" ? op.limit : undefined;
-			return { o: opName, p: opPath, e: edits, c: cmd, s: offset, l: limit };
+			const pattern = typeof op.q === "string" ? op.q : undefined;
+			const typeFilter = typeof op.t === "string" ? op.t : undefined;
+			return { o: opName, p: opPath, e: edits, c: cmd, s: offset, l: limit, q: pattern, t: typeFilter };
 		});
 }
 
-function formatOpSummary(op: { o: string; p: string; e?: unknown[]; c?: string; s?: number; l?: number }): string {
+function formatOpSummary(op: { o: string; p: string; e?: unknown[]; c?: string; s?: number; l?: number; q?: string; t?: string }): string {
 	const shortPath = shortenPath(op.p);
 	switch (op.o) {
 		case "bash": {
@@ -59,8 +61,8 @@ function formatOpSummary(op: { o: string; p: string; e?: unknown[]; c?: string; 
 			return `ls ${shortPath}`;
 		case "find":
 			return `find ${shortPath}`;
-		case "grep":
-			return `grep ${shortPath}`;
+		case "rg":
+			return `rg ${op.q ?? "?"} in ${shortPath}${op.t ? ` (${op.t})` : ""}`;
 		case "delete":
 			return `delete ${shortPath}`;
 		default:

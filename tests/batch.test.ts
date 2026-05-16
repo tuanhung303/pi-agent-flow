@@ -292,6 +292,94 @@ describe("batch tool", () => {
 		});
 	});
 
+	describe("rg operations", () => {
+		it("searches with rg and returns matching files", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "bar.ts"), "export const bar = 2;\n", "utf-8");
+			fs.mkdirSync(path.join(tmpDir, "sub"), { recursive: true });
+			fs.writeFileSync(path.join(tmpDir, "sub", "baz.ts"), "export const baz = 3;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[0].op).toBe("rg");
+			expect(result.content[0].text).toContain("foo.ts");
+			expect(result.content[0].text).toContain("bar.ts");
+			expect(result.content[0].text).toContain("baz.ts");
+		});
+
+		it("returns empty results when no matches", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "nonexistent_pattern_12345" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[0].content).toBe("");
+		});
+
+		it("respects type filter", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "bar.js"), "export const bar = 2;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const", t: "ts" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("foo.ts");
+			expect(result.content[0].text).not.toContain("bar.js");
+		});
+
+		it("respects ignore-case flag", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const FOO = 1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "foo", i: true }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("foo.ts");
+		});
+
+		it("disables files-with-matches when l is false", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\nexport const foo2 = 2;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const", l: false }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.content[0].text).toContain("foo.ts");
+		});
+	});
+
 	describe("write operations", () => {
 		it("creates a new file", async () => {
 			const tool = createTool();
@@ -2681,6 +2769,24 @@ describe("batch_read tool", () => {
 
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("allows rg operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "alpha.txt"), "alpha content\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "beta.txt"), "beta content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "alpha" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBeFalsy();
+			expect(result.content[0].text).toContain("1 operations: 1 rg");
+			expect(result.content[0].text).toContain("alpha.txt");
 		});
 	});
 

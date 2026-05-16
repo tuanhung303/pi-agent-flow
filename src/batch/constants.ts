@@ -28,7 +28,7 @@ export interface EditReplacement {
 }
 
 export interface FileOpInput {
-	o: "read" | "write" | "edit" | "delete" | "bash";
+	o: "read" | "write" | "edit" | "delete" | "bash" | "rg";
 	p: string;
 	c?: string;
 	e?: EditReplacement[];
@@ -37,6 +37,20 @@ export interface FileOpInput {
 	i?: string;
 	t?: number;
 	h?: string;
+	q?: string;
+	n?: number;
+	u?: number;
+}
+
+export interface RgOpInput {
+	o: "rg";
+	p: string;
+	q: string;
+	l?: boolean;
+	i?: boolean;
+	t?: string;
+	n?: number;
+	u?: number;
 }
 
 export interface ContextMapEntry {
@@ -48,7 +62,7 @@ export interface ContextMapEntry {
 }
 
 export interface OpResult {
-	op: "read" | "write" | "edit" | "delete" | "bash";
+	op: "read" | "write" | "edit" | "delete" | "bash" | "rg";
 	path: string;
 	status: "ok" | "error" | "skipped" | "pending";
 	content?: string;

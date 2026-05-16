@@ -45,6 +45,7 @@ const FileOp = Type.Object({
 		Type.Literal("edit"),
 		Type.Literal("delete"),
 		Type.Literal("bash"),
+		Type.Literal("rg"),
 	]),
 	p: Type.String({ description: "Path to the file (relative or absolute). Use 'bash' or any string for o: 'bash'." }),
 	c: Type.Optional(
@@ -67,26 +68,60 @@ const FileOp = Type.Object({
 		}),
 	),
 	l: Type.Optional(
-		Type.Number({
-			minimum: 1,
-			description:
-				"Maximum number of lines to read (limit). Used with o: 'read'.",
-		}),
+		Type.Union([
+			Type.Number({
+				minimum: 1,
+				description:
+					"Maximum number of lines to read (limit). Used with o: 'read'.",
+			}),
+			Type.Boolean({
+				description:
+					"Files-with-matches flag for o: 'rg'. Default true.",
+			}),
+		]),
 	),
 	i: Type.Optional(
-		Type.String({
-			description: "Unique ID for this bash operation. Auto-generated if omitted. Used with o: 'bash'.",
-		}),
+		Type.Union([
+			Type.String({
+				description: "Unique ID for this bash operation. Auto-generated if omitted. Used with o: 'bash'.",
+			}),
+			Type.Boolean({
+				description: "Ignore-case flag for o: 'rg'. Used with o: 'rg'.",
+			}),
+		]),
 	),
 	t: Type.Optional(
-		Type.Number({
-			minimum: 1,
-			description: `Soft timeout in ms. Default: ${BASH_SOFT_TIMEOUT_MS}. Command keeps running after timeout; returns partial output with pending status. Used with o: 'bash'.`,
-		}),
+		Type.Union([
+			Type.Number({
+				minimum: 1,
+				description: `Soft timeout in ms. Default: ${BASH_SOFT_TIMEOUT_MS}. Command keeps running after timeout; returns partial output with pending status. Used with o: 'bash'.`,
+			}),
+			Type.String({
+				description: "Type filter for o: 'rg' (e.g., 'ts', 'js'). Used with o: 'rg'.",
+			}),
+		]),
 	),
 	h: Type.Optional(
 		Type.String({
 			description: "Working directory override for this command. Used with o: 'bash'.",
+		}),
+	),
+	q: Type.Optional(
+		Type.String({
+			description: "Search pattern for o: 'rg'.",
+		}),
+	),
+	n: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			description: "Max-count for o: 'rg'.",
+		}),
+	),
+	u: Type.Optional(
+		Type.Number({
+			minimum: 0,
+			maximum: 3,
+			description: "Ignore level for o: 'rg' (0-3). Maps to -u, -uu, -uuu.",
 		}),
 	),
 });
@@ -166,6 +201,17 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 	if (raw.l !== undefined) op.l = raw.l;
 	else if (raw.limit !== undefined) op.l = raw.limit;
 
+	// Map timeout / type filter
+	if (raw.t !== undefined) op.t = raw.t;
+
+	// Map id / ignore-case
+	if (raw.i !== undefined) op.i = raw.i;
+
+	// Map rg-specific fields
+	if (raw.q !== undefined) op.q = raw.q;
+	if (raw.n !== undefined) op.n = raw.n;
+	if (raw.u !== undefined) op.u = raw.u;
+
 	return op;
 }
 
@@ -222,11 +268,12 @@ function prepareBatchReadArguments(input: unknown): { o: FileOpInput[] } | unkno
 	const ops = Array.isArray(prepared) ? prepared : (prepared as { o: unknown[] }).o;
 	if (!Array.isArray(ops)) return { o: [] };
 
+	const allowedBatchReadOps = new Set(["read", "rg"]);
 	for (const op of ops) {
 		if (!op || typeof op !== "object") continue;
 		const obj = op as Record<string, unknown>;
 		const opType = String(obj.o ?? obj.op ?? "").toLowerCase();
-		if (opType && opType !== "read") {
+		if (opType && !allowedBatchReadOps.has(opType)) {
 			throw new Error(`batch_read only supports read operations. Received: ${opType}`);
 		}
 	}
@@ -291,9 +338,10 @@ export function createBatchReadTool() {
 				};
 			}
 
-			// Defensive validation: reject any non-read operations
+			// Defensive validation: reject any non-read/rg operations
+			const allowedBatchReadOps = new Set(["read", "rg"]);
 			for (const op of ops) {
-				if (op.o !== "read") {
+				if (!allowedBatchReadOps.has(op.o)) {
 					return {
 						content: [
 							{
