@@ -629,7 +629,7 @@ class AskComponent extends Container {
 		const hints = [
 			literalHint(theme, "type", "filter"),
 			keybindingHint(theme, this.keybindings, "tui.editor.deleteCharBackward", "erase"),
-			literalHint(theme, "↑↓", "navigate"),
+			literalHint(theme, "▲▼", "navigate"),
 			keybindingHint(theme, this.keybindings, "tui.select.confirm", "select"),
 			literalHint(theme, "esc", "clear/cancel"),
 			alternateCancelKeys.length > 0

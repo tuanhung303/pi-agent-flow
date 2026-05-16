@@ -650,7 +650,7 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 								container.addChild(tooltipText);
 								container.addChild(new Spacer(1));
 								container.addChild(
-									new Text(theme.fg("dim", "↑↓ navigate • Enter/Space select • Esc back"), 1, 0),
+									new Text(theme.fg("dim", "▲▼ navigate • Enter/Space select • Esc back"), 1, 0),
 								);
 								container.addChild(new DynamicBorder());
 							} else {
