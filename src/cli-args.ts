@@ -40,7 +40,7 @@ function resolvePathArg(value: string, options: ResolvePathOptions = {}): string
 	return value;
 }
 
-export interface ParsedFlowCliArgs {
+interface ParsedFlowCliArgs {
 	extensionArgs: string[];
 	alwaysProxy: string[];
 	fallbackModel?: string;

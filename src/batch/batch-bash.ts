@@ -38,7 +38,7 @@ interface RunningProcess {
 	abortController: AbortController;
 }
 
-export interface TrackedBashResult {
+interface TrackedBashResult {
 	id: string;
 	command: string;
 	status: "ok" | "error" | "aborted";
@@ -423,7 +423,7 @@ export function pollBatchBashResults(
 // Poll tool schema & factory
 // ---------------------------------------------------------------------------
 
-export const BatchBashPollParams = Type.Object({
+const BatchBashPollParams = Type.Object({
 	i: Type.Array(Type.String(), {
 		description: "Array of bash operation IDs to poll for results.",
 		minItems: 1,

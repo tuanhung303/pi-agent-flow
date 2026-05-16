@@ -1,4 +1,4 @@
-export const AGENT_SESSION_MODES = ["fast", "default", "long", "extreme_long"] as const;
+const AGENT_SESSION_MODES = ["fast", "default", "long", "extreme_long"] as const;
 
 export type AgentSessionMode = typeof AGENT_SESSION_MODES[number];
 

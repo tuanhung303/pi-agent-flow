@@ -523,7 +523,7 @@ function buildSummary(
 	return parts.join("\n");
 }
 
-export function buildContextMapText(result: OpResult): string {
+function buildContextMapText(result: OpResult): string {
 	const title = result.language || result.symbols ? "context map" : "file summary";
 	const lines: string[] = [`\n--- ${result.path} ${title} ---`];
 	lines.push(`Total lines: ${result.totalLines ?? 0}`);

@@ -146,7 +146,8 @@ You can also pass `--dump <path>` on the CLI as an alternative to the env var.
 
 **Convenience — one-liner for your shell:**
 ```bash
-eval "$(./scripts/switch.sh)"   # when switching to LOCAL the script prints an export line
+# After switching to LOCAL, export the dump path manually if you want snapshots:
+export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump   # or use ./scripts/dev-start.sh
 ```
 
 > ⚠️ The variable **must** be exported in the same shell that starts `pi`. Running `export` inside a subshell (e.g. `bash -c 'export …'`) will **not** work because child-process environment variables do not propagate upward to the parent.
@@ -276,6 +277,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. See [Payload dump workflow](#payload-dump-workflow) below. |
 | `PI_FLOW_DUMP_MAX_AGE_HOURS` | Max age of dump files before auto-cleanup deletes them (default 168 = 7 days). |
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
+| `PI_FLOW_MAX_CONCURRENCY` | Override the default maximum concurrent flows (default 4, capped to CPU count). |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
 | `PI_TUI_MODE` | Set to `1` to route `logWarn`/`logError` to a log file instead of stderr, preventing on-screen text flash. Detected automatically when stdout is a TTY or `PI_FLOW_DEPTH > 0`. |
@@ -329,7 +331,7 @@ When the same setting is defined in multiple places, the value is resolved as:
   "flowSettings": {
     "steering": {
       "enabled": true,
-      "prompt": "Plan next step..."
+      "customPrompt": "Plan next step..."
     },
     "strategicHint": {
       "enabled": true

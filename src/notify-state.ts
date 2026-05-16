@@ -6,7 +6,7 @@
  * State is reset at the start of each turn.
  */
 
-export interface NotifyState {
+interface NotifyState {
 	/** True when ask_user was invoked this turn. */
 	pendingDecision: boolean;
 	/** Name of the last flow that completed. */

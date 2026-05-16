@@ -32,7 +32,7 @@ const fetchOp = Type.Object({
 	),
 });
 
-export const webSchema = Type.Object({
+const webSchema = Type.Object({
 	op: Type.Array(Type.Union([searchOp, fetchOp]), {
 		minItems: 1,
 		description: "Array of web operations to perform",

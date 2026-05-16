@@ -6,7 +6,7 @@
  */
 
 /** Message part types that represent reasoning/thinking content. */
-export const REASONING_PART_TYPES = new Set([
+const REASONING_PART_TYPES = new Set([
 	"thinking",
 	"reasoning",
 	"reasoning_content",
@@ -14,7 +14,7 @@ export const REASONING_PART_TYPES = new Set([
 ]);
 
 /** Top-level fields on assistant messages that carry reasoning data. */
-export const REASONING_FIELDS = [
+const REASONING_FIELDS = [
 	"thinking",
 	"thinkingSignature",
 	"thinking_signature",

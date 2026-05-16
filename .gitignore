@@ -13,3 +13,4 @@ docs/dump-analysis/
 
 # Dump artifact directories (auto-copied from /tmp for analysis)
 dump-artifacts/
+flow-artifacts/

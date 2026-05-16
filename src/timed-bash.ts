@@ -17,7 +17,7 @@ import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
 import { appendStrategicHintOnce, appendTextToToolResult } from "./tool-utils.js";
 
-export type TimingTier =
+type TimingTier =
 	| "normal"
 	| "avg"
 	| "long"
@@ -100,7 +100,7 @@ function getFlowReminderFilePath(): string | null {
  * Returns the reminder text (without trailing newline), or null if no reminder exists.
  * Clears the file after reading so the agent only sees each reminder once.
  */
-export function readAndClearReminderFile(): string | null {
+function readAndClearReminderFile(): string | null {
 	const filePath = getFlowReminderFilePath();
 	if (!filePath) return null;
 	try {
