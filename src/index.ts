@@ -44,7 +44,7 @@ import {
 	type ResolvedSettings,
 } from "./config/settings-resolver.js";
 import { scrambleManager, setAnimationConfig } from "./tui/scramble.js";
-export { logWarn, logError, logToFile } from "./config/log.js";
+export { logWarn, logError } from "./config/log.js";
 
 // ---------------------------------------------------------------------------
 // Persistent flow result cache — shared across execute() calls so historical

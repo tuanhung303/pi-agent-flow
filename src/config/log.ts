@@ -94,15 +94,6 @@ export function logError(message: string): void {
 	}
 }
 
-/**
- * Force a message to the log file regardless of TUI mode.
- * Useful for debug/diagnostic info that should never flash on screen.
- */
-export function logToFile(message: string): void {
-	initLogging();
-	writeToLogFile("INFO", message);
-}
-
 // ---------------------------------------------------------------------------
 // File writer
 // ---------------------------------------------------------------------------

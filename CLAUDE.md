@@ -177,7 +177,6 @@ Instead, use the `logWarn` / `logError` functions from `src/log.ts`:
 |----------|----------|---------------------------|
 | `logWarn(msg)` | Writes to `$TMPDIR/pi-agent-flow.log` | Falls back to `console.warn()` |
 | `logError(msg)` | Writes to `$TMPDIR/pi-agent-flow.log` | Falls back to `console.error()` |
-| `logToFile(msg)` | Always writes to log file | Always writes to log file |
 
 TUI mode is detected automatically when `PI_TUI_MODE=1`, `PI_FLOW_DEPTH > 0`, or `stdout.isTTY` is true.
 
