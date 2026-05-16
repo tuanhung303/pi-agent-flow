@@ -7,6 +7,7 @@
  * When called with no arguments, opens an interactive TUI overlay.
  */
 
+import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { loadFlowSettings, writeFlowSetting, type FlowSettings } from "../config.js";
 import { configureSteering } from "../sliding-prompt.js";
@@ -253,7 +254,11 @@ export class SettingsList implements Component {
 
 type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session";
 
-function getMainMenuItems(settings: FlowSettings): SelectItem[] {
+interface TooltipSelectItem extends SelectItem {
+	tooltip?: string;
+}
+
+function getMainMenuItems(settings: FlowSettings): TooltipSelectItem[] {
 	const steeringEnabled = settings.steering?.enabled ?? true;
 	const animationEnabled = settings.animation?.enabled ?? true;
 	const toolOptimize = settings.toolOptimize ?? true;
@@ -265,26 +270,31 @@ function getMainMenuItems(settings: FlowSettings): SelectItem[] {
 			value: "steering",
 			label: "Steering Settings",
 			description: steeringEnabled ? "enabled" : "disabled",
+			tooltip: "Configure orchestrator steering and strategic hints",
 		},
 		{
 			value: "animation",
 			label: "Animation Settings",
 			description: animationEnabled ? "enabled" : "disabled",
+			tooltip: "Toggle animation effects and glitch/scramble",
 		},
 		{
 			value: "tools",
 			label: "Tool Settings",
 			description: `tool-optimize: ${toolOptimize ? "on" : "off"}, structured-output: ${structuredOutput ? "on" : "off"}`,
+			tooltip: "Configure tool optimization and structured output",
 		},
 		{
 			value: "session",
 			label: "Session Settings",
 			description: `mode: ${sessionMode}`,
+			tooltip: "Set default session mode and concurrency",
 		},
 		{
 			value: "reset",
 			label: "Reset to Defaults",
 			description: "restore all settings",
+			tooltip: "Restore all flow settings to their default values",
 		},
 	];
 }
@@ -446,7 +456,8 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 							activeList = null;
 
 							// Header
-							container.addChild(new Text(theme.fg("accent", theme.bold("⚙ Flow Settings")), 1, 0));
+							container.addChild(new DynamicBorder());
+							container.addChild(new Text(theme.fg("accent", theme.bold("Flow Settings")), 1, 0));
 							container.addChild(new Spacer(1));
 
 							const currentSettings = loadFlowSettings(cwd);
@@ -454,7 +465,7 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 							if (currentCategory === "main") {
 								const items = getMainMenuItems(currentSettings);
 								const selectList = new SelectList(
-									items,
+									items as SelectItem[],
 									Math.min(items.length, 10),
 									{
 										selectedPrefix: (t: string) => theme.fg("accent", t),
@@ -485,10 +496,24 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 								activeList = selectList;
 								container.addChild(selectList);
 
+								const tooltipText = new Text("", 1, 0);
+								selectList.onSelectionChange = (item) => {
+									tooltipText.setText(theme.fg("dim", (item as TooltipSelectItem).tooltip ?? ""));
+								};
+								const initialItem = selectList.getSelectedItem();
+								if (initialItem) {
+									tooltipText.setText(
+										theme.fg("dim", (initialItem as TooltipSelectItem).tooltip ?? ""),
+									);
+								}
+
+								container.addChild(new Spacer(1));
+								container.addChild(tooltipText);
 								container.addChild(new Spacer(1));
 								container.addChild(
 									new Text(theme.fg("dim", "↑↓ navigate • Enter/Space select • Esc back"), 1, 0),
 								);
+								container.addChild(new DynamicBorder());
 							} else {
 								let items: SettingItem[];
 								let handleChange: (id: string, value: string) => void;
@@ -598,6 +623,7 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 								);
 								activeList = settingsList;
 								container.addChild(settingsList);
+								container.addChild(new DynamicBorder());
 							}
 						}
 
