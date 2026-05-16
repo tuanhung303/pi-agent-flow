@@ -12,7 +12,6 @@ import { getFlowSummaryText } from "../snapshot/runner-events.js";
 import type {
 	SingleResult,
 	FlowDetails,
-	UsageStats,
 } from "../types/flow.js";
 import {
 	aggregateFlowUsage,
@@ -49,7 +48,7 @@ function getLiveTextWithFallback(id: string): string | undefined {
 	const fallbackId = id.includes("#") ? "collapsed" + id.slice(id.indexOf("#")) : "collapsed";
 	return getLiveText(fallbackId);
 }
-import { formatCompactStats, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatCountdownRemaining } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatCountdownRemaining } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();

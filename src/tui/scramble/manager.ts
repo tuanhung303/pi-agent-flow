@@ -148,8 +148,6 @@ function createValueFlashState(): ValueFlashState {
 export class ScrambleStateManager {
 	private cache = new Map<string, Record<LineKey, LineState>>();
 	private tpsState = new Map<string, ValueFlashState>();
-	private actKpiState = new Map<string, ValueFlashState>();
-	private msgKpiState = new Map<string, ValueFlashState>();
 	private genericCache = new Map<string, LineState>();
 	private randomPool: string[] = [];
 	private randomPoolIndex = 0;
@@ -739,18 +737,6 @@ export class ScrambleStateManager {
 		return this._renderValueFlash(state, tpsText, now);
 	}
 
-	updateActKpi(id: string, value: string, now: number, isComplete: boolean = false, staticLine: boolean = false): string {
-		if (!this.animationConfig.enabled) return value;
-		const state = this._updateValueKpi(this.actKpiState, id, value, now, isComplete, staticLine);
-		return this._renderValueFlash(state, value, now);
-	}
-
-	updateMsgKpi(id: string, value: string, now: number, isComplete: boolean = false, staticLine: boolean = false): string {
-		if (!this.animationConfig.enabled) return value;
-		const state = this._updateValueKpi(this.msgKpiState, id, value, now, isComplete, staticLine);
-		return this._renderValueFlash(state, value, now);
-	}
-
 	// -----------------------------------------------------------------------
 	// Animation status helpers
 	// -----------------------------------------------------------------------
@@ -802,8 +788,6 @@ export class ScrambleStateManager {
 			return false;
 		};
 		if (checkValueState(this.tpsState)) return true;
-		if (checkValueState(this.actKpiState)) return true;
-		if (checkValueState(this.msgKpiState)) return true;
 		return false;
 	}
 
@@ -820,20 +804,6 @@ export class ScrambleStateManager {
 				if (!isGlitchComplete(state.glitchQueue, frame)) return true;
 			}
 		}
-		for (const state of this.actKpiState.values()) {
-			if (state.completed) continue;
-			if (state.glitchQueue.length > 0) {
-				const frame = Math.floor((now - state.startTime) / GLITCH_FRAME_MS);
-				if (!isGlitchComplete(state.glitchQueue, frame)) return true;
-			}
-		}
-		for (const state of this.msgKpiState.values()) {
-			if (state.completed) continue;
-			if (state.glitchQueue.length > 0) {
-				const frame = Math.floor((now - state.startTime) / GLITCH_FRAME_MS);
-				if (!isGlitchComplete(state.glitchQueue, frame)) return true;
-			}
-		}
 		for (const state of this.genericCache.values()) {
 			if (this.isLineAnimating(state, now)) return true;
 		}
@@ -843,13 +813,11 @@ export class ScrambleStateManager {
 	clear(): void {
 		this.cache.clear();
 		this.tpsState.clear();
-		this.actKpiState.clear();
-		this.msgKpiState.clear();
 		this.genericCache.clear();
 	}
 
 	private sweepCompletedEntries(): void {
-		if (this.cache.size <= MAX_FLOW_ENTRIES && this.tpsState.size <= MAX_FLOW_ENTRIES && this.actKpiState.size <= MAX_FLOW_ENTRIES && this.msgKpiState.size <= MAX_FLOW_ENTRIES && this.genericCache.size <= MAX_FLOW_ENTRIES * 2) {
+		if (this.cache.size <= MAX_FLOW_ENTRIES && this.tpsState.size <= MAX_FLOW_ENTRIES && this.genericCache.size <= MAX_FLOW_ENTRIES * 2) {
 			return;
 		}
 		for (const [id, record] of this.cache) {
@@ -860,16 +828,6 @@ export class ScrambleStateManager {
 		for (const [id, state] of this.tpsState) {
 			if (state.completed) {
 				this.tpsState.delete(id);
-			}
-		}
-		for (const [id, state] of this.actKpiState) {
-			if (state.completed) {
-				this.actKpiState.delete(id);
-			}
-		}
-		for (const [id, state] of this.msgKpiState) {
-			if (state.completed) {
-				this.msgKpiState.delete(id);
 			}
 		}
 		for (const [key, state] of this.genericCache) {
@@ -905,18 +863,6 @@ export class ScrambleStateManager {
 			tpsState.completed = true;
 			tpsState.glitchQueue = [];
 			tpsState.glitchFrame = 0;
-		}
-		const actKpiState = this.actKpiState.get(id);
-		if (actKpiState) {
-			actKpiState.completed = true;
-			actKpiState.glitchQueue = [];
-			actKpiState.glitchFrame = 0;
-		}
-		const msgKpiState = this.msgKpiState.get(id);
-		if (msgKpiState) {
-			msgKpiState.completed = true;
-			msgKpiState.glitchQueue = [];
-			msgKpiState.glitchFrame = 0;
 		}
 		const prefix = `${id}#`;
 		for (const [key, state] of this.genericCache) {

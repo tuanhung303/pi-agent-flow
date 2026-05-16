@@ -37,20 +37,6 @@ describe('ScrambleStateManager — timer scope & cleanup', () => {
 		expect(manager.hasActiveAnimations('other-id', BASE + 1)).toBe(false);
 	});
 
-	it('hasActiveAnimations detects actKPI glitch for the exact id', () => {
-		manager.updateActKpi(TEST_ID, '12', BASE, false, true);
-		// Check immediately after first flash setup (frame 0, queue non-empty)
-		expect(manager.hasActiveAnimations(TEST_ID, BASE + 1)).toBe(true);
-		expect(manager.hasActiveAnimations('other-id', BASE + 1)).toBe(false);
-	});
-
-	it('hasActiveAnimations detects msgKPI glitch for the exact id', () => {
-		manager.updateMsgKpi(TEST_ID, '?10k?5k', BASE, false, true);
-		manager.updateMsgKpi(TEST_ID, '?20k?10k', BASE + 100, false, true);
-		expect(manager.hasActiveAnimations(TEST_ID, BASE + 110)).toBe(true);
-		expect(manager.hasActiveAnimations('other-id', BASE + 110)).toBe(false);
-	});
-
 	it('hasActiveAnimations detects sub-flow animations via prefix', () => {
 		// Simulate multi-flow panel where sub-flow ids are "base#0", "base#1"
 		manager.updateMsg('base#0', 'Hello world', BASE, false, undefined, true);

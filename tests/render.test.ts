@@ -5,7 +5,6 @@ import {
 	truncateChars,
 	tailText,
 	formatCompactStats,
-	formatCompactTokenPair,
 	formatTps,
 	formatCountdown,
 	lowerFirstWord,
@@ -352,12 +351,6 @@ describe("formatFlowTypeName", () => {
 // ---------------------------------------------------------------------------
 // formatCompactTokenPair / formatCountdown
 // ---------------------------------------------------------------------------
-
-describe("formatCompactTokenPair", () => {
-	it("formats only input tokens with dot suffix", () => {
-		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("▲ 46.7k ·");
-	});
-});
 
 describe("formatCountdown", () => {
 	it("formats remaining milliseconds as a clock", () => {

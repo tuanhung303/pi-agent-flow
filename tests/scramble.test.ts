@@ -322,18 +322,6 @@ describe('ScrambleStateManager', () => {
 		expect(hasAnsi(result)).toBe(false);
 	});
 
-	it('actKPI flash respects 3s cooldown', () => {
-		const base = 6_000_000;
-		manager.updateActKpi(TEST_ID, '12', base, false, false);
-		manager.updateActKpi(TEST_ID, '15', base + 100, false, false);
-		expect(manager.hasAnyActiveAnimations(base + 110)).toBe(true);
-		const blocked = manager.updateActKpi(TEST_ID, '18', base + 500, false, false);
-		expect(blocked).toBe('18');
-		manager.updateActKpi(TEST_ID, '21', base + 3100, false, false);
-		const afterCooldown = manager.updateActKpi(TEST_ID, '21', base + 3110, false, false);
-		expect(manager.hasAnyActiveAnimations(base + 3110)).toBe(true);
-	});
-
 	it('staticLine minor-mutation guard suppresses re-flash', () => {
 		const base = 1_000_000;
 		manager.updateText('id-1', 'header', 'scout - lite - tps: 12', base, false, true);

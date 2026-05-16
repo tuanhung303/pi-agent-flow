@@ -48,10 +48,6 @@ export function italic(text: string): string {
 	return `\x1b[3m${text}\x1b[23m`;
 }
 
-export function formatCompactTokenPair(usage: Partial<UsageStats>): string {
-	return `▲ ${formatFixedTokens(usage.input || 0)} ·`;
-}
-
 export function formatCompactStats(
 	usage: Partial<UsageStats>,
 	model?: string,
