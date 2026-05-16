@@ -400,73 +400,73 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k - tps:     - - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - - - ctx: 21.0k - k2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲   100 - tps:     - - ctx:     0");
+		expect(result).toBe("▲   100 - - - ctx:     0");
 	});
 
 	it("no usage → shows placeholders", () => {
-		expect(formatCompactStats({})).toBe("▲     0 - tps:     - - ctx:     0");
+		expect(formatCompactStats({})).toBe("▲     0 - - - ctx:     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - tps:     - - ctx:     0 - gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - - - ctx:     0 - gpt-4o");
 	});
 
 	it("strips provider prefix from model", () => {
 		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
-			"▲     0 - tps:     - - ctx:     0 - gpt-5.5",
+			"▲     0 - - - ctx:     0 - gpt-5.5",
 		);
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("▲  5.0k - tps:     - - ctx:     0");
+		expect(formatCompactStats(usage)).toBe("▲  5.0k - - - ctx:     0");
 	});
 
 	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("▲     0 - tps:     - - ctx:  6.0k");
+		expect(formatCompactStats(usage)).toBe("▲     0 - - - ctx:  6.0k");
 	});
 
 	it("with smoothedTps value", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k - tps:  42.3 - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - 42.3 tok/s - ctx: 21.0k - k2.6");
 	});
 
 	it("can skip token counts for compact flow headers", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true });
-		expect(result).toBe("tps:  42.3 - ctx: 21.0k - k2.6");
+		expect(result).toBe("42.3 tok/s - ctx: 21.0k - k2.6");
 	});
 
 	it("with skipContext omits context tokens from runtime parts", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true, skipContext: true });
-		expect(result).toBe("tps:  42.3 - k2.6");
+		expect(result).toBe("42.3 tok/s - k2.6");
 	});
 
 	it("with hideModel omits model name", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true, hideModel: true });
-		expect(result).toBe("tps:  42.3 - ctx: 21.0k");
+		expect(result).toBe("42.3 tok/s - ctx: 21.0k");
 	});
 
 	it("with skipContext and hideModel shows only tps", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, undefined, undefined, { skipTokens: true, skipContext: true, hideModel: true });
-		expect(result).toBe("tps:  42.3");
+		expect(result).toBe("42.3 tok/s");
 	});
 
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲  1.0k - tps:     - - ctx:     0");
+		expect(result).toBe("▲  1.0k - - - ctx:     0");
 	});
 
 	it("narrows when maxWidth is tight", () => {
@@ -572,7 +572,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout    tps:");
+		expect(headerLine).toContain("scout");
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("▲ 46.7k");
 		expect(text).toContain("msg ▸ Flow timed out after 600s.");
@@ -609,7 +609,7 @@ describe("activity panel rendering", () => {
 		}
 	});
 
-	it("renders cmd line and appends tool call count to aim line", () => {
+	it("renders cmd line without tool call count suffix on aim line", () => {
 		const result = makeResult({
 			type: "scout",
 			intent: "Map the codebase",
@@ -625,7 +625,7 @@ describe("activity panel rendering", () => {
 		const text = extractText(rendered);
 		expect(text).toContain("cmd ▸");
 		expect(text).toContain("aim ▸");
-		expect(text).toContain("(3)");
+		expect(text).not.toContain("(3)");
 	});
 
 	it("renders ghost dashboard during zero state", () => {
@@ -917,7 +917,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("▲  9.8k - tps:     - - ctx: 10.0k - mimo-v2.5-pro");
+		expect(text).toContain("▲  9.8k - - - ctx: 10.0k - mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {

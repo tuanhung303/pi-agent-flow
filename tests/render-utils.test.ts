@@ -6,7 +6,7 @@ import {
   tailText,
   getTruncationBudget,
   lowerFirstWord,
-  shortenModel,
+  formatModelLabel,
   formatElapsed,
 } from '../src/tui/render-utils.js';
 
@@ -137,17 +137,25 @@ describe('lowerFirstWord', () => {
   });
 });
 
-describe('shortenModel', () => {
-  it('returns short label unchanged', () => {
-    expect(shortenModel('gpt-4o')).toBe('gpt-4o');
+describe('formatModelLabel', () => {
+  it('returns empty string when no model', () => {
+    expect(formatModelLabel(undefined)).toBe('');
   });
 
-  it('truncates long label to last 10 chars with ellipsis', () => {
-    expect(shortenModel('github-copilot/gpt-5.5', 10)).toBe('...ot/gpt-5.5');
+  it('returns lowercase for single segment', () => {
+    expect(formatModelLabel('GPT-4O')).toBe('gpt-4o');
+  });
+
+  it('formats provider/model with shortening', () => {
+    expect(formatModelLabel('accounts/fireworks/routers/kimi-k2p6-turbo')).toBe('fireworks/...k2p6-turbo');
+  });
+
+  it('returns short modelPath unchanged', () => {
+    expect(formatModelLabel('github/copilot/gpt-5.5')).toBe('copilot/gpt-5.5');
   });
 
   it('uses default maxTail of 10', () => {
-    expect(shortenModel('anthropic/claude-3-5-sonnet')).toBe('...3-5-sonnet');
+    expect(formatModelLabel('accounts/anthropic/models/claude-3-5-sonnet')).toBe('anthropic/...3-5-sonnet');
   });
 });
 

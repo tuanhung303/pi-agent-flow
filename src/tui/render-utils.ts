@@ -39,8 +39,8 @@ export function formatFlowTypeName(type: string): string {
 
 /** Format tokens-per-second to a 5-char display (e.g., " 42.3", "    -"). */
 function formatTps(value: number | undefined): string {
-	if (!value || value <= 0) return "    -";
-	return value.toFixed(1).padStart(5);
+	if (!value || value <= 0) return "-";
+	return `${value.toFixed(1)} tok/s`;
 }
 
 export function italic(text: string): string {
@@ -58,7 +58,7 @@ export function formatCompactStats(
 	options: { skipTokens?: boolean; skipContext?: boolean; hideModel?: boolean } = {},
 ): string {
 	const tokenParts = [`▲ ${formatFixedTokens(usage.input || 0)}`];
-	let runtimeParts = [`tps: ${formatTps(usage.smoothedTps)}`];
+	let runtimeParts = [formatTps(usage.smoothedTps)];
 	if (!options.skipContext) {
 		runtimeParts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
 	}
@@ -100,9 +100,14 @@ export function formatCountdown(ms: number): string {
 	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function shortenModel(label: string, maxTail: number = 10): string {
-	if (label.length <= maxTail) return label;
-	return "..." + label.slice(-maxTail);
+export function formatModelLabel(model: string | undefined, maxTail: number = 10): string {
+	if (!model) return "";
+	const parts = model.split("/");
+	if (parts.length < 2) return model.toLowerCase();
+	const provider = parts[1];
+	const modelPath = parts.slice(2).join("/").toLowerCase();
+	const shortened = modelPath.length > maxTail ? "..." + modelPath.slice(-maxTail) : modelPath;
+	return `${provider}/${shortened}`;
 }
 
 export function formatElapsed(startedAtMs?: number): string | undefined {
