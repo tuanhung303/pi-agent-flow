@@ -41,6 +41,15 @@ import {
 	FLOW_PREVENT_CYCLES_ENV,
 	FLOW_TOOL_OPTIMIZE_ENV,
 } from "./depth.js";
+import {
+	computeDelegationState,
+	buildGuardLine,
+	buildDelegationRule,
+	buildFlowListSection,
+	buildLineage,
+	buildParentLineageHint,
+	computeChildPropagation,
+} from "./delegation.js";
 
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
@@ -337,9 +346,7 @@ function buildFlowArgs(
 
 	// Compute delegation depth before building tool list — children that can
 	// delegate need the "flow" tool in their available set.
-	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
-	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
-	const canDelegate = currentDepth < effectiveMaxDepth;
+	const { currentDepth, effectiveMaxDepth, canDelegate } = computeDelegationState(parentDepth, maxDepth);
 
 	// Default tools for child flows. Legacy read/write/edit are NOT registered
 	// for children — only batch (which includes read/write ops) is available.
@@ -380,20 +387,9 @@ function buildFlowArgs(
 		`</context-seal>`;
 
 	// Phase 2: Activation — role, tools, depth, delegation rules (dynamically generated)
-	const stackLabel = parentFlowStack.length > 0 ? parentFlowStack.join(" -> ") : "(root)";
-	const guardLine = `depth ${currentDepth}/${effectiveMaxDepth} | cycles: ${preventCycles ? "blocked" : "off"} | stack: ${stackLabel}`;
-	const delegationRule = canDelegate
-		? `You may delegate to sub-flows (${guardLine}).`
-		: `You may NOT delegate to sub-flows (${guardLine}).`;
-
-	const flowListSection = canDelegate && discoveredFlows.length > 0
-		? `Available flows:\n${discoveredFlows
-			.map((f) => {
-				const badge = f.source === "project" ? " 🔒" : f.source === "user" ? " ⚙" : "";
-				return `- [${f.name}]${badge} — ${f.description}`;
-			})
-			.join("\n")}\n`
-		: "";
+	const guardLine = buildGuardLine(currentDepth, effectiveMaxDepth, preventCycles, parentFlowStack);
+	const delegationRule = buildDelegationRule(canDelegate, guardLine);
+	const flowListSection = buildFlowListSection(canDelegate, discoveredFlows);
 
 	const timeBudgetHint =
 		sessionTimeoutMs > 0
@@ -401,10 +397,8 @@ function buildFlowArgs(
 			: "";
 
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
-	const lineage = ["orchestrator", ...parentFlowStack, flow.name].join(" → ");
-	const parentLineageHint = parentFlowStack.length > 0
-		? `Spawned by: ${parentFlowStack.join(" → ")}.\n`
-		: "";
+	const lineage = buildLineage(flow.name, parentFlowStack);
+	const parentLineageHint = buildParentLineageHint(parentFlowStack);
 	const projectHint = cwd && fs.existsSync(path.join(cwd, "CLAUDE.md"))
 		? `Project index available at CLAUDE.md (read for architecture context if needed).\n`
 		: "";
@@ -688,9 +682,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
-			const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
-			const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
-			const propagatedStack = [...parentFlowStack, normalizedFlowName];
+			const { nextDepth, propagatedMaxDepth, propagatedStack } = computeChildPropagation(parentDepth, maxDepth, parentFlowStack, normalizedFlowName);
 			const proportionalGraceMs = Math.floor(effectiveTimeout * 0.1);
 			const minimumGraceMs = effectiveTimeout >= 10_000 ? 1_000 : Math.floor(effectiveTimeout / 2);
 			const toolSummaryGraceMs = Math.min(
