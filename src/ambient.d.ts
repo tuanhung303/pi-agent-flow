@@ -32,8 +32,9 @@ declare module "@mariozechner/pi-coding-agent" {
 			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
 			notify?: (message: string, type: string) => void;
 			setEditorText?: (text: string) => void;
+			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
-		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		sessionManager: { getSessionDir(): string; getSessionFile(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
 	}
 	export interface Theme {
 		fg(key: string, text: string): string;
@@ -68,6 +69,14 @@ declare module "@mariozechner/pi-coding-agent" {
 		invalidate(): void;
 		render(width: number): string[];
 	}
+	export class BorderedLoader {
+		constructor(tui: any, theme: any, text: string);
+		signal: AbortSignal;
+		onAbort?: () => void;
+		invalidate(): void;
+		render(width: number): string[];
+		handleInput?(data: string): void;
+	}
 	export interface ExtensionCommandContext {
 		cwd: string;
 		hasUI: boolean;
@@ -79,8 +88,9 @@ declare module "@mariozechner/pi-coding-agent" {
 			custom: <T>(factory: (...args: any[]) => any, options?: any) => Promise<T | undefined>;
 			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
 			setEditorText?: (text: string) => void;
+			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
-		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		sessionManager: { getSessionDir(): string; getSessionFile(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
 		newSession(opts?: {
 			parentSession?: string;
 			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
@@ -93,6 +103,7 @@ declare module "@mariozechner/pi-coding-agent" {
 			getAvailable(): any[];
 			find(provider: string, modelId: string): any;
 			hasConfiguredAuth(model: any): boolean;
+			getApiKeyAndHeaders(model: any): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
 		};
 		model?: any;
 	}
@@ -284,7 +295,13 @@ declare module "@mariozechner/pi-ai" {
 		stopReason?: string;
 		errorMessage?: string;
 	}
-	export function complete(opts: { model?: any; system?: string; messages: any[] }): Promise<{ content: string }>;
+	export interface AssistantMessage {
+		role: string;
+		content: { type: string; text?: string }[];
+		stopReason: string;
+		errorMessage?: string;
+	}
+	export function complete(model: any, context: { systemPrompt?: string; messages: any[] }, options?: { apiKey?: string; headers?: Record<string, string>; signal?: AbortSignal }): Promise<AssistantMessage>;
 }
 
 declare module "@sinclair/typebox" {

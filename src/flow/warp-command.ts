@@ -6,7 +6,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
-import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { getGoal, getWarpCount, recordWarp } from "./store.js";
 
 const SYSTEM_PROMPT = `You are a context transfer and execution planning assistant. Given a conversation history and the user's goal, generate a structured warp prompt that serves as a ready-to-execute project brief for a new session.
@@ -61,7 +61,7 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
       const cwd = getCwd() ?? ctx.cwd;
 
       // Ensure a model is available
-      const model = (ctx as any).model ?? ctx.modelRegistry?.getAvailable()?.[0];
+      const model = ctx.model ?? ctx.modelRegistry?.getAvailable()?.[0];
       if (!model) {
         ctx.ui.notify?.("No model selected. Configure a model in Pi settings first.", "error");
         return;
@@ -98,53 +98,89 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
       }
 
       // Generate distilled prompt
-      const result = await complete({
-        model,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: `Conversation history:\n${conversation}\n${preWarpContext}\nUser's goal for new thread: ${goal}`,
-          },
-        ],
+      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!auth.ok || !auth.apiKey) {
+        ctx.ui.notify?.(auth.ok ? `No API key for ${model.provider}` : (auth.error ?? "Auth error"), "error");
+        return;
+      }
+
+      let warpError: string | undefined;
+
+      const distilledPrompt = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+        const loader = new BorderedLoader(tui, theme, "Generating warp prompt...");
+        loader.onAbort = () => done(null);
+
+        const doGenerate = async () => {
+          const response = await complete(
+            model,
+            {
+              systemPrompt: SYSTEM_PROMPT,
+              messages: [
+                {
+                  role: "user",
+                  content: `Conversation history:\n${conversation}\n${preWarpContext}\nUser's goal for new thread: ${goal}`,
+                },
+              ],
+            },
+            { apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+          );
+
+          if (response.stopReason === "aborted") {
+            return null;
+          }
+
+          if (response.stopReason === "error" || response.errorMessage) {
+            throw new Error(response.errorMessage || "Unknown error");
+          }
+
+          return response.content
+            .filter((c): c is { type: "text"; text: string } => c.type === "text")
+            .map((c) => c.text)
+            .join("\n")
+            .trim();
+        };
+
+        doGenerate()
+          .then(done)
+          .catch((err) => {
+            warpError = err.message || "Unknown error";
+            done(null);
+          });
+
+        return loader;
       });
 
-      const distilledPrompt = result.content.trim();
+      if (distilledPrompt === null || distilledPrompt === undefined) {
+        if (warpError) {
+          ctx.ui.notify?.(`Warp generation failed: ${warpError}`, "error");
+        } else {
+          ctx.ui.notify?.("Warp cancelled.", "info");
+        }
+        return;
+      }
 
       // Present for review
-      const reviewedPrompt = await ctx.ui.input(
-        "Review and edit the distilled warp prompt (or submit as-is):",
-        distilledPrompt,
-        { defaultValue: distilledPrompt }
-      );
+      const reviewedPrompt = await ctx.ui.editor("Edit warp prompt", distilledPrompt);
 
-      if (reviewedPrompt === null || reviewedPrompt === undefined) {
+      if (reviewedPrompt === undefined) {
         ctx.ui.notify?.("Warp cancelled by user.", "info");
         return;
       }
 
-      const warpedPrompt = reviewedPrompt.trim() || distilledPrompt;
+      const warpedPrompt = (reviewedPrompt ?? distilledPrompt).trim();
 
       // Warn on deep warp chains
       const warpCount = getWarpCount(cwd);
       if (warpCount >= 3) {
-        const proceed = await ctx.ui.confirm(
-          "Deep warp chain",
-          `You are about to create warp depth ${warpCount + 1} (>3). Continue?`
-        );
-        if (!proceed) {
-          ctx.ui.notify?.("Warp cancelled.", "info");
-          return;
-        }
+        ctx.ui.notify?.(`Warning: Deep warp chain (depth ${warpCount + 1}). Proceed with caution.`, "warning");
       }
 
       // Spawn new session
-      const currentSessionFile = ctx.sessionManager.getSessionDir();
+      const currentSessionFile = ctx.sessionManager.getSessionFile();
       const { cancelled } = await ctx.newSession({
         parentSession: currentSessionFile,
         withSession: async (newCtx) => {
-          await newCtx.sendUserMessage(`/flow:goal set ${goal}`);
-          newCtx.ui.setEditorText?.(warpedPrompt);
+          newCtx.ui.setEditorText?.(`/flow:goal set ${goal}\n\n${warpedPrompt}`);
         },
       });
 
