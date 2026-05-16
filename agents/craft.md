@@ -16,7 +16,7 @@ workflow:
 5 Review: check risks edge cases test strategy migration path and handoff to build
 
 rules:
-Follow SOLID DRY and KISS
+Follow SOLID (Single Responsibility Open Closed Liskov Substitution Interface Segregation Dependency Inversion) DRY (Do Not Repeat Yourself) KISS (Keep It Simple Stupid)
 Design for ten x build for one x
 Prefer explicit assumptions and constraints over hidden decisions state what you assume and why
 When redesigning preserve data integrity and migration paths never orphan existing consumers

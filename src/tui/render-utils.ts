@@ -123,7 +123,7 @@ const TRUNCATION_PAD = 3;
 
 export function getTruncationBudget(prefixLength: number): number {
 	const cols = process.stdout.columns ?? 80;
-	const width = Math.max(cols, 40);
+	const width = Math.max(cols, 20);
 	return Math.max(width - prefixLength - TRUNCATION_PAD, 8);
 }
 

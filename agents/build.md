@@ -18,7 +18,7 @@ workflow:
 7 Cleanup: delete old branch local and remote if requested otherwise leave the branch for the user to merge
 
 rules:
-Follow SOLID DRY KISS
+Follow SOLID (Single Responsibility Open Closed Liskov Substitution Interface Segregation Dependency Inversion) DRY (Do Not Repeat Yourself) KISS (Keep It Simple Stupid) TDD (Test Driven Development)
 Run git branch show current before making changes
 Commit with conventional messages feat fix refactor
 Do not merge to main unless the user explicitly requests it

@@ -3205,6 +3205,8 @@ export class DynamicScrambleText implements Component {
 		const content = this.getScrambleContent();
 		// Replace newlines/tabs with spaces to keep animation on a stable single line
 		const safeContent = content.replace(/[\r\n\t]+/g, ' ');
+		// truncateToWidth is a safety net only. Renderers are responsible for
+		// computing column budgets and truncating text before passing it here.
 		this.base.setText(this.truncated ? truncateToWidth(safeContent, width) : safeContent);
 		return this.base.render(width);
 	}

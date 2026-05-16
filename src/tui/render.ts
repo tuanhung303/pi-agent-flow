@@ -375,27 +375,35 @@ function renderFlowExpanded(
 		}
 	));
 
-	// Intent
+	// Intent — column-aware truncation (budget recalculated inside closure for resize handling)
+	const intentBudget = getTruncationBudget(0);
+	const displayIntent = truncateChars(r.intent, intentBudget);
 	container.addChild(new Spacer(1));
 	container.addChild(new Text(applyRole("prefixLabel", sectionHeader("intent"), theme, config), 0, 0));
 	container.addChild(new DynamicScrambleText(
-		applyRole("aimContent", r.intent, theme, config),
+		applyRole("aimContent", displayIntent, theme, config),
 		() => {
-			const result = scrambleManager.updateText(id, 'intent', r.intent, Date.now(), isComplete);
-			return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : applyRole("aimContent", r.intent, theme, config);
+			const budget = getTruncationBudget(0);
+			const text = truncateChars(r.intent, budget);
+			const result = scrambleManager.updateText(id, 'intent', text, Date.now(), isComplete);
+			return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : applyRole("aimContent", text, theme, config);
 		}
 	));
 
 	// Acceptance
 	if (r.acceptance) {
-		const acceptanceText = r.acceptance;
+		const acceptanceRaw = r.acceptance;
+		const acceptanceBudget = getTruncationBudget(0);
+		const acceptanceText = truncateChars(acceptanceRaw, acceptanceBudget);
 		container.addChild(new Spacer(1));
 		container.addChild(new Text(applyRole("prefixLabel", sectionHeader("acceptance"), theme, config), 0, 0));
 		container.addChild(new DynamicScrambleText(
 			applyRole("aimContent", acceptanceText, theme, config),
 			() => {
-				const result = scrambleManager.updateText(id, 'acceptance', acceptanceText, Date.now(), isComplete);
-				return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : applyRole("aimContent", acceptanceText, theme, config);
+				const budget = getTruncationBudget(0);
+				const text = truncateChars(acceptanceRaw, budget);
+				const result = scrambleManager.updateText(id, 'acceptance', text, Date.now(), isComplete);
+				return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : applyRole("aimContent", text, theme, config);
 			}
 		));
 	}
@@ -473,12 +481,15 @@ function renderFlowExpanded(
 
 	// Output: animate streaming text; show clean markdown when complete
 	if (!isComplete && streamingText != null) {
-		const streamingText_ = streamingText;
+		const msgBudget = getTruncationBudget(0);
+		const displayMsg = tailText(stripAnsi(streamingText), msgBudget);
 		container.addChild(new DynamicScrambleText(
-			stripAnsi(streamingText_),
+			displayMsg,
 			() => {
-				const freshStreamingText = getLiveTextWithFallback(id) ?? streamingText_;
-				return scrambleManager.updateMsg(id, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
+				const budget = getTruncationBudget(0);
+				const freshStreamingText = getLiveTextWithFallback(id) ?? streamingText;
+				const text = tailText(stripAnsi(freshStreamingText), budget);
+				return scrambleManager.updateMsg(id, text, Date.now(), isComplete, undefined, true).content;
 			}
 		));
 	} else if (flowOutput) {
@@ -499,14 +510,22 @@ function renderFlowExpanded(
 	if (toolCallItems.length > 0) {
 		container.addChild(new Spacer(1));
 		container.addChild(new Text(applyRole("prefixLabel", sectionHeader("tool calls"), theme, config), 0, 0));
+		const toolPrefixLen = visibleLength("→ ");
+		const toolBudget = getTruncationBudget(toolPrefixLen);
 		for (let i = 0; i < toolCallItems.length; i++) {
 			const item = toolCallItems[i] as Extract<DisplayItem, { type: "toolCall" }>;
 			const lineText = applyRole("prefixLabel", "→ ", theme, config) + formatFlowToolCall(item.name, item.args, theme.fg.bind(theme));
 			const plainText = stripAnsi(lineText);
-			const initialScrambled = scrambleManager.updateText(id, `tool#${i}`, plainText, now, isComplete).content;
+			const displayTool = truncateChars(plainText, toolBudget);
+			const initialScrambled = scrambleManager.updateText(id, `tool#${i}`, displayTool, now, isComplete).content;
 			container.addChild(new DynamicScrambleText(
 				initialScrambled,
-				() => scrambleManager.updateText(id, `tool#${i}`, plainText, Date.now(), isComplete).content
+				() => {
+					const budget = getTruncationBudget(toolPrefixLen);
+					const freshPlain = stripAnsi(lineText);
+					const text = truncateChars(freshPlain, budget);
+					return scrambleManager.updateText(id, `tool#${i}`, text, Date.now(), isComplete).content;
+				}
 			));
 		}
 	}
@@ -532,7 +551,10 @@ function renderFlowCollapsed(
 	const now = Date.now();
 	const container = new Container();
 	const maxWidth = process.stdout.columns ?? 80;
-	const stats = formatCompactStats(r.usage, r.model, maxWidth, { skipTokens: true, skipContext: true, hideModel: true });
+	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
+	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
+	const headerPrefixLen = visibleLength(typeName) + visibleLength(modelLabel ? f'    {modelLabel} · ' : "    ");
+	const stats = formatCompactStats(r.usage, r.model, Math.max(maxWidth - headerPrefixLen, 20), { skipTokens: true, skipContext: true, hideModel: true });
 
 	const isComplete = r.exitCode !== -1;
 
@@ -545,9 +567,6 @@ function renderFlowCollapsed(
 			displayStats = stats.replace(tpsMatch[1], scrambledTps);
 		}
 	}
-
-	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
-	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
 	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	// Scramble header on first render; show full styled header when complete
@@ -574,8 +593,16 @@ function renderFlowCollapsed(
 		container.addChild(new DynamicScrambleText(
 			`${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", aimLabel, theme, config)}${applyRole("aimContent", displayAim, theme, config)}`,
 			() => {
-				const result = scrambleManager.updateAim(id, displayAim, Date.now(), isComplete, true);
-				return `${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", aimLabel, theme, config)}${applyRole("aimContent", result.content, theme, config)}`;
+				const now = Date.now();
+				const freshCountdown = getLiveCountdown(r);
+				const freshAimLabel = freshCountdown
+					? ` aim ▸ ${freshCountdown} · `
+					: ` aim ▸ `;
+				const freshAimPrefix = `${aimTree}${freshAimLabel}`;
+				const freshBudget = getTruncationBudget(visibleLength(freshAimPrefix));
+				const freshText = truncateChars(lowerFirstWord(r.aim), freshBudget);
+				const result = scrambleManager.updateAim(id, freshText, now, isComplete, true);
+				return `${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", freshAimLabel, theme, config)}${applyRole("aimContent", result.content, theme, config)}`;
 			},
 			true,
 		));
@@ -750,35 +777,48 @@ function renderMultiFlowExpanded(
 			}
 		));
 
-		// Intent: just show text, no prefix
+		// Intent: just show text, no prefix (budget computed dynamically for resize recalculation)
+		const intentBudget = getTruncationBudget(0);
+		const displayIntent = truncateChars(r.intent, intentBudget);
 		container.addChild(new DynamicScrambleText(
-			applyRole("aimContent", r.intent, theme, config),
+			applyRole("aimContent", displayIntent, theme, config),
 			() => {
-				const result = scrambleManager.updateText(flowId, 'intent', r.intent, Date.now(), isComplete, true);
-				return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : applyRole("aimContent", r.intent, theme, config);
+				const budget = getTruncationBudget(0);
+				const text = truncateChars(r.intent, budget);
+				const result = scrambleManager.updateText(flowId, 'intent', text, Date.now(), isComplete, true);
+				return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : applyRole("aimContent", text, theme, config);
 			}
 		));
 
 		if (r.acceptance) {
-			const acceptanceText = r.acceptance;
-			const acceptanceStatic = applyRole("aimContent", `Acceptance: ${acceptanceText}`, theme, config);
+			const acceptanceRaw = r.acceptance;
+			const acceptancePrefix = "Acceptance: ";
+			const acceptanceBudget = getTruncationBudget(visibleLength(acceptancePrefix));
+			const acceptanceText = truncateChars(acceptanceRaw, acceptanceBudget);
+			const acceptanceStatic = applyRole("aimContent", `${acceptancePrefix}${acceptanceText}`, theme, config);
 			container.addChild(new DynamicScrambleText(
 				acceptanceStatic,
 				() => {
-					const result = scrambleManager.updateText(flowId, 'acceptance', acceptanceText, Date.now(), isComplete, true);
-					return result.isAnimating ? applyRole("aimContent", result.content, theme, config) : acceptanceStatic;
+					const budget = getTruncationBudget(visibleLength(acceptancePrefix));
+					const text = truncateChars(acceptanceRaw, budget);
+					const result = scrambleManager.updateText(flowId, 'acceptance', text, Date.now(), isComplete, true);
+					return result.isAnimating ? applyRole("aimContent", `${acceptancePrefix}${result.content}`, theme, config) : applyRole("aimContent", `${acceptancePrefix}${text}`, theme, config);
 				}
 			));
 		}
 
 		// Output: animate streaming text; show clean markdown when complete
 		if (!isComplete && r.streamingText != null) {
-			const streamingText_ = r.streamingText;
+			const streamingRaw = r.streamingText;
+			const msgBudget = getTruncationBudget(0);
+			const displayMsg = tailText(stripAnsi(streamingRaw), msgBudget);
 			container.addChild(new DynamicScrambleText(
-				stripAnsi(streamingText_),
+				displayMsg,
 				() => {
-					const freshStreamingText = getLiveTextWithFallback(flowId) ?? streamingText_;
-					return scrambleManager.updateMsg(flowId, stripAnsi(freshStreamingText), Date.now(), isComplete, undefined, true).content;
+					const budget = getTruncationBudget(0);
+					const freshStreamingText = getLiveTextWithFallback(flowId) ?? streamingRaw;
+					const text = tailText(stripAnsi(freshStreamingText), budget);
+					return scrambleManager.updateMsg(flowId, text, Date.now(), isComplete, undefined, true).content;
 				}
 			));
 		} else if (flowOutput) {
@@ -791,14 +831,22 @@ function renderMultiFlowExpanded(
 		if (toolCallItems.length > 0) {
 			container.addChild(new Spacer(1));
 			container.addChild(new Text(applyRole("prefixLabel", sectionHeader("tool calls"), theme, config), 0, 0));
+			const toolPrefixLen = visibleLength("→ ");
+			const toolBudget = getTruncationBudget(toolPrefixLen);
 			for (let i = 0; i < toolCallItems.length; i++) {
 				const item = toolCallItems[i] as Extract<DisplayItem, { type: "toolCall" }>;
 				const lineText = applyRole("prefixLabel", "→ ", theme, config) + formatFlowToolCall(item.name, item.args, theme.fg.bind(theme));
 				const plainText = stripAnsi(lineText);
-				const initialScrambled = scrambleManager.updateText(flowId, `tool#${i}`, plainText, now, isComplete).content;
+				const displayTool = truncateChars(plainText, toolBudget);
+				const initialScrambled = scrambleManager.updateText(flowId, `tool#${i}`, displayTool, now, isComplete).content;
 				container.addChild(new DynamicScrambleText(
 					initialScrambled,
-					() => scrambleManager.updateText(flowId, `tool#${i}`, plainText, Date.now(), isComplete).content
+					() => {
+						const budget = getTruncationBudget(toolPrefixLen);
+						const freshPlain = stripAnsi(lineText);
+						const text = truncateChars(freshPlain, budget);
+						return scrambleManager.updateText(flowId, `tool#${i}`, text, Date.now(), isComplete).content;
+					}
 				));
 			}
 		}
@@ -902,13 +950,6 @@ function renderActivityPanel(
 			`${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", initialActContent, theme, config)}`,
 			() => {
 				const now = Date.now();
-				let actContent: string;
-				if (scrambleManager.getMode() === 'stream') {
-					actContent = scrambleManager.streamAct(flowId, actFullText, now, flowComplete, budget);
-				} else {
-					const displayAct = truncateChars(actFullText, budget);
-					actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
-				}
 				let actKpi = String(r.usage.toolCalls);
 				const scrambledActKpi = scrambleManager.updateActKpi(flowId, actKpi, now, flowComplete, false);
 				if (scrambledActKpi !== actKpi) {
@@ -916,6 +957,14 @@ function renderActivityPanel(
 				}
 				const actLabel = ` act ▸ ${actKpi} · `;
 				const actPrefix = `${actTree}${actLabel}`;
+				const freshBudget = getTruncationBudget(visibleLength(actPrefix));
+				let actContent: string;
+				if (scrambleManager.getMode() === 'stream') {
+					actContent = scrambleManager.streamAct(flowId, actFullText, now, flowComplete, freshBudget);
+				} else {
+					const displayAct = truncateChars(actFullText, freshBudget);
+					actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
+				}
 				return `${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", actContent, theme, config)}`;
 			},
 			true,
@@ -961,12 +1010,13 @@ function renderActivityPanel(
 				}
 				const msgLabel = ` msg ▸ ${msgKpi} · `;
 				const msgPrefix = `${msgTree}${msgLabel}`;
+				const freshBudget = getTruncationBudget(visibleLength(msgPrefix));
 				const freshRawMsg = flowComplete ? rawMsg : (getLiveTextWithFallback(flowId) ?? rawMsg);
 				if (scrambleManager.getMode() === 'stream') {
-					return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", scrambleManager.streamMsg(flowId, freshRawMsg, now, flowComplete, msgBudget), theme, config)}`;
+					return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", scrambleManager.streamMsg(flowId, freshRawMsg, now, flowComplete, freshBudget), theme, config)}`;
 				} else {
 					const needsTail = Boolean(getLiveTextWithFallback(flowId) || liveText || lastText);
-					const displayMsg = needsTail ? tailText(freshRawMsg, msgBudget) : truncateChars(freshRawMsg, msgBudget);
+					const displayMsg = needsTail ? tailText(freshRawMsg, freshBudget) : truncateChars(freshRawMsg, freshBudget);
 					const result = scrambleManager.updateMsg(flowId, displayMsg, now, flowComplete, undefined, true);
 					return `${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", result.content, theme, config)}`;
 				}

@@ -367,10 +367,6 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
 export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
 	const lines = snapshot.trimEnd().split("\n");
 
-	// Extract fork depth from header for contextual placeholders.
-	let forkDepth: number | undefined;
-	try { const hdr = JSON.parse(lines[0]); forkDepth = hdr?.depth; } catch {}
-
 	// Quick check: if there are no flow cache entries and no compressible tool calls,
 	// nothing to compress — return early.
 	if (cache.size === 0) {

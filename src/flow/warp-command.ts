@@ -21,6 +21,7 @@ FRONTMATTER (YAML between --- delimiters):
   files         — Files touched with what changed (list)
   open_items    — Unresolved work or questions (list)
   watch_out     — Edge cases, gotchas, fragile assumptions (list)
+  uncertain_areas — Areas of the codebase or design that need re-assessment before proceeding (list)
   context_gathering:
     aim         — What the initial scout/discovery should accomplish
     scope       — Specific things to explore or map (list)
@@ -47,8 +48,9 @@ RULES:
 6. Success criteria should be testable — something an audit flow could verify.
 7. If an active goal from the prior session exists, include it in the frontmatter context.
 8. Preserve unresolved blockers, open questions, or "not done" items from prior flow results in open_items.
-9. OUTPUT TEXT ONLY. Do not make tool calls, do not attempt to run code, do not try to read or write files. Your only job is to produce the structured warp prompt as text. The conversation history is provided for context only — do not continue it.
-10. Your entire response must be the warp prompt starting with '---' (YAML frontmatter opening). No preamble, no explanations, no tool calls.
+9. Flag any uncertain areas — parts of the codebase, design decisions, or assumptions that may have shifted since the conversation and need re-assessment via a scout or audit flow before committing to a plan.
+10. OUTPUT TEXT ONLY. Do not make tool calls, do not attempt to run code, do not try to read or write files. Your only job is to produce the structured warp prompt as text. The conversation history is provided for context only — do not continue it.
+11. Your entire response must be the warp prompt starting with '---' (YAML frontmatter opening). No preamble, no explanations, no tool calls.
 
 Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here is the prompt" — just output the prompt itself.
 

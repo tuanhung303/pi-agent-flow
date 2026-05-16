@@ -25,9 +25,9 @@ Both dumps show identical pass signatures: `forkMetadataInjection, dropConfigEve
 The `pi-dump.*.md` files in `tests/fixtures/dumps/` were a mix of old and new formats. Some lacked `Tier:` and `Pipeline:` fields; others used hardcoded pass lists. No tests in `tests/` reference `tests/fixtures/dumps/`, so the fixtures were orphaned.
 
 **Fix:** Removed all stale `pi-dump.*` fixtures and replaced them with **3 current-format representatives** copied from the synced `dump-artifacts/`:
-- `pi-dump.scout.1778872735967.md` + `.txt` — empty-snapshot scout (`Tier: lite | Pipeline: 1.8.40`)
-- `pi-dump.scout.1778890389209.md` + `.txt` — rich-context scout (`Tier: lite | Pipeline: 1.8.40`)
-- `pi-dump.build.1778872929174.md` + `.txt` — build flow (`Tier: flash | Pipeline: 1.8.40`)
+- `pi-dump.scout.1778901915967.md` + `.txt` — empty-snapshot scout (`Tier: lite | Pipeline: 1.8.40`)
+- `pi-dump.scout.1778892184530.md` + `.txt` — rich-context scout (`Tier: lite | Pipeline: 1.8.40`)
+- `pi-dump.build.1778891170537.md` + `.txt` — build flow (`Tier: flash | Pipeline: 1.8.40`)
 
 All three include the HTML comment header with dynamic `Passes:`, `Flow:`, `Tier:`, `Pipeline:`, and `Generated:` fields, plus `.txt` twins and compression stats.
 
