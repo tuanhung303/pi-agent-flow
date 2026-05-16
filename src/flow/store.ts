@@ -63,6 +63,13 @@ export function getGoal(cwd: string): GoalEntry | undefined {
   return readState(cwd).current;
 }
 
+export function getGoalForSession(cwd: string, sessionId: string | undefined): GoalEntry | undefined {
+  const goal = getGoal(cwd);
+  if (!goal) return undefined;
+  if (!goal.sessionId || goal.sessionId === sessionId) return goal;
+  return undefined;
+}
+
 export function setGoal(
   cwd: string,
   objective: string,
@@ -84,6 +91,8 @@ export function setGoal(
     sessionId: opts?.sessionId,
   };
   if (state.current) {
+    state.current.status = "abandoned";
+    state.current.updatedAt = now;
     state.history.push(state.current);
     pruneHistory(state);
   }

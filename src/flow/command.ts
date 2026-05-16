@@ -7,6 +7,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import {
   getGoal,
+  getGoalForSession,
   setGoal,
   clearGoal,
   updateGoalStatus,
@@ -79,9 +80,15 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
           break;
         }
         case "pause": {
-          const entry = updateGoalStatus(cwd, "paused");
-          if (entry) {
-            ctx.ui.notify?.("Goal paused", "info");
+          const currentSessionId = ctx.sessionManager.getSessionId();
+          const goal = getGoalForSession(cwd, currentSessionId);
+          if (goal) {
+            const entry = updateGoalStatus(cwd, "paused");
+            if (entry) {
+              ctx.ui.notify?.("Goal paused", "info");
+            }
+          } else if (getGoal(cwd)) {
+            ctx.ui.notify?.("No active goal in this session to pause", "error");
           } else {
             ctx.ui.notify?.("No active goal to pause", "error");
           }
@@ -97,6 +104,9 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
           if (current.status === "active") {
             ctx.ui.notify?.("Goal is already active", "info");
             break;
+          }
+          if (current.sessionId && current.sessionId !== sessionId) {
+            ctx.ui.notify?.("Resuming goal from another session — it will be rebound to this session.", "warning");
           }
           const entry = updateGoalStatus(cwd, "active", sessionId);
           if (entry) {
@@ -118,8 +128,17 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
             ctx.ui.notify?.("Usage: /flow:goal edit <new-objective> [--acceptance <text>]", "error");
             return;
           }
-          const previousGoal = getGoal(cwd);
-          const previousObjective = previousGoal?.objective ?? "(none)";
+          const currentSessionId = ctx.sessionManager.getSessionId();
+          const previousGoal = getGoalForSession(cwd, currentSessionId);
+          if (!previousGoal) {
+            if (getGoal(cwd)) {
+              ctx.ui.notify?.("No active goal in this session to edit", "error");
+            } else {
+              ctx.ui.notify?.("No active goal to edit", "error");
+            }
+            return;
+          }
+          const previousObjective = previousGoal.objective;
           const entry = updateGoalObjective(cwd, objective, acceptanceMatch?.[1]);
           if (entry) {
             ctx.ui.notify?.(`Goal updated: ${entry.objective}`, "info");
@@ -135,18 +154,30 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
         }
         case "status":
         case "show": {
-          const entry = getGoal(cwd);
+          const currentSessionId = ctx.sessionManager.getSessionId();
+          const entry = getGoalForSession(cwd, currentSessionId);
           if (entry) {
             ctx.ui.notify?.(formatGoal(entry), "info");
           } else {
-            ctx.ui.notify?.("No active goal", "info");
+            const anyGoal = getGoal(cwd);
+            if (anyGoal) {
+              ctx.ui.notify?.(formatGoal(anyGoal) + "\n\n(belongs to another session)", "info");
+            } else {
+              ctx.ui.notify?.("No active goal", "info");
+            }
           }
           break;
         }
         case "complete": {
-          const entry = updateGoalStatus(cwd, "completed");
-          if (entry) {
-            ctx.ui.notify?.("Goal marked as completed", "info");
+          const currentSessionId = ctx.sessionManager.getSessionId();
+          const goal = getGoalForSession(cwd, currentSessionId);
+          if (goal) {
+            const entry = updateGoalStatus(cwd, "completed");
+            if (entry) {
+              ctx.ui.notify?.("Goal marked as completed", "info");
+            }
+          } else if (getGoal(cwd)) {
+            ctx.ui.notify?.("No active goal in this session to complete", "error");
           } else {
             ctx.ui.notify?.("No active goal to complete", "error");
           }

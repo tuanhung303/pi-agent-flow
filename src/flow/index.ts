@@ -20,6 +20,7 @@ export type {
 
 export {
   getGoal,
+  getGoalForSession,
   setGoal,
   clearGoal,
   updateGoalStatus,

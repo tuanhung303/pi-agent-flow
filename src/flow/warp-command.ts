@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
-import { getGoal, getWarpCount, recordWarp } from "./store.js";
+import { getGoal, getGoalForSession, getWarpCount, recordWarp } from "./store.js";
 import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
 import {
   stripSteeringHintFromContent,
@@ -244,8 +244,8 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
           conversation.slice(conversation.length - tailChars);
       }
 
-      // Inject active goal context
-      const activeGoal = getGoal(cwd);
+      // Inject active goal context (session-guarded)
+      const activeGoal = getGoalForSession(cwd, ctx.sessionManager.getSessionId());
       let preWarpContext = "";
       if (activeGoal) {
         preWarpContext = `\nPre-warp active goal: ${activeGoal.objective}${

@@ -34,7 +34,7 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoal, recordFlowCompletion, addTokens } from "./flow/index.js";
+import { registerFlow, getGoal, getGoalForSession, recordFlowCompletion, addTokens } from "./flow/index.js";
 import * as sessionRegistry from "./core/session-registry.js";
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
@@ -448,7 +448,7 @@ export default function (pi: ExtensionAPI) {
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
 						goalContinuationCallback: async (results) => {
-							const goal = getGoal(ctx.cwd);
+							const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
 							if (!goal) return;
 							for (const r of results) {
 								recordFlowCompletion(ctx.cwd, { type: r.type, intent: r.intent, aim: r.aim });
