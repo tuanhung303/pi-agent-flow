@@ -6,6 +6,7 @@ import {
 	tailText,
 	formatCompactStats,
 	formatCompactTokenPair,
+	formatTps,
 	formatCountdown,
 	lowerFirstWord,
 	visibleLength,
@@ -393,6 +394,31 @@ describe("lowerFirstWord", () => {
 });
 
 // ---------------------------------------------------------------------------
+// formatTps
+// ---------------------------------------------------------------------------
+
+describe("formatTps", () => {
+	it("returns dash for undefined", () => {
+		expect(formatTps(undefined)).toBe("-");
+	});
+	it("returns dash for zero", () => {
+		expect(formatTps(0)).toBe("-");
+	});
+	it("returns dash for negative", () => {
+		expect(formatTps(-5)).toBe("-");
+	});
+	it("shows one decimal when value < 100", () => {
+		expect(formatTps(76.2)).toBe("76.2 tok/s");
+	});
+	it("shows integer when value >= 100", () => {
+		expect(formatTps(142.7)).toBe("143 tok/s");
+	});
+	it("shows integer when value is exactly 100", () => {
+		expect(formatTps(100)).toBe("100 tok/s");
+	});
+});
+
+// ---------------------------------------------------------------------------
 // formatCompactStats
 // ---------------------------------------------------------------------------
 
@@ -467,6 +493,18 @@ describe("formatCompactStats", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
 		expect(result).toBe("▲  1.0k - - - ctx:     0");
+	});
+
+	it("with high smoothedTps rounds to integer", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 142.7 };
+		const result = formatCompactStats(usage, "K2.6");
+		expect(result).toBe("▲  2.0k - 143 tok/s - ctx: 21.0k - k2.6");
+	});
+
+	it("with exactly 100 smoothedTps rounds to integer", () => {
+		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 100 };
+		const result = formatCompactStats(usage);
+		expect(result).toBe("▲  2.0k - 100 tok/s - ctx: 21.0k");
 	});
 
 	it("narrows when maxWidth is tight", () => {

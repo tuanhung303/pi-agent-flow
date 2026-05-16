@@ -37,9 +37,10 @@ export function formatFlowTypeName(type: string): string {
 	return lower.padEnd(targetWidth, " ");
 }
 
-/** Format tokens-per-second to a 5-char display (e.g., " 42.3", "    -"). */
-function formatTps(value: number | undefined): string {
+/** Format tokens-per-second to a display string. */
+export function formatTps(value: number | undefined): string {
 	if (!value || value <= 0) return "-";
+	if (value >= 100) return `${Math.round(value)} tok/s`;
 	return `${value.toFixed(1)} tok/s`;
 }
 
