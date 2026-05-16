@@ -354,15 +354,15 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 | `complete` | `/flow complete` — Marks the current goal as completed. |
 | `status`, `show` | `/flow status` (or `show`) — Displays current goal state, budgets, and completed flows |
 
-> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow complete`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
+> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow complete`, by the orchestrator calling the `flow` tool with `type: "complete"`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
 
 ### How it works
 
-1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets.
-2. If under budget, it sends a hidden message instructing the orchestrator to call the `flow` tool.
-3. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
-4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
-5. If `maxTokens` or `maxFlows` is exceeded, the goal **auto-pauses** silently without notifying the user.
+1. On `turn_end`, if a goal is **active**, the continuation hook first checks whether the orchestrator called the `flow` tool with `type: "complete"`. If so, it marks the goal `completed` and stops auto-continuation.
+2. Next, the hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, the goal is **auto-paused** and a hidden budget-limit message is sent to the orchestrator.
+3. If under budget, the hook sends a hidden message instructing the orchestrator to call the `flow` tool.
+4. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
+5. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
 6. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
 7. A **3-second post-completion hold** (`FLOW_COMPLETE_HOLD_MS`) delays the next spawn after a flow finishes, giving the user time to read the completed result before it scrolls off-screen.
 8. Goals are **session-scoped** via `sessionId`; resuming in a new session still works but clears the old session binding.

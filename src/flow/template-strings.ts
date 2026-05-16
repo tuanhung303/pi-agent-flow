@@ -28,13 +28,21 @@ Call the flow tool with the appropriate flow type to advance the goal.
 </flow-continuation>`;
 
 export const budgetLimitTemplate = `<flow-budget>
-The flow goal has exceeded its budget advisory.
+The flow goal has exceeded its budget and has been auto-paused.
 
 Objective: {{objective}}
 Usage: {{totalTokens}}/{{maxTokens}} tokens, {{flowCount}}/{{maxFlows}} flows.
 
-Wrap up efficiently — prioritize the most impactful remaining work. The goal remains active; this is an advisory hint, not a hard stop.
+Resume with \`/flow resume\` if you want to continue.
 </flow-budget>`;
+
+export const goalCompletedTemplate = `<flow-completion>
+The flow goal has been marked as completed by the orchestrator.
+
+Objective: {{objective}}
+
+Auto-continuation is now stopped. No further flows will be spawned for this goal.
+</flow-completion>`;
 
 export const objectiveUpdatedTemplate = `<flow-update>
 The flow goal objective has been updated.

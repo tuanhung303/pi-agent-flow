@@ -217,6 +217,33 @@ export async function executeFlows(
 		confirmProjectFlows,
 	} = deps;
 
+	// Handle agent-driven completion: skip execution for 'complete' type
+	const completeParams = params.filter((p) => p.type.toLowerCase() === "complete");
+	if (completeParams.length > 0) {
+		const completeResults: SingleResult[] = completeParams.map((p) => ({
+			type: p.type.toLowerCase(),
+			agentSource: "unknown",
+			intent: p.intent,
+			aim: p.aim,
+			acceptance: p.acceptance,
+			exitCode: 0,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		}));
+		const flowReports = completeResults.map(
+			(r) => `flow [${r.type}] accomplished\n\nGoal marked as completed by orchestrator.`,
+		);
+		return {
+			content: [{
+				type: "text" as const,
+				text: `Flow: ${completeResults.length}/${completeResults.length} completed\n\n${flowReports.join("\n\n---\n\n")}`,
+			}],
+			details: makeDetails(completeResults),
+			isError: false,
+		};
+	}
+
 	const requested = new Set<string>(params.map((f) => f.type.toLowerCase()));
 
 	// Cycle check

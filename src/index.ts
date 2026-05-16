@@ -62,7 +62,7 @@ import {
 
 const FlowItem = Type.Object({
 	type: Type.String({
-		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as scout, debug, build, craft, audit, or ideas.",
+		description: "Flow type. Matching is case-insensitive. Must correspond to an available flow name such as scout, debug, build, craft, audit, or ideas. Use 'complete' to end an active flow goal.",
 	}),
 	intent: Type.String({
 		description: "Specific mission for this flow — target concrete files, folders, or code patterns. Be precise in final outcome/expectation and common sense, but avoid over-specifying implementation details or assuming current state that may have shifted.",
@@ -365,7 +365,7 @@ export default function (pi: ExtensionAPI) {
 				"Flow states are isolated π processes with forked session snapshots. They run in parallel.",
 				'Invoke: { "flow": [{ "type": "scout", "intent": "...", "aim": "...", "sessionMode": "default" }, ...] }',
 				"Session modes: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
-				"States: scout, debug, build, craft, audit, ideas.",
+				"States: scout, debug, build, craft, audit, ideas. Use 'complete' to end an active flow goal.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,
