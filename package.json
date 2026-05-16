@@ -68,6 +68,7 @@
     }
   },
   "dependencies": {
+    "@hatchet-dev/typescript-sdk": "^1.22.2",
     "jsdom": "^29.1.0",
     "turndown": "^7.2.4"
   }

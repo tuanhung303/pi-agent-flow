@@ -1,5 +1,22 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RunFlowOptions } from "../src/core/flow.js";
+import { runFlow } from "../src/core/flow.js";
+import { createFlowRunnerFromEnv, DEFAULT_LOCAL_FLOW_RUNNER } from "../src/flow-runner.js";
+import {
+	HATCHET_FLOW_TASK_NAME,
+	HatchetFlowRunner,
+	runHatchetFlowTask,
+	submitHatchetTaskWithSdk,
+	type HatchetFlowPayload,
+} from "../src/hatchet-runner.js";
+import {
+	DEFAULT_HATCHET_MAX_PAYLOAD_BYTES,
+	deserializeHatchetFlowPayload,
+	resolveHatchetMaxPayloadBytes,
+	serializeHatchetFlowPayload,
+	validateHatchetFlowPayloadSize,
+} from "../src/hatchet-payload.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
 
 vi.mock("../src/core/flow.js", async (importOriginal) => {
@@ -19,29 +36,18 @@ vi.mock("../src/core/flow.js", async (importOriginal) => {
 	};
 });
 
-import { runFlow, type RunFlowOptions } from "../src/core/flow.js";
-import { createFlowRunnerFromEnv, DEFAULT_LOCAL_FLOW_RUNNER } from "../src/flow-runner.js";
-import {
-	HATCHET_FLOW_TASK_NAME,
-	HatchetFlowRunner,
-	deserializeHatchetFlowPayload,
-	runHatchetFlowTask,
-	serializeHatchetFlowPayload,
-	submitHatchetTaskWithSdk,
-	validateHatchetFlowPayloadSize,
-	type HatchetFlowPayload,
-} from "../src/hatchet-runner.js";
-
 function options(overrides: Partial<RunFlowOptions> = {}): RunFlowOptions {
 	return {
 		cwd: "/repo",
-		flows: [{
-			name: "build",
-			description: "Code",
-			systemPrompt: "Prompt",
-			source: "project",
-			filePath: "/repo/.pi/agents/build.md",
-		}],
+		flows: [
+			{
+				name: "build",
+				description: "Code",
+				systemPrompt: "Prompt",
+				source: "project",
+				filePath: "/repo/.pi/agents/build.md",
+			},
+		],
 		flowName: "build",
 		intent: "Implement feature",
 		aim: "Implement feature",
@@ -53,30 +59,28 @@ function options(overrides: Partial<RunFlowOptions> = {}): RunFlowOptions {
 		toolOptimize: true,
 		structuredOutput: true,
 		model: "test-model",
-		makeDetails: (results) => ({
-			mode: "flow",
-			flowStyle: "fork",
-			projectAgentsDir: null,
-			results,
-		}),
+		makeDetails: (results) => ({ mode: "flow", flowStyle: "fork", projectAgentsDir: null, results }),
 		...overrides,
 	};
 }
 
 describe("Hatchet runner", () => {
+	const originalRunner = process.env.PI_FLOW_RUNNER;
 	const originalSpawnCommand = process.env.PI_FLOW_SPAWN_COMMAND;
 	const originalMaxPayloadBytes = process.env.PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		delete process.env.PI_FLOW_RUNNER;
 		delete process.env.PI_FLOW_SPAWN_COMMAND;
 		delete process.env.PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES;
 	});
 
 	afterEach(() => {
+		if (originalRunner === undefined) delete process.env.PI_FLOW_RUNNER;
+		else process.env.PI_FLOW_RUNNER = originalRunner;
 		if (originalSpawnCommand === undefined) delete process.env.PI_FLOW_SPAWN_COMMAND;
 		else process.env.PI_FLOW_SPAWN_COMMAND = originalSpawnCommand;
-
 		if (originalMaxPayloadBytes === undefined) delete process.env.PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES;
 		else process.env.PI_FLOW_HATCHET_MAX_PAYLOAD_BYTES = originalMaxPayloadBytes;
 	});
@@ -87,7 +91,6 @@ describe("Hatchet runner", () => {
 			options({ signal: controller.signal, onUpdate: vi.fn() }),
 			"/repo/.pi/agents",
 		);
-
 		expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
 		expect(payload).toMatchObject({
 			cwd: "/repo",
@@ -137,14 +140,14 @@ describe("Hatchet runner", () => {
 			messages: [],
 			stderr: `sdk:${taskName}`,
 			usage: emptyFlowUsage(),
-		} satisfies SingleResult));
+		}) satisfies SingleResult);
+
 		class HatchetClient {
 			tasks = { run: taskRun };
 		}
 
 		const payload = serializeHatchetFlowPayload(options());
 		const result = await submitHatchetTaskWithSdk({ HatchetClient }, HATCHET_FLOW_TASK_NAME, payload);
-
 		expect(taskRun).toHaveBeenCalledWith(HATCHET_FLOW_TASK_NAME, payload);
 		expect(result.stderr).toBe(`sdk:${HATCHET_FLOW_TASK_NAME}`);
 	});
@@ -162,6 +165,7 @@ describe("Hatchet runner", () => {
 				usage: emptyFlowUsage(),
 			},
 		}));
+
 		class HatchetClient {
 			tasks = { run: taskRun };
 		}
@@ -172,19 +176,17 @@ describe("Hatchet runner", () => {
 				HATCHET_FLOW_TASK_NAME,
 				serializeHatchetFlowPayload(options()),
 			),
-		).rejects.toThrow("Hatchet SDK result must include string field `type`");
+		).rejects.toThrow("invalid SingleResult");
 	});
 
 	it("rejects malformed Hatchet submitter results before completion is emitted", async () => {
 		const updates: any[] = [];
 		const runner = new HatchetFlowRunner(async () => ({ result: "wrapped" } as unknown as SingleResult));
-
 		await expect(
 			runner.run(options({ onUpdate: (update) => updates.push(update) }), {
 				projectFlowsDir: "/repo/.pi/agents",
 			}),
-		).rejects.toThrow("Hatchet runner result must include string field `type`");
-
+		).rejects.toThrow("invalid SingleResult");
 		expect(updates.map((update) => update.content[0].text)).toEqual([
 			"Hatchet queued/running flow build.",
 			"Hatchet failed flow build.",
@@ -194,7 +196,9 @@ describe("Hatchet runner", () => {
 	it("selects Hatchet only when PI_FLOW_RUNNER=hatchet", () => {
 		expect(createFlowRunnerFromEnv({} as NodeJS.ProcessEnv)).toBe(DEFAULT_LOCAL_FLOW_RUNNER);
 		expect(createFlowRunnerFromEnv({ PI_FLOW_RUNNER: "local" } as NodeJS.ProcessEnv)).toBe(DEFAULT_LOCAL_FLOW_RUNNER);
-		expect(createFlowRunnerFromEnv({ PI_FLOW_RUNNER: "hatchet" } as NodeJS.ProcessEnv)).toBeInstanceOf(HatchetFlowRunner);
+		expect(createFlowRunnerFromEnv({ PI_FLOW_RUNNER: "hatchet" } as NodeJS.ProcessEnv).constructor.name).toBe(
+			"HatchetFlowRunner",
+		);
 	});
 
 	it("emits Hatchet lifecycle updates around final-result submission", async () => {
@@ -218,17 +222,9 @@ describe("Hatchet runner", () => {
 			"Hatchet queued/running flow build.",
 			"Hatchet completed flow build.",
 		]);
-		expect(updates[0].details.results[0]).toMatchObject({
-			type: "build",
-			agentSource: "unknown",
-			exitCode: -1,
-		});
+		expect(updates[0].details.results[0]).toMatchObject({ type: "build", agentSource: "unknown", exitCode: -1 });
 		expect(updates[0].details.projectAgentsDir).toBe("/repo/.pi/agents");
-		expect(updates[1].details.results[0]).toMatchObject({
-			type: "build",
-			stderr: "done",
-			exitCode: 0,
-		});
+		expect(updates[1].details.results[0]).toMatchObject({ type: "build", stderr: "done", exitCode: 0 });
 	});
 
 	it("sanitizes failed Hatchet lifecycle updates while rethrowing the original error", async () => {
@@ -243,7 +239,6 @@ describe("Hatchet runner", () => {
 				projectFlowsDir: "/repo/.pi/agents",
 			}),
 		).rejects.toThrow(secret);
-
 		expect(updates.map((update) => update.content[0].text)).toEqual([
 			"Hatchet queued/running flow build.",
 			"Hatchet failed flow build.",
@@ -257,7 +252,9 @@ describe("Hatchet runner", () => {
 		expect(JSON.stringify(updates)).not.toContain(secret);
 	});
 
-	it("worker entrypoint reconstructs runFlow options and defaults child spawn command to pi", async () => {
+	it("worker entrypoint reconstructs runFlow options and restores worker env after defaulting spawn command", async () => {
+		const previousRunner = process.env.PI_FLOW_RUNNER;
+		const previousSpawn = process.env.PI_FLOW_SPAWN_COMMAND;
 		const payload = serializeHatchetFlowPayload(
 			options({ acceptance: "Done", cwd: process.cwd() }),
 			"/repo/.pi/agents",
@@ -265,47 +262,54 @@ describe("Hatchet runner", () => {
 
 		await runHatchetFlowTask(payload);
 
-		expect(process.env.PI_FLOW_SPAWN_COMMAND).toBe("pi");
+		expect(process.env.PI_FLOW_RUNNER).toBe(previousRunner);
+		expect(process.env.PI_FLOW_SPAWN_COMMAND).toBe(previousSpawn);
 		expect(runFlow).toHaveBeenCalledTimes(1);
 		const calledWith = vi.mocked(runFlow).mock.calls[0][0];
 		expect(calledWith.flowName).toBe("build");
 		expect(calledWith.acceptance).toBe("Done");
 		expect(calledWith.signal).toBeUndefined();
 		expect(calledWith.onUpdate).toBeUndefined();
-		expect(calledWith.makeDetails([{
-			type: "build",
-			agentSource: "project",
-			intent: "i",
-			aim: "a",
-			exitCode: 0,
-			messages: [],
-			stderr: "",
-			usage: emptyFlowUsage(),
-		}]).projectAgentsDir).toBe("/repo/.pi/agents");
+		expect(
+			calledWith.makeDetails([
+				{
+					type: "build",
+					agentSource: "project",
+					intent: "i",
+					aim: "a",
+					exitCode: 0,
+					messages: [],
+					stderr: "",
+					usage: emptyFlowUsage(),
+				},
+			]).projectAgentsDir,
+		).toBe("/repo/.pi/agents");
 	});
 
-	it("preserves an explicit worker spawn command", async () => {
+	it("restores an explicit worker spawn command after execution", async () => {
 		process.env.PI_FLOW_SPAWN_COMMAND = " /custom/pi ";
 		const payload = serializeHatchetFlowPayload(options({ cwd: process.cwd() }));
-
 		await runHatchetFlowTask(payload);
-
-		expect(process.env.PI_FLOW_SPAWN_COMMAND).toBe("/custom/pi");
+		expect(process.env.PI_FLOW_SPAWN_COMMAND).toBe(" /custom/pi ");
 	});
 
 	it("rejects invalid worker spawn commands before running", async () => {
 		process.env.PI_FLOW_SPAWN_COMMAND = "pi\nworker";
 		const payload = serializeHatchetFlowPayload(options({ cwd: process.cwd() }));
-
 		await expect(runHatchetFlowTask(payload)).rejects.toThrow("PI_FLOW_SPAWN_COMMAND must be a single command");
 		expect(runFlow).not.toHaveBeenCalled();
 	});
 
 	it("rejects missing worker workspaces before running", async () => {
 		const payload = serializeHatchetFlowPayload(options({ cwd: "/definitely/missing/pi-agent-flow" }));
-
 		await expect(runHatchetFlowTask(payload)).rejects.toThrow("current checkout/workspace");
 		expect(runFlow).not.toHaveBeenCalled();
+	});
+
+	it("uses a larger default Hatchet payload cap before requiring overrides", () => {
+		expect(DEFAULT_HATCHET_MAX_PAYLOAD_BYTES).toBe(1_500_000);
+		expect(DEFAULT_HATCHET_MAX_PAYLOAD_BYTES).toBeGreaterThan(1_043_652);
+		expect(resolveHatchetMaxPayloadBytes({} as NodeJS.ProcessEnv)).toBe(DEFAULT_HATCHET_MAX_PAYLOAD_BYTES);
 	});
 
 	it("rejects oversized Hatchet payloads before submission", async () => {
@@ -319,9 +323,8 @@ describe("Hatchet runner", () => {
 			messages: [],
 			stderr: "",
 			usage: emptyFlowUsage(),
-		} satisfies SingleResult));
+		}) satisfies SingleResult);
 		const runner = new HatchetFlowRunner(submit);
-
 		await expect(
 			runner.run(options({ cwd: process.cwd(), forkSessionSnapshotJsonl: "x".repeat(100) })),
 		).rejects.toThrow("exceeding limit");
@@ -336,7 +339,6 @@ describe("Hatchet runner", () => {
 	it("deserializes payload without streaming or cancellation callbacks", () => {
 		const payload = serializeHatchetFlowPayload(options({ onUpdate: vi.fn() }));
 		const restored = deserializeHatchetFlowPayload(payload);
-
 		expect(restored.onUpdate).toBeUndefined();
 		expect(restored.signal).toBeUndefined();
 		expect(restored.flowName).toBe("build");
@@ -345,7 +347,6 @@ describe("Hatchet runner", () => {
 	it("documents the Hatchet payload trust boundary", () => {
 		const readme = readFileSync("README.md", "utf8");
 		const adr = readFileSync("doc/adr/0003-phase-2-basic-hatchet-backend.md", "utf8");
-
 		expect(readme).toContain("Hatchet payload trust boundary");
 		expect(readme).toContain("trusted infrastructure");
 		expect(adr).toContain("Hatchet payload trust boundary");
