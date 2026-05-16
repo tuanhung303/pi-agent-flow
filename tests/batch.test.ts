@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createBatchTool, createBatchReadTool, suggestSimilarFiles, isWithinDirectory } from "../src/batch.js";
+import { createBatchTool, createBatchReadTool } from "../src/batch/index.js";
+import { suggestSimilarFiles } from "../src/batch/execute.js";
+import { isWithinDirectory } from "../src/batch/fuzzy-edit.js";
 
 describe("batch tool", () => {
 	let tmpDir: string;
@@ -287,6 +289,206 @@ describe("batch tool", () => {
 				expect(result.content[0].text).toContain("⚠ large.txt truncated");
 				expect(result.content[0].text).toContain("s=3001");
 			});
+		});
+	});
+
+	describe("rg operations", () => {
+		it("searches with rg and returns matching files", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "bar.ts"), "export const bar = 2;\n", "utf-8");
+			fs.mkdirSync(path.join(tmpDir, "sub"), { recursive: true });
+			fs.writeFileSync(path.join(tmpDir, "sub", "baz.ts"), "export const baz = 3;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[0].op).toBe("rg");
+			expect(result.content[0].text).toContain("foo.ts");
+			expect(result.content[0].text).toContain("bar.ts");
+			expect(result.content[0].text).toContain("baz.ts");
+		});
+
+		it("returns empty results when no matches", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "nonexistent_pattern_12345" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[0].content).toBe("");
+		});
+
+		it("respects type filter", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "bar.js"), "export const bar = 2;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const", t: "ts" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("foo.ts");
+			expect(result.content[0].text).not.toContain("bar.js");
+		});
+
+		it("respects ignore-case flag", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const FOO = 1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "foo", i: true }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("foo.ts");
+		});
+
+		it("disables files-with-matches when l is false", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\nexport const foo2 = 2;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const", l: false }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.content[0].text).toContain("foo.ts");
+		});
+
+		it("rejects empty pattern", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("error");
+			expect(result.details.results[0].error).toContain("q (search pattern) is required");
+		});
+
+		it("handles pattern starting with dash safely", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = -1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "-1" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.content[0].text).toContain("foo.ts");
+		});
+
+		it("handles patterns with shell metacharacters safely", async () => {
+			fs.writeFileSync(path.join(tmpDir, "shell.ts"), "echo $HOME && rm -rf /\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "echo \\$HOME && rm -rf /" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.content[0].text).toContain("shell.ts");
+		});
+
+		it("respects max-count", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\nexport const foo2 = 2;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const", l: false, n: 1 }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			const lines = result.details.results[0].content.split("\n").filter(Boolean);
+			expect(lines.length).toBeLessThanOrEqual(1);
+		});
+
+		it("respects ignore level (-u)", async () => {
+			fs.writeFileSync(path.join(tmpDir, "foo.ts"), "export const foo = 1;\n", "utf-8");
+			fs.mkdirSync(path.join(tmpDir, "node_modules"));
+			fs.writeFileSync(path.join(tmpDir, "node_modules", "bar.ts"), "export const bar = 2;\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, ".gitignore"), "node_modules/\n", "utf-8");
+			fs.mkdirSync(path.join(tmpDir, ".git"));
+
+			const tool = createTool();
+
+			const resultDefault = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+			expect(resultDefault.content[0].text).toContain("foo.ts");
+			expect(resultDefault.content[0].text).not.toContain("node_modules");
+
+			const resultIgnore = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "export const", u: 0 }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+			expect(resultIgnore.content[0].text).toContain("foo.ts");
+			expect(resultIgnore.content[0].text).toContain("node_modules");
+		});
+
+		it("handles path with spaces", async () => {
+			fs.mkdirSync(path.join(tmpDir, "path with spaces"));
+			fs.writeFileSync(path.join(tmpDir, "path with spaces", "foo.ts"), "export const foo = 1;\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: "path with spaces", q: "export const" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.content[0].text).toContain("foo.ts");
 		});
 	});
 
@@ -2028,9 +2230,9 @@ describe("edge cases", () => {
 		});
 
 		it("skips remaining reads when aggregate line limit is exceeded", async () => {
-			// 4 files × 1500 lines = 6000 total; cap is 4000
+			// 4 files × 500 lines = 2000 total; cap is 1500
 			for (let i = 0; i < 4; i++) {
-				const lines = Array.from({ length: 1500 }, (_, j) => `file${i} line ${j}`);
+				const lines = Array.from({ length: 500 }, (_, j) => `file${i} line ${j}`);
 				fs.writeFileSync(path.join(tmpDir, `batch-agg-${i}.txt`), lines.join("\n"), "utf-8");
 			}
 
@@ -2057,14 +2259,14 @@ describe("edge cases", () => {
 				op: "read",
 				path: "batch-agg-3.txt",
 				status: "skipped",
-				error: expect.stringContaining("aggregate line limit of 4000"),
+				error: expect.stringContaining("aggregate line limit of 1500"),
 			});
-			expect(result.content[0].text).toContain("⚠ Aggregate line limit (4000) reached — skipped 1 read: batch-agg-3.txt");
+			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 1 read: batch-agg-3.txt");
 		});
 
 		it("continues non-read operations after aggregate line limit is reached", async () => {
 			for (let i = 0; i < 4; i++) {
-				const lines = Array.from({ length: 1500 }, (_, j) => `file${i} line ${j}`);
+				const lines = Array.from({ length: 500 }, (_, j) => `file${i} line ${j}`);
 				fs.writeFileSync(path.join(tmpDir, `mixed-${i}.txt`), lines.join("\n"), "utf-8");
 			}
 
@@ -2404,12 +2606,12 @@ describe("batch_read tool", () => {
 
 			expect(result.details.results[0]).toMatchObject({
 				truncated: true,
-				nextOffset: 2001,
-				warning: expect.stringContaining("Raw content truncated at 2000 lines"),
+				nextOffset: 501,
+				warning: expect.stringContaining("Raw content truncated at 500 lines"),
 			});
-			expect(result.details.results[0].content).toContain("line 2000");
-			expect(result.details.results[0].content).not.toContain("line 2001");
-			expect(result.content[0].text).toContain("Raw content truncated at 2000 lines");
+			expect(result.details.results[0].content).toContain("line 500");
+			expect(result.details.results[0].content).not.toContain("line 501");
+			expect(result.content[0].text).toContain("Raw content truncated at 500 lines");
 		});
 
 		it("returns Terraform context maps for large full-file reads", async () => {
@@ -2548,8 +2750,8 @@ describe("batch_read tool", () => {
 		});
 
 		it("skips remaining reads when aggregate line limit is exceeded", async () => {
-			// 4 files × 3000 lines; targeted read of 2000 lines each
-			// File 1 + File 2 = 4000 lines ≥ 4000 cap, so Files 3 and 4 are skipped
+			// 4 files × 3000 lines; targeted reads clamped to 500 lines each
+			// File 1 + File 2 + File 3 = 1500 lines ≥ 1500 cap, so File 4 is skipped
 			for (let i = 0; i < 4; i++) {
 				const lines = Array.from({ length: 3000 }, (_, j) => `file${i} line ${j}`);
 				fs.writeFileSync(path.join(tmpDir, `agg-${i}.txt`), lines.join("\n"), "utf-8");
@@ -2560,10 +2762,10 @@ describe("batch_read tool", () => {
 				"call-1",
 				{
 					o: [
-						{ o: "read", p: "agg-0.txt", s: 1, l: 2000 },
-						{ o: "read", p: "agg-1.txt", s: 1, l: 2000 },
-						{ o: "read", p: "agg-2.txt", s: 1, l: 2000 },
-						{ o: "read", p: "agg-3.txt", s: 1, l: 2000 },
+						{ o: "read", p: "agg-0.txt", s: 1, l: 600 },
+						{ o: "read", p: "agg-1.txt", s: 1, l: 600 },
+						{ o: "read", p: "agg-2.txt", s: 1, l: 600 },
+						{ o: "read", p: "agg-3.txt", s: 1, l: 600 },
 					],
 				},
 				undefined,
@@ -2573,23 +2775,18 @@ describe("batch_read tool", () => {
 
 			expect(result.details.results[0].status).toBe("ok");
 			expect(result.details.results[1].status).toBe("ok");
-			expect(result.details.results[2]).toMatchObject({
-				op: "read",
-				path: "agg-2.txt",
-				status: "skipped",
-				error: expect.stringContaining("aggregate line limit of 4000"),
-			});
+			expect(result.details.results[2].status).toBe("ok");
 			expect(result.details.results[3]).toMatchObject({
 				op: "read",
 				path: "agg-3.txt",
 				status: "skipped",
-				error: expect.stringContaining("aggregate line limit of 4000"),
+				error: expect.stringContaining("aggregate line limit of 1500"),
 			});
-			expect(result.content[0].text).toContain("⚠ Aggregate line limit (4000) reached — skipped 2 reads: agg-2.txt, agg-3.txt");
+			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 1 read: agg-3.txt");
 		});
 
 		it("does not count context maps toward aggregate line limit", async () => {
-			// A context map read (801+ lines, full-file) should not consume the aggregate cap
+			// A context map read (401+ lines, full-file) should not consume the aggregate cap
 			const lines = Array.from({ length: 801 }, (_, i) => `line ${i}`);
 			fs.writeFileSync(path.join(tmpDir, "large-map.txt"), lines.join("\n"), "utf-8");
 			const smallLines = Array.from({ length: 500 }, (_, i) => `small line ${i}`);
@@ -2684,6 +2881,47 @@ describe("batch_read tool", () => {
 
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toContain("batch_read only supports read operations");
+		});
+
+		it("allows rg operations", async () => {
+			fs.writeFileSync(path.join(tmpDir, "alpha.txt"), "alpha content\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "beta.txt"), "beta content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ o: "rg", p: ".", q: "alpha" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBeFalsy();
+			expect(result.content[0].text).toContain("1 operations: 1 rg");
+			expect(result.content[0].text).toContain("alpha.txt");
+		});
+
+		it("allows mixed read and rg in batch_read", async () => {
+			fs.writeFileSync(path.join(tmpDir, "alpha.txt"), "alpha content\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "beta.txt"), "beta content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "alpha.txt" },
+						{ o: "rg", p: ".", q: "beta" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.isError).toBeFalsy();
+			expect(result.content[0].text).toContain("alpha content");
+			expect(result.content[0].text).toContain("beta.txt");
 		});
 	});
 

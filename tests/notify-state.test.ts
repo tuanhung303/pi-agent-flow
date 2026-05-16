@@ -4,7 +4,7 @@ import {
 	resetNotifyState,
 	setPendingDecision,
 	setFlowComplete,
-} from "../src/notify-state.js";
+} from "../src/notify/notify-state.js";
 
 describe("notify-state", () => {
 	beforeEach(() => {

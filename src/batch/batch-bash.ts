@@ -1,4 +1,4 @@
-import { appendStrategicHintOnce } from "../tool-utils.js";
+import { appendStrategicHintOnce } from "../steering/tool-utils.js";
 
 /**
  * batch bash -- parallel bash execution and polling.
@@ -23,7 +23,7 @@ import {
 	MAX_BASH_OUTPUT_BYTES,
 	MAX_BASH_OUTPUT_LINES,
 } from "./constants.js";
-import { classifyDuration } from "../timed-bash.js";
+import { classifyDuration } from "../tools/timed-bash.js";
 
 // ---------------------------------------------------------------------------
 // Process tracker -- shared between batch and batch_bash_poll tools
@@ -38,7 +38,7 @@ interface RunningProcess {
 	abortController: AbortController;
 }
 
-export interface TrackedBashResult {
+interface TrackedBashResult {
 	id: string;
 	command: string;
 	status: "ok" | "error" | "aborted";
@@ -423,7 +423,7 @@ export function pollBatchBashResults(
 // Poll tool schema & factory
 // ---------------------------------------------------------------------------
 
-export const BatchBashPollParams = Type.Object({
+const BatchBashPollParams = Type.Object({
 	i: Type.Array(Type.String(), {
 		description: "Array of bash operation IDs to poll for results.",
 		minItems: 1,

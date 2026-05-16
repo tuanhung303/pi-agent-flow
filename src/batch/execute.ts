@@ -7,8 +7,10 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { execFile } from "node:child_process";
 import {
 	type FileOpInput,
+	type RgOpInput,
 	type ExecuteOptions,
 	type ReadOptions,
 	type OpResult,
@@ -17,6 +19,7 @@ import {
 	SAFE_FULL_READ_LIMIT,
 	TARGETED_READ_LINE_LIMIT,
 	MAX_TOTAL_RESULT_LINES,
+	BATCH_READ_MAX_TOTAL_BYTES,
 } from "./constants.js";
 import {
 	normalizeToLF,
@@ -210,11 +213,13 @@ export async function executeOperations(
 	const results: OpResult[] = [];
 	let failed = false;
 
-	const counts = { read: 0, write: 0, edit: 0, delete: 0, error: 0, skipped: 0 };
+	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, error: 0, skipped: 0 };
 	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
 	const aggregateLimitSkipped: { path: string }[] = [];
+	const aggregateByteLimitSkipped: { path: string }[] = [];
 	let aggregateLinesRead = 0;
+	let aggregateBytesRead = 0;
 	const includeLimitWarnings = options.includeLimitWarnings ?? true;
 
 	for (const op of operations) {
@@ -244,6 +249,18 @@ export async function executeOperations(
 						});
 						counts.skipped++;
 						aggregateLimitSkipped.push({ path: op.p });
+						break;
+					}
+
+					if (aggregateBytesRead >= BATCH_READ_MAX_TOTAL_BYTES) {
+						results.push({
+							op: "read",
+							path: op.p,
+							status: "skipped",
+							error: `Skipped: aggregate byte limit of ${BATCH_READ_MAX_TOTAL_BYTES} already reached. Use separate batch/batch_read calls.`,
+						});
+						counts.skipped++;
+						aggregateByteLimitSkipped.push({ path: op.p });
 						break;
 					}
 
@@ -309,6 +326,7 @@ export async function executeOperations(
 					}
 
 					aggregateLinesRead += linesRead;
+					aggregateBytesRead += Buffer.byteLength(finalContent, "utf-8");
 
 					results.push({
 						op: "read",
@@ -388,6 +406,26 @@ export async function executeOperations(
 					break;
 				}
 
+				case "rg": {
+					const rgOp = op as unknown as RgOpInput;
+					if (!rgOp.q) {
+						throw new Error("q (search pattern) is required for rg operations.");
+					}
+					const searchPath = (rgOp.p.startsWith("~") || path.isAbsolute(rgOp.p)) ? resolvedPath : rgOp.p;
+					const args = buildRgArgs({ ...rgOp, p: searchPath });
+					const matches = await execRg(args, cwd);
+					const content = matches.join("\n");
+					results.push({
+						op: "rg",
+						path: rgOp.p,
+						status: "ok",
+						content,
+						totalLines: matches.length,
+					});
+					counts.rg++;
+					break;
+				}
+
 				default:
 					throw new Error(`Unknown operation type: ${op.o}`);
 			}
@@ -421,7 +459,7 @@ export async function executeOperations(
 		}
 	}
 	// Build the enhanced summary and content text
-	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped);
+	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
 	const contentText = buildContentText(summary, results);
 
 	return { summary, contentText, results };
@@ -432,13 +470,14 @@ export async function executeOperations(
 // ---------------------------------------------------------------------------
 
 function buildSummary(
-	counts: { read: number; write: number; edit: number; delete: number; error: number; skipped: number },
+	counts: { read: number; write: number; edit: number; delete: number; rg: number; error: number; skipped: number },
 	errors: { path: string; op: string; message: string; hint?: string }[],
 	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
 	aggregateLimitSkipped: { path: string }[] = [],
+	aggregateByteLimitSkipped: { path: string }[] = [],
 ): string {
 	const totalSuccess =
-		counts.read + counts.write + counts.edit + counts.delete;
+		counts.read + counts.write + counts.edit + counts.delete + counts.rg;
 	const totalOps = totalSuccess + counts.error + counts.skipped;
 
 	const parts: string[] = [];
@@ -460,6 +499,10 @@ function buildSummary(
 	if (counts.delete > 0)
 		successParts.push(
 			`${counts.delete} delete${counts.delete > 1 ? "s" : ""}`,
+		);
+	if (counts.rg > 0)
+		successParts.push(
+			`${counts.rg} rg${counts.rg > 1 ? "s" : ""}`,
 		);
 
 	if (counts.error === 0) {
@@ -496,10 +539,17 @@ function buildSummary(
 		);
 	}
 
+	// Aggregate byte limit warnings
+	if (aggregateByteLimitSkipped.length > 0) {
+		parts.push(
+			`  ⚠ Aggregate byte limit (${BATCH_READ_MAX_TOTAL_BYTES}) reached — skipped ${aggregateByteLimitSkipped.length} read${aggregateByteLimitSkipped.length > 1 ? "s" : ""}: ${aggregateByteLimitSkipped.map((s) => s.path).join(", ")}`,
+		);
+	}
+
 	return parts.join("\n");
 }
 
-export function buildContextMapText(result: OpResult): string {
+function buildContextMapText(result: OpResult): string {
 	const title = result.language || result.symbols ? "context map" : "file summary";
 	const lines: string[] = [`\n--- ${result.path} ${title} ---`];
 	lines.push(`Total lines: ${result.totalLines ?? 0}`);
@@ -542,10 +592,59 @@ function buildContentText(summary: string, results: OpResult[]): string {
 			sections.push(`\n--- write: ${r.path} (${r.bytes ?? 0} bytes) ---`);
 		} else if (r.op === "delete" && r.status === "ok") {
 			sections.push(`\n--- delete: ${r.path} ---`);
+		} else if (r.op === "rg" && r.status === "ok") {
+			sections.push(`\n--- rg: ${r.path} ---\n${r.content}`);
 		} else if (r.status === "error") {
 			sections.push(`\n--- ${r.op}: ${r.path} ---\nError: ${r.error}`);
 		}
 	}
 
 	return sections.join("");
+}
+
+// ---------------------------------------------------------------------------
+// ripgrep helpers
+// ---------------------------------------------------------------------------
+
+function buildRgArgs(op: RgOpInput): string[] {
+	const args: string[] = [];
+	if (op.l === true || op.l === undefined) args.push("-l");
+	if (op.i === true) args.push("-i");
+	if (typeof op.t === "string" && op.t) args.push("-t", op.t);
+	if (typeof op.n === "number" && Number.isFinite(op.n) && op.n >= 1) args.push("--max-count", String(Math.floor(op.n)));
+	if (typeof op.u === "number" && op.u >= 0) {
+		const uCount = Math.min(op.u + 1, 3); // ripgrep caps at -uuu
+		args.push("-" + "u".repeat(uCount));
+	}
+	args.push("--");
+	args.push(op.q);
+	args.push(op.p);
+	return args;
+}
+
+function execRg(args: string[], cwd: string): Promise<string[]> {
+	return new Promise((resolve, reject) => {
+		execFile("rg", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+			if (err) {
+				// ripgrep exits with code 1 when no matches are found
+				if ((err as any).code === 1) {
+					resolve([]);
+					return;
+				}
+				if ((err as any).code === "ENOBUFS") {
+					reject(new Error("ripgrep output exceeded 10MB buffer limit. Use a more specific pattern or add max-count."));
+					return;
+				}
+				if ((err as any).code === "ENOENT") {
+					reject(new Error("ripgrep (rg) binary not found. Please install ripgrep."));
+					return;
+				}
+				const stderrMsg = stderr?.trim() ? ` — ${stderr.trim()}` : "";
+				reject(new Error(`ripgrep failed${stderrMsg}`));
+				return;
+			}
+			const lines = stdout.split("\n").filter((line) => line.length > 0);
+			resolve(lines);
+		});
+	});
 }

@@ -4,6 +4,14 @@ dist/
 .DS_Store
 *.bak
 
+.pi/
 context/
-.specs/
 debug/
+.cursor/
+tmp/
+docs/dump-analysis/
+
+# Dump artifact directories (auto-copied from /tmp for analysis)
+dump-artifacts/
+flow-artifacts/
+codex/

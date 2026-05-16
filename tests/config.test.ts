@@ -9,25 +9,39 @@ import {
 	loadFlowSettings,
 	resolveFlowModelCandidates,
 	writeGlobalFlowMode,
-} from "../src/config.js";
+} from "../src/config/config.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;
 	let originalHome: string | undefined;
 	let originalAgentDir: string | undefined;
+	let originalIsTTY: boolean | undefined;
+	let originalFlowDepth: string | undefined;
 	let warnSpy: ReturnType<typeof vi.spyOn>;
 
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-config-test-"));
 		originalHome = process.env.HOME;
 		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		originalIsTTY = process.stdout.isTTY;
+		originalFlowDepth = process.env.PI_FLOW_DEPTH;
 		process.env.HOME = tmpDir;
 		delete process.env.PI_CODING_AGENT_DIR;
+		delete process.env.PI_FLOW_DEPTH;
+		// @ts-ignore
+		process.stdout.isTTY = false;
 		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 	});
 
 	afterEach(() => {
 		warnSpy.mockRestore();
+		// @ts-ignore
+		process.stdout.isTTY = originalIsTTY;
+		if (originalFlowDepth !== undefined) {
+			process.env.PI_FLOW_DEPTH = originalFlowDepth;
+		} else {
+			delete process.env.PI_FLOW_DEPTH;
+		}
 		process.env.HOME = originalHome;
 		if (originalAgentDir !== undefined) {
 			process.env.PI_CODING_AGENT_DIR = originalAgentDir;

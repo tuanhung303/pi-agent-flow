@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BashProcessTracker, generateBashId, pollBatchBashResults, executeBatchBash, truncateBashOutput } from "../src/batch/batch-bash.js";
-import { createBatchTool, createBatchBashPollTool } from "../src/batch.js";
+import { createBatchTool, createBatchBashPollTool } from "../src/batch/index.js";
 
 describe("generateBashId", () => {
 	it("generates an 8-char alphanumeric string", () => {

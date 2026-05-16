@@ -58,7 +58,6 @@ pi-agent-flow/
 │   │   └── symbols.ts         # File symbol extraction
 │   ├── notify.ts              # Notification channel setup
 │   ├── notify-state.ts        # Notification state machine
-│   ├── spec-mode.ts           # /spec toggle handler
 │   ├── sliding-prompt.ts      # Steering hint injection & stripping
 │   ├── reasoning-strip.ts     # Strip reasoning/thinking from messages
 │   ├── tool-utils.ts          # Strategic hint helpers
@@ -94,7 +93,7 @@ pi-agent-flow/
    - Appends strategic hint once to result
 
 ### 2.2 Flow Discovery
-**File:** `src/agents.ts` (288 lines)  
+**File:** `src/core/agents.ts` (288 lines)  
 **Role:** Parses `.md` files with YAML frontmatter into `FlowConfig` objects.
 
 **Lookup precedence:** bundled < user < project
@@ -105,7 +104,7 @@ pi-agent-flow/
 **Frontmatter keys parsed:** `name`, `description`, `tools`, `model`, `thinking`, `maxDepth`, `inheritContext`, `tier`.
 
 ### 2.3 Flow Execution (Fork)
-**File:** `src/flow.ts` (875 lines)  
+**File:** `src/core/flow.ts` (875 lines)  
 **Role:** Spawns isolated `pi` child processes with `--session <snapshot>`.
 
 **Key functions:**
@@ -118,7 +117,7 @@ pi-agent-flow/
 - `terminateAllChildGroups()` — global cleanup on parent exit.
 
 ### 2.4 Orchestration
-**File:** `src/executor.ts` (457 lines)  
+**File:** `src/core/executor.ts` (457 lines)  
 **Role:** `executeFlows()` — high-level orchestration.
 
 **Responsibilities:**
@@ -131,7 +130,7 @@ pi-agent-flow/
 - Post-flow transition advisories (`getTransitionAdvice`)
 
 ### 2.5 Depth System
-**File:** `src/depth.ts` (210 lines)  
+**File:** `src/core/depth.ts` (210 lines)  
 **Role:** Parses `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars + CLI flags.
 
 **Defaults:**
@@ -143,7 +142,7 @@ pi-agent-flow/
 - Child flows (depth > 0) receive `--tools` CLI arg; main orchestrator gets `batch_read`, `flow`, `web`, `ask_user`.
 
 ### 2.6 Session Snapshot Sanitization
-**File:** `src/snapshot.ts` (686 lines)  
+**File:** `src/snapshot/snapshot.ts` (686 lines)  
 **Role:** `sanitizeForkSnapshot()` — strips non-inheritable artifacts before forking.
 
 **Operations:**
@@ -184,26 +183,25 @@ When `toolOptimize = false` (legacy):
 
 ### 4.1 Dead / Orphaned Code
 - **`src/ambient.d.ts`** — appears to be an ambient type declarations file, but its contents were not read in this scout. Verify if it contains active declarations or is stale.
-- **`tests/runner-cli.test.js`** and **`tests/runner-events.test.js`** — the only `.js` test files among `.ts` tests. They test `runner-events.js` which does not exist as a separate compiled file (it's `src/runner-events.ts`). Verify if these are stale or testing dist artifacts.
+- **`tests/runner-cli.test.js`** and **`tests/runner-events.test.js`** — the only `.js` test files among `.ts` tests. They test `runner-events.js` which does not exist as a separate compiled file (it's `src/snapshot/runner-events.ts`). Verify if these are stale or testing dist artifacts.
 
 ### 4.2 Circular / Tangled Imports
-- `src/runner-events.ts` imports `stripReasoningFromAssistantMessage` from `./reasoning-strip.js` at **line 305** (dynamic-ish import inside the module, after other code). This is unusual placement.
-- `src/types.ts` imports `getFlowFinalText` from `./runner-events.js`. `src/runner-events.ts` imports `formatBatchOpsSummary` from `./batch/render.js`. `src/batch/render.ts` imports `scrambleManager` from `../scramble.js`. `src/scramble.ts` imports `UsageStats` from `./types.js`. This creates a dependency cycle: `types.ts → runner-events.ts → batch/render.ts → scramble.ts → types.ts`. TypeScript handles this because it's type-only + value imports at runtime, but it could bite during bundling or refactoring.
+- `src/snapshot/runner-events.ts` imports `stripReasoningFromAssistantMessage` from `./reasoning-strip.js` at **line 305** (dynamic-ish import inside the module, after other code). This is unusual placement.
+- `src/types.ts` imports `getFlowFinalText` from `./runner-events.js`. `src/snapshot/runner-events.ts` imports `formatBatchOpsSummary` from `./batch/render.js`. `src/batch/render.ts` imports `scrambleManager` from `../scramble.js`. `src/tui/scramble.ts` imports `UsageStats` from `./types.js`. This creates a dependency cycle: `types.ts → runner-events.ts → batch/render.ts → scramble.ts → types.ts`. TypeScript handles this because it's type-only + value imports at runtime, but it could bite during bundling or refactoring.
 
 ### 4.3 Missing / Incomplete Documentation
 - `docs/agent-context-dump.md` and `docs/agent-payload-example.md` exist but their content was not verified for freshness against the current 4-part prompt structure (`context-seal`, `activation`, `directive`, `mission`).
 - `CLAUDE.md` is the project index but does not document the 4-part prompt structure or the snapshot sanitization pipeline in detail.
 
 ### 4.4 Potential Bugs / Smells
-- **`src/flow.ts` line 444:** `args.push("-p", `${contextSeal}${activation}${directive}${mission}`);` — the `-p` argument immediately precedes the prompt. If any of the interpolated strings contain special shell characters, they are passed as a single argv element (safe because `spawn` uses `shell: false`), but extremely long prompts could hit OS argv length limits.
-- **`src/executor.ts` line 248:** `const effectiveMaxDepth = targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;` — per-flow `maxDepth` override is not clamped to the parent's `maxDepth`. A child flow could theoretically set `maxDepth: 999` and bypass the parent's limit.
-- **`src/snapshot.ts` line 356:** `compressFlowToolResults` is marked `@deprecated` but still exported from `index.ts` and used in tests. Should be removed or the tests updated.
-- **`src/flow.ts` line 235:** `harnessTools = [...new Set([...defaultTools, ...harnessTools])];` — when `toolOptimize` is true and a flow's explicit tools lack essentials, the fallback merges `defaultTools` (which includes `bash` and `flow`) with `harnessTools`. This means a flow that explicitly listed only `web` would still get `batch`, `bash`, `web`, and potentially `flow`. This is a safety net but could surprise users who explicitly restricted tools.
+- **`src/core/flow.ts` line 444:** `args.push("-p", `${contextSeal}${activation}${directive}${mission}`);` — the `-p` argument immediately precedes the prompt. If any of the interpolated strings contain special shell characters, they are passed as a single argv element (safe because `spawn` uses `shell: false`), but extremely long prompts could hit OS argv length limits.
+- **`src/core/executor.ts` line 248:** `const effectiveMaxDepth = targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;` — per-flow `maxDepth` override is not clamped to the parent's `maxDepth`. A child flow could theoretically set `maxDepth: 999` and bypass the parent's limit.
+- **`src/snapshot/snapshot.ts` line 356:** `compressFlowToolResults` is marked `@deprecated` but still exported from `index.ts` and used in tests. Should be removed or the tests updated.
+- **`src/core/flow.ts` line 235:** `harnessTools = [...new Set([...defaultTools, ...harnessTools])];` — when `toolOptimize` is true and a flow's explicit tools lack essentials, the fallback merges `defaultTools` (which includes `bash` and `flow`) with `harnessTools`. This means a flow that explicitly listed only `web` would still get `batch`, `bash`, `web`, and potentially `flow`. This is a safety net but could surprise users who explicitly restricted tools.
 
 ### 4.5 Test Coverage Gaps
 - No tests for `src/ambient.d.ts` (if it has logic).
-- No tests for `src/spec-mode.ts` behavior integrated with the full index.ts lifecycle.
-- No tests for the `PI_FLOW_DUMP_SNAPSHOT` dump path logic in `src/flow.ts`.
+- No tests for the `PI_FLOW_DUMP_SNAPSHOT` dump path logic in `src/core/flow.ts`.
 - No tests for the global shutdown signal handlers registered in `src/index.ts`.
 - No tests for the `Makefile` targets (expected, but scripts like `switch.sh` and `dev-start.sh` are untested shell scripts).
 

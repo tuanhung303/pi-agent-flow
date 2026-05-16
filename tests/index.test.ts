@@ -3,12 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import registerExtension, { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "../src/index.js";
-import { setSpecModeActive } from "../src/sliding-prompt.js";
-import { runFlow, mapFlowConcurrent } from "../src/flow.js";
-import { emptyFlowUsage, type SingleResult } from "../src/types.js";
+import { runFlow, mapFlowConcurrent } from "../src/core/flow.js";
+import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
 
-vi.mock("../src/flow.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../src/flow.js")>();
+vi.mock("../src/core/flow.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../src/core/flow.js")>();
 	return {
 		...actual,
 		runFlow: vi.fn(),
@@ -52,6 +51,7 @@ function makeMockCtx(cwd: string) {
 		sessionManager: {
 			getHeader: () => ({}),
 			getBranch: () => [],
+			getSessionId: () => 'test-session-id',
 		},
 		hasUI: false,
 		ui: { confirm: vi.fn() },
@@ -158,6 +158,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => ({ version: 1 }),
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -174,7 +175,7 @@ describe("flow tool execute", () => {
 		// Flow results without cache entry are compressed to a placeholder instead of
 		// passing the bulky raw output verbatim (protects child context window).
 		expect(snapshot).toContain("[flow] prior result");
-		expect(snapshot).toContain("not cached or evicted");
+		expect(snapshot).toContain("full context unavailable (result not cached at this depth)");
 		expect(snapshot).toContain("Current request should be inherited");
 		expect(snapshot).not.toContain("SECRET_THINKING_FIELD");
 		expect(snapshot).not.toContain("SECRET_REASONING_FIELD");
@@ -233,6 +234,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => header,
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -247,7 +249,7 @@ describe("flow tool execute", () => {
 		expect(lines).toContain(JSON.stringify(unchangedUserExpected));
 		expect(lines).toContain(JSON.stringify(unchangedAssistantExpected));
 		expect(lines).toContain(normalizedToolLine);
-		expect(lines).toContain(JSON.stringify({ type: "system", content: header.systemPrompt }));
+		expect(lines).not.toContain(JSON.stringify({ type: "system", content: header.systemPrompt }));
 		expect(lines.some((l: string) => l.includes('"type":"compression-stats"'))).toBe(true);
 		expect(lines).not.toContain(JSON.stringify(changedAssistant));
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
@@ -294,6 +296,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => ({ version: 1 }),
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -355,6 +358,7 @@ describe("flow tool execute", () => {
 				sessionManager: {
 					getHeader: () => ({ version: 1 }),
 					getBranch: () => sessionBranch,
+					getSessionId: () => 'test-session-id',
 				},
 			},
 		);
@@ -365,7 +369,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Text after delegation.");
 		// Flow results without cache entry are compressed to a placeholder.
 		expect(snapshot).toContain("[flow] prior result");
-		expect(snapshot).toContain("not cached or evicted");
+		expect(snapshot).toContain("full context unavailable (result not cached at this depth)");
 		expect(snapshot).toContain("flow-call-2");
 		expect(snapshot).toContain('"name":"flow"');
 		expect(snapshot).toContain("Current request should be inherited");
@@ -557,8 +561,6 @@ describe("flow tool execute", () => {
 		it("inserts sliding system prompt before latest user message unconditionally", async () => {
 			const pi = createMockPi();
 			registerExtension(pi as any);
-			setSpecModeActive(false);
-
 			const messages = [
 				{ role: "user" as const, content: "first prompt", timestamp: 1 },
 				{ role: "assistant" as const, content: [{ type: "text" as const, text: "ok" }], timestamp: 2, api: "openai", provider: "openai", model: "gpt-4", usage: {} as any, stopReason: "stop" as const },
@@ -580,7 +582,6 @@ describe("flow tool execute", () => {
 			process.env.PI_FLOW_TOOL_OPTIMIZE = "0";
 			const pi = createMockPi();
 			registerExtension(pi as any);
-			setSpecModeActive(false);
 
 			const messages = [
 				{ role: "user" as const, content: "first prompt", timestamp: 1 },
@@ -1644,7 +1645,7 @@ describe("compressFlowToolResults", () => {
 
 		// Cache miss: must NOT pass bulky raw output verbatim; render a compact placeholder.
 		expect(result).toContain("[flow] prior result");
-		expect(result).toContain("not cached or evicted");
+		expect(result).toContain("full context unavailable (result not cached at this depth)");
 		expect(result).not.toContain("Prior flow output not in cache");
 	});
 

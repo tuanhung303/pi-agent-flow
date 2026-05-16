@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/flow.js";
-import type { FlowConfig } from "../src/agents.js";
-import type { FlowDetails } from "../src/types.js";
+import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/core/flow.js";
+import type { FlowConfig } from "../src/core/agents.js";
+import type { FlowDetails } from "../src/types/flow.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -885,9 +885,6 @@ describe("child flow harness tools", () => {
 		expect(toolsIndex).toBeGreaterThan(-1);
 		const toolsValue = args[toolsIndex + 1];
 		expect(toolsValue).not.toBe("");
-		expect(toolsValue).toContain("read");
-		expect(toolsValue).toContain("write");
-		expect(toolsValue).toContain("edit");
 		expect(toolsValue).toContain("batch");
 		expect(toolsValue).toContain("bash");
 		expect(toolsValue).toContain("flow");

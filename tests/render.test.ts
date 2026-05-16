@@ -11,16 +11,19 @@ import {
 	visibleLength,
 	getTruncationBudget,
 	stripAnsi,
-} from "../src/render-utils.js";
-import { renderFlowResult } from "../src/render.js";
-import { scrambleManager } from "../src/scramble.js";
-import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
-import type { Text, Container, TruncatedText } from "@mariozechner/pi-tui";
+} from "../src/tui/render-utils.js";
+import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/tui/render.js";
+import { scrambleManager, DynamicScrambleText } from "../src/tui/scramble/index.js";
+import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types/flow.js";
+import type { Text, TruncatedText } from "@mariozechner/pi-tui";
+import { Container } from "@mariozechner/pi-tui";
 
-// Helper to extract text from Text, TruncatedText, or Container objects
-function extractText(node: Text | Container | TruncatedText): string {
+// Helper to extract text from Text, TruncatedText, Container, or DynamicScrambleText objects
+function extractText(node: Text | Container | TruncatedText | DynamicScrambleText): string {
 	let raw: string;
-	if ("text" in node && typeof node.text === "string") {
+	if (node instanceof DynamicScrambleText) {
+		raw = node.render(80).join("\n");
+	} else if ("text" in node && typeof node.text === "string") {
 		raw = node.text;
 	} else if ("children" in node && Array.isArray(node.children)) {
 		raw = node.children.map((child: any) => extractText(child)).join("\n");
@@ -34,10 +37,11 @@ function extractText(node: Text | Container | TruncatedText): string {
 // visibleLength
 // ---------------------------------------------------------------------------
 
-// Reset scramble state between render tests so ripple animations don't leak across test boundaries.
+// Reset scramble state between render tests so glitch animations don't leak across test boundaries.
 beforeEach(() => {
-	scrambleManager.setMode('cascade');
+	scrambleManager.setAnimationConfig({ enabled: true, glitch: true });
 	scrambleManager.clear();
+	resetAnonymousFlowIdCounter();
 });
 
 describe("visibleLength", () => {
@@ -189,15 +193,15 @@ describe("getTruncationBudget", () => {
 		}
 	});
 
-	it("floors terminal width at 40", () => {
+	it("floors terminal width at 20", () => {
 		const originalColumns = process.stdout.columns;
 		try {
 			(process.stdout as any).columns = 30;
-			expect(getTruncationBudget(0)).toBe(37);
+			expect(getTruncationBudget(0)).toBe(27);
 
-			(process.stdout as any).columns = 20;
-			// width floored to 40, then 40 - 10 = 30, but floor of 8 means 30
-			expect(getTruncationBudget(10)).toBe(27);
+			(process.stdout as any).columns = 15;
+			// width floored to 20, then 20 - 10 = 10, but floor of 8 means 10
+			expect(getTruncationBudget(10)).toBe(8);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -349,8 +353,8 @@ describe("formatFlowTypeName", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatCompactTokenPair", () => {
-	it("formats only input and output tokens", () => {
-		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("↑ 46.7k · ↓  4.6k");
+	it("formats only input tokens with dot suffix", () => {
+		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("▲ 46.7k ·");
 	});
 });
 
@@ -396,43 +400,43 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k · ↓   500 - tps:     - - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - tps:     - - ctx: 21.0k - k2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("↑   100 · ↓     0 - tps:     - - ctx:     0");
+		expect(result).toBe("▲   100 - tps:     - - ctx:     0");
 	});
 
 	it("no usage → shows placeholders", () => {
-		expect(formatCompactStats({})).toBe("↑     0 · ↓     0 - tps:     - - ctx:     0");
+		expect(formatCompactStats({})).toBe("▲     0 - tps:     - - ctx:     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("↑     0 · ↓     0 - tps:     - - ctx:     0 - gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - tps:     - - ctx:     0 - gpt-4o");
 	});
 
 	it("strips provider prefix from model", () => {
 		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
-			"↑     0 · ↓     0 - tps:     - - ctx:     0 - gpt-5.5",
+			"▲     0 - tps:     - - ctx:     0 - gpt-5.5",
 		);
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("↑  5.0k · ↓  1.0k - tps:     - - ctx:     0");
+		expect(formatCompactStats(usage)).toBe("▲  5.0k - tps:     - - ctx:     0");
 	});
 
 	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("↑     0 · ↓     0 - tps:     - - ctx:  6.0k");
+		expect(formatCompactStats(usage)).toBe("▲     0 - tps:     - - ctx:  6.0k");
 	});
 
 	it("with smoothedTps value", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("↑  2.0k · ↓   500 - tps:  42.3 - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - tps:  42.3 - ctx: 21.0k - k2.6");
 	});
 
 	it("can skip token counts for compact flow headers", () => {
@@ -462,14 +466,14 @@ describe("formatCompactStats", () => {
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("↑  1.0k · ↓   500 - tps:     - - ctx:     0");
+		expect(result).toBe("▲  1.0k - tps:     - - ctx:     0");
 	});
 
 	it("narrows when maxWidth is tight", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", 35);
 		expect(visibleLength(result)).toBeLessThanOrEqual(35);
-		expect(result).toContain("↑  2.0k");
+		expect(result).toContain("▲  2.0k");
 	});
 
 	it("drops model and context when maxWidth is very tight", () => {
@@ -533,9 +537,9 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
-		expect(text).toContain("aim:");
-		expect(text).toContain("├─ act:");
-		expect(text).toContain("msg:");
+		expect(text).toContain("aim ▸");
+		expect(text).toContain("├─ act ▸");
+		expect(text).toContain("msg ▸");
 	});
 
 	it("renders in-progress aim with a live countdown prefix", () => {
@@ -552,9 +556,7 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			expect(text).toContain("aim: [09:36] -");
-			// Aim content is scrambled on first render for in-progress flows
-			expect(text).not.toContain("aim: [09:36] - test aim");
+			expect(text).toContain("aim ▸ 09:36 ·");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -569,11 +571,10 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
-		expect(headerLine).toContain("scout - tps:");
+		expect(headerLine).toContain("scout    tps:");
 		expect(headerLine).not.toContain("ctx:");
-		expect(headerLine).not.toContain("↑ 46.7k");
-		expect(headerLine).not.toContain("↓  4.6k");
-		expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] - Flow timed out after 600s.");
+		expect(headerLine).not.toContain("▲ 46.7k");
+		expect(text).toContain("msg ▸ ▲ 46.7k · Flow timed out after 600s.");
 	});
 
 	it("renders multi-flow aim countdown and msg token prefixes", () => {
@@ -595,12 +596,11 @@ describe("activity panel rendering", () => {
 			// Header is scrambled on first render for in-progress flows
 			expect(firstHeaderLine.length).toBeGreaterThan(0);
 			expect(firstHeaderLine).not.toContain("ctx:");
-			expect(firstHeaderLine).not.toContain("↑ 46.7k");
-			expect(firstHeaderLine).not.toContain("↓  4.6k");
+			expect(firstHeaderLine).not.toContain("▲ 46.7k");
 			// Aim prefix is static, content may be scrambled
-			expect(text).toContain("aim: [00:45] -");
+			expect(text).toContain("aim ▸ 00:45 ·");
 			// Msg prefix is static, content may be scrambled
-			expect(text).toContain("msg: [↑ 46.7k · ↓  4.6k] -");
+			expect(text).toContain("msg ▸ ▲ 46.7k ·");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -620,7 +620,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("act: [3] -");
+		expect(text).toContain("act ▸ 3 ·");
 	});
 
 	it("renders ghost dashboard during zero state", () => {
@@ -634,14 +634,12 @@ describe("activity panel rendering", () => {
 		const headerLine = text.split("\n")[0];
 		// Header is scrambled on first render for in-progress flows
 		expect(headerLine.length).toBeGreaterThan(0);
-		expect(text).toContain("aim:");
-		// Aim content is scrambled on first render
-		expect(text).not.toContain("refactor"); // fully scrambled on first render
-		expect(text).toContain("↑     0");
-		expect(text).toContain("↓     0");
+		expect(text).toContain("aim ▸");
+		// Glitch mode shows plain text for unstarted chars at frame 0
+		expect(text).toContain("▲     0");
 		// Header stats are scrambled on first render, don't assert exact tps text
 		expect(text).not.toContain("ctx:");
-		expect(text).toContain("msg:");
+		expect(text).toContain("msg ▸");
 	});
 
 	it("hides acceptance line in collapsed view", () => {
@@ -712,9 +710,37 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: [↑     0 · ↓     0] - "));
-		expect(scoutBlock).toContain("msg:");
+		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 · "));
+		expect(scoutBlock).toContain("msg ▸");
 		expect(scoutBlock).not.toContain("stale completed text");
+	});
+
+	it("passes the live tail window to msg animation in multi-flow collapsed rows", () => {
+		const originalColumns = process.stdout.columns;
+		try {
+			(process.stdout as any).columns = 40;
+			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
+			const result = makeResult({
+				type: "scout",
+				intent: "Map the view rebuild code",
+				messages: [makeTextMessage("stale completed text")],
+				exitCode: -1,
+				streamingText: longStreaming,
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
+			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 · "));
+			const expectedTail = tailText(longStreaming, expectedBudget);
+			const spy = vi.spyOn(scrambleManager, "updateMsg");
+
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+			extractText(rendered);
+
+			expect(spy).toHaveBeenCalledWith(expect.any(String), expectedTail, expect.any(Number), false, undefined, true);
+			expect(spy).not.toHaveBeenCalledWith(expect.any(String), longStreaming, expect.any(Number), false, undefined, true);
+			spy.mockRestore();
+		} finally {
+			(process.stdout as any).columns = originalColumns;
+		}
 	});
 
 	it("includes long DIR text in TruncatedText", () => {
@@ -727,9 +753,9 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("aim:");
+		expect(text).toContain("aim ▸");
 		// Content is pre-truncated dynamically based on terminal width
-		const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
+		const dirLine = text.split("\n").find((l: string) => l.includes("aim ▸"));
 		expect(dirLine).toContain("...");
 	});
 
@@ -745,7 +771,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
 		expect(exeLine).toBeDefined();
 		// The act line should exist and be non-empty
 		expect(exeLine!.length).toBeGreaterThan(5);
@@ -762,7 +788,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
 		expect(exeLine).toBeDefined();
 		// Should not contain newlines in the act line itself
 		expect(exeLine).not.toContain("\n");
@@ -770,14 +796,15 @@ describe("activity panel rendering", () => {
 		expect(exeLine!.includes("echo") || exeLine!.includes("bash")).toBe(true);
 	});
 
-	it("shows [n/a] when no log text", () => {
+	it("shows empty msg line when streamingText is empty and no other text sources exist", () => {
 		const result = makeResult({
 			messages: [],
 		});
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("[n/a]");
+		expect(text).toContain("├─ act ▸ 0 · [n/a]");
+		expect(text).toContain("└─ msg ▸");
 	});
 
 	it("passes full EXE text to TruncatedText in single flow collapsed", () => {
@@ -795,7 +822,7 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
+			const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
 			expect(exeLine).toBeDefined();
 			// The act line should exist and be non-empty
 			expect(exeLine!.length).toBeGreaterThan(5);
@@ -817,38 +844,41 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult()] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
+			const dirLine = text.split("\n").find((l: string) => l.includes("aim ▸"));
 			expect(dirLine).toBeDefined();
 			// Content is pre-truncated dynamically based on terminal width (columns=40)
 			expect(dirLine).toContain("...");
-			const expectedBudget = getTruncationBudget(visibleLength("│  ├─ aim: "));
-			expect(visibleLength(dirLine.split("aim:")[1].trim())).toBeLessThanOrEqual(expectedBudget);
+			const expectedBudget = getTruncationBudget(visibleLength("│  ├─ aim ▸ "));
+			expect(visibleLength(dirLine.split("aim ▸")[1].trim())).toBeLessThanOrEqual(expectedBudget);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
 	});
 
-	it("shows the live tail of streaming msg text in single flow collapsed", () => {
+	it("passes the live tail window to msg animation in single flow collapsed", () => {
 		const originalColumns = process.stdout.columns;
 		try {
-			(process.stdout as any).columns = 40; // narrow terminal
+			(process.stdout as any).columns = 40;
 			const longStreaming = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRST";
 			const result = makeResult({
 				intent: "test",
 				messages: [],
+				exitCode: -1,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg ▸ ▲     0 ·"));
+			const expectedTail = tailText(longStreaming, expectedBudget);
+			const spy = vi.spyOn(scrambleManager, "updateMsg");
+
 			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
-			const text = extractText(rendered);
-			const logLine = text.split("\n").find((l: string) => l.includes("msg:"));
-			expect(logLine).toBeDefined();
-			// Content is a moving tail window so new characters visibly shift into view.
-			const expectedPrefix = "[↑     0 · ↓     0] - ";
-			expect(logLine).toContain(`msg: ${expectedPrefix}`);
-			const logContent = logLine.split(expectedPrefix)[1].trim();
-			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: [↑     0 · ↓     0] - "));
-			expect(logContent).toBe(tailText(longStreaming, expectedBudget));
-			expect(visibleLength(logContent)).toBeLessThanOrEqual(expectedBudget);
+			extractText(rendered);
+
+			expect(spy).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.any(Number), false, undefined, true);
+			const actualTail = spy.mock.calls[0][1];
+			expect(longStreaming.endsWith(actualTail)).toBe(true);
+			expect(actualTail.length).toBeLessThanOrEqual(expectedTail.length);
+			expect(spy).not.toHaveBeenCalledWith(expect.any(String), longStreaming, expect.any(Number), false, undefined, true);
+			spy.mockRestore();
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -884,7 +914,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("↑  9.8k · ↓  1.3k - tps:     - - ctx: 10.0k - mimo-v2.5-pro");
+		expect(text).toContain("▲  9.8k - tps:     - - ctx: 10.0k - mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {
@@ -1163,5 +1193,288 @@ describe("formatFlowToolCall — batch", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("read src/a.ts×3");
+	});
+
+	it("collapsed view passes empty streamingText to scrambleManager instead of falling back to stale summary", () => {
+		const summary = "This is the stale summary";
+		const result = makeResult({
+			type: "build",
+			intent: "Implement feature",
+			exitCode: -1,
+			structuredOutput: {
+				version: "1.0",
+				status: "partial",
+				summary,
+				files: [],
+				actions: [],
+				notDone: [],
+				commands: [],
+				nextSteps: [],
+				reasoning: [],
+				notes: [],
+			},
+		});
+		const spy = vi.spyOn(scrambleManager, "updateMsg");
+		const rendered = renderSingleFlowResult(result, false, makeTheme(), "");
+		expect(spy).not.toHaveBeenCalled();
+		extractText(rendered as any);
+		expect(spy).toHaveBeenCalledWith(expect.any(String), "", expect.any(Number), false, undefined, true);
+		spy.mockRestore();
+	});
+
+	it("expanded view passes empty streamingText to scrambleManager instead of falling back to stale summary", () => {
+		const summary = "This is the stale summary";
+		const result = makeResult({
+			type: "build",
+			intent: "Implement feature",
+			exitCode: -1,
+			structuredOutput: {
+				version: "1.0",
+				status: "partial",
+				summary,
+				files: [],
+				actions: [],
+				notDone: [],
+				commands: [],
+				nextSteps: [],
+				reasoning: [],
+				notes: [],
+			},
+		});
+		const spy = vi.spyOn(scrambleManager, "updateMsg");
+		const rendered = renderSingleFlowResult(result, true, makeTheme(), "");
+		expect(spy).not.toHaveBeenCalled();
+		extractText(rendered as any);
+		expect(spy).toHaveBeenCalledWith(expect.any(String), "", expect.any(Number), false, undefined, true);
+		spy.mockRestore();
+	});
+
+	it("does not leak streamingText into msg line for completed flow when structuredOutput and flowOutput are missing", () => {
+		const streamingText = "Internal raw model text with JSON fragments";
+		const result = makeResult({
+			exitCode: 0,
+			messages: [],
+			structuredOutput: undefined,
+		});
+		const rendered = renderSingleFlowResult(result, false, makeTheme(), streamingText);
+		const text = extractText(rendered);
+		expect(text).not.toContain(streamingText);
+		expect(text).toContain("└─ msg ▸");
+	});
+
+	it("collapsed view does not fall back to flowOutput when streamingText is empty", () => {
+		const flowOutput = "flow output from messages";
+		const result = makeResult({
+			type: "build",
+			intent: "Implement feature",
+			exitCode: -1,
+			messages: [makeTextMessage(flowOutput)],
+		});
+		const rendered = renderSingleFlowResult(result, false, makeTheme(), "");
+		const text = extractText(rendered);
+		expect(text).not.toContain(flowOutput);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// In-place mutation pattern — container reuse
+// ---------------------------------------------------------------------------
+
+describe("in-place mutation pattern", () => {
+	it("renderFlowResult reuses cached container via __rootContainer", () => {
+		const state: Record<string, any> = {};
+		const args = { flow: [{ type: "scout", intent: "test" }], state };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+		const rendered2 = renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
+
+		expect(rendered1).toBe(rendered2);
+		expect(state.__rootContainer).toBe(rendered1);
+	});
+
+	it("transfers all children during container reuse even when addChild removes from source", () => {
+		// Simulate real pi-tui behavior where addChild removes the child from its old parent.
+		const originalAddChild = Container.prototype.addChild;
+		Container.prototype.addChild = function (child: any) {
+			if (child.parent && child.parent !== this) {
+				const idx = child.parent.children.indexOf(child);
+				if (idx !== -1) child.parent.children.splice(idx, 1);
+			}
+			child.parent = this;
+			this.children.push(child);
+		};
+
+		try {
+			const state: Record<string, any> = {};
+			const args = { flow: [{ type: "scout", intent: "test" }], state };
+			const result = makeResult({
+				messages: [
+					makeToolCallMessage("bash", { command: "echo 1" }),
+					makeTextMessage("line 1"),
+					makeToolCallMessage("read", { file_path: "src/a.ts" }),
+					makeTextMessage("line 2"),
+				],
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+			const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+			const rendered2 = renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
+
+			expect(rendered1).toBe(rendered2);
+			const text = extractText(rendered2);
+			// All tool calls and text lines from the new render must be present.
+			expect(text).toContain("read");
+			expect(text).toContain("line 2");
+			// Verify all 4 children (header, aim, act, msg) were transferred to the reused root.
+			expect((rendered2 as any).children.length).toBe(4);
+		} finally {
+			Container.prototype.addChild = originalAddChild;
+		}
+	});
+
+	it("renderFlowResult works without state (backwards compatible)", () => {
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		const rendered1 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+		const rendered2 = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
+
+		expect(rendered1).not.toBe(rendered2);
+	});
+
+	it("renderFlowCall reuses cached container via __rootContainer", () => {
+		const state: Record<string, any> = {};
+		const args = { flow: [{ type: "scout", intent: "test" }], state };
+
+		const rendered1 = renderFlowCall(args, makeTheme());
+		const rendered2 = renderFlowCall(args, makeTheme());
+
+		expect(rendered1).toBe(rendered2);
+		expect(state.__rootContainer).toBe(rendered1);
+	});
+
+	it("renderFlowCall works without state (backwards compatible)", () => {
+		const args = { flow: [{ type: "scout", intent: "test" }] };
+
+		const rendered1 = renderFlowCall(args, makeTheme());
+		const rendered2 = renderFlowCall(args, makeTheme());
+
+		// Without state, each call returns a new Text object
+		expect(rendered1).not.toBe(rendered2);
+	});
+
+	it("generates distinct anonymous ids for separate tool calls to avoid scramble collisions", () => {
+		const state1: Record<string, any> = {};
+		const state2: Record<string, any> = {};
+
+		const result1 = makeResult();
+		const details1: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1] };
+
+		const result2 = makeResult({ type: "build", intent: "Fix bug" });
+		const details2: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result2] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details: details1 }, false, makeTheme(), { state: state1 });
+		renderFlowResult({ content: [{ type: "text", text: "" }], details: details2 }, false, makeTheme(), { state: state2 });
+
+		expect(state1.__flowId).toBeDefined();
+		expect(state2.__flowId).toBeDefined();
+		expect(state1.__flowId).not.toBe(state2.__flowId);
+	});
+
+	it("reuses the same anonymous id on subsequent renders of the same tool call", () => {
+		const state: Record<string, any> = {};
+		const args = { state };
+
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+		const firstId = state.__flowId;
+
+		renderFlowResult({ content: [{ type: "text", text: "updated" }], details }, false, makeTheme(), args);
+		const secondId = state.__flowId;
+
+		expect(secondId).toBe(firstId);
+	});
+
+	it("uses args.toolCallId when result._toolCallId is absent", () => {
+		const state: Record<string, any> = {};
+		const args = { state, toolCallId: "call_custom_123" };
+
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+
+		// The resolved id is now stored in state so it stays stable across re-renders.
+		expect(state.__flowId).toBe("call_custom_123");
+		// Verify scramble state was created under the custom id.
+		const textResult = scrambleManager.updateText("call_custom_123", "header", "test", Date.now(), true, true);
+		expect(textResult.isAnimating).toBe(false);
+	});
+
+	it("uses result._toolCallId as the scramble id and stores it in state", () => {
+		const state: Record<string, any> = {};
+		const args = { state };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details, _toolCallId: "call_prod_456" } as any, false, makeTheme(), args);
+
+		expect(state.__flowId).toBe("call_prod_456");
+		const textResult = scrambleManager.updateText("call_prod_456", "header", "test", Date.now(), true, true);
+		expect(textResult.isAnimating).toBe(false);
+	});
+
+	it("uses args.id when result._toolCallId and args.toolCallId are absent", () => {
+		const state: Record<string, any> = {};
+		const args = { state, id: "fallback_id_999" };
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), args);
+
+		expect(state.__flowId).toBe("fallback_id_999");
+		const textResult = scrambleManager.updateText("fallback_id_999", "header", "test", Date.now(), true, true);
+		expect(textResult.isAnimating).toBe(false);
+	});
+
+	it("generates a stable anonymous id for ghost state and reuses it when results arrive", () => {
+		const state: Record<string, any> = {};
+		const args = { state, flow: [{ type: "scout", intent: "Ghost test", aim: "Ghost test" }] };
+
+		// First render: no details (ghost state)
+		renderFlowResult({ content: [{ type: "text", text: "Starting..." }] }, false, makeTheme(), args);
+		const ghostId = state.__flowId;
+		expect(ghostId).toBeDefined();
+		expect(ghostId).toMatch(/^flow-\d+$/);
+
+		// Second render: still ghost
+		renderFlowResult({ content: [{ type: "text", text: "Still going..." }] }, false, makeTheme(), args);
+		expect(state.__flowId).toBe(ghostId);
+
+		// Third render: real result arrives — must keep same id to avoid scramble reset
+		const result = makeResult();
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+		renderFlowResult({ content: [{ type: "text", text: "Done" }], details }, false, makeTheme(), args);
+		expect(state.__flowId).toBe(ghostId);
+	});
+
+	it("assigns distinct scramble ids to parallel flows in a batch", () => {
+		const state: Record<string, any> = {};
+		const args = { state };
+		const result1 = makeResult({ type: "scout", intent: "Map code" });
+		const result2 = makeResult({ type: "build", intent: "Ship fix" });
+		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
+
+		renderFlowResult({ content: [{ type: "text", text: "" }], details, _toolCallId: "call_batch_789" } as any, false, makeTheme(), args);
+
+		// Per-flow scramble ids are baseId#0, baseId#1
+		const id0Result = scrambleManager.updateText("call_batch_789#0", "header", "test", Date.now(), true, true);
+		const id1Result = scrambleManager.updateText("call_batch_789#1", "header", "test", Date.now(), true, true);
+		expect(id0Result.isAnimating).toBe(false);
+		expect(id1Result.isAnimating).toBe(false);
 	});
 });

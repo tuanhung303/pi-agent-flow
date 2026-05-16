@@ -5,43 +5,52 @@
  * Each flow receives a forked snapshot of the current session context.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { setupNotify } from "./notify.js";
-import { discoverFlows, getFlowTier } from "./agents.js";
-import { getInheritedCliArgs } from "./cli-args.js";
-import { renderFlowCall, renderFlowResult } from "./render.js";
-import { terminateAllChildGroups } from "./flow.js";
-import { executeFlows } from "./executor.js";
-import { appendStrategicHintOnce, resetStrategicHintTracker } from "./tool-utils.js";
+import { setupNotify } from "./notify/notify.js";
+import { discoverFlows, getFlowTier } from "./core/agents.js";
+import { getInheritedCliArgs } from "./snapshot/cli-args.js";
+import { renderFlowCall, renderFlowResult } from "./tui/render.js";
+import { terminateAllChildGroups } from "./core/flow.js";
+import { executeFlows } from "./core/executor.js";
+import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./steering/tool-utils.js";
+import type {
+	SingleResult,
+	FlowDetails,
+	PiAgentFlowAPI,
+} from "./types/flow.js";
+import type { CompressedFlowResult } from "./types/output.js";
 import {
-	type SingleResult,
-	type FlowDetails,
-	type CompressedFlowResult,
-	type PiAgentFlowAPI,
-} from "./types.js";
-import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBashPollTool } from "./batch.js";
-import { createWebTool } from "./web-tool.js";
-import { createAskUserTool } from "./ask-user.js";
+	createBatchTool,
+	createBatchReadTool,
+	BashProcessTracker,
+	createBatchBashPollTool,
+} from "./batch/index.js";
+import { createWebTool } from "./tools/web-tool.js";
+import { createAskUserTool } from "./tools/ask-user.js";
 import {
 	stripSteeringHintText,
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
-} from "./sliding-prompt.js";
-import { setupSpecMode } from "./spec-mode.js";
-import { createTimedBashToolDefinition } from "./timed-bash.js";
+	configureSteering,
+} from "./steering/sliding-prompt.js";
+import { registerFlow, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
+import * as sessionRegistry from "./core/session-registry.js";
+import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
 	resolveFlowDepthConfig,
 	type FlowDepthConfig,
-} from "./depth.js";
+} from "./core/depth.js";
 import {
 	buildForkSessionSnapshotJsonl,
 	sanitizeForkSnapshot,
-} from "./snapshot.js";
+} from "./snapshot/snapshot.js";
 import {
 	resolveSettings,
 	type ResolvedSettings,
-} from "./settings-resolver.js";
+} from "./config/settings-resolver.js";
+import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
+export { logWarn, logError } from "./config/log.js";
 
 // ---------------------------------------------------------------------------
 // Persistent flow result cache — shared across execute() calls so historical
@@ -52,7 +61,7 @@ const flowResultCache = new Map<string, CompressedFlowResult[]>();
 import {
 	computeActiveTools,
 	buildBeforeAgentStartPrompt,
-} from "./flow-prompt.js";
+} from "./steering/flow-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Tool parameter schema
@@ -124,7 +133,8 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 }
 
 // Re-export compressToolResults and stripBatchReadToolCalls for tests
-export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot.js";
+export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot/snapshot.js";
+export { type FlowColorConfig } from "./tui/flow-colors.js";
 
 // ---------------------------------------------------------------------------
 // Extension entry point
@@ -172,23 +182,52 @@ export default function (pi: ExtensionAPI) {
 		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
 		type: "boolean",
 	});
+	pi.registerFlag("no-steering", {
+		description: "Disable orchestrator steering hint injection.",
+		type: "boolean",
+	});
+	pi.registerFlag("steering-prompt", {
+		description: "Path to file containing custom steering prompt.",
+		type: "string",
+	});
+	pi.registerFlag("no-strategic-hint", {
+		description: "Disable strategic [Hint: ...] after tool results.",
+		type: "boolean",
+	});
+	pi.registerFlag("no-animation", {
+		description: "Disable all flow animation (instant render).",
+		type: "boolean",
+	});
+	pi.registerFlag("no-glitch", {
+		description: "Disable glitch/scramble effect.",
+		type: "boolean",
+	});
 
 	// Wire up bundled notification channel
 	setupNotify(pi);
 
-	// Wire up /spec toggle
-	setupSpecMode(pi);
+
+	// Wire up /flow command and continuation hooks
+	registerFlow(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
 	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
 	let resolved: ResolvedSettings | undefined;
+	let _sessionCtx: ExtensionContext | undefined;
 	let bashTracker: BashProcessTracker | undefined;
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
+		sessionRegistry.register(ctx.cwd, ctx.sessionManager.getSessionId());
+		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
+
+		// Wire resolved settings to modules
+		configureSteering({ enabled: resolved.steeringEnabled, customPrompt: resolved.steeringCustomPrompt });
+		configureStrategicHint(resolved.steeringStrategicHint);
+		scrambleManager.setAnimationConfig({ enabled: resolved.animationEnabled, glitch: resolved.animationGlitch });
 
 		// Only restrict tools for the main orchestrator (depth 0).
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
@@ -299,13 +338,17 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const lastUserIndex = userIndices[userIndices.length - 1];
-		const modified = [
-			...messages.slice(0, lastUserIndex),
-			makeSteeringHintMessage(messages[lastUserIndex]),
-			...messages.slice(lastUserIndex),
-		];
+		const hintMessage = makeSteeringHintMessage(messages[lastUserIndex]);
+		const modified = hintMessage
+			? [
+					...messages.slice(0, lastUserIndex),
+					hintMessage,
+					...messages.slice(lastUserIndex),
+				]
+			: messages;
 
-		const result: any = { messages: modified };
+		const result: any = {};
+		if (hintMessage || messagesChanged) result.messages = modified;
 		if (systemPromptChanged) {
 			result.systemPrompt = systemPrompt;
 		}
@@ -352,12 +395,14 @@ export default function (pi: ExtensionAPI) {
 				// artifacts before passing it to child flows.
 				// Uses the persistent module-level cache so historical flow results
 				// are properly compressed (not passed through verbatim).
-				const forkSessionSnapshotJsonl = sanitizeForkSnapshot(
+				const { result: forkSessionSnapshotJsonl } = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
 					{
+						forkedFrom: ctx.sessionManager.getSessionId(),
 						forkedAt: new Date().toISOString(),
 						depth: currentDepth + 1,
+						...(ancestorFlowStack.length > 0 ? { parentFlow: ancestorFlowStack[ancestorFlowStack.length - 1] } : {}),
 					},
 				);
 
@@ -373,6 +418,14 @@ export default function (pi: ExtensionAPI) {
 					const inheritedValue = inheritedCliArgs.tieredModels?.[tier];
 					return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
 				};
+
+				const activeGoal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+				const goalContext = activeGoal ? {
+					objective: activeGoal.objective,
+					acceptance: activeGoal.acceptance,
+					flowCount: activeGoal.completedFlows.length,
+					maxFlows: activeGoal.maxFlows,
+				} : undefined;
 
 				const result = await executeFlows(
 					{
@@ -402,6 +455,15 @@ export default function (pi: ExtensionAPI) {
 						uiConfirm: (title, body) => ctx.ui.confirm(title, body),
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
+						goalContext,
+						goalContinuationCallback: async (results) => {
+							const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+							if (!goal) return;
+							for (const r of results) {
+								recordFlowCompletion(ctx.cwd, { type: r.type, intent: r.intent, aim: r.aim });
+								addTokens(ctx.cwd, r.usage.input + r.usage.output);
+							}
+						},
 					},
 					params.flow.map((f: any) => ({ type: f.type, intent: f.intent, aim: f.aim, acceptance: f.acceptance, cwd: f.cwd, sessionMode: f.sessionMode })),
 					toolCallId,
@@ -411,7 +473,8 @@ export default function (pi: ExtensionAPI) {
 					content: result.content,
 					details: result.details,
 					isError: result.isError,
-				};
+					_toolCallId: toolCallId,
+				} as any;
 				appendStrategicHintOnce(flowToolResult);
 				return flowToolResult;
 			},
@@ -431,8 +494,26 @@ export default function (pi: ExtensionAPI) {
 		discoverFlows: (cwd: string) => discoverFlows(cwd, "all"),
 		getFlowTier: (name: string) => getFlowTier(name),
 		getSettings: () => resolved
-			? { toolOptimize: resolved.toolOptimize, structuredOutput: resolved.structuredOutput, maxConcurrency: resolved.maxConcurrency }
-			: { toolOptimize: true, structuredOutput: true, maxConcurrency: 4 },
+			? {
+					toolOptimize: resolved.toolOptimize,
+					structuredOutput: resolved.structuredOutput,
+					maxConcurrency: resolved.maxConcurrency,
+					steeringEnabled: resolved.steeringEnabled,
+					steeringCustomPrompt: resolved.steeringCustomPrompt,
+					steeringStrategicHint: resolved.steeringStrategicHint,
+					animationEnabled: resolved.animationEnabled,
+					animationGlitch: resolved.animationGlitch,
+				}
+			: {
+					toolOptimize: true,
+					structuredOutput: true,
+					maxConcurrency: 4,
+					steeringEnabled: true,
+					steeringCustomPrompt: undefined,
+					steeringStrategicHint: true,
+					animationEnabled: true,
+					animationGlitch: true,
+				},
 	};
 
 	if (typeof pi.emit === "function") {
@@ -454,6 +535,7 @@ export default function (pi: ExtensionAPI) {
 				try { bashTracker.abortAll(); } catch { /* best-effort */ }
 			}
 			terminateAllChildGroups();
+			shutdownWakeup();
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}

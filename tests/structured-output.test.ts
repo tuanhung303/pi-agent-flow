@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@mariozechner/pi-ai";
-import { extractStructuredOutput, generateCommandsFromHistory } from "../src/structured-output.js";
-import type { FlowStructuredOutput } from "../src/types.js";
+import { extractStructuredOutput, generateCommandsFromHistory } from "../src/snapshot/structured-output.js";
+import type { FlowStructuredOutput } from "../src/types/output.js";
 
 describe("extractStructuredOutput", () => {
 	it("returns undefined for empty text", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runFlow, type RunFlowOptions } from "../src/flow.js";
-import type { FlowConfig } from "../src/agents.js";
-import type { FlowDetails } from "../src/types.js";
+import { runFlow, type RunFlowOptions } from "../src/core/flow.js";
+import type { FlowConfig } from "../src/core/agents.js";
+import type { FlowDetails } from "../src/types/flow.js";
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -210,11 +210,26 @@ describe("dump mechanism — end-to-end", () => {
 // ---------------------------------------------------------------------------
 
 describe("dump mechanism — error handling", () => {
+	let originalIsTTY: boolean | undefined;
+	let originalFlowDepth: string | undefined;
+
 	beforeEach(() => {
+		originalIsTTY = process.stdout.isTTY;
+		originalFlowDepth = process.env.PI_FLOW_DEPTH;
+		// @ts-ignore
+		process.stdout.isTTY = false;
+		delete process.env.PI_FLOW_DEPTH;
 		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
+		// @ts-ignore
+		process.stdout.isTTY = originalIsTTY;
+		if (originalFlowDepth !== undefined) {
+			process.env.PI_FLOW_DEPTH = originalFlowDepth;
+		} else {
+			delete process.env.PI_FLOW_DEPTH;
+		}
 		vi.restoreAllMocks();
 	});
 

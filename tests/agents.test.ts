@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { discoverFlows, getFlowTier, type FlowDiscoveryResult } from "../src/agents.js";
+import { discoverFlows, getFlowTier, type FlowDiscoveryResult } from "../src/core/agents.js";
 
 describe("discoverFlows", () => {
 	let tmpDir: string;

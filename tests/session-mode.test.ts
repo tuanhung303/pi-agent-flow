@@ -6,7 +6,7 @@ import {
 	getAgentSessionTimeoutMs,
 	parseAgentSessionMode,
 	resolveAgentSessionMode,
-} from "../src/session-mode.js";
+} from "../src/core/session-mode.js";
 
 describe("agent session modes", () => {
 	it("defines fast/default/long/extreme_long budgets with default at 600s and extreme_long capped at 1200s", () => {

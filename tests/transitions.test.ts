@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_TRANSITIONS, getTransitionAdvice, type FlowTransition } from "../src/transitions.js";
-import { emptyFlowUsage, type SingleResult } from "../src/types.js";
+import { DEFAULT_TRANSITIONS, getTransitionAdvice, type FlowTransition } from "../src/core/transitions.js";
+import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {

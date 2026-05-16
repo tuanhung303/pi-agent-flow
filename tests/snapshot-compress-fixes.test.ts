@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults } from "../src/snapshot.js";
+import { compressToolResults } from "../src/snapshot/snapshot.js";
 
 function makeSnapshot(lines: any[]): string {
 	return lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
@@ -112,14 +112,14 @@ describe("compressToolResults — error sections preserved", () => {
 
 describe("context handler — strategic hints not stripped", () => {
 	it("stripStrategicHintsFromMessages is removed from the public API", async () => {
-		const toolUtils = await import("fs").then(m => m.default.readFileSync("src/tool-utils.ts", "utf-8"));
+		const toolUtils = await import("fs").then(m => m.default.readFileSync("src/steering/tool-utils.ts", "utf-8"));
 		expect(toolUtils).not.toContain("export function stripStrategicHintsFromMessages");
 	});
 
 	it("sanitizeForkSnapshot still strips hints (children don't need them)", async () => {
-		const { sanitizeForkSnapshot } = await import("../src/snapshot.js");
+		const { sanitizeForkSnapshot } = await import("../src/snapshot/snapshot.js");
 		const snapshot = JSON.stringify({ type: "message", message: { role: "toolResult", content: "Result\n\n[Hint: Plan next step.]" } }) + "\n";
-		const result = sanitizeForkSnapshot(snapshot);
+		const { result } = sanitizeForkSnapshot(snapshot);
 		expect(result).not.toContain("[Hint:");
 		expect(result).toContain("Result");
 	});

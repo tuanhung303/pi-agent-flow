@@ -32,8 +32,9 @@ declare module "@mariozechner/pi-coding-agent" {
 			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
 			notify?: (message: string, type: string) => void;
 			setEditorText?: (text: string) => void;
+			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
-		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		sessionManager: { getSessionDir(): string; getSessionFile(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
 	}
 	export interface Theme {
 		fg(key: string, text: string): string;
@@ -44,6 +45,8 @@ declare module "@mariozechner/pi-coding-agent" {
 	export const DEFAULT_MAX_BYTES: number;
 	export const DEFAULT_MAX_LINES: number;
 	export function truncateHead(text: string, options: { maxBytes?: number; maxLines?: number }): { content: string };
+	export function convertToLlm(branch: unknown[]): any[];
+	export function serializeConversation(messages: any[]): string;
 	export function createBashToolDefinition(
 		cwd: string,
 		options?: {
@@ -61,6 +64,19 @@ declare module "@mariozechner/pi-coding-agent" {
 		renderCall?: (...args: any[]) => any;
 		renderResult?: (...args: any[]) => any;
 	};
+	export class DynamicBorder {
+		constructor(color?: (str: string) => string);
+		invalidate(): void;
+		render(width: number): string[];
+	}
+	export class BorderedLoader {
+		constructor(tui: any, theme: any, text: string);
+		signal: AbortSignal;
+		onAbort?: () => void;
+		invalidate(): void;
+		render(width: number): string[];
+		handleInput?(data: string): void;
+	}
 	export interface ExtensionCommandContext {
 		cwd: string;
 		hasUI: boolean;
@@ -72,8 +88,9 @@ declare module "@mariozechner/pi-coding-agent" {
 			custom: <T>(factory: (...args: any[]) => any, options?: any) => Promise<T | undefined>;
 			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
 			setEditorText?: (text: string) => void;
+			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
-		sessionManager: { getSessionDir(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		sessionManager: { getSessionDir(): string; getSessionFile(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
 		newSession(opts?: {
 			parentSession?: string;
 			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
@@ -81,6 +98,14 @@ declare module "@mariozechner/pi-coding-agent" {
 		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
 		waitForIdle(): Promise<void>;
 		reload(): Promise<void>;
+		modelRegistry: {
+			getAll(): any[];
+			getAvailable(): any[];
+			find(provider: string, modelId: string): any;
+			hasConfiguredAuth(model: any): boolean;
+			getApiKeyAndHeaders(model: any): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
+		};
+		model?: any;
 	}
 
 	/** Fresh command-capable context bound to the replacement session after a session switch. */
@@ -106,6 +131,7 @@ declare module "@mariozechner/pi-tui" {
 	export interface Component {
 		invalidate(): void;
 		render(width: number): string[];
+		handleInput?(data: string): void;
 	}
 	export class Text implements Component {
 		constructor(text: string, width: number, height: number);
@@ -135,6 +161,73 @@ declare module "@mariozechner/pi-tui" {
 		constructor(height: number);
 		invalidate(): void;
 		render(width: number): string[];
+	}
+	export interface SelectItem {
+		value: string;
+		label: string;
+		description?: string;
+	}
+	export interface SelectListTheme {
+		selectedPrefix: (text: string) => string;
+		selectedText: (text: string) => string;
+		description: (text: string) => string;
+		scrollInfo: (text: string) => string;
+		noMatch: (text: string) => string;
+	}
+	export class SelectList implements Component {
+		constructor(items: SelectItem[], maxVisible: number, theme: SelectListTheme);
+		onSelect?: (item: SelectItem) => void;
+		onCancel?: () => void;
+		onSelectionChange?: (item: SelectItem) => void;
+		setSelectedIndex(index: number): void;
+		getSelectedItem(): SelectItem | null;
+		handleInput(data: string): void;
+		render(width: number): string[];
+		invalidate(): void;
+	}
+	export interface SettingItem {
+		id: string;
+		label: string;
+		description?: string;
+		currentValue: string;
+		values?: string[];
+		submenu?: (currentValue: string, done: (selectedValue?: string) => void) => Component;
+		editable?: boolean;
+	}
+	export interface SettingsListTheme {
+		label: (text: string, selected: boolean) => string;
+		value: (text: string, selected: boolean) => string;
+		description: (text: string) => string;
+		cursor: string;
+		hint: (text: string) => string;
+	}
+	export interface SettingsListOptions {
+		enableSearch?: boolean;
+	}
+	export class SettingsList implements Component {
+		constructor(
+			items: SettingItem[],
+			maxVisible: number,
+			theme: SettingsListTheme,
+			onChange: (id: string, newValue: string) => void,
+			onCancel: () => void,
+			options?: SettingsListOptions,
+		);
+		updateValue(id: string, newValue: string): void;
+		handleInput(data: string): void;
+		render(width: number): string[];
+		invalidate(): void;
+	}
+	export class Input implements Component {
+		focused: boolean;
+		onSubmit?: (value: string) => void;
+		onEscape?: () => void;
+		constructor();
+		setValue(text: string): void;
+		getValue(): string;
+		handleInput(data: string): void;
+		render(width: number): string[];
+		invalidate(): void;
 	}
 	export interface EditorTheme {
 		borderColor: (s: string) => string;
@@ -181,6 +274,7 @@ declare module "@mariozechner/pi-tui" {
 	export function matchesKey(data: string, key: string): boolean;
 	export function truncateToWidth(text: string, width: number, ellipsis?: string, padRight?: boolean): string;
 	export function wrapTextWithAnsi(text: string, width: number): string[];
+	export function visibleWidth(text: string): number;
 }
 
 declare module "@mariozechner/pi-agent-core" {
@@ -188,6 +282,7 @@ declare module "@mariozechner/pi-agent-core" {
 		content: any[];
 		details?: T;
 		isError?: boolean;
+		_toolCallId?: string;
 	}
 }
 
@@ -200,6 +295,13 @@ declare module "@mariozechner/pi-ai" {
 		stopReason?: string;
 		errorMessage?: string;
 	}
+	export interface AssistantMessage {
+		role: string;
+		content: { type: string; text?: string }[];
+		stopReason: string;
+		errorMessage?: string;
+	}
+	export function complete(model: any, context: { systemPrompt?: string; messages: any[] }, options?: { apiKey?: string; headers?: Record<string, string>; signal?: AbortSignal }): Promise<AssistantMessage>;
 }
 
 declare module "@sinclair/typebox" {

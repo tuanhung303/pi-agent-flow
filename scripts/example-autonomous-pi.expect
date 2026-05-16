@@ -1,0 +1,46 @@
+#!/usr/bin/env expect -f
+#
+# Template for driving `pi` through a PTY (see docs/autonomous-pi-testing.md).
+# Copy elsewhere, tune AFTER_MS / STARTUP_RE / RESPONSE_RE / payload, then chmod +x.
+
+set timeout 600
+log_user 1
+
+# Pi paints a full-screen TUI first; increase if startup flakes on slow machines.
+set AFTER_MS 4000
+
+# Optional: wait until this appears before typing (branch name, status glyph, etc.).
+set STARTUP_RE {}
+
+# Success detector after send — tune to a substring you expect in model output.
+set RESPONSE_RE {(?i)ok}
+
+spawn -noecho bash --noprofile --norc -c {exec pi}
+
+after $AFTER_MS
+
+if {$STARTUP_RE ne ""} {
+	expect {
+		timeout {
+			puts stderr "timeout: Pi did not match STARTUP_RE"
+			exit 1
+		}
+		-re $STARTUP_RE {}
+	}
+}
+
+# Replace with a short mission aligned with RESPONSE_RE (must eventually appear on screen).
+send -- "\[scout\] Reply with exactly the single word ok and nothing else.\r"
+
+expect {
+	timeout {
+		puts stderr "timeout: RESPONSE_RE never matched (loosen pattern or raise timeout)"
+		exit 1
+	}
+	-re $RESPONSE_RE {
+		exit 0
+	}
+	eof {
+		exit 0
+	}
+}

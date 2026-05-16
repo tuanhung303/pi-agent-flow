@@ -8,11 +8,14 @@ import {
 	isFlowError,
 	normalizeFlowResult,
 	getFlowOutput,
+	type SingleResult,
+} from "../src/types/flow.js";
+
+import {
 	getFlowDisplayItems,
 	getLastToolCall,
 	getLastAssistantText,
-	type SingleResult,
-} from "../src/types.js";
+} from "../src/types/ui.js";
 
 function makeResult(overrides: Partial<SingleResult> = {}): SingleResult {
 	return {

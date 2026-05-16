@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults } from "../src/snapshot.js";
-import { evictCacheOverflow } from "../src/executor.js";
-import { stripStrategicHints } from "../src/tool-utils.js";
+import { compressToolResults } from "../src/snapshot/snapshot.js";
+import { evictCacheOverflow } from "../src/core/executor.js";
+import { stripStrategicHints } from "../src/steering/tool-utils.js";
 
 // ---------------------------------------------------------------------------
 // stripStrategicHints
@@ -394,7 +394,7 @@ describe("compressToolResults — flow cache miss", () => {
 		const text = parsed.message.content[0].text;
 		// Must be the compact placeholder, NOT the bulky original
 		expect(text).toContain("[flow] prior result");
-		expect(text).toContain("not cached or evicted");
+		expect(text).toContain("full context unavailable (result not cached at this depth)");
 		expect(text.length).toBeLessThan(200);
 		expect(text).not.toContain("Flow: 1/1 completed");
 	});

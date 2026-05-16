@@ -72,7 +72,7 @@ function buildPositionMap(original: string): number[] {
 	return map;
 }
 
-export function fuzzyFindText(
+function fuzzyFindText(
 	content: string,
 	oldText: string,
 ): { found: boolean; index: number; matchLength: number; isExact: boolean } {

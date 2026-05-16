@@ -21,7 +21,7 @@ import {
 	normalizeBashOp,
 	executeBatchBash,
 } from "./batch-bash.js";
-import { appendStrategicHintOnce } from "../tool-utils.js";
+import { appendStrategicHintOnce } from "../steering/tool-utils.js";
 
 // Re-export polling tool factory and tracker from batch-bash
 export { BashProcessTracker, createBatchBashPollTool, pollBatchBashResults } from "./batch-bash.js";
@@ -45,6 +45,7 @@ const FileOp = Type.Object({
 		Type.Literal("edit"),
 		Type.Literal("delete"),
 		Type.Literal("bash"),
+		Type.Literal("rg"),
 	]),
 	p: Type.String({ description: "Path to the file (relative or absolute). Use 'bash' or any string for o: 'bash'." }),
 	c: Type.Optional(
@@ -67,26 +68,60 @@ const FileOp = Type.Object({
 		}),
 	),
 	l: Type.Optional(
-		Type.Number({
-			minimum: 1,
-			description:
-				"Maximum number of lines to read (limit). Used with o: 'read'.",
-		}),
+		Type.Union([
+			Type.Number({
+				minimum: 1,
+				description:
+					"Maximum number of lines to read (limit). Used with o: 'read'.",
+			}),
+			Type.Boolean({
+				description:
+					"Files-with-matches flag for o: 'rg'. Default true.",
+			}),
+		]),
 	),
 	i: Type.Optional(
-		Type.String({
-			description: "Unique ID for this bash operation. Auto-generated if omitted. Used with o: 'bash'.",
-		}),
+		Type.Union([
+			Type.String({
+				description: "Unique ID for this bash operation. Auto-generated if omitted. Used with o: 'bash'.",
+			}),
+			Type.Boolean({
+				description: "Ignore-case flag for o: 'rg'. Used with o: 'rg'.",
+			}),
+		]),
 	),
 	t: Type.Optional(
-		Type.Number({
-			minimum: 1,
-			description: `Soft timeout in ms. Default: ${BASH_SOFT_TIMEOUT_MS}. Command keeps running after timeout; returns partial output with pending status. Used with o: 'bash'.`,
-		}),
+		Type.Union([
+			Type.Number({
+				minimum: 1,
+				description: `Soft timeout in ms. Default: ${BASH_SOFT_TIMEOUT_MS}. Command keeps running after timeout; returns partial output with pending status. Used with o: 'bash'.`,
+			}),
+			Type.String({
+				description: "Type filter for o: 'rg' (e.g., 'ts', 'js'). Used with o: 'rg'.",
+			}),
+		]),
 	),
 	h: Type.Optional(
 		Type.String({
 			description: "Working directory override for this command. Used with o: 'bash'.",
+		}),
+	),
+	q: Type.Optional(
+		Type.String({
+			description: "Search pattern for o: 'rg'.",
+		}),
+	),
+	n: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			description: "Max-count for o: 'rg'.",
+		}),
+	),
+	u: Type.Optional(
+		Type.Number({
+			minimum: 0,
+			maximum: 3,
+			description: "Ignore level for o: 'rg' (0-3). Maps to -u (0), -uu (1), -uuu (2-3).",
 		}),
 	),
 });
@@ -98,31 +133,66 @@ export const WeavePatchParams = Type.Object({
 	}),
 });
 
+const BatchReadOp = Type.Union([
+	Type.Object({
+		o: Type.Literal("read"),
+		p: Type.String({ description: "Path to the file (relative or absolute)" }),
+		s: Type.Optional(
+			Type.Number({
+				minimum: 1,
+				description:
+					"1-indexed line number to start reading from (offset). Used with o: 'read'.",
+			}),
+		),
+		l: Type.Optional(
+			Type.Number({
+				minimum: 1,
+				description:
+					"Maximum number of lines to read (limit). Used with o: 'read'.",
+			}),
+		),
+	}),
+	Type.Object({
+		o: Type.Literal("rg"),
+		p: Type.String({ description: "Path to search (relative or absolute). Use '.' for cwd." }),
+		q: Type.String({ description: "Search pattern for o: 'rg'." }),
+		l: Type.Optional(
+			Type.Boolean({
+				description:
+					"Files-with-matches flag for o: 'rg'. Default true.",
+			}),
+		),
+		i: Type.Optional(
+			Type.Boolean({
+				description: "Ignore-case flag for o: 'rg'.",
+			}),
+		),
+		t: Type.Optional(
+			Type.String({
+				description: "Type filter for o: 'rg' (e.g., 'ts', 'js').",
+			}),
+		),
+		n: Type.Optional(
+			Type.Number({
+				minimum: 1,
+				description: "Max-count for o: 'rg'.",
+			}),
+		),
+		u: Type.Optional(
+			Type.Number({
+				minimum: 0,
+				maximum: 3,
+				description: "Ignore level for o: 'rg' (0-3). Maps to -u (0), -uu (1), -uuu (2-3).",
+			}),
+		),
+	}),
+]);
+
 export const BatchReadParams = Type.Object({
-	o: Type.Array(
-		Type.Object({
-			o: Type.Literal("read"),
-			p: Type.String({ description: "Path to the file (relative or absolute)" }),
-			s: Type.Optional(
-				Type.Number({
-					minimum: 1,
-					description:
-						"1-indexed line number to start reading from (offset). Used with o: 'read'.",
-				}),
-			),
-			l: Type.Optional(
-				Type.Number({
-					minimum: 1,
-					description:
-						"Maximum number of lines to read (limit). Used with o: 'read'.",
-				}),
-			),
-		}),
-		{
-			description:
-				"Ordered list of read operations. Executed sequentially. On failure, remaining operations are skipped.",
-		},
-	),
+	o: Type.Array(BatchReadOp, {
+		description:
+			"Ordered list of read operations. Executed sequentially. On failure, remaining operations are skipped.",
+	}),
 });
 
 // ---------------------------------------------------------------------------
@@ -165,6 +235,17 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 	else if (raw.offset !== undefined) op.s = raw.offset;
 	if (raw.l !== undefined) op.l = raw.l;
 	else if (raw.limit !== undefined) op.l = raw.limit;
+
+	// Map timeout / type filter
+	if (raw.t !== undefined) op.t = raw.t;
+
+	// Map id / ignore-case
+	if (raw.i !== undefined) op.i = raw.i;
+
+	// Map rg-specific fields
+	if (raw.q !== undefined) op.q = raw.q;
+	if (raw.n !== undefined) op.n = raw.n;
+	if (raw.u !== undefined) op.u = raw.u;
 
 	return op;
 }
@@ -222,11 +303,12 @@ function prepareBatchReadArguments(input: unknown): { o: FileOpInput[] } | unkno
 	const ops = Array.isArray(prepared) ? prepared : (prepared as { o: unknown[] }).o;
 	if (!Array.isArray(ops)) return { o: [] };
 
+	const allowedBatchReadOps = new Set(["read", "rg"]);
 	for (const op of ops) {
 		if (!op || typeof op !== "object") continue;
 		const obj = op as Record<string, unknown>;
 		const opType = String(obj.o ?? obj.op ?? "").toLowerCase();
-		if (opType && opType !== "read") {
+		if (opType && !allowedBatchReadOps.has(opType)) {
 			throw new Error(`batch_read only supports read operations. Received: ${opType}`);
 		}
 	}
@@ -291,9 +373,10 @@ export function createBatchReadTool() {
 				};
 			}
 
-			// Defensive validation: reject any non-read operations
+			// Defensive validation: reject any non-read/rg operations
+			const allowedBatchReadOps = new Set(["read", "rg"]);
 			for (const op of ops) {
-				if (op.o !== "read") {
+				if (!allowedBatchReadOps.has(op.o)) {
 					return {
 						content: [
 							{
@@ -346,6 +429,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 		"Each edit matches the on-disk file, not prior ops in the same call — so order within a file's `e` array doesn't matter.",
 		"Bash ops run in parallel. Use i (id) to track them. Use batch_bash_poll to check on pending commands.",
 		"Before calling batch, plan: list every file you need to read, edit, or create, and every command you need to run — then put them ALL in one call.",
+		"For non-trivial scripts (Python, Node, shell), write the script to ./tmp/ first with o:'write', then execute it with o:'bash'. File ops always run before bash ops, so the write is guaranteed to complete before execution. This avoids escaping issues, produces better error traces, and leaves the script inspectable for debugging.",
 	];
 	if (toolOptimize) {
 		guidelines.push("In this mode batch is your ONLY edit tool — there is no separate edit command. Always use batch for every edit, even single-block single-file changes.");
@@ -361,6 +445,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			`Bash ops use c (command), i (id), t (timeout, default ${BASH_SOFT_TIMEOUT_MS}ms), h (cwd). Commands exceeding the soft timeout return "pending" status with last 50 lines of output; poll with batch_bash_poll.`,
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
 			"The primary tool for all file operations and shell commands. Always combine multiple ops into one call: reads, edits, creates, deletes, and bash can all coexist. Avoid: 3 separate batch calls for 3 edits. Do: 1 batch call with 3 ops in the o array.",
+			"Prefer write-then-execute for scripts: write code to ./tmp/ via o:'write', then run it via o:'bash'. File ops complete before bash ops, so this is guaranteed safe. Avoid bash python -c '...' or node -e '...' for anything beyond a simple one-liner.",
 		].join("\n"),
 		promptSnippet: "Batch operations — run multiple file ops and bash commands in one call",
 		promptGuidelines: guidelines,

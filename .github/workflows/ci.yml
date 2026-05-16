@@ -15,5 +15,6 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: sudo apt-get install -y ripgrep
       - run: npm run lint
       - run: npm test

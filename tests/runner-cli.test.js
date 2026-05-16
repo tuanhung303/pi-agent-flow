@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFlowCliArgs } from "../src/cli-args.js";
+import { parseFlowCliArgs } from "../src/snapshot/cli-args.js";
 
 // ---------------------------------------------------------------------------
 // parseFlowCliArgs
