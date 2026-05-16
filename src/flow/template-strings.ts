@@ -9,7 +9,7 @@ The flow goal has exceeded its budget and has been auto-paused.
 Objective: {{objective}}
 Usage: {{totalTokens}}/{{maxTokens}} tokens, {{flowCount}}/{{maxFlows}} flows.
 
-Resume with \`/flow resume\` if you want to continue.
+Resume with \`/flow:goal resume\` if you want to continue.
 </flow-budget>`;
 
 export const goalCompletedTemplate = `<flow-completion>

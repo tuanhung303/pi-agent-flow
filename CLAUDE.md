@@ -357,15 +357,15 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 
 | Command | Usage |
 |---------|-------|
-| `set` | `/flow set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` — Sets the goal and **immediately auto-triggers** a build flow to start working. |
-| `clear` | `/flow clear` — Marks the active goal as `abandoned` and moves it to history. |
-| `pause` | `/flow pause` — Pauses auto-continuation so no new flows are spawned until the goal is resumed or cleared. |
-| `resume` | `/flow resume` — Resumes a paused goal and **immediately auto-triggers** a build flow to continue. |
-| `edit` | `/flow edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
-| `complete` | `/flow complete` — Marks the current goal as completed. |
-| `status`, `show` | `/flow status` (or `show`) — Displays current goal state, budgets, and completed flows |
+| `set` | `/flow:goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]` — Sets the goal and **immediately auto-triggers** a build flow to start working. |
+| `clear` | `/flow:goal clear` — Marks the active goal as `abandoned` and moves it to history. |
+| `pause` | `/flow:goal pause` — Pauses auto-continuation so no new flows are spawned until the goal is resumed or cleared. |
+| `resume` | `/flow:goal resume` — Resumes a paused goal and **immediately auto-triggers** a build flow to continue. |
+| `edit` | `/flow:goal edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
+| `complete` | `/flow:goal complete` — Marks the current goal as completed. |
+| `status`, `show` | `/flow:goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
 
-> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow complete`, by the orchestrator calling the `flow` tool with `type: "complete"`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
+> **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow:goal complete`, by the orchestrator calling the `flow` tool with `type: "complete"`, or they may reach `completed` status programmatically (for example, when the orchestrator detects that the objective has been fulfilled).
 
 ### How it works
 
@@ -391,11 +391,11 @@ Add `.pi/` to `.gitignore` — this is local runtime state.
 ### Typical lifecycle
 
 ```bash
-/flow set "Refactor all tests to vitest" --acceptance "All tests pass" --max-flows 5
+/flow:goal set "Refactor all tests to vitest" --acceptance "All tests pass" --max-flows 5
 # Work normally — after each turn the orchestrator auto-delegates
-/flow pause    # Stop auto-continuation
-/flow status   # Check progress
-/flow clear    # Done
+/flow:goal pause    # Stop auto-continuation
+/flow:goal status   # Check progress
+/flow:goal clear    # Done
 ```
 
 > No environment variable controls auto-continuation; it is active whenever a goal is set and not paused.

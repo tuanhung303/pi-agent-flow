@@ -1,5 +1,5 @@
 /**
- * /flow slash command registration.
+ * /flow:goal slash command registration.
  *
  * Subcommands: set, clear, pause, resume, edit, status, show
  */
@@ -34,7 +34,7 @@ function formatGoal(entry: NonNullable<ReturnType<typeof getGoal>>): string {
 }
 
 export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
-  pi.registerCommand("flow", {
+  pi.registerCommand("flow:goal", {
     description:
       "Manage an active flow goal. Subcommands: set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>], clear, pause, resume, complete, edit <new-objective> [--acceptance <text>], status, show",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
@@ -54,7 +54,7 @@ export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefi
           if (maxTokensMatch) objective = objective.replace(maxTokensMatch[0], "").trim();
           if (maxFlowsMatch) objective = objective.replace(maxFlowsMatch[0], "").trim();
           if (!objective) {
-            ctx.ui.notify?.("Usage: /flow set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]", "error");
+            ctx.ui.notify?.("Usage: /flow:goal set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>]", "error");
             return;
           }
           const sessionId = ctx.sessionManager.getSessionId();
@@ -115,7 +115,7 @@ export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefi
           let objective = rest;
           if (acceptanceMatch) objective = objective.replace(acceptanceMatch[0], "").trim();
           if (!objective) {
-            ctx.ui.notify?.("Usage: /flow edit <new-objective> [--acceptance <text>]", "error");
+            ctx.ui.notify?.("Usage: /flow:goal edit <new-objective> [--acceptance <text>]", "error");
             return;
           }
           const previousGoal = getGoal(cwd);
@@ -154,7 +154,7 @@ export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefi
         }
         default: {
           ctx.ui.notify?.(
-            "Unknown subcommand. Usage: /flow {set|clear|pause|resume|complete|edit|status|show}",
+            "Unknown subcommand. Usage: /flow:goal {set|clear|pause|resume|complete|edit|status|show}",
             "error",
           );
         }
