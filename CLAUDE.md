@@ -6,6 +6,16 @@
 > 🌱 **Keep this index alive.**
 > CLAUDE.md is a living document. When flows change, scripts move, or CI/CD steps get updated, this file must reflect reality. If you just changed something structural — added a workflow, renamed a script, tweaked a flow's tools — **update this file before you wrap up**. The next agent (or future you) will thank you. Don't leave them lost in the maze.
 
+## Project Index
+
+| Category | Files |
+|----------|-------|
+| **Docs** | [`docs/CONTEXT-DIAGNOSTICS.md`](docs/CONTEXT-DIAGNOSTICS.md) — diagnose high token counts in child flows • [`docs/agent-context-dump.md`](docs/agent-context-dump.md) — verbatim child context dump anatomy • [`docs/agent-payload-example.md`](docs/agent-payload-example.md) — exact payload reproduction from source code • [`docs/autonomous-pi-testing.md`](docs/autonomous-pi-testing.md) — scripted Pi sessions over PTY • [`docs/scout-report.md`](docs/scout-report.md) — generated codebase map |
+| **Dump Analysis** | [`docs/dump-analysis/VERSION-NOTES.md`](docs/dump-analysis/VERSION-NOTES.md) — version notes for collected artifacts • [`docs/dump-artifacts/ANALYSIS.md`](docs/dump-artifacts/ANALYSIS.md) — cross-reference of dumps against source • [`docs/dump-artifacts/README.md`](docs/dump-artifacts/README.md) — catalog of representative dump files |
+| **Workflows** | [`ci.yml`](.github/workflows/ci.yml) — lint + test on PR/push • [`bump-version.yml`](.github/workflows/bump-version.yml) — version bump → commit → tag → push • [`publish.yml`](.github/workflows/publish.yml) — npm publish with provenance |
+| **Scripts** | [`dev-start.sh`](scripts/dev-start.sh) — start `pi` with `PI_FLOW_DUMP_SNAPSHOT` preset • [`switch.sh`](scripts/switch.sh) — toggle local ↔ remote install • [`sync-dumps.sh`](scripts/sync-dumps.sh) — sync `/tmp` dumps into `dump-artifacts/` • [`dump-context-payload.ts`](scripts/dump-context-payload.ts) — generate realistic child flow payload dumps • [`example-autonomous-pi.expect`](scripts/example-autonomous-pi.expect) — PTY test harness template |
+| **Key Source** | `src/index.ts` — entrypoint • `src/flow.ts` — core flow orchestration & snapshotting • `src/snapshot.ts` — session fork & sanitization pipeline • `src/agents.ts` — bundled flow definitions & loading • `src/batch.ts` / `src/batch/` — unified file/batch tools • `src/render.ts` — TUI rendering & animations • `src/structured-output.ts` — JSON output validation & enrichment • `src/web-tool.ts` — search & fetch • `src/ask-user.ts` — interactive prompts • `src/config.ts` — settings resolution • `src/notify.ts` — desktop/terminal notifications |
+
 ## CI/CD
 
 Publishing is **fully automated** via GitHub Actions.

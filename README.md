@@ -42,30 +42,45 @@ pi install .
 
 ## Features
 
+### Flow System
 - **Flow-state delegation** — six bundled specialist flows (`scout`, `debug`, `build`, `craft`, `audit`, `ideas`) plus custom flows via Markdown front-matter
 - **Isolated forked context** — each flow runs as an isolated `pi` child process with a session snapshot (or clean slate when configured)
 - **Parallel execution** — batch independent flows into one call with bounded concurrency
-- **Structured reports** — every flow returns structured output with `summary`, `files`, `actions`, `commands`, `notDone`, `nextSteps`, `reasoning`, and `notes`; optional JSON schema for machine-readable results
-- **Mechanically enriched commands** — bash commands in structured output are replaced with exact verbatim tool-call strings and annotated with `executionTime`
-- **Depth guards** — configurable max delegation depth (default: `3`)
+- **Depth guards & cycle prevention** — configurable max delegation depth (default: `3`) and automatic blocking of re-entering ancestor flows
+- **Post-flow advisories** — built-in transition matrix suggesting optimal next flows (e.g. `scout` → `build`, `debug` → `build`)
 - **Session timeout modes** — child flows use controlled budgets: `fast` (300s), `default` (600s), `long` (900s), or `extreme_long` (1200s)
 - **Two-stage timeout awareness** — flows receive deadline hints in their prompt; the parent UI shows live countdowns and injects warning reminders before hard kill
 - **Graceful shutdown** — parent `SIGINT`/`SIGTERM` propagates to all child process groups; orphaned sub-agents are force-killed after a grace period
-- **Cycle prevention** — blocks re-entering flows already in the ancestor stack
 - **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
 - **Persistent flow mode** — switch global model strategies with `--flow-mode`; written to `settings.json` and remembered across sessions
-- **Flow-mode notification** — concise (`mode: name | lite: model - flash: model - full: model`) or verbose (with per-tier flow-name labels) startup message
+
+### Tools
 - **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
 - **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
-- **Steering hint** — lightweight routing reminder dynamically injected before each user message (never part of the static system prompt); stripped from child snapshots to avoid duplication
-- **Session snapshot sanitization** — removes steering hints, reasoning/thinking artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
+- **Ask-user prompts** — interactive `ask_user` with overlay/inline display, preferred-choice guidance, comments, and optional timeouts
+- **Structured reports** — every flow returns structured output with `summary`, `files`, `actions`, `commands`, `notDone`, `nextSteps`, `reasoning`, and `notes`; optional JSON schema for machine-readable results
+- **Mechanically enriched commands** — bash commands in structured output are replaced with exact verbatim tool-call strings and annotated with `executionTime`
+
+### TUI & Rendering
+- **Rich activity panel** — collapsed view with per-flow stats, live countdowns, and expanded view with full reports and tool traces
+- **Quad-mode scramble animations** — `stream`, `cascade`, `ripple`, and `illuminate` text animations on act, msg, TPS lines, and tool results (default: `illuminate`)
+- **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
+- **Dynamic notifications** — terminal and desktop alerts adapt their title/body based on flow completion state or pending `ask_user` decisions
+
+### Developer Experience
+- **Local development loop** — `npm link` local checkout for instant iteration; `scripts/switch.sh` toggles between local and published builds
+- **Payload dump workflow** — capture exact child-flow prompts via `PI_FLOW_DUMP_SNAPSHOT` or `--dump`; sync to repo with `scripts/sync-dumps.sh`
+- **Steering hint** — lightweight routing reminder dynamically injected before each user message; stripped from child snapshots to avoid duplication
+- **Session snapshot sanitization** — removes steering hints, reasoning artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
 - **Shared context inheritance** — child flows receive the parent's sanitized session automatically; write forward-looking intents and let the child pick up context from its inherited snapshot
 - **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
-- **Rich TUI rendering** — collapsed activity-panel view with per-flow stats, live countdowns, scramble-animated act/msg/tps lines, and expanded view with full reports and tool traces
-- **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
-- **Quad-mode TUI scramble** — `stream`, `cascade`, `ripple`, and `illuminate` text animations on act, msg, TPS lines, and tool results (batch, web, ask_user) in the collapsed activity panel (default: `illuminate`)
-- **Dynamic notifications** — terminal and desktop alerts adapt their title/body based on flow completion state or pending `ask_user` decisions
-- **Preferred-choice guidance** — `ask_user` prompts can mark a recommended option with `[preferred]` and place it first
+- **TUI-safe logging** — `logWarn`/`logError` routes to a log file instead of stderr during TUI rendering to prevent on-screen text flash
+
+### Configuration
+- **Flow model strategies** — define tiered model chains (`lite` / `flash` / `full`) with `flowModelConfigs`; switch modes via `--flow-mode` (performance / balance / quality)
+- **Flow settings** — persistent runtime defaults under `flowSettings` (session mode, concurrency, tool optimization, structured output)
+- **CLI flags** — `--flow-max-depth`, `--flow-session-mode`, `--flow-max-concurrency`, `--no-steering`, `--no-animation`, and more
+- **Environment variables** — `PI_FLOW_DUMP_SNAPSHOT`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_TOOL_OPTIMIZE`, `PI_TUI_MODE`, and others
 
 ---
 
