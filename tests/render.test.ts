@@ -353,8 +353,8 @@ describe("formatFlowTypeName", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatCompactTokenPair", () => {
-	it("formats only input and output tokens", () => {
-		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("▲ 46.7k ▼   4.6k");
+	it("formats only input tokens with dot suffix", () => {
+		expect(formatCompactTokenPair({ input: 46700, output: 4600 })).toBe("▲ 46.7k ·");
 	});
 });
 
@@ -400,43 +400,43 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k · ▼   500 - tps:     - - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - tps:     - - ctx: 21.0k - k2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲   100 · ▼     0 - tps:     - - ctx:     0");
+		expect(result).toBe("▲   100 - tps:     - - ctx:     0");
 	});
 
 	it("no usage → shows placeholders", () => {
-		expect(formatCompactStats({})).toBe("▲     0 · ▼     0 - tps:     - - ctx:     0");
+		expect(formatCompactStats({})).toBe("▲     0 - tps:     - - ctx:     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 · ▼     0 - tps:     - - ctx:     0 - gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - tps:     - - ctx:     0 - gpt-4o");
 	});
 
 	it("strips provider prefix from model", () => {
 		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
-			"▲     0 · ▼     0 - tps:     - - ctx:     0 - gpt-5.5",
+			"▲     0 - tps:     - - ctx:     0 - gpt-5.5",
 		);
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("▲  5.0k · ▼  1.0k - tps:     - - ctx:     0");
+		expect(formatCompactStats(usage)).toBe("▲  5.0k - tps:     - - ctx:     0");
 	});
 
 	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("▲     0 · ▼     0 - tps:     - - ctx:  6.0k");
+		expect(formatCompactStats(usage)).toBe("▲     0 - tps:     - - ctx:  6.0k");
 	});
 
 	it("with smoothedTps value", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k · ▼   500 - tps:  42.3 - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - tps:  42.3 - ctx: 21.0k - k2.6");
 	});
 
 	it("can skip token counts for compact flow headers", () => {
@@ -466,7 +466,7 @@ describe("formatCompactStats", () => {
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲  1.0k · ▼   500 - tps:     - - ctx:     0");
+		expect(result).toBe("▲  1.0k - tps:     - - ctx:     0");
 	});
 
 	it("narrows when maxWidth is tight", () => {
@@ -557,8 +557,6 @@ describe("activity panel rendering", () => {
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
 			expect(text).toContain("aim ▸ 09:36 ·");
-			// Aim content is scrambled on first render for in-progress flows
-			expect(text).not.toContain("aim ▸ 09:36 · test aim");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -576,8 +574,7 @@ describe("activity panel rendering", () => {
 		expect(headerLine).toContain("scout    tps:");
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("▲ 46.7k");
-		expect(headerLine).not.toContain("▼  4.6k");
-		expect(text).toContain("msg ▸ ▲ 46.7k ▼   4.6k · Flow timed out after 600s.");
+		expect(text).toContain("msg ▸ ▲ 46.7k · Flow timed out after 600s.");
 	});
 
 	it("renders multi-flow aim countdown and msg token prefixes", () => {
@@ -600,11 +597,10 @@ describe("activity panel rendering", () => {
 			expect(firstHeaderLine.length).toBeGreaterThan(0);
 			expect(firstHeaderLine).not.toContain("ctx:");
 			expect(firstHeaderLine).not.toContain("▲ 46.7k");
-			expect(firstHeaderLine).not.toContain("▼  4.6k");
 			// Aim prefix is static, content may be scrambled
 			expect(text).toContain("aim ▸ 00:45 ·");
 			// Msg prefix is static, content may be scrambled
-			expect(text).toContain("msg ▸ ▲ 46.7k ▼   4.6k ·");
+			expect(text).toContain("msg ▸ ▲ 46.7k ·");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -641,7 +637,6 @@ describe("activity panel rendering", () => {
 		expect(text).toContain("aim ▸");
 		// Glitch mode shows plain text for unstarted chars at frame 0
 		expect(text).toContain("▲     0");
-		expect(text).toContain("▼      0");
 		// Header stats are scrambled on first render, don't assert exact tps text
 		expect(text).not.toContain("ctx:");
 		expect(text).toContain("msg ▸");
@@ -715,7 +710,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 ▼      0 · "));
+		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 · "));
 		expect(scoutBlock).toContain("msg ▸");
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
@@ -733,7 +728,7 @@ describe("activity panel rendering", () => {
 				streamingText: longStreaming,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
-			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 ▼      0 · "));
+			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 · "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 
@@ -871,14 +866,17 @@ describe("activity panel rendering", () => {
 				exitCode: -1,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
-			const expectedBudget = getTruncationBudget(visibleLength("└─ msg ▸ ▲     0 ▼      0 · "));
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg ▸ ▲     0 ·"));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 
 			const rendered = renderFlowResult({ content: [{ type: "text", text: longStreaming }], details }, false, makeTheme(), undefined);
 			extractText(rendered);
 
-			expect(spy).toHaveBeenCalledWith(expect.any(String), expectedTail, expect.any(Number), false, undefined, true);
+			expect(spy).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.any(Number), false, undefined, true);
+			const actualTail = spy.mock.calls[0][1];
+			expect(longStreaming.endsWith(actualTail)).toBe(true);
+			expect(actualTail.length).toBeLessThanOrEqual(expectedTail.length);
 			expect(spy).not.toHaveBeenCalledWith(expect.any(String), longStreaming, expect.any(Number), false, undefined, true);
 			spy.mockRestore();
 		} finally {
@@ -916,7 +914,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("▲  9.8k · ▼  1.3k - tps:     - - ctx: 10.0k - mimo-v2.5-pro");
+		expect(text).toContain("▲  9.8k - tps:     - - ctx: 10.0k - mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {

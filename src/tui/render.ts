@@ -645,7 +645,7 @@ function renderFlowCollapsed(
 	if (scrambledMsgKpi !== msgKpi) {
 		msgKpi = scrambledMsgKpi;
 	}
-	const msgPrefixStub = `└─ msg ▸ ${msgKpi} · `;
+	const msgPrefixStub = `└─ msg ▸ ${msgKpi} `;
 	const msgBudget = getTruncationBudget(visibleLength(msgPrefixStub));
 
 	let rawMsg: string;
@@ -672,7 +672,7 @@ function renderFlowCollapsed(
 		? tailText(rawMsg, msgBudget)
 		: truncateChars(rawMsg, msgBudget);
 	const msgTree = "└─";
-	const msgLabel = ` msg ▸ ${msgKpi} · `;
+	const msgLabel = ` msg ▸ ${msgKpi} `;
 	const initialMsgPrefix = `${msgTree}${msgLabel}`;
 	container.addChild(new DynamicScrambleText(
 		`${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", initialMsgContent, theme, config)}`,
@@ -683,7 +683,7 @@ function renderFlowCollapsed(
 			if (scrambledMsgKpi !== msgKpi) {
 				msgKpi = scrambledMsgKpi;
 			}
-			const msgLabel = ` msg ▸ ${msgKpi} · `;
+			const msgLabel = ` msg ▸ ${msgKpi} `;
 			const msgPrefix = `${msgTree}${msgLabel}`;
 			const freshRawMsg = (r.exitCode === -1 ? getLiveTextWithFallback(id) : undefined) ?? rawMsg;
 			const needsTail = r.exitCode === -1 || streamingText != null;
@@ -976,7 +976,7 @@ function renderActivityPanel(
 			msgKpi = scrambledMsgKpi;
 		}
 		const msgTree = `${indent}└─`;
-		const msgLabel = ` msg ▸ ${msgKpi} · `;
+		const msgLabel = ` msg ▸ ${msgKpi} `;
 		const msgPrefixStub = `${msgTree}${msgLabel}`;
 		const msgBudget = getTruncationBudget(visibleLength(msgPrefixStub));
 		const liveText = r.exitCode === -1 ? r.streamingText : undefined;
@@ -1007,7 +1007,7 @@ function renderActivityPanel(
 				if (scrambledMsgKpi !== msgKpi) {
 					msgKpi = scrambledMsgKpi;
 				}
-				const msgLabel = ` msg ▸ ${msgKpi} · `;
+				const msgLabel = ` msg ▸ ${msgKpi} `;
 				const msgPrefix = `${msgTree}${msgLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(msgPrefix));
 				const freshRawMsg = flowComplete ? rawMsg : (getLiveTextWithFallback(flowId) ?? rawMsg);
