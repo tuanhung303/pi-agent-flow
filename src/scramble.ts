@@ -1333,25 +1333,32 @@ function applyScramble(text: string, state: LineState, now: number, mode: Scramb
 					state.glitchFrame = 0;
 					state.lastGlitchTime = now;
 					state.targetText = state.pendingNewDisplayed;
+					state.displayedText = text;
+					// Preserve lastText — it holds the latest buffered text
 					state.pendingGlitch = null;
 					state.pendingOldDisplayed = '';
 					state.pendingNewDisplayed = '';
 					state.pendingStartTime = 0;
-					// FIX: sync displayedText to current text so pending handoff doesn't
-					// leave a stale anchor that triggers chain glitches on next frames.
-					state.displayedText = text;
-					state.lastText = text;
-					const pendingText = lineKey === 'msg'
-						? (state.targetText && state.targetText.length > text.length ? text : (state.targetText || text))
-						: text;
+					const pendingText = lineKey === 'msg' ? state.targetText : text;
 					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, pendingText, config);
 				}
-				// FIX: settle to current text, not stale targetText, to prevent snap-back.
-				const settledText = text;
-				state.displayedText = settledText;
-				state.lastText = settledText;
+				// Sync displayedText to targetText (the resolved target), then check
+				// if new text arrived during the glitch and start a fresh one.
+				const resolvedTarget = state.targetText || text;
+				const hasDiverged = state.lastText !== resolvedTarget;
+				const enoughChars = state.charsSinceLastFlush >= 20;
+				state.displayedText = resolvedTarget;
 				state.targetText = '';
-				return settledText;
+				state.charsSinceLastFlush = 0;
+				if (hasDiverged && enoughChars) {
+					state.glitchQueue = buildMsgGlitchQueue(resolvedTarget, state.lastText);
+					state.targetText = state.lastText;
+					state.startTime = now;
+					state.glitchFrame = 0;
+					state.lastGlitchTime = now;
+					return computeGlitchFrame(state.glitchQueue, 0, rng ?? poolRandomChar, state.targetText, config);
+				}
+				return resolvedTarget;
 			}
 			const glitchText = lineKey === 'msg'
 				? (state.targetText && state.targetText.length > text.length ? text : (state.targetText || text))
@@ -2276,15 +2283,27 @@ export class ScrambleStateManager {
 				const glitchComplete = isGlitchComplete(state.glitchQueue, frame);
 
 				if (state.glitchQueue.length > 0 && glitchComplete) {
-					const settledText = visibleText;
 					if (!state.pendingGlitch) {
+						const resolvedTarget = state.targetText;
+						const hasDiverged = state.lastText !== resolvedTarget;
+						const enoughChars = state.charsSinceLastFlush >= 20;
+						state.displayedText = resolvedTarget;
+						state.targetText = '';
 						state.glitchQueue = [];
 						state.glitchFrame = 0;
-						state.targetText = '';
+						state.charsSinceLastFlush = 0;
+						if (hasDiverged && enoughChars) {
+							state.glitchQueue = buildMsgGlitchQueue(resolvedTarget, state.lastText);
+							state.targetText = state.lastText;
+							state.startTime = now;
+							state.glitchFrame = 0;
+							state.lastGlitchTime = now;
+						}
+					} else {
+						// Leave queue intact for applyScramble pending handoff
+						state.displayedText = state.targetText;
+						state.charsSinceLastFlush = 0;
 					}
-					state.displayedText = settledText;
-					state.lastText = settledText;
-					state.charsSinceLastFlush = 0;
 				}
 
 				if (textChanged) {
@@ -2393,13 +2412,22 @@ export class ScrambleStateManager {
 		} else {
 			processLine(state, visibleText, now, this.mode, 'msg');
 		}
-		const hasActiveMsgGlitch = this.mode === 'illuminate' && state.glitchQueue.length > 0;
-		// Only suppress tail-window slides (high overlap), not meaningful text changes.
-		const overlap = computeOverlapLen(state.displayedText, visibleText);
-		const minDispLen = Math.min(state.displayedText.length, visibleText.length);
-		const isTailSlide = overlap > 0 && overlap >= minDispLen * 0.5;
-		const suppressTailSlide = this.mode === 'illuminate' && staticLine && !isComplete && !hasActiveMsgGlitch && state.displayedText !== '' && state.displayedText !== visibleText && isTailSlide;
-		const displayText = suppressTailSlide ? state.displayedText : visibleText;
+		let displayText: string;
+		if (this.mode === 'illuminate' && staticLine && state.glitchQueue.length > 0) {
+			// Freeze displayed text during active msg glitch so streaming
+			// changes don't leak through the animation. Only freeze when visible
+			// text has grown beyond the snapshot; if it shrunk (truncation),
+			// respect the shorter visible text.
+			const frozenTarget = state.targetText || state.displayedText;
+			displayText = visibleText.length > frozenTarget.length ? frozenTarget : visibleText;
+		} else {
+			// Only suppress tail-window slides (high overlap), not meaningful text changes.
+			const overlap = computeOverlapLen(state.displayedText, visibleText);
+			const minDispLen = Math.min(state.displayedText.length, visibleText.length);
+			const isTailSlide = overlap > 0 && overlap >= minDispLen * 0.5;
+			const suppressTailSlide = this.mode === 'illuminate' && staticLine && !isComplete && state.displayedText !== '' && state.displayedText !== visibleText && isTailSlide;
+			displayText = suppressTailSlide ? state.displayedText : visibleText;
+		}
 		const content = applyScramble(displayText, state, now, this.mode, 'msg', () => this.poolRandomChar());
 		const isAnimating = this.isLineAnimating(state, now);
 		return { label: 'msg:', content, isAnimating };

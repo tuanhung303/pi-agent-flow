@@ -2480,9 +2480,10 @@ describe('ScrambleStateManager ? msg chunk glitch fixes', () => {
 		const duringCooldown = (manager as any).cache.get(TEST_ID)?.msg;
 		expect(duringCooldown.pendingGlitch).toBeNull();
 
-		// After the readable pause, displayedText is already synced ? no re-ripple on stable text
+		// After the readable pause, the original glitch completes and a fresh glitch
+		// starts from the settled target to the latest buffered text.
 		const started = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 4300, false, undefined, true);
-		expect(started.isAnimating).toBe(false);
+		expect(started.isAnimating).toBe(true);
 		const settled = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.', base + 6700, false, undefined, true);
 		expect(settled.isAnimating).toBe(false);
 		expect(stripAnsi(settled.content)).toBe('Hello world. How are you today? This is a very long first chunk with many extra characters to trigger accumulator.');
@@ -2526,15 +2527,39 @@ describe('ScrambleStateManager ? msg chunk glitch fixes', () => {
 		// Rapid follow-up chunk is displayed but should not queue a back-to-back pulse.
 		manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 200, false, undefined, true);
 
+		// Original glitch completes and fresh glitch starts from settled target.
 		const r1 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 2500, false, undefined, true);
-		expect(r1.isAnimating).toBe(false);
+		expect(r1.isAnimating).toBe(true);
 
-		// Stable unchanged text after the cadence window ? displayedText already synced, no re-ripple
+		// Fresh glitch still active at this point.
 		const r2 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 4300, false, undefined, true);
-		expect(r2.isAnimating).toBe(false);
+		expect(r2.isAnimating).toBe(true);
 		const r3 = manager.updateMsg(TEST_ID, 'Hello world. How are you today? This is new and it contains enough characters.', base + 6700, false, undefined, true);
 		expect(r3.isAnimating).toBe(false);
 		expect(stripAnsi(r3.content)).toBe('Hello world. How are you today? This is new and it contains enough characters.');
+	});
+
+	it('does not leak new streaming text into active msg glitch render', () => {
+		const base = 60_000_000;
+		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
+		// Trigger glitch
+		const midText = 'Hello world. How are you today?';
+		manager.updateMsg(TEST_ID, midText, base + 100, false, undefined, true);
+		const midState = (manager as any).cache.get(TEST_ID)?.msg;
+		expect(midState.glitchQueue.length).toBeGreaterThan(0);
+		expect(midState.targetText).toBe(midText);
+
+		// New streaming text arrives while glitch is still active
+		const newText = 'Hello world. How are you today? This is brand new streaming content that should not leak.';
+		const during = manager.updateMsg(TEST_ID, newText, base + 200, false, undefined, true);
+
+		// Rendered content should NOT contain the new suffix
+		const stripped = stripAnsi(during.content);
+		expect(stripped).not.toContain('This is brand new streaming content');
+		expect(stripped).not.toBe(newText);
+		// The target was midText, so resolved chars should not exceed midText length
+		// (plus a small allowance for ANSI). The key invariant: no leaked suffix.
+		expect(stripped.length).toBeLessThanOrEqual(midText.length + 10);
 	});
 
 	it('applyScramble cascade with empty queue returns text, not stale displayedText', () => {
