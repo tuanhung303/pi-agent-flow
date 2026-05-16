@@ -562,7 +562,7 @@ function renderFlowCollapsed(
 	const tpsValue = r.usage.smoothedTps;
 	const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 	if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
-	else statsParts.push("-");
+	else statsParts.push("-- tok/s");
 	let displayStats = statsParts.join(" · ");
 
 	// Flash TPS value when it changes
@@ -868,7 +868,7 @@ function renderActivityPanel(
 		const tpsValue = r.usage.smoothedTps;
 		const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 		if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
-		else statsParts.push("-");
+		else statsParts.push("-- tok/s");
 		let displayStats = statsParts.join(" · ");
 
 		const flowComplete = r.exitCode !== -1;
