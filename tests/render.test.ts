@@ -419,49 +419,49 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k - -- tok/s - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - -- tok/s - 21.0k - k2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲   100 - -- tok/s - ctx:     0");
+		expect(result).toBe("▲   100 - -- tok/s -     0");
 	});
 
 	it("no usage → shows placeholders", () => {
-		expect(formatCompactStats({})).toBe("▲     0 - -- tok/s - ctx:     0");
+		expect(formatCompactStats({})).toBe("▲     0 - -- tok/s -     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - -- tok/s - ctx:     0 - gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - -- tok/s -     0 - gpt-4o");
 	});
 
 	it("strips provider prefix from model", () => {
 		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
-			"▲     0 - -- tok/s - ctx:     0 - gpt-5.5",
+			"▲     0 - -- tok/s -     0 - gpt-5.5",
 		);
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("▲  5.0k - -- tok/s - ctx:     0");
+		expect(formatCompactStats(usage)).toBe("▲  5.0k - -- tok/s -     0");
 	});
 
 	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("▲     0 - -- tok/s - ctx:  6.0k");
+		expect(formatCompactStats(usage)).toBe("▲     0 - -- tok/s -  6.0k");
 	});
 
 	it("with smoothedTps value", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k - 42.3 tok/s - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - 42.3 tok/s - 21.0k - k2.6");
 	});
 
 	it("can skip token counts for compact flow headers", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true });
-		expect(result).toBe("42.3 tok/s - ctx: 21.0k - k2.6");
+		expect(result).toBe("42.3 tok/s - 21.0k - k2.6");
 	});
 
 	it("with skipContext omits context tokens from runtime parts", () => {
@@ -473,7 +473,7 @@ describe("formatCompactStats", () => {
 	it("with hideModel omits model name", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 42.3 };
 		const result = formatCompactStats(usage, "K2.6", undefined, { skipTokens: true, hideModel: true });
-		expect(result).toBe("42.3 tok/s - ctx: 21.0k");
+		expect(result).toBe("42.3 tok/s - 21.0k");
 	});
 
 	it("with skipContext and hideModel shows only tps", () => {
@@ -485,19 +485,19 @@ describe("formatCompactStats", () => {
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲  1.0k - -- tok/s - ctx:     0");
+		expect(result).toBe("▲  1.0k - -- tok/s -     0");
 	});
 
 	it("with high smoothedTps rounds to integer", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 142.7 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k - 143 tok/s - ctx: 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - 143 tok/s - 21.0k - k2.6");
 	});
 
 	it("with exactly 100 smoothedTps rounds to integer", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲  2.0k - 100 tok/s - ctx: 21.0k");
+		expect(result).toBe("▲  2.0k - 100 tok/s - 21.0k");
 	});
 
 	it("narrows when maxWidth is tight", () => {
@@ -512,7 +512,7 @@ describe("formatCompactStats", () => {
 		const result = formatCompactStats(usage, "K2.6", 25);
 		expect(visibleLength(result)).toBeLessThanOrEqual(25);
 		expect(result).not.toContain("k2.6");
-		expect(result).not.toContain("ctx");
+		expect(result).not.toContain("21.0k");
 	});
 });
 
@@ -604,7 +604,7 @@ describe("activity panel rendering", () => {
 		const text = extractText(rendered);
 		const headerLine = text.split("\n")[0];
 		expect(headerLine).toContain("scout");
-		expect(headerLine).toContain("50.0k ctx");
+		expect(headerLine).toContain("50.0k");
 		expect(headerLine).not.toContain("▲ 46.7k");
 		expect(text).toContain("msg ▸ Flow timed out after 600s.");
 	});
@@ -627,7 +627,7 @@ describe("activity panel rendering", () => {
 			const text = extractText(rendered);
 			const firstHeaderLine = text.split("\n")[0];
 			expect(firstHeaderLine).toContain("scout");
-			expect(firstHeaderLine).toContain("50.0k ctx");
+			expect(firstHeaderLine).toContain("50.0k");
 			expect(firstHeaderLine).not.toContain("▲ 46.7k");
 			// Aim prefix is static, content may be scrambled
 			expect(text).toContain("aim ▸");
@@ -948,7 +948,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("▲  9.8k - -- tok/s - ctx: 10.0k - mimo-v2.5-pro");
+		expect(text).toContain("▲  9.8k - -- tok/s - 10.0k - mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {
@@ -962,7 +962,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("ctx: 10.0k");
+		expect(text).toContain("10.0k");
 	});
 
 	it("single expanded renders structured notDone details", () => {

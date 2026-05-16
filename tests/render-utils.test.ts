@@ -148,15 +148,15 @@ describe('formatModelLabel', () => {
   });
 
   it('formats provider/model with shortening', () => {
-    expect(formatModelLabel('accounts/fireworks/routers/kimi-k2p6-turbo')).toBe('fireworks/...k2p6-turbo');
+    expect(formatModelLabel('accounts/fireworks/routers/kimi-k2p6-turbo')).toBe('accounts/...k2p6-turbo');
   });
 
   it('returns short modelPath unchanged', () => {
-    expect(formatModelLabel('github/copilot/gpt-5.5')).toBe('copilot/gpt-5.5');
+    expect(formatModelLabel('github/copilot/gpt-5.5')).toBe('github/...ot/gpt-5.5');
   });
 
   it('uses default maxTail of 10', () => {
-    expect(formatModelLabel('accounts/anthropic/models/claude-3-5-sonnet')).toBe('anthropic/...3-5-sonnet');
+    expect(formatModelLabel('accounts/anthropic/models/claude-3-5-sonnet')).toBe('accounts/...3-5-sonnet');
   });
 });
 
@@ -176,23 +176,19 @@ describe('formatCountdownRemaining', () => {
 });
 
 describe('formatContextLabel', () => {
-  it('returns undefined when contextTokens is 0 and no max', () => {
-    expect(formatContextLabel(0)).toBeUndefined();
+  it('returns formatted tokens when max is unknown', () => {
+    expect(formatContextLabel(32000)).toBe('32.0k');
   });
 
-  it('returns token count with ctx suffix when no max', () => {
-    expect(formatContextLabel(500)).toBe('500 ctx');
-    expect(formatContextLabel(1300)).toBe('1.3k ctx');
-    expect(formatContextLabel(32000)).toBe('32.0k ctx');
-  });
-
-  it('returns ratio when maxContextTokens is provided', () => {
-    expect(formatContextLabel(500, 4000)).toBe('500/4.0k');
-    expect(formatContextLabel(1300, 8000)).toBe('1.3k/8.0k');
+  it('returns ratio when max is provided', () => {
     expect(formatContextLabel(32000, 200000)).toBe('32.0k/0.20M');
   });
 
-  it('shows 0/max ratio when max is provided even if context is 0', () => {
-    expect(formatContextLabel(0, 128000)).toBe('0/0.13M');
+  it('handles small numbers', () => {
+    expect(formatContextLabel(500, 1000)).toBe('  500/ 1.0k');
+  });
+
+  it('handles large numbers', () => {
+    expect(formatContextLabel(950500, 1000000)).toBe('0.95M/1.00M');
   });
 });

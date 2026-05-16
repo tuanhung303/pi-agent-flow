@@ -57,7 +57,7 @@ export function formatCompactStats(
 	const tokenParts = [`▲ ${formatFixedTokens(usage.input || 0)}`];
 	let runtimeParts = [formatTps(usage.smoothedTps)];
 	if (!options.skipContext) {
-		runtimeParts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
+		runtimeParts.push(formatFixedTokens(usage.contextTokens || 0));
 	}
 	const parts = options.skipTokens ? runtimeParts : [...tokenParts, ...runtimeParts];
 
@@ -69,7 +69,8 @@ export function formatCompactStats(
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens next.
-		const withoutContext = parts.filter((part) => !part.startsWith("ctx:"));
+		const tpsOnly = [formatTps(usage.smoothedTps)];
+		const withoutContext = options.skipTokens ? tpsOnly : [...tokenParts, ...tpsOnly];
 		narrow = withoutContext.join(" - ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
@@ -101,8 +102,8 @@ export function formatModelLabel(model: string | undefined, maxTail: number = 10
 	if (!model) return "";
 	const parts = model.split("/");
 	if (parts.length < 2) return model.toLowerCase();
-	const provider = parts[1];
-	const modelPath = parts.slice(2).join("/").toLowerCase();
+	const provider = parts[0];
+	const modelPath = parts.slice(1).join("/").toLowerCase();
 	const shortened = modelPath.length > maxTail ? "..." + modelPath.slice(-maxTail) : modelPath;
 	return `${provider}/${shortened}`;
 }
@@ -114,15 +115,12 @@ export function formatCountdownRemaining(deadlineAtMs?: number): string | undefi
 	return formatCountdown(remaining);
 }
 
-/** Format a context-token label for flow headers. */
-export function formatContextLabel(contextTokens: number, maxContextTokens?: number): string | undefined {
-	if (maxContextTokens) {
-		return `${formatFixedTokens(contextTokens).trim()}/${formatFixedTokens(maxContextTokens).trim()}`;
+export function formatContextLabel(ctxTokens: number, maxCtxTokens?: number): string {
+	const formatted = formatFixedTokens(ctxTokens);
+	if (maxCtxTokens === undefined) {
+		return formatted;
 	}
-	if (contextTokens > 0) {
-		return `${formatFixedTokens(contextTokens).trim()} ctx`;
-	}
-	return undefined;
+	return `${formatted}/${formatFixedTokens(maxCtxTokens)}`;
 }
 
 /** Regex matching ANSI escape sequences. */

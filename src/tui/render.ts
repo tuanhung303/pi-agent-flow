@@ -556,10 +556,12 @@ function renderFlowCollapsed(
 
 	// Build header stats: countdown · ctxLabel · tok/s
 	const countdown = formatCountdownRemaining(r.deadlineAtMs);
-	const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 	const statsParts: string[] = [];
 	if (countdown) statsParts.push(countdown);
-	if (ctxLabel) statsParts.push(ctxLabel);
+	if (r.usage.contextTokens || r.maxContextTokens) {
+		const ctxLabel = formatContextLabel(r.usage.contextTokens || 0, r.maxContextTokens);
+		statsParts.push(ctxLabel);
+	}
 	const tpsValue = r.usage.smoothedTps;
 	const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 	if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
@@ -864,10 +866,12 @@ function renderActivityPanel(
 
 		// Build header stats: countdown · ctxLabel · tok/s
 		const countdown = formatCountdownRemaining(r.deadlineAtMs);
-		const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 		const statsParts: string[] = [];
 		if (countdown) statsParts.push(countdown);
-		if (ctxLabel) statsParts.push(ctxLabel);
+		if (r.usage.contextTokens || r.maxContextTokens) {
+			const ctxLabel = formatContextLabel(r.usage.contextTokens || 0, r.maxContextTokens);
+			statsParts.push(ctxLabel);
+		}
 		const tpsValue = r.usage.smoothedTps;
 		const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
 		if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
