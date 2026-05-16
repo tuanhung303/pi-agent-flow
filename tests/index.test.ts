@@ -6,12 +6,34 @@ import registerExtension, { compressToolResults, compressFlowToolResults, stripB
 import { sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
 import { runFlow, mapFlowConcurrent } from "../src/core/flow.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
+import { distillForWarp, performWarp } from "../src/flow/perform-warp.js";
+import { extractGoalFromPrompt } from "../src/flow/warp-utils.js";
 
 vi.mock("../src/core/flow.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../src/core/flow.js")>();
 	return {
 		...actual,
 		runFlow: vi.fn(),
+	};
+});
+
+vi.mock("../src/flow/perform-warp.js", () => ({
+	distillForWarp: vi.fn(),
+	performWarp: vi.fn(),
+}));
+
+vi.mock("../src/flow/warp-utils.js", () => ({
+	extractGoalFromPrompt: vi.fn(),
+	sanitizeBranchForWarp: vi.fn(() => ({ messages: [], passesApplied: [] })),
+	SYSTEM_PROMPT: "",
+	MAX_CONVERSATION_CHARS: 15000,
+}));
+
+vi.mock("../src/flow/index.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../src/flow/index.js")>();
+	return {
+		...actual,
+		getLoop: vi.fn(() => undefined),
 	};
 });
 
@@ -40,6 +62,7 @@ function createMockPi() {
 		setFlag: (name: string, value: unknown) => { flags[name] = value; },
 		emit: vi.fn(),
 		registerCommand: vi.fn(),
+		sendUserMessage: vi.fn(),
 		trigger: (event: string, ...args: any[]) =>
 			Promise.all((handlers[event] || []).map((h) => h(...args))),
 		getTool: (name: string) => tools.find((t) => t.name === name),
@@ -56,6 +79,28 @@ function makeMockCtx(cwd: string) {
 		},
 		hasUI: false,
 		ui: { confirm: vi.fn() },
+	};
+}
+
+function makeMockWarpCtx(cwd: string, opts?: { model?: any; branch?: any[]; newSession?: any }) {
+	const defaultModel = { provider: "test", model: "test-model" };
+	const model = opts && Object.prototype.hasOwnProperty.call(opts, 'model') ? opts.model : defaultModel;
+	return {
+		cwd,
+		model,
+		modelRegistry: {
+			getAvailable: () => (model ? [model] : []),
+			getApiKeyAndHeaders: vi.fn(() => Promise.resolve({ ok: true, apiKey: "test-key", headers: {} })),
+		},
+		sessionManager: {
+			getHeader: () => ({}),
+			getBranch: () => opts?.branch ?? [{ type: "message", message: { role: "user", content: "hello" } }],
+			getSessionId: () => 'test-session-id',
+			getSessionFile: () => 'session.json',
+		},
+		hasUI: false,
+		ui: { confirm: vi.fn(), notify: vi.fn(), editor: vi.fn(), custom: vi.fn() },
+		newSession: opts?.newSession ?? vi.fn(() => Promise.resolve({ cancelled: false })),
 	};
 }
 
@@ -144,7 +189,7 @@ describe("flow tool execute", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Prior flow" }] } }], timestamp: 5 } },
 			{ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "prior flow result should be inherited" }], timestamp: 6 } },
-			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation" }], timestamp: 7 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation — [build] flow completed with files modified" }], timestamp: 7 } },
 			{ type: "message", message: { role: "user", content: "Current request should be inherited", timestamp: 8 } },
 		];
 
@@ -212,12 +257,12 @@ describe("flow tool execute", () => {
 		const steeringHint = "<pi-flow-steering-hint>old routing prompt</pi-flow-steering-hint>";
 		const header = { version: 1, meta: { keep: "header formatting" }, systemPrompt: "test system prompt" };
 		const unchangedUser = { type: "message", message: { role: "user", content: "Unchanged requirement", timestamp: 1 } };
-		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }], timestamp: 2 } };
-		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer" }], timestamp: 3 } };
+		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer — see [build] output for full details." }], timestamp: 2 } };
+		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer — [build] output shows success." }], timestamp: 3 } };
 		const droppedSystem = { type: "message", message: { role: "system", content: steeringHint, timestamp: 4 } };
 		const unchangedTool = { type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
 		const unchangedUserExpected = { type: "message", message: { role: "user", content: "Unchanged requirement" } };
-		const unchangedAssistantExpected = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer" }] } };
+		const unchangedAssistantExpected = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer — see [build] output for full details." }] } };
 		const normalizedToolLine = JSON.stringify({
 			...unchangedTool,
 			message: { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }] },
@@ -258,7 +303,7 @@ describe("flow tool execute", () => {
 		expect(stats!.postBytes).toBeGreaterThan(0);
 		expect(lines).not.toContain(JSON.stringify(changedAssistant));
 		expect(lines).not.toContain(JSON.stringify(droppedSystem));
-		expect(snapshot).toContain("Visible answer");
+		expect(snapshot).toContain("Visible answer — [build] output shows success.");
 		expect(snapshot).not.toContain("SECRET_REASONING");
 		expect(snapshot).not.toMatch(/<pi-flow-steering-hint\b/);
 	});
@@ -343,7 +388,7 @@ describe("flow tool execute", () => {
 					content: [
 						{ type: "text", text: "Text before delegation." },
 						{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: { flow: [{ type: "debug", intent: "Prior debug" }] } },
-						{ type: "text", text: "Text after delegation." },
+						{ type: "text", text: "Text after delegation — [debug] completed." },
 					],
 					timestamp: 2,
 				},
@@ -371,7 +416,7 @@ describe("flow tool execute", () => {
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).toContain("Original requirement");
 		expect(snapshot).toContain("Text before delegation.");
-		expect(snapshot).toContain("Text after delegation.");
+		expect(snapshot).toContain("Text after delegation — [debug] completed.");
 		// Flow results without cache entry are compressed to a placeholder.
 		expect(snapshot).toContain("[flow:debug] completed · see prior session");
 		expect(snapshot).not.toContain("full context unavailable");
@@ -2078,5 +2123,199 @@ describe("stripBatchReadToolCalls", () => {
 		expect(result).not.toContain("br-mixed-2");
 		expect(result).not.toContain("result 1");
 		expect(result).not.toContain("result 2");
+	});
+});
+
+describe("warp tool", () => {
+	let tmpDir: string;
+	let originalCwd: string;
+
+	beforeAll(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-test-"));
+		originalCwd = process.cwd();
+		process.chdir(tmpDir);
+	});
+
+	afterAll(() => {
+		process.chdir(originalCwd);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("registers the warp tool", () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+		expect(tool).toBeDefined();
+		expect(tool.name).toBe("warp");
+		expect(tool.label).toBe("Warp");
+		expect(tool.renderCall).toBeDefined();
+		expect(tool.renderResult).toBeDefined();
+	});
+
+	it("successful warp when model and branch exist", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		vi.mocked(distillForWarp).mockResolvedValue("---\nend_goal: Refactor auth\n---\nTask: do it");
+		vi.mocked(performWarp).mockResolvedValue({ success: true });
+		vi.mocked(extractGoalFromPrompt).mockReturnValue("Refactor auth");
+
+		const result = await tool.execute(
+			"warp-call-1",
+			{ goal: "Refactor auth module" },
+			new AbortController().signal,
+			undefined,
+			makeMockWarpCtx(tmpDir),
+		);
+
+		expect(result.isError).toBe(false);
+		expect(result.content[0].text).toContain("Warped to new session");
+		expect(result.content[0].text).toContain("Refactor auth");
+		expect(distillForWarp).toHaveBeenCalledTimes(1);
+		const distillCall = vi.mocked(distillForWarp).mock.calls[0];
+		expect(distillCall[0]).toBeDefined();
+		expect(distillCall[3]).toMatchObject({ userGoalOverride: "Refactor auth module" });
+
+		expect(performWarp).toHaveBeenCalledTimes(1);
+		const performCall = vi.mocked(performWarp).mock.calls[0];
+		expect(performCall[0]).toBeDefined();
+		expect(performCall[1]).toMatchObject({ type: "warp", intent: "LLM warp", aim: "Warp to fresh session" });
+		expect(performCall[2]).toMatchObject({ reviewedPrompt: "---\nend_goal: Refactor auth\n---\nTask: do it", goalOverride: "Refactor auth module" });
+	});
+
+	it("error when no model is available", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		const ctx = makeMockWarpCtx(tmpDir, { model: undefined });
+		(ctx as any).modelRegistry = { getAvailable: () => [] };
+
+		const result = await tool.execute(
+			"warp-call-2",
+			{},
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("No model selected");
+		expect(distillForWarp).not.toHaveBeenCalled();
+		expect(performWarp).not.toHaveBeenCalled();
+	});
+
+	it("error when branch is empty", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		const ctx = makeMockWarpCtx(tmpDir, { branch: [] });
+
+		const result = await tool.execute(
+			"warp-call-3",
+			{},
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("Empty conversation");
+		expect(distillForWarp).not.toHaveBeenCalled();
+		expect(performWarp).not.toHaveBeenCalled();
+	});
+
+	it("error when distillForWarp throws", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		vi.mocked(distillForWarp).mockRejectedValue(new Error("LLM error"));
+
+		const result = await tool.execute(
+			"warp-call-4",
+			{},
+			new AbortController().signal,
+			undefined,
+			makeMockWarpCtx(tmpDir),
+		);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("LLM error");
+		expect(performWarp).not.toHaveBeenCalled();
+	});
+
+	it("error when performWarp returns success: false", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		vi.mocked(distillForWarp).mockResolvedValue("---\nend_goal: Refactor auth\n---\nTask: do it");
+		vi.mocked(performWarp).mockResolvedValue({ success: false, error: "session creation failed" });
+
+		const result = await tool.execute(
+			"warp-call-5",
+			{},
+			new AbortController().signal,
+			undefined,
+			makeMockWarpCtx(tmpDir),
+		);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("session creation failed");
+		expect(performWarp).toHaveBeenCalledTimes(1);
+	});
+
+	it("error when performWarp throws", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		vi.mocked(distillForWarp).mockResolvedValue("---\nend_goal: Refactor auth\n---\nTask: do it");
+		vi.mocked(performWarp).mockRejectedValue(new Error("network timeout"));
+
+		const result = await tool.execute(
+			"warp-call-6",
+			{},
+			new AbortController().signal,
+			undefined,
+			makeMockWarpCtx(tmpDir),
+		);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("network timeout");
+		expect(performWarp).toHaveBeenCalledTimes(1);
+	});
+
+	it("error when newSession is not available (non-interactive mode)", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		const tool = pi.getTool("warp");
+
+		const baseCtx = makeMockWarpCtx(tmpDir);
+		const ctx = { ...baseCtx, newSession: undefined };
+
+		const result = await tool.execute(
+			"warp-call-7",
+			{},
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0].text).toContain("Warp requires an interactive Pi session");
+		expect(distillForWarp).not.toHaveBeenCalled();
+		expect(performWarp).not.toHaveBeenCalled();
 	});
 });

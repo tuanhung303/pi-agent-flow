@@ -10,7 +10,7 @@ import { Type } from "@sinclair/typebox";
 import { setupNotify } from "./notify/notify.js";
 import { discoverFlows, getFlowTier } from "./core/agents.js";
 import { getInheritedCliArgs } from "./snapshot/cli-args.js";
-import { renderFlowCall, renderFlowResult } from "./tui/render.js";
+import { renderFlowCall, renderFlowResult, renderWarpCall, renderWarpResult } from "./tui/render.js";
 import { terminateAllChildGroups } from "./core/flow.js";
 import { executeFlows } from "./core/executor.js";
 import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./steering/tool-utils.js";
@@ -34,7 +34,7 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoal, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
+import { registerFlow, getGoal, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup, getLoop } from "./flow/index.js";
 import * as sessionRegistry from "./core/session-registry.js";
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
@@ -49,6 +49,8 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./config/settings-resolver.js";
+import { distillForWarp, performWarp } from "./flow/perform-warp.js";
+import { extractGoalFromPrompt } from "./flow/warp-utils.js";
 import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
 import { logWarn, logError } from "./config/log.js";
 export { logWarn, logError };
@@ -495,22 +497,97 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	// Register the warp tool (routes to /flow:warp command handler)
+	// Register the warp tool (directly executes the distillation and session creation pipeline)
 	pi.registerTool({
 		name: "warp",
 		label: "Warp",
-		description: "Distill context and hand off to a fresh session. Used by the endless loop when budget is exceeded, or when explicitly requested by the user.",
+		description: [
+			"Distill conversation context into a structured project brief and spawn a fresh session.",
+			"Use this when the conversation context is too large, when switching topics, or when you want to hand off work to a clean session with a distilled brief.",
+			"The tool validates model availability and branch existence, then directly executes the warp pipeline without user review (since you are the requester).",
+			"Only works in interactive TUI mode. Not available in non-interactive (-p) mode because warp requires session management APIs.",
+			"Parameters: { goal?: string } — optional goal override for the new session.",
+		].join("\n"),
 		parameters: Type.Object({
 			goal: Type.Optional(Type.String({ description: "Optional goal for the new session." })),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+			if (typeof ctx.newSession !== "function") {
+				return {
+					content: [{ type: "text", text: "Warp requires an interactive Pi session. Run pi without -p flag to use warp." }],
+					isError: true,
+				};
+			}
 			const goal = (params as any).goal?.trim?.() ?? "";
-			pi.sendUserMessage('/flow:warp ' + (goal || ''));
-			return {
-				content: [{ type: "text", text: "Warp command sent. Switching to new session." }],
-				isError: false,
-			};
+
+			// Validate model
+			const model = ctx.model ?? ctx.modelRegistry?.getAvailable()?.[0];
+			if (!model) {
+				return {
+					content: [{ type: "text", text: "Warp failed: No model selected. Configure a model in Pi settings first." }],
+					isError: true,
+				};
+			}
+
+			// Validate branch
+			const branch = ctx.sessionManager.getBranch();
+			if (!branch || branch.length === 0) {
+				return {
+					content: [{ type: "text", text: "Warp failed: Empty conversation — nothing to warp." }],
+					isError: true,
+				};
+			}
+
+			const activeGoal = getGoalForSession(ctx.cwd, ctx.sessionManager.getSessionId()) ?? getGoal(ctx.cwd);
+			const loop = getLoop(ctx.cwd);
+
+			let distilledPrompt: string;
+			try {
+				distilledPrompt = await distillForWarp(ctx, activeGoal, loop, {
+					signal,
+					userGoalOverride: goal || undefined,
+				});
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				logError(`[warp] distillation failed: ${message}`);
+				return {
+					content: [{ type: "text", text: `Warp failed: ${message}` }],
+					isError: true,
+				};
+			}
+
+			try {
+				const result = await performWarp(ctx, { type: "warp", intent: "LLM warp", aim: "Warp to fresh session" }, {
+					reviewedPrompt: distilledPrompt,
+					goalOverride: goal || undefined,
+				});
+
+				if (!result.success) {
+					return {
+						content: [{ type: "text", text: `Warp failed: ${result.error}` }],
+						isError: true,
+					};
+				}
+
+				const extractedGoal = extractGoalFromPrompt(distilledPrompt) || goal || "Continue the work from the warped context";
+
+				return {
+					content: [{ type: "text", text: `Warped to new session. Goal: ${extractedGoal}` }],
+					isError: false,
+				};
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				logError(`[warp] performWarp failed: ${message}`);
+				return {
+					content: [{ type: "text", text: `Warp failed: ${message}` }],
+					isError: true,
+				};
+			}
 		},
+
+		renderCall: (args, theme) => renderWarpCall(args, theme),
+		renderResult: (result, { expanded }, theme, args) =>
+			renderWarpResult(result, expanded, theme, args),
 	});
 
 	// -------------------------------------------------------------------------
