@@ -42,14 +42,14 @@ BODY (after the closing ---):
 RULES:
 1. Always start with a context_gathering phase — the new session has no context yet, so discovery comes first.
 2. Mark phases parallel:true when they have no data dependencies on each other. Use group labels (A, B, C) to cluster parallel work.
-3. Each phase should produce a concrete artifact or state — not "make progress on X".
-4. Keep the total plan to 3-5 phases. If it's more, consolidate.
+3. Each phase should produce a concrete artifact, evidence of completion before moving on to the next.
+4. Respect the given plan scaffold.
 5. Use flow types from: scout, build, audit, craft, debug, ideas.
-6. Success criteria should be testable — something an audit flow could verify.
+6. Success criteria should be the final state, i.e. integration test pass, code coverage with verified output, etc.
 7. If an active goal from the prior session exists, include it in the frontmatter context.
 8. Preserve unresolved blockers, open questions, or "not done" items from prior flow results in open_items.
 9. Flag any uncertain areas — parts of the codebase, design decisions, or assumptions that may have shifted since the conversation and need re-assessment via a scout or audit flow before committing to a plan.
-10. OUTPUT TEXT ONLY. Do not make tool calls, do not attempt to run code, do not try to read or write files. Your only job is to produce the structured warp prompt as text. The conversation history is provided for context only — do not continue it.
+10. No tool calls, all attemps that you need to discover, note it to the watch_out list or uncertain_areas list.
 11. Your entire response must be the warp prompt starting with '---' (YAML frontmatter opening). No preamble, no explanations, no tool calls.
 
 Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here is the prompt" — just output the prompt itself.
