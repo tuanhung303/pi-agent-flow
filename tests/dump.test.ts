@@ -210,11 +210,26 @@ describe("dump mechanism — end-to-end", () => {
 // ---------------------------------------------------------------------------
 
 describe("dump mechanism — error handling", () => {
+	let originalIsTTY: boolean | undefined;
+	let originalFlowDepth: string | undefined;
+
 	beforeEach(() => {
+		originalIsTTY = process.stdout.isTTY;
+		originalFlowDepth = process.env.PI_FLOW_DEPTH;
+		// @ts-ignore
+		process.stdout.isTTY = false;
+		delete process.env.PI_FLOW_DEPTH;
 		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
+		// @ts-ignore
+		process.stdout.isTTY = originalIsTTY;
+		if (originalFlowDepth !== undefined) {
+			process.env.PI_FLOW_DEPTH = originalFlowDepth;
+		} else {
+			delete process.env.PI_FLOW_DEPTH;
+		}
 		vi.restoreAllMocks();
 	});
 
