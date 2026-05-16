@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ScrambleStateManager, isGlitchComplete, buildGlitchQueue, computeGlitchFrame } from '../src/tui/scramble.js';
+import { ScrambleStateManager, isGlitchComplete, buildGlitchQueue, computeGlitchFrame } from '../src/tui/scramble/index.js';
 
 function stripAnsi(s: string): string {
 	return s.replace(/\x1b\[[0-9;]*m/g, '');

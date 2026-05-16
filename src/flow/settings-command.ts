@@ -12,7 +12,7 @@ import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner
 import { loadFlowSettings, writeFlowSetting, loadFlowModelConfigs, writeGlobalFlowMode, writeFlowModelConfig, type FlowSettings } from "../config/config.js";
 import { configureSteering } from "../steering/sliding-prompt.js";
 import { configureStrategicHint } from "../steering/tool-utils.js";
-import { scrambleManager } from "../tui/scramble.js";
+import { scrambleManager } from "../tui/scramble/index.js";
 import {
 	Container,
 	type Component,

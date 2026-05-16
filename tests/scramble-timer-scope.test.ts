@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
-import { ScrambleStateManager } from '../src/tui/scramble.js';
+import { ScrambleStateManager } from '../src/tui/scramble/index.js';
 
 const TEST_ID = 'scope-id';
 const BASE = 1_000_000;

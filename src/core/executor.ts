@@ -21,7 +21,7 @@ import { getFlowSummaryText } from "../snapshot/runner-events.js";
 import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "../config/config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "../notify/notify-state.js";
-import { setLiveText } from '../tui/scramble.js';
+import { setLiveText } from '../tui/scramble/index.js';
 import { logWarn } from '../config/log.js';
 import { markFlowCompleted } from '../flow/index.js';
 

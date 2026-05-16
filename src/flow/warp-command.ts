@@ -7,7 +7,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
-import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { getGoal, getWarpCount, recordWarp } from "./store.js";
 
 const SYSTEM_PROMPT = `You are a context transfer and execution planning assistant. Given a conversation history and the user's goal, generate a structured warp prompt that serves as a ready-to-execute project brief for a new session.

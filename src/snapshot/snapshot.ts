@@ -22,10 +22,8 @@
  * Extracted from index.ts for single-responsibility and testability.
  */
 
-import {
-	type CompressedFlowResult,
-	isFlowError,
-} from "../types.js";
+import type { CompressedFlowResult } from "../types/output.js";
+import { isFlowError } from "../types/flow.js";
 import { stripReasoningFromAssistantMessage } from "./reasoning-strip.js";
 import {
 	stripSteeringHintFromContent,

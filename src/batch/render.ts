@@ -4,7 +4,7 @@
 
 import * as os from "node:os";
 import { Text, TruncatedText } from "@mariozechner/pi-tui";
-import { scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { stripAnsi } from "../tui/render-utils.js";
 import type { BatchTheme, OpResult } from "./constants.js";
 

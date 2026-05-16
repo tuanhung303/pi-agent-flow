@@ -14,12 +14,12 @@ import { renderFlowCall, renderFlowResult } from "./tui/render.js";
 import { terminateAllChildGroups } from "./core/flow.js";
 import { executeFlows } from "./core/executor.js";
 import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./steering/tool-utils.js";
-import {
-	type SingleResult,
-	type FlowDetails,
-	type CompressedFlowResult,
-	type PiAgentFlowAPI,
-} from "./types.js";
+import type {
+	SingleResult,
+	FlowDetails,
+	PiAgentFlowAPI,
+} from "./types/flow.js";
+import type { CompressedFlowResult } from "./types/output.js";
 import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBashPollTool } from "./batch.js";
 import { createWebTool } from "./tools/web-tool.js";
 import { createAskUserTool } from "./tools/ask-user.js";
@@ -43,7 +43,7 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./config/settings-resolver.js";
-import { scrambleManager, setAnimationConfig } from "./tui/scramble.js";
+import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
 export { logWarn, logError } from "./config/log.js";
 
 // ---------------------------------------------------------------------------

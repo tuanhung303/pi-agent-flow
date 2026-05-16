@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { appendStrategicHintOnce } from "../steering/tool-utils.js";
-import { scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { stripAnsi } from "../tui/render-utils.js";
 import { logWarn } from "../config/log.js";
 

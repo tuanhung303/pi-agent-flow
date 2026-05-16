@@ -9,7 +9,7 @@ import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type, type TUnsafe } from "@sinclair/typebox";
 import { appendStrategicHintOnce } from "../steering/tool-utils.js";
 import { setPendingDecision } from "../notify/notify-state.js";
-import { scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { stripAnsi } from "../tui/render-utils.js";
 import {
 	Container,

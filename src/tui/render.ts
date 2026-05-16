@@ -9,21 +9,25 @@ import * as os from "node:os";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text, TruncatedText } from "@mariozechner/pi-tui";
 import { getFlowSummaryText } from "../snapshot/runner-events.js";
+import type {
+	SingleResult,
+	FlowDetails,
+	UsageStats,
+} from "../types/flow.js";
 import {
-	type DisplayItem,
-	type SingleResult,
-	type FlowDetails,
-	type UsageStats,
 	aggregateFlowUsage,
-	getFlowDisplayItems,
 	getFlowOutput,
-	getLastToolCall,
-	getLastAssistantText,
 	isFlowError,
 	isFlowSuccess,
-} from "../types.js";
+} from "../types/flow.js";
+import {
+	type DisplayItem,
+	getFlowDisplayItems,
+	getLastToolCall,
+	getLastAssistantText,
+} from "../types/ui.js";
 import { formatBatchOpsSummary } from "../batch/render.js";
-import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble.js";
+import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble/index.js";
 
 // ---------------------------------------------------------------------------
 // Anonymous flow-id counter — prevents scramble-state collisions when multiple

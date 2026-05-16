@@ -21,7 +21,7 @@ import {
 	normalizeFlowResult,
 } from "../types/flow.js";
 import { extractStructuredOutput, generateCommandsFromHistory } from "../snapshot/structured-output.js";
-import { setLiveText } from '../tui/scramble.js';
+import { setLiveText } from '../tui/scramble/index.js';
 import { logWarn, logError } from '../config/log.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
 import type { GoalContext } from "../flow/types.js";
