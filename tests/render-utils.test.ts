@@ -185,7 +185,7 @@ describe('formatContextLabel', () => {
   });
 
   it('handles small numbers', () => {
-    expect(formatContextLabel(500, 1000)).toBe('  500/ 1.0k');
+    expect(formatContextLabel(500, 1000)).toBe('500/1.0k');
   });
 
   it('handles large numbers', () => {

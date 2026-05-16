@@ -117,12 +117,12 @@ export function formatCountdownRemaining(deadlineAtMs?: number): string | undefi
 
 export function formatContextLabel(ctxTokens: number, maxCtxTokens?: number): string {
 	if (maxCtxTokens === undefined) {
-		return formatFixedTokens(ctxTokens);
+		return formatFixedTokens(ctxTokens).trim();
 	}
 	if (ctxTokens === 0) {
-		return `-----/${formatFixedTokens(maxCtxTokens)}`;
+		return `-----/${formatFixedTokens(maxCtxTokens).trim()}`;
 	}
-	return `${formatFixedTokens(ctxTokens)}/${formatFixedTokens(maxCtxTokens)}`;
+	return `${formatFixedTokens(ctxTokens).trim()}/${formatFixedTokens(maxCtxTokens).trim()}`;
 }
 
 /** Regex matching ANSI escape sequences. */
