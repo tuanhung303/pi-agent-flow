@@ -77,4 +77,59 @@ describe("goal complete hook terminates loop", () => {
     await registered["flow:goal"].handler("complete", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Goal marked as completed", type: "info" });
   });
+
+  it("set sends hidden message containing objective", async () => {
+    await registered["flow:goal"].handler("set refactor auth layer", makeCtx());
+    expect(notifyCalls).toContainEqual({ msg: "Goal set: refactor auth layer", type: "info" });
+    expect(mockPi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("Objective: refactor auth layer"),
+        display: false,
+      }),
+      expect.objectContaining({ triggerTurn: true })
+    );
+  });
+
+  it("set sends hidden message containing acceptance when provided", async () => {
+    await registered["flow:goal"].handler("set refactor auth layer --acceptance All tests pass", makeCtx());
+    expect(mockPi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("Acceptance: All tests pass"),
+        display: false,
+      }),
+      expect.objectContaining({ triggerTurn: true })
+    );
+  });
+
+  it("resume sends hidden message containing objective", async () => {
+    setGoal(tmpDir, "migrate to vitest", { sessionId: "session-test" });
+    await registered["flow:goal"].handler("pause", makeCtx());
+    notifyCalls.length = 0;
+    mockPi.sendMessage.mockClear();
+
+    await registered["flow:goal"].handler("resume", makeCtx());
+    expect(notifyCalls).toContainEqual({ msg: "Goal resumed", type: "info" });
+    expect(mockPi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("Objective: migrate to vitest"),
+        display: false,
+      }),
+      expect.objectContaining({ triggerTurn: true })
+    );
+  });
+
+  it("resume sends hidden message containing acceptance when provided", async () => {
+    setGoal(tmpDir, "migrate to vitest", { sessionId: "session-test", acceptance: "Zero regressions" });
+    await registered["flow:goal"].handler("pause", makeCtx());
+    mockPi.sendMessage.mockClear();
+
+    await registered["flow:goal"].handler("resume", makeCtx());
+    expect(mockPi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("Acceptance: Zero regressions"),
+        display: false,
+      }),
+      expect.objectContaining({ triggerTurn: true })
+    );
+  });
 });

@@ -70,7 +70,7 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
 
           const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
           pi.sendMessage(
-            { content: `New goal active. Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to start executing.${acceptanceLine}`, display: false },
+            { content: `New goal active. Objective: ${entry.objective}. Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to start executing.${acceptanceLine}`, display: false },
             { triggerTurn: true }
           );
           break;
@@ -119,7 +119,7 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
 
             const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
             pi.sendMessage(
-              { content: `Goal resumed. Continue execution by calling the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas).${acceptanceLine}`, display: false },
+              { content: `Goal resumed. Objective: ${entry.objective}. Continue execution by calling the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas).${acceptanceLine}`, display: false },
               { triggerTurn: true }
             );
           }
