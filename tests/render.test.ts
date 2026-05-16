@@ -538,11 +538,11 @@ describe("activity panel rendering", () => {
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
 		expect(text).toContain("aim ▸");
-		expect(text).toContain("├─ act ▸");
+		expect(text).toContain("├─ cmd ▸");
 		expect(text).toContain("msg ▸");
 	});
 
-	it("renders in-progress aim with a live countdown prefix", () => {
+	it("renders in-progress aim without countdown prefix", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-05-07T00:00:00.000Z"));
 		try {
@@ -556,7 +556,8 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			expect(text).toContain("aim ▸ 09:36 ·");
+			expect(text).toContain("aim ▸");
+			expect(text).not.toContain("aim ▸ 09:36");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -574,7 +575,7 @@ describe("activity panel rendering", () => {
 		expect(headerLine).toContain("scout    tps:");
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("▲ 46.7k");
-		expect(text).toContain("msg ▸ ▲ 46.7k · Flow timed out after 600s.");
+		expect(text).toContain("msg ▸ Flow timed out after 600s.");
 	});
 
 	it("renders multi-flow aim countdown and msg token prefixes", () => {
@@ -598,15 +599,17 @@ describe("activity panel rendering", () => {
 			expect(firstHeaderLine).not.toContain("ctx:");
 			expect(firstHeaderLine).not.toContain("▲ 46.7k");
 			// Aim prefix is static, content may be scrambled
-			expect(text).toContain("aim ▸ 00:45 ·");
+			expect(text).toContain("aim ▸");
+			expect(text).not.toContain("aim ▸ 00:45");
 			// Msg prefix is static, content may be scrambled
-			expect(text).toContain("msg ▸ ▲ 46.7k ·");
+			expect(text).toContain("msg ▸");
+			expect(text).not.toContain("msg ▸ ▲");
 		} finally {
 			vi.useRealTimers();
 		}
 	});
 
-	it("renders act line with count prefix [N]", () => {
+	it("renders cmd line and appends tool call count to aim line", () => {
 		const result = makeResult({
 			type: "scout",
 			intent: "Map the codebase",
@@ -620,7 +623,9 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("act ▸ 3 ·");
+		expect(text).toContain("cmd ▸");
+		expect(text).toContain("aim ▸");
+		expect(text).toContain("(3)");
 	});
 
 	it("renders ghost dashboard during zero state", () => {
@@ -635,8 +640,6 @@ describe("activity panel rendering", () => {
 		// Header is scrambled on first render for in-progress flows
 		expect(headerLine.length).toBeGreaterThan(0);
 		expect(text).toContain("aim ▸");
-		// Glitch mode shows plain text for unstarted chars at frame 0
-		expect(text).toContain("▲     0");
 		// Header stats are scrambled on first render, don't assert exact tps text
 		expect(text).not.toContain("ctx:");
 		expect(text).toContain("msg ▸");
@@ -710,7 +713,7 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 · "));
+		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ "));
 		expect(scoutBlock).toContain("msg ▸");
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
@@ -728,7 +731,7 @@ describe("activity panel rendering", () => {
 				streamingText: longStreaming,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
-			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ▲     0 · "));
+			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 
@@ -771,7 +774,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("├─ cmd ▸"));
 		expect(exeLine).toBeDefined();
 		// The act line should exist and be non-empty
 		expect(exeLine!.length).toBeGreaterThan(5);
@@ -788,7 +791,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("├─ cmd ▸"));
 		expect(exeLine).toBeDefined();
 		// Should not contain newlines in the act line itself
 		expect(exeLine).not.toContain("\n");
@@ -803,7 +806,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("├─ act ▸ 0 · [n/a]");
+		expect(text).toContain("├─ cmd ▸ [n/a]");
 		expect(text).toContain("└─ msg ▸");
 	});
 
@@ -822,7 +825,7 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
+			const exeLine = text.split("\n").find((l: string) => l.includes("├─ cmd ▸"));
 			expect(exeLine).toBeDefined();
 			// The act line should exist and be non-empty
 			expect(exeLine!.length).toBeGreaterThan(5);
@@ -866,7 +869,7 @@ describe("activity panel rendering", () => {
 				exitCode: -1,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
-			const expectedBudget = getTruncationBudget(visibleLength("└─ msg ▸ ▲     0 ·"));
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg ▸ "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 

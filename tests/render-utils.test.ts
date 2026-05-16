@@ -6,6 +6,8 @@ import {
   tailText,
   getTruncationBudget,
   lowerFirstWord,
+  shortenModel,
+  formatElapsed,
 } from '../src/tui/render-utils.js';
 
 describe('visibleLength', () => {
@@ -132,5 +134,34 @@ describe('lowerFirstWord', () => {
 
   it('handles single word', () => {
     expect(lowerFirstWord('HELLO')).toBe('hello');
+  });
+});
+
+describe('shortenModel', () => {
+  it('returns short label unchanged', () => {
+    expect(shortenModel('gpt-4o')).toBe('gpt-4o');
+  });
+
+  it('truncates long label to last 10 chars with ellipsis', () => {
+    expect(shortenModel('github-copilot/gpt-5.5', 10)).toBe('...ot/gpt-5.5');
+  });
+
+  it('uses default maxTail of 10', () => {
+    expect(shortenModel('anthropic/claude-3-5-sonnet')).toBe('...3-5-sonnet');
+  });
+});
+
+describe('formatElapsed', () => {
+  it('returns undefined when startedAtMs is missing', () => {
+    expect(formatElapsed(undefined)).toBeUndefined();
+  });
+
+  it('formats elapsed time as MM:SS', () => {
+    const result = formatElapsed(Date.now() - 90_000);
+    expect(['01:30', '01:31']).toContain(result);
+  });
+
+  it('returns undefined for future timestamps', () => {
+    expect(formatElapsed(Date.now() + 1000)).toBeUndefined();
   });
 });

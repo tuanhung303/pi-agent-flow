@@ -49,7 +49,7 @@ function getLiveTextWithFallback(id: string): string | undefined {
 	const fallbackId = id.includes("#") ? "collapsed" + id.slice(id.indexOf("#")) : "collapsed";
 	return getLiveText(fallbackId);
 }
-import { formatCompactStats, formatCompactTokenPair, formatCountdown, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, italic, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, shortenModel, formatElapsed } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -158,12 +158,6 @@ function sectionHeader(label: string): string {
 	const right = "─".repeat(Math.ceil(side));
 	return `${left} ${label} ${right}`;
 }
-
-function getLiveCountdown(r: SingleResult): string | undefined {
-	if (r.exitCode !== -1 || typeof r.deadlineAtMs !== "number") return undefined;
-	return formatCountdown(r.deadlineAtMs - Date.now());
-}
-
 
 
 // ---------------------------------------------------------------------------
@@ -556,7 +550,8 @@ function renderFlowCollapsed(
 	const container = new Container();
 	const maxWidth = process.stdout.columns ?? 80;
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
-	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
+	const rawModelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
+	const modelLabel = shortenModel(rawModelLabel);
 	const headerPrefixLen = visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 	const stats = formatCompactStats(r.usage, r.model, Math.max(maxWidth - headerPrefixLen, 20), { skipTokens: true, skipContext: true, hideModel: true });
 
@@ -571,6 +566,8 @@ function renderFlowCollapsed(
 			displayStats = stats.replace(tpsMatch[1], scrambledTps);
 		}
 	}
+	const elapsed = formatElapsed(r.startedAtMs);
+	if (elapsed) displayStats = `${displayStats} · ${elapsed}`;
 	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	// Scramble header on first render; show full styled header when complete
@@ -586,25 +583,21 @@ function renderFlowCollapsed(
 
 	// aim: line — glitch on text change
 	if (r.aim) {
-		const countdown = getLiveCountdown(r);
 		const aimTree = "├─";
-		const aimLabel = countdown
-			? ` aim ▸ ${countdown} · `
-			: ` aim ▸ `;
+		const aimLabel = ` aim ▸ `;
 		const aimPrefix = `${aimTree}${aimLabel}`;
 		const budget = getTruncationBudget(visibleLength(aimPrefix));
-		const displayAim = truncateChars(lowerFirstWord(r.aim), budget);
+		const suffix = r.usage.toolCalls > 0 ? ` (${r.usage.toolCalls})` : "";
+		const displayAim = truncateChars(lowerFirstWord(r.aim), budget - visibleLength(suffix)) + suffix;
 		container.addChild(new DynamicScrambleText(
 			`${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", aimLabel, theme, config)}${applyRole("aimContent", displayAim, theme, config)}`,
 			() => {
 				const now = Date.now();
-				const freshCountdown = getLiveCountdown(r);
-				const freshAimLabel = freshCountdown
-					? ` aim ▸ ${freshCountdown} · `
-					: ` aim ▸ `;
+				const freshAimLabel = ` aim ▸ `;
 				const freshAimPrefix = `${aimTree}${freshAimLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(freshAimPrefix));
-				const freshText = truncateChars(lowerFirstWord(r.aim), freshBudget);
+				const suffix = r.usage.toolCalls > 0 ? ` (${r.usage.toolCalls})` : "";
+				const freshText = truncateChars(lowerFirstWord(r.aim), freshBudget - visibleLength(suffix)) + suffix;
 				const result = scrambleManager.updateAim(id, freshText, now, isComplete, true);
 				return `${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", freshAimLabel, theme, config)}${applyRole("aimContent", result.content, theme, config)}`;
 			},
@@ -616,7 +609,7 @@ function renderFlowCollapsed(
 	const lastTool = getLastToolCall(r.messages);
 	const actStr = lastTool ? formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme)) : "[n/a]";
 	const actTree = "├─";
-	const actLabel = ` act ▸ ${r.usage.toolCalls} · `;
+	const actLabel = ` cmd ▸ `;
 	const prefixStub = `${actTree}${actLabel}`;
 	const budget = getTruncationBudget(visibleLength(prefixStub));
 	const actFullText = stripAnsi(lowerFirstWord(actStr));
@@ -627,12 +620,7 @@ function renderFlowCollapsed(
 			const now = Date.now();
 			const displayAct = truncateChars(actFullText, budget);
 			const actContent = scrambleManager.updateAct(id, displayAct, now, isComplete, true).content;
-			let actKpi = String(r.usage.toolCalls);
-			const scrambledActKpi = scrambleManager.updateActKpi(id, actKpi, now, isComplete, true);
-			if (scrambledActKpi !== actKpi) {
-				actKpi = scrambledActKpi;
-			}
-			const actLabel = ` act ▸ ${actKpi} · `;
+			const actLabel = ` cmd ▸ `;
 			const actPrefix = `${actTree}${actLabel}`;
 			return `${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", actContent, theme, config)}`;
 		},
@@ -640,12 +628,7 @@ function renderFlowCollapsed(
 	));
 
 	// msg: line (last assistant text or streaming)
-	let msgKpi = formatCompactTokenPair(r.usage);
-	const scrambledMsgKpi = scrambleManager.updateMsgKpi(id, msgKpi, now, isComplete, false);
-	if (scrambledMsgKpi !== msgKpi) {
-		msgKpi = scrambledMsgKpi;
-	}
-	const msgPrefixStub = `└─ msg ▸ ${msgKpi} `;
+	const msgPrefixStub = `└─ msg ▸ `;
 	const msgBudget = getTruncationBudget(visibleLength(msgPrefixStub));
 
 	let rawMsg: string;
@@ -672,18 +655,13 @@ function renderFlowCollapsed(
 		? tailText(rawMsg, msgBudget)
 		: truncateChars(rawMsg, msgBudget);
 	const msgTree = "└─";
-	const msgLabel = ` msg ▸ ${msgKpi} `;
+	const msgLabel = ` msg ▸ `;
 	const initialMsgPrefix = `${msgTree}${msgLabel}`;
 	container.addChild(new DynamicScrambleText(
 		`${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", initialMsgContent, theme, config)}`,
 		() => {
 			const now = Date.now();
-			let msgKpi = formatCompactTokenPair(r.usage);
-			const scrambledMsgKpi = scrambleManager.updateMsgKpi(id, msgKpi, now, isComplete, false);
-			if (scrambledMsgKpi !== msgKpi) {
-				msgKpi = scrambledMsgKpi;
-			}
-			const msgLabel = ` msg ▸ ${msgKpi} `;
+			const msgLabel = ` msg ▸ `;
 			const msgPrefix = `${msgTree}${msgLabel}`;
 			const freshRawMsg = (r.exitCode === -1 ? getLiveTextWithFallback(id) : undefined) ?? rawMsg;
 			const needsTail = r.exitCode === -1 || streamingText != null;
@@ -877,7 +855,8 @@ function renderActivityPanel(
 		const isLast = i === results.length - 1;
 		const flowId = `${idPrefix}#${i}`;
 		const typeName = formatCollapsedFlowHeaderTypeName(r.type);
-		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
+		const rawModelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
+		const modelLabel = shortenModel(rawModelLabel);
 		const headerPrefix = isLast ? "└─" : "├─";
 		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 		const stats = formatCompactStats(r.usage, r.model, Math.max(maxWidth - headerPrefixLen, 20), { skipTokens: true, skipContext: true, hideModel: true });
@@ -892,6 +871,8 @@ function renderActivityPanel(
 				displayStats = stats.replace(tpsMatch[1], scrambledTps);
 			}
 		}
+		const elapsed = formatElapsed(r.startedAtMs);
+		if (elapsed) displayStats = `${displayStats} · ${elapsed}`;
 
 		const error = isFlowError(r);
 
@@ -915,25 +896,21 @@ function renderActivityPanel(
 
 		// aim: line — glitch on text change
 		if (r.aim) {
-			const countdown = getLiveCountdown(r);
 			const aimTree = indent + "├─";
-			const aimLabel = countdown
-				? ` aim ▸ ${countdown} · `
-				: ` aim ▸ `;
+			const aimLabel = ` aim ▸ `;
 			const aimPrefix = `${aimTree}${aimLabel}`;
 			const budget = getTruncationBudget(visibleLength(aimPrefix));
-			const displayAim = truncateChars(lowerFirstWord(r.aim), budget);
+			const suffix = r.usage.toolCalls > 0 ? ` (${r.usage.toolCalls})` : "";
+			const displayAim = truncateChars(lowerFirstWord(r.aim), budget - visibleLength(suffix)) + suffix;
 			container.addChild(new DynamicScrambleText(
 				`${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", aimLabel, theme, config)}${applyRole("aimContent", displayAim, theme, config)}`,
 				() => {
 					const now = Date.now();
-					const freshCountdown = getLiveCountdown(r);
-					const freshAimLabel = freshCountdown
-						? ` aim ▸ ${freshCountdown} · `
-						: ` aim ▸ `;
+					const freshAimLabel = ` aim ▸ `;
 					const freshAimPrefix = `${aimTree}${freshAimLabel}`;
 					const freshBudget = getTruncationBudget(visibleLength(freshAimPrefix));
-					const freshText = truncateChars(lowerFirstWord(r.aim), freshBudget);
+					const suffix = r.usage.toolCalls > 0 ? ` (${r.usage.toolCalls})` : "";
+					const freshText = truncateChars(lowerFirstWord(r.aim), freshBudget - visibleLength(suffix)) + suffix;
 					const result = scrambleManager.updateAim(flowId, freshText, now, flowComplete, true);
 					return `${applyRole("treeChars", aimTree, theme, config)}${applyRole("prefixLabel", freshAimLabel, theme, config)}${applyRole("aimContent", result.content, theme, config)}`;
 				},
@@ -945,7 +922,7 @@ function renderActivityPanel(
 		const lastTool = getLastToolCall(r.messages);
 		const actStr = lastTool ? formatFlowToolCall(lastTool.name, lastTool.args, theme.fg.bind(theme)) : "[n/a]";
 		const actTree = `${indent}├─`;
-		const actLabel = ` act ▸ ${r.usage.toolCalls} · `;
+		const actLabel = ` cmd ▸ `;
 		const prefixStub = `${actTree}${actLabel}`;
 		const budget = getTruncationBudget(visibleLength(prefixStub));
 		const actFullText = stripAnsi(lowerFirstWord(actStr));
@@ -954,12 +931,7 @@ function renderActivityPanel(
 			`${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", initialActContent, theme, config)}`,
 			() => {
 				const now = Date.now();
-				let actKpi = String(r.usage.toolCalls);
-				const scrambledActKpi = scrambleManager.updateActKpi(flowId, actKpi, now, flowComplete, false);
-				if (scrambledActKpi !== actKpi) {
-					actKpi = scrambledActKpi;
-				}
-				const actLabel = ` act ▸ ${actKpi} · `;
+				const actLabel = ` cmd ▸ `;
 				const actPrefix = `${actTree}${actLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(actPrefix));
 				const displayAct = truncateChars(actFullText, freshBudget);
@@ -970,13 +942,8 @@ function renderActivityPanel(
 		));
 
 		// msg: line (live streaming text or last assistant text)
-		let msgKpi = formatCompactTokenPair(r.usage);
-		const scrambledMsgKpi = scrambleManager.updateMsgKpi(flowId, msgKpi, now, flowComplete, false);
-		if (scrambledMsgKpi !== msgKpi) {
-			msgKpi = scrambledMsgKpi;
-		}
 		const msgTree = `${indent}└─`;
-		const msgLabel = ` msg ▸ ${msgKpi} `;
+		const msgLabel = ` msg ▸ `;
 		const msgPrefixStub = `${msgTree}${msgLabel}`;
 		const msgBudget = getTruncationBudget(visibleLength(msgPrefixStub));
 		const liveText = r.exitCode === -1 ? r.streamingText : undefined;
@@ -1002,12 +969,7 @@ function renderActivityPanel(
 			`${applyRole("treeChars", msgTree, theme, config)}${applyRole("prefixLabel", msgLabel, theme, config)}${applyRole(useError ? "msgError" : "msgContent", initialDisplayMsg, theme, config)}`,
 			() => {
 				const now = Date.now();
-				let msgKpi = formatCompactTokenPair(r.usage);
-				const scrambledMsgKpi = scrambleManager.updateMsgKpi(flowId, msgKpi, now, flowComplete, false);
-				if (scrambledMsgKpi !== msgKpi) {
-					msgKpi = scrambledMsgKpi;
-				}
-				const msgLabel = ` msg ▸ ${msgKpi} `;
+				const msgLabel = ` msg ▸ `;
 				const msgPrefix = `${msgTree}${msgLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(msgPrefix));
 				const freshRawMsg = flowComplete ? rawMsg : (getLiveTextWithFallback(flowId) ?? rawMsg);

@@ -100,6 +100,18 @@ export function formatCountdown(ms: number): string {
 	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+export function shortenModel(label: string, maxTail: number = 10): string {
+	if (label.length <= maxTail) return label;
+	return "..." + label.slice(-maxTail);
+}
+
+export function formatElapsed(startedAtMs?: number): string | undefined {
+	if (typeof startedAtMs !== "number") return undefined;
+	const elapsed = Date.now() - startedAtMs;
+	if (elapsed < 0) return undefined;
+	return formatCountdown(elapsed);
+}
+
 /** Regex matching ANSI escape sequences. */
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
