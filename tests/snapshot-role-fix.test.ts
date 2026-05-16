@@ -5,7 +5,7 @@ import {
 	sanitizeForkSnapshot,
 } from "../src/snapshot/snapshot.js";
 import { STEERING_HINT } from "../src/steering/sliding-prompt.js";
-import type { CompressedFlowResult } from "../src/types.js";
+import type { CompressedFlowResult } from "../src/types/output.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -15,7 +15,7 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
-import { formatBatchOpsSummary } from "../batch/render.js";
+import { formatBatchOpsSummary } from "../batch/summary.js";
 
 // WeakMap-based side tables to avoid polluting caller objects and survive frozen/sealed objects.
 const seenSignaturesMap = new WeakMap<object, Set<string>>();

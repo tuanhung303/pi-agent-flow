@@ -14,7 +14,7 @@ import {
 } from "../src/tui/render-utils.js";
 import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/tui/render.js";
 import { scrambleManager, DynamicScrambleText } from "../src/tui/scramble/index.js";
-import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types.js";
+import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types/flow.js";
 import type { Text, TruncatedText } from "@mariozechner/pi-tui";
 import { Container } from "@mariozechner/pi-tui";
 

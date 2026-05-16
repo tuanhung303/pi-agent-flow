@@ -20,7 +20,12 @@ import type {
 	PiAgentFlowAPI,
 } from "./types/flow.js";
 import type { CompressedFlowResult } from "./types/output.js";
-import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBashPollTool } from "./batch.js";
+import {
+	createBatchTool,
+	createBatchReadTool,
+	BashProcessTracker,
+	createBatchBashPollTool,
+} from "./batch/index.js";
 import { createWebTool } from "./tools/web-tool.js";
 import { createAskUserTool } from "./tools/ask-user.js";
 import {

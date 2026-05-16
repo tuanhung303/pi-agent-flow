@@ -26,7 +26,7 @@ import {
 	getLastToolCall,
 	getLastAssistantText,
 } from "../types/ui.js";
-import { formatBatchOpsSummary } from "../batch/render.js";
+import { formatBatchOpsSummary } from "../batch/summary.js";
 import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble/index.js";
 
 // ---------------------------------------------------------------------------
