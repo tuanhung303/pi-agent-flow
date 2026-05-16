@@ -518,7 +518,7 @@ class AskComponent extends Container {
 		this.onDone = onDone;
 
 		const settings = loadFlowSettings(process.cwd());
-		this.timerEnabled = settings.askUser?.enabled ?? false;
+		this.timerEnabled = settings.askUser?.enabled ?? true;
 		this.timerSeconds = settings.askUser?.timeout ?? 300;
 		this.timerInterval = undefined;
 		this.timerStartMs = Date.now();
