@@ -16,6 +16,6 @@ The artifacts in this directory were collected across multiple pipeline versions
 Dumps produced by the current code include:
 - HTML comment header with `Passes:`, `Flow:`, `Tier:`, `Pipeline:`, `Generated:`
 - `.txt` twin file alongside every `.md` dump
-- Compression stats block with `passesApplied` (the `pipelineVersion` is present in the HTML header, not the JSONL entry)
+- Compression stats block with `passesApplied`
 
 When comparing or analyzing artifacts, always check whether the file matches the current format before treating it as a ground-truth reference.

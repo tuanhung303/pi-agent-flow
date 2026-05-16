@@ -158,7 +158,7 @@ function parseFlowFile(filePath: string, source: "user" | "project" | "bundled")
 	if (typeof frontmatter.tools === "string") {
 		const parsedTools = frontmatter.tools
 			.split(",")
-			.map((t) => t.trim())
+			.flatMap((t) => t.trim().split(/\s+/))
 			.filter(Boolean);
 		if (parsedTools.length > 0) tools = parsedTools;
 	} else if (Array.isArray(frontmatter.tools)) {

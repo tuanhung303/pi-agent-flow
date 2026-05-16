@@ -146,46 +146,6 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string | un
 }
 
 // ---------------------------------------------------------------------------
-// batch_read result compression
-// ---------------------------------------------------------------------------
-
-/**
- * Extract file paths from a batch_read tool call's arguments.
- * Handles both { o: [...] } and bare array argument formats.
- */
-function extractBatchReadPaths(args: unknown): string[] {
-	if (!args || typeof args !== "object") return [];
-
-	let ops: unknown[];
-	if (Array.isArray(args)) {
-		ops = args;
-	} else if (Array.isArray((args as Record<string, unknown>).o)) {
-		ops = (args as Record<string, unknown>).o as unknown[];
-	} else {
-		return [];
-	}
-
-	const paths: string[] = [];
-	for (const op of ops) {
-		if (!op || typeof op !== "object") continue;
-		const p = (op as Record<string, unknown>).p;
-		if (typeof p === "string" && p) paths.push(p);
-	}
-	return paths;
-}
-
-/**
- * Render a compressed batch_read result as compact metadata for child context.
- * Format: [batch_read] N ops → paths: file1.ts, file2.ts, …
- */
-function renderCompressedBatchReadResult(paths: string[]): string {
-	const MAX_PATHS_DISPLAY = 10;
-	const display = paths.slice(0, MAX_PATHS_DISPLAY);
-	const suffix = paths.length > MAX_PATHS_DISPLAY ? `, … +${paths.length - MAX_PATHS_DISPLAY} more` : "";
-	return `[batch_read] ${paths.length} ops → paths: ${display.join(", ")}${suffix}`;
-}
-
-// ---------------------------------------------------------------------------
 // Additional tool result compressors
 // ---------------------------------------------------------------------------
 
@@ -483,13 +443,6 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					rendered = renderResults.filter((r): r is string => r !== undefined).join("\n\n");
 				}
 			}
-		}
-
-		// Note: batch_read tool results are now compressed in stripBatchReadToolCalls
-		// before compressToolResults runs, so this branch is no longer needed.
-		// Kept as a no-op safety net for any edge cases.
-		else if (toolName === "batch_read") {
-			rendered = undefined; // handled upstream
 		}
 
 		// --- Compress batch tool results (selective: keep bash, truncate reads) ---
