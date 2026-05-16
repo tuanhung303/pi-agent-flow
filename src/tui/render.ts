@@ -551,7 +551,7 @@ function renderFlowCollapsed(
 	const maxWidth = process.stdout.columns ?? 80;
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 	const modelLabel = formatModelLabel(r.model);
-	const headerPrefixLen = visibleLength(typeName) + visibleLength(modelLabel ? `     ${modelLabel} · ` : "     ");
+	const headerPrefixLen = visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 
 	const isComplete = r.exitCode !== -1;
 
@@ -572,10 +572,10 @@ function renderFlowCollapsed(
 			displayStats = displayStats.replace(`${tpsDisplay} tok/s`, `${scrambledTps} tok/s`);
 		}
 	}
-	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `     ${modelLabel} · ` : "     ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
+	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	// Scramble header on first render; show full styled header when complete
-	const plainHeader = typeName + (modelLabel ? `     ${modelLabel} · ` : "     ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
+	const plainHeader = typeName + (modelLabel ? `    ${modelLabel} · ` : "    ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
 	container.addChild(new DynamicScrambleText(
 		header,
 		() => {
@@ -859,7 +859,7 @@ function renderActivityPanel(
 		const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 		const modelLabel = formatModelLabel(r.model);
 		const headerPrefix = isLast ? "└─" : "├─";
-		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `     ${modelLabel} · ` : "     ");
+		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 
 		// Build header stats: elapsed · tok/s
 		const elapsed = formatElapsed(r.startedAtMs);
@@ -884,11 +884,11 @@ function renderActivityPanel(
 		const error = isFlowError(r);
 
 		// Header line
-		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `     ${modelLabel} · ` : "     ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
+		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
-		const plainHeader = headerPrefix + " " + typeName + (modelLabel ? `     ${modelLabel} · ` : "     ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
+		const plainHeader = headerPrefix + " " + typeName + (modelLabel ? `    ${modelLabel} · ` : "    ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
 		container.addChild(new DynamicScrambleText(
 			headerLine,
 			() => {
