@@ -27,7 +27,7 @@ function atomicWriteJson(targetPath: string, data: unknown): void {
   fs.renameSync(tmpPath, targetPath);
 }
 
-function readState(cwd: string): GoalState {
+export function readState(cwd: string): GoalState {
   const filePath = getStorePath(cwd);
   if (!fs.existsSync(filePath)) {
     return { history: [] };
@@ -45,7 +45,6 @@ function readState(cwd: string): GoalState {
 }
 
 const MAX_HISTORY_ENTRIES = 5;
-const MAX_WARP_ENTRIES = 20;
 const MAX_INTENT_LENGTH = 200;
 
 function pruneHistory(state: GoalState): void {
@@ -58,7 +57,7 @@ function truncateIntent(intent: string): string {
   return intent.length > MAX_INTENT_LENGTH ? intent.slice(0, MAX_INTENT_LENGTH) : intent;
 }
 
-function writeState(cwd: string, state: GoalState): void {
+export function writeState(cwd: string, state: GoalState): void {
   atomicWriteJson(getStorePath(cwd), state);
 }
 
@@ -94,7 +93,8 @@ export function setGoal(
     sessionId: opts?.sessionId,
   };
   if (state.current) {
-    state.current.status = "abandoned";
+    const loopActive = state.loop?.status === "active";
+    state.current.status = loopActive ? "warped" : "abandoned";
     state.current.updatedAt = now;
     state.history.push(state.current);
     pruneHistory(state);
@@ -107,7 +107,8 @@ export function setGoal(
 export function clearGoal(cwd: string): void {
   const state = readState(cwd);
   if (state.current) {
-    state.current.status = "abandoned";
+    const loopActive = state.loop?.status === "active";
+    state.current.status = loopActive ? "warped" : "abandoned";
     state.current.updatedAt = new Date().toISOString();
     state.history.push(state.current);
     pruneHistory(state);
@@ -153,6 +154,9 @@ export function recordFlowCompletion(
     completedAt: new Date().toISOString(),
   });
   state.current.updatedAt = new Date().toISOString();
+  if (state.loop?.status === "active") {
+    state.loop.totalFlowsAcrossSessions += 1;
+  }
   writeState(cwd, state);
   return state.current;
 }
@@ -162,9 +166,14 @@ export function addTokens(cwd: string, tokens: number): GoalEntry | undefined {
   if (!state.current) return undefined;
   state.current.totalTokens += tokens;
   state.current.updatedAt = new Date().toISOString();
+  if (state.loop?.status === "active") {
+    state.loop.totalTokensAcrossSessions += tokens;
+  }
   writeState(cwd, state);
   return state.current;
 }
+
+const MAX_WARP_ENTRIES = 20;
 
 export function getWarpCount(cwd: string): number {
   const state = readState(cwd);
@@ -180,3 +189,5 @@ export function recordWarp(cwd: string, warp: import("./types.js").WarpEntry): v
   }
   writeState(cwd, state);
 }
+
+

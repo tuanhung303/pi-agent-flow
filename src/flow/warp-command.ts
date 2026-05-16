@@ -8,7 +8,8 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
-import { getGoalForSession, getWarpCount, recordWarp } from "./store.js";
+import { getGoalForSession } from "./store.js";
+import { getLoop, recordSessionWarp } from "./loop.js";
 import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
 import {
   stripSteeringHintFromContent,
@@ -414,9 +415,10 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
       const warpedPrompt = (reviewedPrompt ?? distilledPrompt).trim();
 
       // Warn on deep warp chains
-      const warpCount = getWarpCount(cwd);
-      if (warpCount >= 3) {
-        ctx.ui.notify?.(`Warning: Deep warp chain (depth ${warpCount + 1}). Proceed with caution.`, "warning");
+      const loop = getLoop(cwd);
+      const sessionCount = loop?.sessionCount ?? 0;
+      if (sessionCount >= 3) {
+        ctx.ui.notify?.(`Warning: Deep warp chain (depth ${sessionCount + 1}). Proceed with caution.`, "warning");
       }
 
       // Spawn new session
@@ -426,14 +428,10 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
         withSession: async (newCtx) => {
           const effectiveGoal = args.trim() ? goal : extractGoalFromPrompt(warpedPrompt);
 
-          // Log warp (cwd captured in closure, no ctx needed)
-          recordWarp(cwd, {
-            id: `warp-${Date.now()}`,
-            parentSession: currentSessionFile,
-            goal,
-            createdAt: new Date().toISOString(),
-            depth: warpCount + 1,
-          });
+          // Record session warp if loop is active
+          if (loop?.status === "active") {
+            recordSessionWarp(cwd);
+          }
 
           newCtx.ui.notify?.("Warped to new session.", "info");
 

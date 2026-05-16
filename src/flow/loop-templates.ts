@@ -1,0 +1,43 @@
+/**
+ * Runtime template strings for endless loop prompts.
+ */
+
+export const autoWarpTriggerTemplate = `<flow-loop-warp>
+The active goal has exceeded its budget, but the endless loop is active. Call /flow:warp to continue in a new session.
+
+Objective: {{objective}}
+{{acceptanceClause}}
+Loop progress: {{sessionCount}} sessions, {{totalFlowsAcrossSessions}} flows, {{totalTokensAcrossSessions}}/{{maxTokens}} tokens.
+
+The new session should inherit this context and resume work toward the objective.
+</flow-loop-warp>`;
+
+export const loopContinuationPromptTemplate = `<flow-continuation>
+Continue execution toward the active goal. This is an endless loop session.
+
+Objective: {{objective}}
+{{acceptanceClause}}
+Progress: {{flowCount}}{{maxFlowsClause}} flows in this session, {{tokenInfo}} tokens.
+Loop overall: {{sessionCount}} sessions, {{totalTokensAcrossSessions}} tokens total.
+
+Latest user message: {{userMessage}}
+
+Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Only the user can end a goal. Keep finding improvements that advance the objective.
+</flow-continuation>`;
+
+export const loopWakeupTemplate = `<flow-wakeup>
+The user has been idle. Review the active goal and find safe, conservative improvements that advance it. This is an endless loop session.
+
+Objective: {{objective}}
+{{acceptanceClause}}
+Progress: {{flowCount}}/{{maxFlows}} flows in this session, {{totalTokens}} tokens.
+Loop overall: {{sessionCount}} sessions, {{totalTokensAcrossSessions}} tokens total.
+
+Guidance:
+- Focus on safe, incremental improvements — do not refactor large areas or make risky changes.
+- Prefer verification, testing, and documentation over new features.
+- If you find potential issues, investigate with scout or audit before making changes.
+- You cannot end this goal. Only the user can end a goal.
+
+Call the flow tool with the appropriate flow type to continue.
+</flow-wakeup>`;
