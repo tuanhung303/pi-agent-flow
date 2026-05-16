@@ -24,6 +24,7 @@ import { setFlowComplete } from "../notify/notify-state.js";
 import { setLiveText } from '../tui/scramble/index.js';
 import { logWarn } from '../config/log.js';
 import { markFlowCompleted } from '../flow/index.js';
+import type { GoalContext } from '../flow/types.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +84,8 @@ export interface FlowExecutorDeps {
 	confirmProjectFlows?: boolean;
 	/** Optional callback invoked after all flows complete to record goal usage. */
 	goalContinuationCallback?: (results: SingleResult[]) => Promise<void>;
+	/** Optional active goal context to inject into child flow prompts. */
+	goalContext?: GoalContext;
 }
 
 export interface ExecuteFlowParams {
@@ -215,6 +218,7 @@ export async function executeFlows(
 		getFlag, tierOverrideResolver, fallbackModel, forkSessionSnapshotJsonl,
 		flowResultCache, projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
 		confirmProjectFlows,
+		goalContext,
 	} = deps;
 
 	const requested = new Set<string>(params.map((f) => f.type.toLowerCase()));
@@ -385,6 +389,7 @@ export async function executeFlows(
 				structuredOutput,
 				sessionMode,
 				model: candidateModel,
+				goalContext: deps.goalContext,
 				signal,
 				onUpdate: (partial) => {
 					if (partial.details?.results[0]) {

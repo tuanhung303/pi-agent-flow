@@ -27,3 +27,15 @@ Guidance:
 
 Call the flow tool with the appropriate flow type to continue.
 </flow-wakeup>`;
+
+export const continuationPromptTemplate = `<flow-continuation>
+Continue execution toward the active goal.
+
+Objective: {{objective}}
+{{acceptanceClause}}
+Progress: {{flowCount}}{{maxFlowsClause}} flows, {{tokenInfo}} tokens.
+
+Latest user message: {{userMessage}}
+
+Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Only the user can end a goal. Keep finding improvements that advance the objective.
+</flow-continuation>`;

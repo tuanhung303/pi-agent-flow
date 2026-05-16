@@ -419,6 +419,14 @@ export default function (pi: ExtensionAPI) {
 					return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
 				};
 
+				const activeGoal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+				const goalContext = activeGoal ? {
+					objective: activeGoal.objective,
+					acceptance: activeGoal.acceptance,
+					flowCount: activeGoal.completedFlows.length,
+					maxFlows: activeGoal.maxFlows,
+				} : undefined;
+
 				const result = await executeFlows(
 					{
 						flows,
@@ -447,6 +455,7 @@ export default function (pi: ExtensionAPI) {
 						uiConfirm: (title, body) => ctx.ui.confirm(title, body),
 						onFlowMetrics: (metrics) => { if (typeof pi.emit === "function") pi.emit("pi-agent-flow:complete", metrics); },
 						confirmProjectFlows: params.confirmProjectFlows,
+						goalContext,
 						goalContinuationCallback: async (results) => {
 							const goal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
 							if (!goal) return;

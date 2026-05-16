@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
 import { getGoal, addTokens, updateGoalStatus } from "./store.js";
-import { budgetLimitTemplate, idleWakeupTemplate } from "./template-strings.js";
+import { budgetLimitTemplate, idleWakeupTemplate, continuationPromptTemplate } from "./template-strings.js";
 import { logWarn } from '../config/log.js';
 import * as sessionRegistry from '../core/session-registry.js';
 
@@ -152,7 +152,13 @@ export function setupContinuation(pi: ExtensionAPI): void {
     const tokenInfo = `${goal.totalTokens}${goal.maxTokens !== undefined ? `/${goal.maxTokens}` : ''}`;
     const acceptanceClause = goal.acceptance ? `\nAcceptance: ${goal.acceptance}` : '';
 
-    const continuationPrompt = `<flow-continuation>\nContinue execution toward the active goal.\n\nObjective: ${goal.objective}${acceptanceClause}\nProgress: ${flowCount}${maxFlowsClause} flows, ${tokenInfo} tokens.\n\nCall the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Only the user can end a goal. Keep finding improvements that advance the objective.\n</flow-continuation>`;
+    const continuationPrompt = continuationPromptTemplate
+      .replace('{{objective}}', goal.objective)
+      .replace('{{acceptanceClause}}', acceptanceClause)
+      .replace('{{flowCount}}', String(flowCount))
+      .replace('{{maxFlowsClause}}', maxFlowsClause)
+      .replace('{{tokenInfo}}', tokenInfo)
+      .replace('{{userMessage}}', messageText);
 
     pi.sendMessage({ content: continuationPrompt, display: false }, { triggerTurn: true });
   });
