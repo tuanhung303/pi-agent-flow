@@ -10,6 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { type FlowTier } from "./agents.js";
+import { logWarn } from "./log.js";
 
 
 export interface FlowModelTierConfig {
@@ -35,6 +36,22 @@ export interface FlowSettings {
 
 	/** Default child-flow session mode. Default: "default" (600s). */
 	sessionMode?: AgentSessionMode;
+
+	steering?: {
+		/** Skip entire steering system message when false. Default: true. */
+		enabled?: boolean;
+		/** Replace built-in STEERING_HINT body. Default: undefined. */
+		customPrompt?: string;
+		/** Toggle [Hint: Plan next step...] after tool results. Default: true. */
+		strategicHint?: boolean;
+	};
+
+	animation?: {
+		/** Master switch — false = instant render. Default: true. */
+		enabled?: boolean;
+		/** false = disable glitch/scramble cascade, keep ripple/pulse. Default: true. */
+		glitch?: boolean;
+	};
 }
 
 const BUILTIN_FLOW_MODEL_CONFIGS: FlowModelConfigs = {
@@ -125,7 +142,7 @@ function normalizeFailoverList(
 ): string[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value)) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${strategyName}.${tier}.failover. Expected an array of strings.`,
 		);
 		return undefined;
@@ -134,7 +151,7 @@ function normalizeFailoverList(
 	const result: string[] = [];
 	for (const item of value) {
 		if (typeof item !== "string") {
-			console.warn(
+			logWarn(
 				`[pi-agent-flow] Ignoring invalid failover entry in ${sourceLabel}.flowModelConfigs.${strategyName}.${tier}. Expected a string.`,
 			);
 			continue;
@@ -151,7 +168,7 @@ function extractFlowModelConfigs(settings: Record<string, unknown> | null, sourc
 	const rawConfigs = settings.flowModelConfigs;
 	if (rawConfigs === undefined) return {};
 	if (!isPlainObject(rawConfigs)) {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs. Expected an object map of strategy names.`,
 		);
 		return {};
@@ -161,13 +178,13 @@ function extractFlowModelConfigs(settings: Record<string, unknown> | null, sourc
 	for (const [rawName, rawStrategy] of Object.entries(rawConfigs)) {
 		const name = rawName.trim();
 		if (!name) {
-			console.warn(
+			logWarn(
 				`[pi-agent-flow] Ignoring empty strategy name in ${sourceLabel}.flowModelConfigs.`,
 			);
 			continue;
 		}
 		if (!isPlainObject(rawStrategy)) {
-			console.warn(
+			logWarn(
 				`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${name}. Expected an object with lite/flash/full tiers.`,
 			);
 			continue;
@@ -178,7 +195,7 @@ function extractFlowModelConfigs(settings: Record<string, unknown> | null, sourc
 			const rawTier = rawStrategy[tier];
 			if (rawTier === undefined) continue;
 			if (!isPlainObject(rawTier)) {
-				console.warn(
+				logWarn(
 					`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${name}.${tier}. Expected { primary?: string, failover?: string[] }.`,
 				);
 				continue;
@@ -189,7 +206,7 @@ function extractFlowModelConfigs(settings: Record<string, unknown> | null, sourc
 				const primary = rawTier.primary.trim();
 				if (primary) tierConfig.primary = primary;
 			} else if (rawTier.primary !== undefined) {
-				console.warn(
+				logWarn(
 					`[pi-agent-flow] Ignoring invalid ${sourceLabel}.flowModelConfigs.${name}.${tier}.primary. Expected a string.`,
 				);
 			}
@@ -234,6 +251,34 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 	if (sessionMode !== undefined) {
 		result.sessionMode = sessionMode;
 	}
+
+	// Parse nested steering settings
+	if (isPlainObject(obj.steering)) {
+		const steering: FlowSettings["steering"] = {};
+		if (typeof obj.steering.enabled === "boolean") {
+			steering.enabled = obj.steering.enabled;
+		}
+		if (typeof obj.steering.customPrompt === "string") {
+			steering.customPrompt = obj.steering.customPrompt;
+		}
+		if (typeof obj.steering.strategicHint === "boolean") {
+			steering.strategicHint = obj.steering.strategicHint;
+		}
+		result.steering = steering;
+	}
+
+	// Parse nested animation settings
+	if (isPlainObject(obj.animation)) {
+		const animation: FlowSettings["animation"] = {};
+		if (typeof obj.animation.enabled === "boolean") {
+			animation.enabled = obj.animation.enabled;
+		}
+		if (typeof obj.animation.glitch === "boolean") {
+			animation.glitch = obj.animation.glitch;
+		}
+		result.animation = animation;
+	}
+
 	return result;
 }
 
@@ -289,6 +334,66 @@ export function loadFlowSettings(cwd: string): FlowSettings {
 	};
 }
 
+/**
+ * Atomically write a single flow setting to the project .pi/settings.json.
+ * Supports dot-notation keyPath like "steering.enabled" or "animation.glitch".
+ */
+export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): { path: string; previous: unknown } {
+	const filePath = getProjectSettingsPath(cwd);
+	let settings: Record<string, unknown> = {};
+
+	if (fs.existsSync(filePath)) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+		} catch (error) {
+			throw new Error(`Cannot update flow setting because ${filePath} contains invalid JSON.`);
+		}
+		if (!isPlainObject(parsed)) {
+			throw new Error(`Cannot update flow setting because ${filePath} must contain a JSON object.`);
+		}
+		settings = { ...parsed };
+	}
+
+	if (!settings.flowSettings || !isPlainObject(settings.flowSettings)) {
+		settings.flowSettings = {};
+	}
+	const flowSettings = settings.flowSettings as Record<string, unknown>;
+
+	if (!keyPath) {
+		// Reset the entire flowSettings object when keyPath is empty
+		const previous = { ...flowSettings };
+		settings.flowSettings = value;
+		const dir = path.dirname(filePath);
+		fs.mkdirSync(dir, { recursive: true });
+		const tmpPath = path.join(dir, `.settings.json.${process.pid}.${Date.now()}.tmp`);
+		fs.writeFileSync(tmpPath, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
+		fs.renameSync(tmpPath, filePath);
+		return { path: filePath, previous };
+	}
+
+	const keys = keyPath.split(".");
+	let target: Record<string, unknown> = flowSettings;
+	for (let i = 0; i < keys.length - 1; i++) {
+		const k = keys[i];
+		if (!target[k] || !isPlainObject(target[k])) {
+			target[k] = {};
+		}
+		target = target[k] as Record<string, unknown>;
+	}
+	const leafKey = keys[keys.length - 1];
+	const previous = target[leafKey];
+	target[leafKey] = value;
+
+	const dir = path.dirname(filePath);
+	fs.mkdirSync(dir, { recursive: true });
+	const tmpPath = path.join(dir, `.settings.json.${process.pid}.${Date.now()}.tmp`);
+	fs.writeFileSync(tmpPath, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
+	fs.renameSync(tmpPath, filePath);
+
+	return { path: filePath, previous };
+}
+
 export function selectFlowModelStrategy(
 	configs: FlowModelConfigs,
 	requestedName?: string,
@@ -300,7 +405,7 @@ export function selectFlowModelStrategy(
 	}
 
 	if (normalizedRequested !== "default") {
-		console.warn(
+		logWarn(
 			`[pi-agent-flow] Flow model config "${normalizedRequested}" not found. Falling back to "default".`,
 		);
 	}
@@ -386,3 +491,72 @@ export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStr
 	}
 	return `mode: ${modeName} | ${parts.join(" - ")}`;
 }
+
+export function writeFlowModelConfig(
+	cwd: string,
+	strategyName: string,
+	tier: FlowTier,
+	updates: { primary?: string | null; failover?: string[] | null },
+): void {
+	const filePath = getProjectSettingsPath(cwd);
+	let settings: Record<string, unknown> = {};
+
+	if (fs.existsSync(filePath)) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+		} catch (error) {
+			throw new Error(`Cannot update flow model config because ${filePath} contains invalid JSON.`);
+		}
+		if (!isPlainObject(parsed)) {
+			throw new Error(`Cannot update flow model config because ${filePath} must contain a JSON object.`);
+		}
+		settings = { ...parsed };
+	}
+
+	if (!settings.flowModelConfigs || !isPlainObject(settings.flowModelConfigs)) {
+		settings.flowModelConfigs = {};
+	}
+	const configs = settings.flowModelConfigs as Record<string, unknown>;
+
+	if (!configs[strategyName] || !isPlainObject(configs[strategyName])) {
+		configs[strategyName] = {};
+	}
+	const strategy = configs[strategyName] as Record<string, unknown>;
+
+	if (!strategy[tier] || !isPlainObject(strategy[tier])) {
+		strategy[tier] = {};
+	}
+	const tierConfig = strategy[tier] as Record<string, unknown>;
+
+	if (updates.primary !== undefined) {
+		if (updates.primary === null) {
+			delete tierConfig.primary;
+		} else {
+			tierConfig.primary = updates.primary;
+		}
+	}
+
+	if (updates.failover !== undefined) {
+		if (updates.failover === null) {
+			delete tierConfig.failover;
+		} else {
+			tierConfig.failover = updates.failover;
+		}
+	}
+
+	if (Object.keys(tierConfig).length === 0) {
+		delete strategy[tier];
+	}
+	if (Object.keys(strategy).length === 0) {
+		delete configs[strategyName];
+	}
+
+	const dir = path.dirname(filePath);
+	fs.mkdirSync(dir, { recursive: true });
+	const tmpPath = path.join(dir, `.settings.json.${process.pid}.${Date.now()}.tmp`);
+	fs.writeFileSync(tmpPath, `${JSON.stringify(settings, null, 2)}
+`, "utf-8");
+	fs.renameSync(tmpPath, filePath);
+}
+

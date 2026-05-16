@@ -61,6 +61,11 @@ declare module "@mariozechner/pi-coding-agent" {
 		renderCall?: (...args: any[]) => any;
 		renderResult?: (...args: any[]) => any;
 	};
+	export class DynamicBorder {
+		constructor(color?: (str: string) => string);
+		invalidate(): void;
+		render(width: number): string[];
+	}
 	export interface ExtensionCommandContext {
 		cwd: string;
 		hasUI: boolean;
@@ -81,6 +86,12 @@ declare module "@mariozechner/pi-coding-agent" {
 		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
 		waitForIdle(): Promise<void>;
 		reload(): Promise<void>;
+		modelRegistry: {
+			getAll(): any[];
+			getAvailable(): any[];
+			find(provider: string, modelId: string): any;
+			hasConfiguredAuth(model: any): boolean;
+		};
 	}
 
 	/** Fresh command-capable context bound to the replacement session after a session switch. */

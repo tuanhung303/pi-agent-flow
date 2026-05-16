@@ -9,7 +9,7 @@
 
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { loadFlowSettings, writeFlowSetting, type FlowSettings } from "../config.js";
+import { loadFlowSettings, writeFlowSetting, loadFlowModelConfigs, writeGlobalFlowMode, writeFlowModelConfig, type FlowSettings } from "../config.js";
 import { configureSteering } from "../sliding-prompt.js";
 import { configureStrategicHint } from "../tool-utils.js";
 import { scrambleManager } from "../scramble.js";
@@ -28,6 +28,11 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@mariozechner/pi-tui";
+
+// Module-level refs for submenu builders (set during handler call)
+let _modelRegistry: any = null;
+let _theme: any = null;
+let _keybindings: any = null;
 
 // ---------------------------------------------------------------------------
 // SettingsList component (local implementation matching sub-core pattern)
@@ -252,18 +257,23 @@ export class SettingsList implements Component {
 // Menu item builders
 // ---------------------------------------------------------------------------
 
-type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session";
+type SettingsCategory = "main" | "steering" | "animation" | "tools" | "session" | "model-config";
 
 interface TooltipSelectItem extends SelectItem {
 	tooltip?: string;
 }
 
-function getMainMenuItems(settings: FlowSettings): TooltipSelectItem[] {
+function getMainMenuItems(settings: FlowSettings, cwd: string): TooltipSelectItem[] {
 	const steeringEnabled = settings.steering?.enabled ?? true;
 	const animationEnabled = settings.animation?.enabled ?? true;
 	const toolOptimize = settings.toolOptimize ?? true;
 	const structuredOutput = settings.structuredOutput ?? true;
 	const sessionMode = settings.sessionMode ?? "default";
+
+	const loaded = loadFlowModelConfigs(cwd);
+	const strategyName = loaded.selectedName;
+	const litePrimary = loaded.strategy.lite?.primary ?? "(default)";
+	const primaryModelShort = litePrimary.includes("/") ? litePrimary.split("/").pop()! : litePrimary;
 
 	return [
 		{
@@ -289,6 +299,12 @@ function getMainMenuItems(settings: FlowSettings): TooltipSelectItem[] {
 			label: "Session Settings",
 			description: `mode: ${sessionMode}`,
 			tooltip: "Set default session mode and concurrency",
+		},
+		{
+			value: "model-config",
+			label: "Model Config",
+			description: `${strategyName} ▸ lite: ${primaryModelShort}`,
+			tooltip: "Configure LLM models for lite, flash, and full flow tiers",
 		},
 		{
 			value: "reset",
@@ -393,6 +409,47 @@ function getSessionItems(settings: FlowSettings): SettingItem[] {
 	];
 }
 
+
+function getModelConfigItems(settings: FlowSettings, cwd: string): SettingItem[] {
+	const loaded = loadFlowModelConfigs(cwd);
+	const strategyName = loaded.selectedName;
+	const strategy = loaded.strategy;
+
+	const items: SettingItem[] = [
+		{
+			id: "modelConfig.strategy",
+			label: "strategy",
+			description: "Active model strategy",
+			currentValue: strategyName,
+			values: Object.keys(loaded.configs).sort(),
+		},
+	];
+
+	for (const tier of ["lite", "flash", "full"] as const) {
+		const tierConfig = strategy[tier];
+		const primary = tierConfig?.primary ?? "(default)";
+		const failover = tierConfig?.failover?.join(", ") ?? "(none)";
+
+		items.push({
+			id: `modelConfig.${tier}.primary`,
+			label: `${tier}: primary`,
+			description: `Primary model for ${tier} tier`,
+			currentValue: primary,
+			submenu: buildModelPickerSubmenu(primary, tier, "primary"),
+		});
+
+		items.push({
+			id: `modelConfig.${tier}.failover`,
+			label: `${tier}: failover`,
+			description: `Failover models for ${tier} tier`,
+			currentValue: failover,
+			submenu: buildModelPickerSubmenu(failover, tier, "failover"),
+		});
+	}
+
+	return items;
+}
+
 // ---------------------------------------------------------------------------
 // Submenu helpers
 // ---------------------------------------------------------------------------
@@ -427,6 +484,52 @@ function buildInputSubmenu(
 	};
 }
 
+
+
+function buildModelPickerSubmenu(
+	currentValue: string,
+	tier: "lite" | "flash" | "full",
+	slot: "primary" | "failover",
+): (currentValue: string, done: (selectedValue?: string) => void) => Component {
+	return (_currentValue, done) => {
+		const models = _modelRegistry?.getAvailable() ?? [];
+		const items: SelectItem[] = models.map((m: any) => ({
+			value: `${m.provider}/${m.id}`,
+			label: `${m.provider}/${m.id}`,
+			description: m.name ?? "",
+		}));
+
+		items.unshift({ value: "(default)", label: "(default)", description: "Use the default model" });
+
+		const selectList = new SelectList(items, 15, {
+			selectedPrefix: (t: string) => _theme?.fg("accent", t) ?? t,
+			selectedText: (t: string) => _theme?.fg("accent", t) ?? t,
+			description: (t: string) => _theme?.fg("muted", t) ?? t,
+			scrollInfo: (t: string) => _theme?.fg("dim", t) ?? t,
+			noMatch: (t: string) => _theme?.fg("warning", t) ?? t,
+		});
+
+		selectList.onSelect = (item) => {
+			done(item.value);
+		};
+		selectList.onCancel = () => {
+			done();
+		};
+
+		return {
+			render(width: number) {
+				return selectList.render(width);
+			},
+			invalidate() {
+				selectList.invalidate?.();
+			},
+			handleInput(data: string) {
+				selectList.handleInput(data);
+			},
+		} as Component;
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Command registration
 // ---------------------------------------------------------------------------
@@ -445,8 +548,12 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 			if (!sub) {
 				const settings = loadFlowSettings(cwd);
 
+				_modelRegistry = (ctx as any).modelRegistry;
+
 				await ctx.ui.custom<FlowSettings>(
 					(tui: any, theme: Theme, keybindings: KeybindingsManager, done: (result: FlowSettings | null) => void) => {
+						_theme = theme;
+						_keybindings = keybindings;
 						let currentCategory: SettingsCategory = "main";
 						let container = new Container();
 						let activeList: SelectList | SettingsList | null = null;
@@ -463,7 +570,7 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 							const currentSettings = loadFlowSettings(cwd);
 
 							if (currentCategory === "main") {
-								const items = getMainMenuItems(currentSettings);
+								const items = getMainMenuItems(currentSettings, cwd);
 								const selectList = new SelectList(
 									items as SelectItem[],
 									Math.min(items.length, 10),
@@ -590,6 +697,40 @@ export function setupSettingsCommand(pi: ExtensionAPI, getCwd: () => string | un
 											writeFlowSetting(cwd, "sessionMode", value);
 										} else if (id === "maxConcurrency") {
 											writeFlowSetting(cwd, "maxConcurrency", Number(value));
+										}
+										rebuild();
+										tui.requestRender();
+									};
+								} else if (currentCategory === "model-config") {
+									items = getModelConfigItems(currentSettings, cwd);
+									handleChange = (id, value) => {
+										if (id === "modelConfig.strategy") {
+											try {
+												writeGlobalFlowMode(value);
+											} catch (e) {
+												/* ignore */
+											}
+										} else if (id.startsWith("modelConfig.")) {
+											const match = id.match(/^modelConfig\.(lite|flash|full)\.(primary|failover)$/);
+											if (match) {
+												const tier = match[1] as "lite" | "flash" | "full";
+												const slot = match[2] as "primary" | "failover";
+												const loaded = loadFlowModelConfigs(cwd);
+												const strategyName = loaded.selectedName;
+												if (slot === "primary") {
+													if (value === "(default)") {
+														writeFlowModelConfig(cwd, strategyName, tier, { primary: null, failover: null });
+													} else {
+														writeFlowModelConfig(cwd, strategyName, tier, { primary: value });
+													}
+												} else {
+													if (value === "(default)") {
+														writeFlowModelConfig(cwd, strategyName, tier, { failover: [] });
+													} else {
+														writeFlowModelConfig(cwd, strategyName, tier, { failover: [value] });
+													}
+												}
+											}
 										}
 										rebuild();
 										tui.requestRender();
