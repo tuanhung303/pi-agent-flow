@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sync /tmp dump artifacts into dump-artifacts/ and regenerate manifests.
 # Idempotent — safe to run multiple times.
+# Additive: only copies newer or missing files from /tmp; never deletes curated dumps.
 
 set -euo pipefail
 
@@ -11,13 +12,16 @@ TMP_DIR="/tmp"
 
 mkdir -p "$DUMP_DIR"
 
-# Remove stale dump artifacts (keep meta files which will be regenerated)
-cd "$DUMP_DIR"
-rm -f pi-dump.* snapshot-dump.*
-
-# Copy current artifacts from /tmp
-cp "$TMP_DIR"/pi-dump.* "$DUMP_DIR"/ 2>/dev/null || true
-cp "$TMP_DIR"/snapshot-dump.* "$DUMP_DIR"/ 2>/dev/null || true
+# Copy current artifacts from /tmp only if newer or missing (portable cp -u)
+for pattern in 'pi-dump.*' 'snapshot-dump.*'; do
+  for src in "$TMP_DIR"/$pattern; do
+    [ -e "$src" ] || continue
+    dest="$DUMP_DIR/$(basename "$src")"
+    if [ ! -e "$dest" ] || [ "$src" -nt "$dest" ]; then
+      cp "$src" "$dest"
+    fi
+  done
+done
 
 # Regenerate manifests using Node.js for reliable JSON handling
 node -e "
@@ -53,5 +57,7 @@ for (const e of entries) {
 fs.writeFileSync(path.join(dumpDir, 'MANIFEST.md'), md);
 " "$DUMP_DIR"
 
-echo "Synced $(ls -1 "$DUMP_DIR"/pi-dump.* 2>/dev/null | wc -l | tr -d ' ') pi-dump and $(ls -1 "$DUMP_DIR"/snapshot-dump.* 2>/dev/null | wc -l | tr -d ' ') snapshot-dump files."
+PI_COUNT=$(find "$DUMP_DIR" -maxdepth 1 -name 'pi-dump.*' | wc -l | tr -d ' ')
+SNAP_COUNT=$(find "$DUMP_DIR" -maxdepth 1 -name 'snapshot-dump.*' | wc -l | tr -d ' ')
+echo "Synced $PI_COUNT pi-dump and $SNAP_COUNT snapshot-dump files."
 echo "Manifests regenerated: MANIFEST.md, manifest.json"

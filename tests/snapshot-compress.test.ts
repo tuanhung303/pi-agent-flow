@@ -1239,6 +1239,132 @@ describe("evictCacheOverflow", () => {
 	});
 });
 
+describe("compressToolResults — edge cases", () => {
+	it("handles empty batch result", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "0 operations",
+				},
+			},
+		]);
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("0 operations");
+	});
+
+	it("handles write and edit to same file in the same batch result", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/index.ts" }, { o: "edit", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "2 operations: 1 write, 1 edit\n\n--- write: src/index.ts (400 bytes) ---\n\n--- edit: src/index.ts (1 block) ---",
+				},
+			},
+		]);
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("[batch:write] src/index.ts (400 bytes)");
+		expect(result).toContain("[batch:edit] src/index.ts (1 block)");
+	});
+
+	it("handles delete then write to same file in the same batch result", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "delete", p: "src/index.ts" }, { o: "write", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "2 operations: 1 delete, 1 write\n\n--- delete: src/index.ts ---\n\n--- write: src/index.ts (400 bytes) ---",
+				},
+			},
+		]);
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- delete: src/index.ts ---");
+		expect(result).toContain("[batch:write] src/index.ts (400 bytes)");
+	});
+
+	it("handles mixed ok and error sections in the same batch result", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/ok.ts" }, { o: "write", p: "src/bad.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "2 operations: 1 write, 1 write\n\n--- write: src/ok.ts (200 bytes) ---\n\n--- write: src/bad.ts ---\nError: ENOENT",
+				},
+			},
+		]);
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("[batch:write] src/ok.ts (200 bytes)");
+		expect(result).toContain("--- write: src/bad.ts ---");
+		expect(result).toContain("Error: ENOENT");
+	});
+
+	it("handles batch result with only error operations", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "read", p: "missing1.ts" }, { o: "write", p: "missing2.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "2 operations: 2 errors\n\n--- read: missing1.ts ---\nError: ENOENT\n\n--- write: missing2.ts ---\nError: ENOENT",
+				},
+			},
+		]);
+		const result = compressToolResults(snapshot, new Map());
+		expect(result).toContain("--- read: missing1.ts ---");
+		expect(result).toContain("Error: ENOENT");
+		expect(result).toContain("--- write: missing2.ts ---");
+	});
+});
+
 describe("compressToolResults — flow cache miss", () => {
 	it("renders a placeholder when flow result is not in cache instead of passing bulky output verbatim", () => {
 		const bulkyContent = "Flow: 1/1 completed\n\n".repeat(5000); // ~100KB of raw flow output

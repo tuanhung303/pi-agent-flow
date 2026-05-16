@@ -124,7 +124,7 @@ function createLineState(): LineState {
 		lastAccessTime: Date.now(),
 		glitchQueue: [],
 		glitchFrame: 0,
-		lastGlitchTime: 0,
+		lastGlitchTime: Number.NEGATIVE_INFINITY,
 		pendingGlitch: null,
 		pendingOldDisplayed: '',
 		pendingNewDisplayed: '',

@@ -264,9 +264,11 @@ describe('ScrambleStateManager', () => {
 		manager.updateMsg(TEST_ID, 'text one', base);
 		manager.updateMsg(TEST_ID, 'text two', base + 300);
 		manager.updateMsg(TEST_ID, 'text three', base + 400);
-		const result = manager.updateMsg(TEST_ID, 'text four', base + 1400);
-		expect(result.isAnimating).toBe(true);
-		const done = manager.updateMsg(TEST_ID, 'text four', base + 3000);
+		const duringCooldown = manager.updateMsg(TEST_ID, 'text four', base + 1400);
+		expect(duringCooldown.isAnimating).toBe(false);
+		const afterCooldown = manager.updateMsg(TEST_ID, 'text five', base + 3000);
+		expect(afterCooldown.isAnimating).toBe(true);
+		const done = manager.updateMsg(TEST_ID, 'text five', base + 5000);
 		expect(done.isAnimating).toBe(false);
 	});
 
@@ -377,8 +379,6 @@ describe('ScrambleStateManager', () => {
 		manager.updateMsg(TEST_ID, midText, base + 400, false, undefined, true);
 		const newText = 'Hello world. How are you today? This is brand new streaming content.';
 		const during = manager.updateMsg(TEST_ID, newText, base + 500, false, undefined, true);
-		const state = (manager as any).cache.get(TEST_ID)?.msg;
-		console.log({ targetText: state?.targetText, displayedText: state?.displayedText, glitchQueueLen: state?.glitchQueue?.length, pendingLen: state?.pendingGlitch?.length });
 		const stripped = stripAnsi(during.content);
 		expect(stripped).not.toContain('This is brand new streaming content');
 		expect(stripped.length).toBeLessThanOrEqual(midText.length + 10);

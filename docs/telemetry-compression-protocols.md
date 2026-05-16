@@ -382,7 +382,7 @@ Tests: 42 passed, 42 total
 
 ### Deduplication Rules
 - **Key:** `bashId` (the `i` field from the batch arguments, present in `--- bash [id] ...` delimiters).
-- Bash IDs are typically unique per `batch` call. [I] Cross-turn bash deduplication is low-frequency but supported: if the same ID appears in multiple batch results, only the latest state is kept; earlier states are replaced with `[bash:...] id (superseded)`.
+- Bash IDs are typically unique per `batch` call. Cross-turn bash deduplication is **not yet implemented**; each bash section is compressed independently.
 - `batch_bash_poll` results are out of scope for X1; they pass through a separate tool and should be addressed by a future `batch_bash_poll` compression pass.
 
 ### Fallback Behavior
@@ -412,13 +412,12 @@ Deduplicate web search and fetch results across turns. The current `compressWebR
 
 If the same query appears in turn 2, turn 4, and turn 6, the child sees three lines.
 
-### Proposed Format (after)
-
-**Depth 1 — latest kept:**
+### Current Format (after — compression only, no dedup)
 ```
 [web:search] "node.js streams" · 2 results · first: Node.js Streams
 ```
 
+### Proposed Future Work (Q1 dedup — not yet implemented)
 **Superseded query (breadcrumb):**
 ```
 [web:search] "node.js streams" (superseded by later search)
@@ -437,7 +436,7 @@ Or, if the snapshot contains many web queries:
 [web:fetch] https://example.com · "Example" · 4200 chars
 ```
 
-### Deduplication Rules
+### Deduplication Rules (Proposed)
 - **Search key:** normalized query string (`q` field), lowercased and trimmed.
 - **Fetch key:** normalized URL (`u` field), stripped of trailing slash and query params.
 - **Keep only the latest result** per key.
@@ -497,14 +496,11 @@ interface CompressToolResultsOptions {
   depth?: number; // 1 = moderate compression, 2+ = maximum compression
 }
 
-// Internal dedup index built during pre-scan
+// Internal dedup index built during pre-scan (W1 + E1 only)
 interface DedupIndex {
   latestWrite: Map<string, string>;      // normPath → toolCallId
   latestEdit: Map<string, string>;       // normPath → toolCallId
   latestDelete: Map<string, string>;    // normPath → toolCallId
-  latestBash: Map<string, string>;       // bashId → toolCallId
-  latestWebQuery: Map<string, string>;   // normQuery → toolCallId
-  latestWebFetch: Map<string, string>;   // normUrl → toolCallId
 }
 
 // Enhanced compressBatchResult signature
@@ -544,15 +540,15 @@ These tokens are:
 | **W1 (Write)** | `[batch:write] path (bytes)` | `[batch:write] path` |
 | **E1 (Edit)** | `[batch:edit] path (blocks)` | `[batch:edit] path` |
 | **X1 (Bash)** | `[bash:ok] id · exit N · tier · lines`<br>+ 3-line preview | `[bash:ok] id · exit N` |
-| **Q1 (Web)** | Individual compressed lines | Rolled-up `[web] N unique queries` list |
+| **Q1 (Web)** | Individual compressed lines | Rolled-up `[web] N unique queries` list *(future work)* |
 
 ---
 
 # Migration Path
 
-1. **Phase 1 (safe):** Implement X1 first. It has the highest token savings and the lowest risk — bash output is rarely re-parsed by child flows for semantic meaning; children re-run commands themselves. Add unit tests to `tests/snapshot-compress.test.ts` for depth 1 and depth 2 bash compression.
-2. **Phase 2 (moderate):** Implement W1 and E1. These introduce cross-turn deduplication. Update tests to verify that earlier writes/edits to the same file are collapsed.
-3. **Phase 3 (final):** Implement Q1. Web query deduplication is lower-impact than bash compression but adds polish.
+1. **Phase 1 (complete):** X1 bash compression — implemented and tested in `tests/snapshot-compress.test.ts`.
+2. **Phase 2 (complete):** W1 write dedup and E1 edit dedup — implemented and tested.
+3. **Phase 3 (future):** Q1 web query deduplication — lower-impact than bash compression but adds polish. Not yet implemented.
 4. **Rollback:** Each phase is a discrete function. If a phase causes regressions in child flows, it can be disabled by removing the relevant option pass or reverting to the previous `compressBatchResult` signature (the old function is a one-line fallback).
 
 ---

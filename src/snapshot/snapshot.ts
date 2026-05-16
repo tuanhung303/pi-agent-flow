@@ -23,17 +23,14 @@
  */
 
 import type { CompressedFlowResult } from "../types/output.js";
-import { isFlowError } from "../types/flow.js";
 import { stripReasoningFromAssistantMessage } from "./reasoning-strip.js";
 import {
 	stripSteeringHintFromContent,
-	stripSteeringHintText,
 	contentContainsSteeringHintTag,
 	isJsonEqual,
 } from "../steering/sliding-prompt.js";
-import { stripStrategicHints, stripStrategicHintsFromContent } from "../steering/tool-utils.js";
+import { stripStrategicHintsFromContent } from "../steering/tool-utils.js";
 import { logError } from "../config/log.js";
-import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -140,9 +137,14 @@ export function renderCompressedFlowResult(r: CompressedFlowResult): string | un
 		parts.push(`Notes:\n${r.notes.map((s) => `  ${s}`).join("\n")}`);
 	}
 	if (r.error) parts.push(`Error: ${r.error}`);
-	const text = parts.join("\n");
-	if (text.includes("undefined")) return undefined;
-	return text;
+	// Safety net: reject malformed runtime data where required fields are missing.
+	// This is more precise than a substring search that would false-positive on
+	// legitimate content containing the word "undefined".
+	if (!r.type || !r.status) return undefined;
+	if (r.actions?.some((a) => !a.type || !a.description)) return undefined;
+	if (r.commands?.some((c) => !c.command)) return undefined;
+	if (r.notDone?.some((n) => !n.item)) return undefined;
+	return parts.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -245,19 +247,6 @@ interface DedupIndex {
 	latestDelete: Map<string, string>;
 }
 
-function extractToolResultTextInline(entry: any): string | undefined {
-	if (typeof entry.message?.content === "string") {
-		return entry.message.content;
-	}
-	if (Array.isArray(entry.message?.content)) {
-		for (const part of entry.message.content) {
-			if (part.type === "text" && typeof part.text === "string") {
-				return part.text;
-			}
-		}
-	}
-	return undefined;
-}
 
 /**
  * Scan all batch tool results in the snapshot and build a DedupIndex.
@@ -277,7 +266,7 @@ function buildDedupIndex(lines: string[], toolCallIdToName: Map<string, string>)
 		if (typeof toolCallId !== "string") continue;
 		if (toolCallIdToName.get(toolCallId) !== "batch") continue;
 
-		const text = extractToolResultTextInline(entry) ?? "";
+		const text = extractToolResultText(entry) ?? "";
 		const textLines = text.replace(/\r\n/g, "\n").split("\n");
 
 		for (let i = 0; i < textLines.length; i++) {
@@ -996,31 +985,46 @@ function reparentOrphans(snapshot: string): string {
 			const entry = JSON.parse(line);
 			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string" && id) survivingIds.add(id);
-			const parentId = entry?.parentId ?? entry?.parentMessageId ?? entry?.message?.parentId ?? entry?.message?.parentMessageId;
-			if (typeof parentId === "string" && parentId && !(typeof id === "string" && id)) survivingIds.add(parentId);
+			// Only ids of actual entries should be in survivingIds; parentId refs
+			// are checked in the second pass, not added here.
 		} catch { /* ignore */ }
 	}
 	for (let i = 0; i < lines.length; i++) {
 		try {
 			let entry = JSON.parse(lines[i]);
-			const entryParentId = entry.parentId ?? entry.parentMessageId;
-			const messageParentId = entry.message?.parentId ?? entry.message?.parentMessageId;
-			const parentId = entryParentId ?? messageParentId;
-			if (typeof parentId === "string" && parentId && !survivingIds.has(parentId)) {
-				let modified = false;
-				if (entry.parentId === parentId || entry.parentMessageId === parentId) {
-					const { parentId: _pid, parentMessageId: _pmid, ...restEntry } = entry;
+			let modified = false;
+			const isMessageEntry = entry?.type === "message";
+
+			// Fix top-level parentId only for message entries (not session headers).
+			if (isMessageEntry) {
+				if (typeof entry.parentId === "string" && entry.parentId && !survivingIds.has(entry.parentId)) {
+					const { parentId: _pid, ...restEntry } = entry;
 					entry = restEntry;
 					modified = true;
 				}
-				if (entry.message && (entry.message.parentId === parentId || entry.message.parentMessageId === parentId)) {
-					const { parentId: _pid, parentMessageId: _pmid, ...restMessage } = entry.message;
+				if (typeof entry.parentMessageId === "string" && entry.parentMessageId && !survivingIds.has(entry.parentMessageId)) {
+					const { parentMessageId: _pmid, ...restEntry } = entry;
+					entry = restEntry;
+					modified = true;
+				}
+			}
+
+			// Fix message-level parentId for all entries.
+			if (entry.message) {
+				if (typeof entry.message.parentId === "string" && entry.message.parentId && !survivingIds.has(entry.message.parentId)) {
+					const { parentId: _pid, ...restMessage } = entry.message;
 					entry = { ...entry, message: restMessage };
 					modified = true;
 				}
-				if (modified) {
-					lines[i] = JSON.stringify(entry);
+				if (typeof entry.message.parentMessageId === "string" && entry.message.parentMessageId && !survivingIds.has(entry.message.parentMessageId)) {
+					const { parentMessageId: _pmid, ...restMessage } = entry.message;
+					entry = { ...entry, message: restMessage };
+					modified = true;
 				}
+			}
+
+			if (modified) {
+				lines[i] = JSON.stringify(entry);
 			}
 		} catch { /* ignore */ }
 	}
