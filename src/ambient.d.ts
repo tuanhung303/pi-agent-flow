@@ -106,6 +106,7 @@ declare module "@mariozechner/pi-tui" {
 	export interface Component {
 		invalidate(): void;
 		render(width: number): string[];
+		handleInput?(data: string): void;
 	}
 	export class Text implements Component {
 		constructor(text: string, width: number, height: number);
@@ -135,6 +136,73 @@ declare module "@mariozechner/pi-tui" {
 		constructor(height: number);
 		invalidate(): void;
 		render(width: number): string[];
+	}
+	export interface SelectItem {
+		value: string;
+		label: string;
+		description?: string;
+	}
+	export interface SelectListTheme {
+		selectedPrefix: (text: string) => string;
+		selectedText: (text: string) => string;
+		description: (text: string) => string;
+		scrollInfo: (text: string) => string;
+		noMatch: (text: string) => string;
+	}
+	export class SelectList implements Component {
+		constructor(items: SelectItem[], maxVisible: number, theme: SelectListTheme);
+		onSelect?: (item: SelectItem) => void;
+		onCancel?: () => void;
+		onSelectionChange?: (item: SelectItem) => void;
+		setSelectedIndex(index: number): void;
+		getSelectedItem(): SelectItem | null;
+		handleInput(data: string): void;
+		render(width: number): string[];
+		invalidate(): void;
+	}
+	export interface SettingItem {
+		id: string;
+		label: string;
+		description?: string;
+		currentValue: string;
+		values?: string[];
+		submenu?: (currentValue: string, done: (selectedValue?: string) => void) => Component;
+		editable?: boolean;
+	}
+	export interface SettingsListTheme {
+		label: (text: string, selected: boolean) => string;
+		value: (text: string, selected: boolean) => string;
+		description: (text: string) => string;
+		cursor: string;
+		hint: (text: string) => string;
+	}
+	export interface SettingsListOptions {
+		enableSearch?: boolean;
+	}
+	export class SettingsList implements Component {
+		constructor(
+			items: SettingItem[],
+			maxVisible: number,
+			theme: SettingsListTheme,
+			onChange: (id: string, newValue: string) => void,
+			onCancel: () => void,
+			options?: SettingsListOptions,
+		);
+		updateValue(id: string, newValue: string): void;
+		handleInput(data: string): void;
+		render(width: number): string[];
+		invalidate(): void;
+	}
+	export class Input implements Component {
+		focused: boolean;
+		onSubmit?: (value: string) => void;
+		onEscape?: () => void;
+		constructor();
+		setValue(text: string): void;
+		getValue(): string;
+		handleInput(data: string): void;
+		render(width: number): string[];
+		invalidate(): void;
 	}
 	export interface EditorTheme {
 		borderColor: (s: string) => string;
@@ -181,6 +249,7 @@ declare module "@mariozechner/pi-tui" {
 	export function matchesKey(data: string, key: string): boolean;
 	export function truncateToWidth(text: string, width: number, ellipsis?: string, padRight?: boolean): string;
 	export function wrapTextWithAnsi(text: string, width: number): string[];
+	export function visibleWidth(text: string): number;
 }
 
 declare module "@mariozechner/pi-agent-core" {
