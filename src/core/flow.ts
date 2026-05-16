@@ -493,6 +493,8 @@ export interface RunFlowOptions {
 	goalContext?: GoalContext;
 	/** Compression statistics from sanitizeForkSnapshot for dump header generation. */
 	compressionStats?: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
+	/** Optional max context token budget to record in the result. */
+	maxContextTokens?: number;
 }
 
 /**
@@ -525,6 +527,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const flow = flows.find((f) => f.name === normalizedFlowName);
 	if (!flow) {
 		const available = flows.map((f) => `"${f.name}"`).join(", ") || "none";
+		const resolvedMaxContextTokens = opts.maxContextTokens ?? inheritedCliArgs.maxContextTokens;
 		return {
 			type: normalizedFlowName,
 			agentSource: "unknown",
@@ -534,6 +537,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			messages: [],
 			stderr: `Unknown flow: "${flowName}". Available flows: ${available}.`,
 			usage: emptyFlowUsage(),
+			...(resolvedMaxContextTokens !== undefined ? { maxContextTokens: resolvedMaxContextTokens } : {}),
 		};
 	}
 
@@ -542,6 +546,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const startedAtMs = Date.now();
 	const deadlineAtMs = effectiveTimeout > 0 ? startedAtMs + effectiveTimeout : undefined;
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
+	const resolvedMaxContextTokens = opts.maxContextTokens ?? inheritedCliArgs.maxContextTokens;
 	const result: SingleResult = {
 		type: normalizedFlowName,
 		agentSource: flow.source,
@@ -555,6 +560,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		model: resolvedModel,
 		startedAtMs,
 		...(deadlineAtMs !== undefined ? { deadlineAtMs } : {}),
+		...(resolvedMaxContextTokens !== undefined ? { maxContextTokens: resolvedMaxContextTokens } : {}),
 	};
 
 	let liveStreamingText = "";

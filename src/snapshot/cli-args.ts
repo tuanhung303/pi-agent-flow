@@ -56,6 +56,7 @@ interface ParsedFlowCliArgs {
 		full?: string;
 	};
 	dumpPath?: string;
+	maxContextTokens?: number;
 }
 
 /**
@@ -91,6 +92,7 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 	let tieredFlashModel: string | undefined;
 	let tieredFullModel: string | undefined;
 	let dumpPath: string | undefined;
+	let maxContextTokens: number | undefined;
 
 	let i = 2; // skip executable + script name
 	while (i < argv.length) {
@@ -290,6 +292,16 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 			continue;
 		}
 
+		if (flagName === "--max-context-tokens") {
+			const [value, skip] = getValue();
+			if (value !== undefined) {
+				const parsed = Number(value);
+				if (Number.isFinite(parsed) && parsed > 0) maxContextTokens = parsed;
+			}
+			i += skip;
+			continue;
+		}
+
 		if (inlineValue !== undefined) {
 			alwaysProxy.push(flagName, inlineValue);
 			i++;
@@ -322,5 +334,6 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 			full: tieredFullModel,
 		},
 		dumpPath,
+		maxContextTokens,
 	};
 }

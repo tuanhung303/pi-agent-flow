@@ -41,6 +41,8 @@ export interface SingleResult {
 	streamingText?: string;
 	/** Structured JSON output parsed from the flow's final response. */
 	structuredOutput?: import("./output.js").FlowStructuredOutput;
+	/** Maximum context token budget forwarded from parent CLI. */
+	maxContextTokens?: number;
 }
 
 /** Metadata attached to every tool result for rendering. */
