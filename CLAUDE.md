@@ -10,7 +10,7 @@
 
 | Category | Files |
 |----------|-------|
-| **Docs** | [`docs/CONTEXT-DIAGNOSTICS.md`](docs/CONTEXT-DIAGNOSTICS.md) — diagnose high token counts in child flows • [`docs/agent-context-dump.md`](docs/agent-context-dump.md) — verbatim child context dump anatomy • [`docs/agent-payload-example.md`](docs/agent-payload-example.md) — exact payload reproduction from source code • [`docs/autonomous-pi-testing.md`](docs/autonomous-pi-testing.md) — scripted Pi sessions over PTY • [`docs/scout-report.md`](docs/scout-report.md) — generated codebase map |
+| **Docs** | [`docs/CONTEXT-DIAGNOSTICS.md`](docs/CONTEXT-DIAGNOSTICS.md) — diagnose high token counts in child flows • [`docs/agent-context-dump.md`](docs/agent-context-dump.md) — verbatim child context dump anatomy • [`docs/agent-payload-example.md`](docs/agent-payload-example.md) — exact payload reproduction from source code • [`docs/autonomous-pi-testing.md`](docs/autonomous-pi-testing.md) — scripted Pi sessions over PTY • [`docs/scout-report.md`](docs/scout-report.md) — generated codebase map • [`docs/telemetry-compression-protocols.md`](docs/telemetry-compression-protocols.md) — W1/E1/X1/Q1 compression protocol specs |
 | **Dump Analysis** | [`docs/dump-analysis/VERSION-NOTES.md`](docs/dump-analysis/VERSION-NOTES.md) — version notes for collected artifacts • [`docs/dump-artifacts/ANALYSIS.md`](docs/dump-artifacts/ANALYSIS.md) — cross-reference of dumps against source • [`docs/dump-artifacts/README.md`](docs/dump-artifacts/README.md) — catalog of representative dump files |
 | **Workflows** | [`ci.yml`](.github/workflows/ci.yml) — lint + test on PR/push • [`bump-version.yml`](.github/workflows/bump-version.yml) — version bump → commit → tag → push • [`publish.yml`](.github/workflows/publish.yml) — npm publish with provenance |
 | **Scripts** | [`dev-start.sh`](scripts/dev-start.sh) — start `pi` with `PI_FLOW_DUMP_SNAPSHOT` preset • [`switch.sh`](scripts/switch.sh) — toggle local ↔ remote install • [`sync-dumps.sh`](scripts/sync-dumps.sh) — sync `/tmp` dumps into `dump-artifacts/` • [`example-autonomous-pi.expect`](scripts/example-autonomous-pi.expect) — PTY test harness template |
@@ -162,11 +162,15 @@ Use `scripts/sync-dumps.sh` to copy the current `/tmp` dump files into `dump-art
 ```
 
 This script is **idempotent** — safe to run multiple times. It:
-1. Removes stale `pi-dump*` and `snapshot-dump*` files from `dump-artifacts/`
-2. Copies fresh `pi-dump*` and `snapshot-dump*` files from `/tmp`
-3. Regenerates `MANIFEST.md` and `manifest.json`
+1. Copies newer or missing `pi-dump*` and `snapshot-dump*` files from `/tmp` into `dump-artifacts/` (additive — never deletes curated dumps)
+2. Regenerates `MANIFEST.md` and `manifest.json`
 
 > 💡 **When to use it:** After a debugging session where you want to archive or diff the exact prompts that were sent to child flows. The synced artifacts are analysis material and can be committed if you are tracking format evolution, but they are not required for CI.
+>
+> **Integration test dumps:** You can also generate dump artifacts without running `pi` directly by setting `PI_FLOW_DUMP_SNAPSHOT` when running the integration test:
+> ```bash
+> PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump npm test -- tests/snapshot-integration.test.ts
+> ```
 
 ## TUI-Safe Logging Convention
 

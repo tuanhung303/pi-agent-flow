@@ -395,6 +395,19 @@ describe("SNAPSHOT INTEGRATION TEST — depth-aware compression & dump artifacts
 		fs.writeFileSync(mdPath, md, "utf8");
 		fs.writeFileSync(txtPath, txt, "utf8");
 
+		// Optional: also write to PI_FLOW_DUMP_SNAPSHOT path for manual inspection
+		if (process.env.PI_FLOW_DUMP_SNAPSHOT) {
+			const dumpBase = process.env.PI_FLOW_DUMP_SNAPSHOT;
+			const ext = path.extname(dumpBase);
+			const base = ext ? dumpBase.slice(0, -ext.length) : dumpBase;
+			const timestamp = Date.now();
+			const realMdPath = `${base}.integration.${timestamp}.md`;
+			const realTxtPath = `${base}.integration.${timestamp}.txt`;
+			fs.writeFileSync(realMdPath, md, "utf8");
+			fs.writeFileSync(realTxtPath, txt, "utf8");
+			console.log(`[pi-agent-flow] Integration-test dump written to ${realMdPath}`);
+		}
+
 		// Verify files exist
 		expect(fs.existsSync(mdPath)).toBe(true);
 		expect(fs.existsSync(txtPath)).toBe(true);
