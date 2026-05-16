@@ -301,8 +301,8 @@ describe('ScrambleStateManager', () => {
 
 	it('hasActiveAnimations detects sub-flow animations via prefix', () => {
 		manager.updateMsg('base#0', 'Hello world', 1_000_000, false, undefined, true);
-		manager.updateMsg('base#0', 'Hello world. Changed.', 1_000_500, false, undefined, true);
-		expect(manager.hasActiveAnimations('base', 1_000_510)).toBe(true);
+		manager.updateMsg('base#0', 'Totally different text here.', 1_000_400, false, undefined, true);
+		expect(manager.hasActiveAnimations('base', 1_000_410)).toBe(true);
 		expect(manager.hasActiveAnimations('base#0', 1_000_510)).toBe(true);
 		expect(manager.hasActiveAnimations('base#1', 1_000_510)).toBe(false);
 	});
@@ -386,9 +386,9 @@ describe('ScrambleStateManager', () => {
 		const base = 60_000_000;
 		manager.updateMsg(TEST_ID, 'Hello world', base, false, undefined, true);
 		const midText = 'Hello world. How are you today?';
-		manager.updateMsg(TEST_ID, midText, base + 100, false, undefined, true);
+		manager.updateMsg(TEST_ID, midText, base + 400, false, undefined, true);
 		const newText = 'Hello world. How are you today? This is brand new streaming content.';
-		const during = manager.updateMsg(TEST_ID, newText, base + 200, false, undefined, true);
+		const during = manager.updateMsg(TEST_ID, newText, base + 500, false, undefined, true);
 		const state = (manager as any).cache.get(TEST_ID)?.msg;
 		console.log({ targetText: state?.targetText, displayedText: state?.displayedText, glitchQueueLen: state?.glitchQueue?.length, pendingLen: state?.pendingGlitch?.length });
 		const stripped = stripAnsi(during.content);

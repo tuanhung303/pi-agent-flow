@@ -54,15 +54,15 @@ describe('ScrambleStateManager — timer scope & cleanup', () => {
 	it('hasActiveAnimations detects sub-flow animations via prefix', () => {
 		// Simulate multi-flow panel where sub-flow ids are "base#0", "base#1"
 		manager.updateMsg('base#0', 'Hello world', BASE, false, undefined, true);
-		manager.updateMsg('base#0', 'Hello world. Changed.', BASE + 100, false, undefined, true);
-		expect(manager.hasActiveAnimations('base', BASE + 110)).toBe(true);
+		manager.updateMsg('base#0', 'Totally different text here.', BASE + 400, false, undefined, true);
+		expect(manager.hasActiveAnimations('base', BASE + 410)).toBe(true);
 		expect(manager.hasActiveAnimations('base#0', BASE + 110)).toBe(true);
 		expect(manager.hasActiveAnimations('base#1', BASE + 110)).toBe(false);
 	});
 
 	it('completeFlow clears glitchQueue, glitchFrame, and targetText for aim/act/msg', () => {
 		manager.updateMsg(TEST_ID, 'Start', BASE, false, undefined, true);
-		manager.updateMsg(TEST_ID, 'Start text. Changed text here.', BASE + 100, false, undefined, true);
+		manager.updateMsg(TEST_ID, 'Start text. Changed text here.', BASE + 400, false, undefined, true);
 
 		const stateBefore = (manager as any).cache.get(TEST_ID).msg;
 		expect(stateBefore.glitchQueue.length).toBeGreaterThan(0);
@@ -116,7 +116,7 @@ describe('ScrambleStateManager — timer scope & cleanup', () => {
 		// active flow
 		const longText = 'A very long active text that contains many characters and a sentence boundary. Here is more text to ensure a glitch is triggered properly.';
 		manager.updateMsg('active', 'Active text', BASE, false, undefined, true);
-		manager.updateMsg('active', longText, BASE + 100, false, undefined, true);
+		manager.updateMsg('active', longText, BASE + 400, false, undefined, true);
 
 		// Idle scoped check must be false even while active is animating
 		expect(manager.hasActiveAnimations('idle', BASE + 110)).toBe(false);
