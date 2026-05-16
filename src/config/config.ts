@@ -525,6 +525,36 @@ export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStr
 	return `mode: ${modeName} | ${parts.join(" - ")}`;
 }
 
+export function resolveModelContextWindow(model?: string): number | undefined {
+	if (!model) return undefined;
+	const m = model.toLowerCase();
+	// Claude
+	if (m.includes("claude-3.7-sonnet")) return 200_000;
+	if (m.includes("claude-3.5-sonnet")) return 200_000;
+	if (m.includes("claude-3-opus")) return 200_000;
+	if (m.includes("claude-3-sonnet")) return 200_000;
+	if (m.includes("claude-3-haiku")) return 200_000;
+	if (m.includes("claude")) return 200_000;
+	// OpenAI
+	if (m.includes("gpt-4o")) return 128_000;
+	if (m.includes("gpt-4-turbo")) return 128_000;
+	if (m.includes("gpt-4")) return m.includes("32k") ? 32_000 : 128_000;
+	if (m.includes("gpt-3.5-turbo")) return 16_000;
+	if (m.includes("o1") || m.includes("o3")) return 200_000;
+	// Gemini
+	if (m.includes("gemini-1.5-pro")) return 2_000_000;
+	if (m.includes("gemini-1.5-flash")) return 1_000_000;
+	if (m.includes("gemini-1.0-pro")) return 32_000;
+	if (m.includes("gemini")) return 1_000_000;
+	// DeepSeek
+	if (m.includes("deepseek")) return 64_000;
+	// Llama
+	if (m.includes("llama-3.1") || m.includes("llama3.1")) return 128_000;
+	if (m.includes("llama-3.2") || m.includes("llama3.2")) return 128_000;
+	if (m.includes("llama")) return 8_000;
+	return undefined;
+}
+
 export function writeFlowModelConfig(
 	cwd: string,
 	strategyName: string,
