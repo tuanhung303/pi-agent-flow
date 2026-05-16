@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { DynamicScrambleText, scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
-import { getGoal, setGoal, getWarpCount, recordWarp } from "./store.js";
+import { getGoal, getWarpCount, recordWarp } from "./store.js";
 
 const SYSTEM_PROMPT = `You are a context transfer and execution planning assistant. Given a conversation history and the user's goal, generate a structured warp prompt that serves as a ready-to-execute project brief for a new session.
 
@@ -298,16 +298,6 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
         withSession: async (newCtx) => {
           const effectiveGoal = args.trim() ? goal : extractGoalFromPrompt(warpedPrompt);
 
-          // Bind goal to the new session immediately — eliminates the window where
-          // the old parent session's goal persists as current after warp.
-          const newSessionId = newCtx.sessionManager.getSessionId();
-          if (newSessionId) {
-            setGoal(cwd, effectiveGoal, { sessionId: newSessionId });
-          }
-
-          // Keep editor text so user can review/modify the goal
-          newCtx.ui.setEditorText?.(`/flow:goal set ${effectiveGoal}`);
-
           // Log warp (cwd captured in closure, no ctx needed)
           recordWarp(cwd, {
             id: `warp-${Date.now()}`,
@@ -318,6 +308,13 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
           });
 
           newCtx.ui.notify?.("Warped to new session.", "info");
+
+          // Execute /flow:goal set as a real user message in the new session.
+          // This triggers the command handler which calls setGoal() with
+          // ctx.sessionManager.getSessionId() — guaranteed to be the new
+          // session's ID. The handler then triggers the LLM to start working.
+          // sendUserMessage is called last because it may trigger a turn.
+          newCtx.sendUserMessage(`/flow:goal set ${effectiveGoal}`);
         },
       });
 
