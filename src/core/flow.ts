@@ -48,7 +48,6 @@ import {
 	buildDelegationRule,
 	buildFlowListSection,
 	buildLineage,
-	buildParentLineageHint,
 	computeChildPropagation,
 } from "./delegation.js";
 
@@ -396,13 +395,11 @@ function buildFlowArgs(
 
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 	const lineage = buildLineage(flow.name, parentFlowStack);
-	const parentLineageHint = buildParentLineageHint(parentFlowStack);
 	const activation =
 		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}" lineage="${lineage}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
 		`${delegationRule}\n` +
 		`${flowListSection}` +
-		`${parentLineageHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
 

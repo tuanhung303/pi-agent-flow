@@ -1489,10 +1489,10 @@ describe("acceptance field propagation", () => {
 		const prompt = args[args.indexOf("-p") + 1];
 
 		expect(prompt).toContain("Available flows:");
-		expect(prompt).toContain("- [scout] — Discovery flow");
-		expect(prompt).toContain("- [build] — Implement, test, verify, ship.");
-		expect(prompt).toContain("- [audit] 🔒 — Audit security, quality, correctness; fix safe issues.");
-		expect(prompt).toContain("You may delegate to sub-flows (depth 2/3 | cycles: blocked | stack: orchestrator).");
+		expect(prompt).toContain("- scout");
+		expect(prompt).toContain("- build");
+		expect(prompt).toContain("- audit");
+		expect(prompt).toContain("Deleg: on (depth 2/3 · stack: orchestrator)");
 		expect(prompt).toContain("<activation flow=\"scout\"");
 
 		mockProc.emit("close", 0);
@@ -1528,7 +1528,7 @@ describe("acceptance field propagation", () => {
 		const prompt = args[args.indexOf("-p") + 1];
 
 		expect(prompt).not.toContain("Available flows:");
-		expect(prompt).toContain("You may NOT delegate to sub-flows (depth 3/3 | cycles: blocked | stack: orchestrator -> scout).");
+		expect(prompt).toContain("Deleg: off (depth 3/3 · stack: orchestrator -> scout)");
 
 		mockProc.emit("close", 0);
 		await promise;
