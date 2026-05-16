@@ -1125,6 +1125,172 @@ describe("compressToolResults — web", () => {
 	});
 });
 
+describe("compressToolResults — Q1 web dedup", () => {
+	function getWebText(result: string, tcId: string): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`)
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("3 identical searches → only latest kept at depth 1", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "search", q: "node.js streams" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "1. Node.js Streams\n   https://nodejs.org/api/stream.html\n   Everything" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "web", arguments: { o: [{ o: "search", q: "node.js streams" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "1. Node.js Streams\n   https://nodejs.org/api/stream.html\n   Everything" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc3", name: "web", arguments: { o: [{ o: "search", q: "node.js streams" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc3", content: "1. Node.js Streams\n   https://nodejs.org/api/stream.html\n   Everything" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		// Latest preserved (check parsed text to avoid JSON escaping)
+		const tc3Text = getWebText(result, "tc3");
+		expect(tc3Text).toContain('[web:search] "node.js streams" · 1 results · first: Node.js Streams');
+		expect(tc3Text).not.toContain("(superseded");
+		// Earlier superseded
+		const tc1Text = getWebText(result, "tc1");
+		const tc2Text = getWebText(result, "tc2");
+		expect(tc1Text).toContain('[web:search] "node.js streams" (superseded by later search)');
+		expect(tc2Text).toContain('[web:search] "node.js streams" (superseded by later search)');
+	});
+
+	it("same URL fetched twice → only latest kept", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "fetch", u: "https://example.com/" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "File: /tmp/abc.md\nTitle: Example\nContent length: 100 chars\n\nPreview: old" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "web", arguments: { o: [{ o: "fetch", u: "https://example.com" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "File: /tmp/abc.md\nTitle: Example\nContent length: 200 chars\n\nPreview: new" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc2Text = getWebText(result, "tc2");
+		expect(tc2Text).toContain("[web:fetch] https://example.com · \"Example\" · 200 chars");
+		const tc1Text = getWebText(result, "tc1");
+		expect(tc1Text).toContain("[web:fetch] https://example.com/ (superseded by later fetch)");
+		expect(tc2Text).not.toContain("(superseded");
+	});
+
+	it("search + fetch of same URL → treated as independent keys", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "search", q: "example.com homepage" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "1. Example Domain\n   https://example.com\n   Info" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "web", arguments: { o: [{ o: "fetch", u: "https://example.com" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "File: /tmp/abc.md\nTitle: Example Domain\nContent length: 500 chars\n\nPreview:\nMore text" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getWebText(result, "tc1");
+		const tc2Text = getWebText(result, "tc2");
+		expect(tc1Text).toContain('[web:search] "example.com homepage" · 1 results · first: Example Domain');
+		expect(tc2Text).toContain('[web:fetch] https://example.com · "Example Domain" · 500 chars');
+		expect(result).not.toContain("(superseded");
+	});
+
+	it("depth 2+ rollup", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "search", q: "query A" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "1. Result A\n   https://a.com\n   Info" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "web", arguments: { o: [{ o: "search", q: "query B" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "1. Result B\n   https://b.com\n   Info" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc3", name: "web", arguments: { o: [{ o: "fetch", u: "https://c.com" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc3", content: "File: /tmp/c.md\nTitle: C\nContent length: 300 chars\n\nPreview:\nText" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc4", name: "web", arguments: { o: [{ o: "search", q: "query A" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc4", content: "1. Result A updated\n   https://a.com\n   Info" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		// Rollup summary (no quotes, safe to check in raw JSON)
+		expect(result).toContain("[web] 3 unique queries (2 searches, 1 fetch) · latest per query below");
+		// Latest results — check parsed text to avoid JSON escaping
+		const tc2Text = getWebText(result, "tc2");
+		const tc3Text = getWebText(result, "tc3");
+		const tc4Text = getWebText(result, "tc4");
+		expect(tc2Text).toContain('[web:search] "query B" · 1 results · first: Result B');
+		expect(tc3Text).toContain('[web:fetch] https://c.com · "C" · 300 chars');
+		expect(tc4Text).toContain('[web:search] "query A" · 1 results · first: Result A updated');
+		// Superseded tool result removed entirely (assistant toolCall still present)
+		const hasTc1ToolResult = result.trimEnd().split("\n").some((l) =>
+			l.includes('"role":"toolResult"') && l.includes('"toolCallId":"tc1"')
+		);
+		expect(hasTc1ToolResult).toBe(false);
+		expect(result).not.toContain("(superseded");
+	});
+
+	it("handles empty query without crashing", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "search", q: "" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getWebText(result, "tc1");
+		expect(tc1Text).toContain("[web]");
+		expect(tc1Text).not.toContain("(superseded");
+	});
+
+	it("handles whitespace-only query without marking as superseded", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "search", q: "   " }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "web", arguments: { o: [{ o: "search", q: "   " }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "No results" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getWebText(result, "tc1");
+		const tc2Text = getWebText(result, "tc2");
+		// Neither should be superseded because empty normalized queries are not indexed
+		expect(tc1Text).not.toContain("(superseded");
+		expect(tc2Text).not.toContain("(superseded");
+	});
+
+	it("handles null ops[0] without crashing", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [null] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getWebText(result, "tc1");
+		expect(tc1Text).toBeTruthy();
+		expect(tc1Text).not.toContain("(superseded");
+	});
+
+	it("handles missing args without crashing", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: undefined }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getWebText(result, "tc1");
+		expect(tc1Text).toBeTruthy();
+		expect(tc1Text).not.toContain("(superseded");
+	});
+
+	it("query normalization (case-insensitive, trimmed)", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "web", arguments: { o: [{ o: "search", q: "Node.JS STREAMS" }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "1. Node.js Streams\n   https://nodejs.org\n   Info" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "web", arguments: { o: [{ o: "search", q: "  node.js streams  " }] } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "1. Node.js Streams\n   https://nodejs.org\n   Info" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		// tc2 is latest
+		const tc2Text = getWebText(result, "tc2");
+		expect(tc2Text).toContain('[web:search] "  node.js streams  " · 1 results · first: Node.js Streams');
+		expect(tc2Text).not.toContain("(superseded");
+		// tc1 superseded due to normalization
+		const tc1Text = getWebText(result, "tc1");
+		expect(tc1Text).toContain('[web:search] "Node.JS STREAMS" (superseded by later search)');
+	});
+});
+
 describe("compressToolResults — ask_user", () => {
 	it("compresses answered result", () => {
 		const snapshot = makeSnapshot([

@@ -496,11 +496,13 @@ interface CompressToolResultsOptions {
   depth?: number; // 1 = moderate compression, 2+ = maximum compression
 }
 
-// Internal dedup index built during pre-scan (W1 + E1 only)
+// Internal dedup index built during pre-scan (W1 + E1 + Q1)
 interface DedupIndex {
   latestWrite: Map<string, string>;      // normPath → toolCallId
   latestEdit: Map<string, string>;       // normPath → toolCallId
-  latestDelete: Map<string, string>;    // normPath → toolCallId
+  latestDelete: Map<string, string>;     // normPath → toolCallId
+  latestWebSearch: Map<string, string>;   // normQuery → toolCallId
+  latestWebFetch: Map<string, string>;    // normUrl → toolCallId
 }
 
 // Enhanced compressBatchResult signature

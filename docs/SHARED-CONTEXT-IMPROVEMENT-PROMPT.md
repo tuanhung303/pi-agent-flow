@@ -45,13 +45,12 @@ When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it fork
 | **X1** | Bash stdout/stderr compression | ✅ Complete | `[bash:ok] id · exit 0 · 0.5s (avg) · 3 lines\n> head:\n...` | `[bash:ok] id · exit 0` |
 | **W1** | Write deduplication (cross-turn) | ✅ Complete | `[batch:write] src/config.ts (1234 bytes)` | `[batch:write] src/config.ts` |
 | **E1** | Edit deduplication (cross-turn) | ✅ Complete | `[batch:edit] src/index.ts (2 blocks)` | `[batch:edit] src/index.ts` |
-| **Q1** | Web query deduplication | ✅ Basic compression only | `[web:search] "query" · 2 results · first: Title` | Same (no depth-specific trimming yet) |
+| **Q1** | Web query deduplication | ✅ Complete | `[web:search] "query" · 2 results · first: Title` | `[web] N unique queries (S searches, F fetches) · latest per query below` |
 
 ### Pending / Future Work
 
 | Item | Why It Matters | File Hint |
 |------|--------------|-----------|
-| **Q1 cross-turn dedup** | Same search issued 3× = 3 lines in child context. Should collapse to 1 latest + superseded breadcrumbs. | `src/snapshot/snapshot.ts:~283` `compressWebResult` — add `buildWebDedupIndex` pre-scan analogous to `buildDedupIndex` for batch. |
 | **Cross-turn bash dedup** | If parent runs `npm test` every turn, child sees N bash results. Low ROI because bash IDs are unique per batch call. | `compressBatchResult` already handles intra-batch dedup; cross-turn would require new `DedupIndex` category. |
 | **Read content truncation tuning** | Currently truncates to header only. Could preserve first/last N lines for context. | `compressBatchResult` read section handling (~line 480). |
 | **rg output compression** | `rg` results currently pass through verbatim. Could compress to `[rg] N matches in M files`. | `KNOWN_SECTION_HEADERS` in `snapshot.ts:~181`. |
@@ -373,6 +372,7 @@ find /tmp -name 'pi-dump.*' -mtime +7 -delete
 | Date | Agent | Change | Tests Added |
 |------|-------|--------|-------------|
 | 2026-05-17 | craft | Initial prompt document created | N/A |
+| 2026-05-17 | build | Q1 web query deduplication — cross-turn dedup with depth-aware rollup | 5 new tests in `tests/snapshot-compress.test.ts` |
 
 ---
 

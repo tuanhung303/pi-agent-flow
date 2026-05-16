@@ -73,6 +73,10 @@ export function setupContinuation(pi: ExtensionAPI): void {
       const goal = getGoal(cwd);
       if (!goal || goal.status !== "active") return;
       const sessionId = goal.sessionId ?? "none";
+      // Session guard: only nudge the session that owns the active goal.
+      if (sessionId !== "none" && sessionId !== sessionRegistry.getSessionId(cwd)) {
+        return;
+      }
       const lastActivity = _lastTurnEndAt.get(sessionId);
       if (!lastActivity) return;
       const now = Date.now();

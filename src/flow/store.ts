@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { logWarn } from "../config/log.js";
 import type { GoalEntry, GoalState, GoalStatus } from "./types.js";
 
 function ensureDir(dir: string): void {
@@ -37,12 +38,14 @@ function readState(cwd: string): GoalState {
     if (!parsed || typeof parsed !== "object") return { history: [] };
     if (!Array.isArray(parsed.history)) parsed.history = [];
     return parsed;
-  } catch {
+  } catch (err) {
+    logWarn(`[pi-agent-flow] Goal state file corrupted or unreadable at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
     return { history: [] };
   }
 }
 
 const MAX_HISTORY_ENTRIES = 5;
+const MAX_WARP_ENTRIES = 20;
 const MAX_INTENT_LENGTH = 200;
 
 function pruneHistory(state: GoalState): void {
@@ -172,5 +175,8 @@ export function recordWarp(cwd: string, warp: import("./types.js").WarpEntry): v
   const state = readState(cwd);
   if (!state.warps) state.warps = [];
   state.warps.push(warp);
+  if (state.warps.length > MAX_WARP_ENTRIES) {
+    state.warps = state.warps.slice(-MAX_WARP_ENTRIES);
+  }
   writeState(cwd, state);
 }

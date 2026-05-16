@@ -245,6 +245,8 @@ interface DedupIndex {
 	latestWrite: Map<string, string>;
 	latestEdit: Map<string, string>;
 	latestDelete: Map<string, string>;
+	latestWebSearch: Map<string, string>;
+	latestWebFetch: Map<string, string>;
 }
 
 
@@ -252,10 +254,16 @@ interface DedupIndex {
  * Scan all batch tool results in the snapshot and build a DedupIndex.
  * Only successful writes/edits/deletes are tracked; error operations are exempt.
  */
-function buildDedupIndex(lines: string[], toolCallIdToName: Map<string, string>): DedupIndex {
+function buildDedupIndex(
+	lines: string[],
+	toolCallIdToName: Map<string, string>,
+	toolCallIdToArgs: Map<string, unknown>,
+): DedupIndex {
 	const latestWrite = new Map<string, string>();
 	const latestEdit = new Map<string, string>();
 	const latestDelete = new Map<string, string>();
+	const latestWebSearch = new Map<string, string>();
+	const latestWebFetch = new Map<string, string>();
 
 	for (const line of lines) {
 		let entry: any;
@@ -264,7 +272,8 @@ function buildDedupIndex(lines: string[], toolCallIdToName: Map<string, string>)
 
 		const toolCallId = entry.message?.toolCallId;
 		if (typeof toolCallId !== "string") continue;
-		if (toolCallIdToName.get(toolCallId) !== "batch") continue;
+		const toolName = toolCallIdToName.get(toolCallId);
+		if (toolName === "batch") {
 
 		const text = extractToolResultText(entry) ?? "";
 		const textLines = text.replace(/\r\n/g, "\n").split("\n");
@@ -310,9 +319,70 @@ function buildDedupIndex(lines: string[], toolCallIdToName: Map<string, string>)
 				latestEdit.delete(path);   // delete supersedes earlier edits
 			}
 		}
+		}
+
+		// Web tool results — build Q1 dedup index
+		if (toolName === "web") {
+			const args = toolCallIdToArgs.get(toolCallId);
+			if (args && typeof args === "object") {
+				const a = args as Record<string, unknown>;
+				const ops = Array.isArray(a.o) ? a.o : Array.isArray(a.op) ? a.op : undefined;
+				if (ops && ops.length > 0) {
+					const firstOp = ops[0];
+					if (firstOp && typeof firstOp === "object") {
+						const query = typeof firstOp.q === "string" ? firstOp.q.trim().toLowerCase() : undefined;
+						const url = typeof firstOp.u === "string" ? firstOp.u.trim().replace(/\/$/, "") : undefined;
+						if (query) latestWebSearch.set(query, toolCallId);
+						if (url) latestWebFetch.set(url, toolCallId);
+					}
+				}
+			}
+		}
 	}
 
-	return { latestWrite, latestEdit, latestDelete };
+	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch };
+}
+
+/** Check if a web tool result is superseded by a later result with the same query or URL. */
+function checkWebDedup(
+	args: unknown,
+	toolCallId: string,
+	dedupIndex: DedupIndex,
+): { isSuperseded: boolean; marker?: string } {
+	if (!args || typeof args !== "object") return { isSuperseded: false };
+	const a = args as Record<string, unknown>;
+	const ops = Array.isArray(a.o) ? a.o : Array.isArray(a.op) ? a.op : undefined;
+	if (!ops || ops.length === 0) return { isSuperseded: false };
+	const firstOp = ops[0];
+	if (!firstOp || typeof firstOp !== "object") return { isSuperseded: false };
+
+	if (typeof firstOp.q === "string") {
+		const normQuery = firstOp.q.trim().toLowerCase();
+		if (normQuery) {
+			const latestTc = dedupIndex.latestWebSearch.get(normQuery);
+			if (latestTc !== toolCallId) {
+				return {
+					isSuperseded: true,
+					marker: `[web:search] "${firstOp.q}" (superseded by later search)`,
+				};
+			}
+		}
+	}
+
+	if (typeof firstOp.u === "string") {
+		const normUrl = firstOp.u.trim().replace(/\/$/, "");
+		if (normUrl) {
+			const latestTc = dedupIndex.latestWebFetch.get(normUrl);
+			if (latestTc !== toolCallId) {
+				return {
+					isSuperseded: true,
+					marker: `[web:fetch] ${firstOp.u} (superseded by later fetch)`,
+				};
+			}
+		}
+	}
+
+	return { isSuperseded: false };
 }
 
 /** Compress batch tool result: compress bash sections, truncate read content, dedup writes/edits/deletes (W1 + E1). */
@@ -578,9 +648,11 @@ function compressWebResult(text: string, args?: unknown): string {
 		const a = args as Record<string, unknown>;
 		const ops = Array.isArray(a.o) ? a.o : Array.isArray(a.op) ? a.op : undefined;
 		if (ops && ops.length > 0) {
-			const firstOp = ops[0] as Record<string, unknown>;
-			query = typeof firstOp.q === "string" ? firstOp.q : undefined;
-			url = typeof firstOp.u === "string" ? firstOp.u : undefined;
+			const firstOp = ops[0];
+			if (firstOp && typeof firstOp === "object") {
+				query = typeof firstOp.q === "string" ? firstOp.q : undefined;
+				url = typeof firstOp.u === "string" ? firstOp.u : undefined;
+			}
 		}
 	}
 
@@ -715,10 +787,11 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		}
 	}
 
-	// === PASS 1 (pre-scan): Build DedupIndex for batch tool results (W1 + E1) ===
-	const dedupIndex = buildDedupIndex(lines, toolCallIdToName);
+	// === PASS 1 (pre-scan): Build DedupIndex for batch and web tool results (W1 + E1 + Q1) ===
+	const dedupIndex = buildDedupIndex(lines, toolCallIdToName, toolCallIdToArgs);
 
 	const result: string[] = [];
+	let webSummaryEmitted = false;
 
 	// Second pass: compress matching tool results
 	for (const line of lines) {
@@ -806,11 +879,31 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			});
 		}
 
-		// --- Compress web tool results ---
+		// --- Compress web tool results (Q1 dedup) ---
 		else if (toolName === "web") {
 			originalText = extractToolResultText(entry) ?? "";
 			const args = toolCallIdToArgs.get(toolCallId);
-			rendered = compressWebResult(originalText, args);
+			const { isSuperseded, marker } = checkWebDedup(args, toolCallId, dedupIndex);
+			if (isSuperseded) {
+				if (depth < 2) {
+					rendered = marker;
+				} else {
+					// At depth 2+, drop superseded web results entirely
+					continue;
+				}
+			} else {
+				rendered = compressWebResult(originalText, args);
+				if (depth >= 2 && !webSummaryEmitted) {
+					const searchCount = dedupIndex.latestWebSearch.size;
+					const fetchCount = dedupIndex.latestWebFetch.size;
+					const total = searchCount + fetchCount;
+					if (total > 0) {
+						const fetchLabel = fetchCount === 1 ? "fetch" : "fetches";
+						rendered = `[web] ${total} unique queries (${searchCount} searches, ${fetchCount} ${fetchLabel}) · latest per query below\n${rendered}`;
+						webSummaryEmitted = true;
+					}
+				}
+			}
 		}
 
 		// --- Compress ask_user tool results ---
