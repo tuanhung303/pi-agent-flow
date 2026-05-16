@@ -68,7 +68,7 @@ export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefi
 
           const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
           pi.sendMessage(
-            { content: `You have a new active goal. Analyze it and call the flow tool to start executing.\n\nGoal: ${objective}${acceptanceLine}\n\nChoose the appropriate flow type (scout, craft, build, audit, debug, ideas) based on the objective's nature.`, display: false },
+            { content: `New goal active. Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to start executing.${acceptanceLine}`, display: false },
             { triggerTurn: true }
           );
           break;
@@ -104,7 +104,7 @@ export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefi
 
             const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
             pi.sendMessage(
-              { content: `You have a resumed goal. Continue working on it and call the flow tool to proceed.\n\nGoal: ${entry.objective}${acceptanceLine}\n\nChoose the appropriate flow type (scout, craft, build, audit, debug, ideas) based on the objective's nature.`, display: false },
+              { content: `Goal resumed. Continue execution by calling the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas).${acceptanceLine}`, display: false },
               { triggerTurn: true }
             );
           }

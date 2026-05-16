@@ -2,10 +2,9 @@ import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner
 import { getGoal, addTokens, updateGoalStatus } from "./store.js";
 import { budgetLimitTemplate, goalCompletedTemplate } from "./template-strings.js";
 
-let _previousObjective: string | undefined;
-let _lastSpawnAt = 0;
 let _currentSessionId: string | undefined;
 const SPAWN_COOLDOWN_MS = 5000;
+const _lastSpawnAt = new Map<string, number>();
 
 /**
  * Post-flow completion hold — gives the user time to read the result before
@@ -20,15 +19,20 @@ const SPAWN_COOLDOWN_MS = 5000;
  * even when the cooldown has already elapsed.
  */
 const FLOW_COMPLETE_HOLD_MS = 3000;
-let _lastFlowCompleteAt = 0;
+const _lastFlowCompleteAt = new Map<string, number>();
 
 /**
  * Mark that a flow just completed. Called by the executor after each flow
  * finishes. The continuation system uses this to enforce the post-completion
  * hold, giving the user time to read the result before the next flow spawns.
+ *
+ * Per-session tracking prevents one session's flow completion from delaying
+ * another session's continuation.
  */
-export function markFlowCompleted(): void {
-  _lastFlowCompleteAt = Date.now();
+export function markFlowCompleted(sessionId?: string): void {
+  if (sessionId) {
+    _lastFlowCompleteAt.set(sessionId, Date.now());
+  }
 }
 
 export function setupContinuation(
@@ -45,6 +49,12 @@ export function setupContinuation(
 
     const goal = getGoal(cwd);
     if (!goal || goal.status !== "active") return;
+    // Session guard: only continue goals bound to the current session.
+    // NOTE: _currentSessionId is a module-level singleton. If multiple sessions
+    // run concurrently in the same extension host, the most recent session_start
+    // overwrites this value, which can block the parent session's continuation
+    // after a warp. A proper fix requires the Pi framework to pass ctx into
+    // turn_end, or for the store to be keyed by sessionId.
     if (goal.sessionId && goal.sessionId !== _currentSessionId) return;
 
     // Detect agent-driven completion: parse assistant message for flow tool call with type='complete'
@@ -76,16 +86,18 @@ export function setupContinuation(
       }
     }
 
-    // Cooldown: don't re-fire within 5 seconds of last spawn
+    // Cooldown: don't re-fire within 5 seconds of last spawn for THIS goal's session
     const now = Date.now();
-    if (now - _lastSpawnAt < SPAWN_COOLDOWN_MS) return;
+    const goalSessionId = goal.sessionId ?? "none";
+    if (now - (_lastSpawnAt.get(goalSessionId) ?? 0) < SPAWN_COOLDOWN_MS) return;
 
     // Post-completion hold: give the user time to read the flow result
     // before triggering the next flow. This prevents the completed result
     // from scrolling off-screen too fast.
-    if (_lastFlowCompleteAt > 0 && now - _lastFlowCompleteAt < FLOW_COMPLETE_HOLD_MS) return;
+    const lastFlowComplete = _lastFlowCompleteAt.get(goalSessionId);
+    if (lastFlowComplete !== undefined && now - lastFlowComplete < FLOW_COMPLETE_HOLD_MS) return;
 
-    _lastSpawnAt = now;
+    _lastSpawnAt.set(goalSessionId, now);
 
     // Track token usage from turn
     const messageText =
@@ -96,7 +108,6 @@ export function setupContinuation(
             .map((p) => p.text)
             .join("");
     addTokens(cwd, Math.ceil(messageText.length / 4));
-    _previousObjective = goal.objective;
 
     // Budget guards — silent
     const flowCount = goal.completedFlows.length;
@@ -121,7 +132,7 @@ export function setupContinuation(
     const tokenInfo = `${goal.totalTokens}${goal.maxTokens !== undefined ? `/${goal.maxTokens}` : ''}`;
     const acceptanceClause = goal.acceptance ? `\nAcceptance: ${goal.acceptance}` : '';
 
-    const continuationPrompt = `<flow-continuation>\nThe current session has an active flow goal. Continue execution toward the objective.\n\nObjective: ${goal.objective}${acceptanceClause}\nProgress: ${flowCount}${maxFlowsClause} flows completed, ${tokenInfo} tokens used.\n\n**Flow routing:** Choose the appropriate flow type based on the objective:\n- \`scout\` — explore, map, discover\n- \`craft\` — conservative design, architecture\n- \`build\` — implement, test, verify, ship\n- \`audit\` — security, quality, correctness review\n- \`debug\` — investigate root cause and fix\n- \`ideas\` — diverge, evaluate, recommend\n\n**Completion audit:** Before considering the goal complete, verify EACH requirement:\n1. Re-read the original objective and acceptance criteria.\n2. For every stated requirement, confirm concrete evidence of completion.\n3. If ANY requirement lacks evidence, continue working rather than declaring victory.\n4. A goal is complete only when ALL acceptance criteria are met with verifiable results.\n\nCall the flow tool with the appropriate flow type to advance the goal.\n</flow-continuation>`;
+    const continuationPrompt = `<flow-continuation>\nContinue execution toward the active goal.\n\nObjective: ${goal.objective}${acceptanceClause}\nProgress: ${flowCount}${maxFlowsClause} flows, ${tokenInfo} tokens.\n\nCall the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to advance. Verify all acceptance criteria are met before marking complete.\n</flow-continuation>`;
 
     pi.sendMessage({ content: continuationPrompt, display: false }, { triggerTurn: true });
   });
