@@ -181,24 +181,25 @@ export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefi
         parentSession: currentSessionFile,
         withSession: async (newCtx) => {
           newCtx.ui.setEditorText?.(`/flow:goal set ${goal}\n\n${warpedPrompt}`);
+
+          // Log warp (cwd captured in closure, no ctx needed)
+          recordWarp(cwd, {
+            id: `warp-${Date.now()}`,
+            parentSession: currentSessionFile,
+            goal,
+            createdAt: new Date().toISOString(),
+            depth: warpCount + 1,
+          });
+
+          newCtx.ui.notify?.("Warped to new session.", "info");
         },
       });
 
       if (cancelled) {
-        ctx.ui.notify?.("Warp cancelled — no session created.", "info");
+        // Can't use ctx.ui.notify here — ctx is stale after newSession.
+        // The cancelled case means withSession never ran, so we return silently.
         return;
       }
-
-      // Log warp
-      recordWarp(cwd, {
-        id: `warp-${Date.now()}`,
-        parentSession: currentSessionFile,
-        goal,
-        createdAt: new Date().toISOString(),
-        depth: warpCount + 1,
-      });
-
-      ctx.ui.notify?.("Warped to new session.", "info");
     },
   });
 }
