@@ -548,10 +548,10 @@ function renderFlowCollapsed(
 
 	const typeName = formatCollapsedFlowHeaderTypeName(r.type);
 	const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
-	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `   ${modelLabel}   ` : "   ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
+	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `   ${modelLabel} · ` : "   ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 	if (error && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 	// Scramble header on first render; show full styled header when complete
-	const plainHeader = typeName + (modelLabel ? `   ${modelLabel}   ` : "   ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
+	const plainHeader = typeName + (modelLabel ? `   ${modelLabel} · ` : "   ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
 	container.addChild(new DynamicScrambleText(
 		header,
 		() => {
@@ -566,7 +566,7 @@ function renderFlowCollapsed(
 		const countdown = getLiveCountdown(r);
 		const aimTree = "├─";
 		const aimLabel = countdown
-			? ` aim: [${countdown}] - `
+			? ` aim: ${countdown} · `
 			: ` aim: `;
 		const aimPrefix = `${aimTree}${aimLabel}`;
 		const budget = getTruncationBudget(visibleLength(aimPrefix));
@@ -852,11 +852,11 @@ function renderActivityPanel(
 		// Header line
 		const headerPrefix = isLast ? "└─" : "├─";
 		const modelLabel = r.model ? r.model.replace(/^[^/]+\//, "").toLowerCase() : "";
-		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `   ${modelLabel}   ` : "   ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
+		let headerLine = `${applyRole("treeChars", headerPrefix, theme, config)} ${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `   ${modelLabel} · ` : "   ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
 		if (error && r.stopReason) {
 			headerLine += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 		}
-		const plainHeader = headerPrefix + " " + typeName + (modelLabel ? `   ${modelLabel}   ` : "   ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
+		const plainHeader = headerPrefix + " " + typeName + (modelLabel ? `   ${modelLabel} · ` : "   ") + stripAnsi(displayStats) + (error && r.stopReason ? ` [${r.stopReason}]` : "");
 		container.addChild(new DynamicScrambleText(
 			headerLine,
 			() => {
@@ -874,7 +874,7 @@ function renderActivityPanel(
 			const countdown = getLiveCountdown(r);
 			const aimTree = indent + "├─";
 			const aimLabel = countdown
-				? ` aim: [${countdown}] - `
+				? ` aim: ${countdown} · `
 				: ` aim: `;
 			const aimPrefix = `${aimTree}${aimLabel}`;
 			const budget = getTruncationBudget(visibleLength(aimPrefix));

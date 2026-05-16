@@ -556,9 +556,9 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			expect(text).toContain("aim: [09:36] -");
+			expect(text).toContain("aim: 09:36 ·");
 			// Aim content is scrambled on first render for in-progress flows
-			expect(text).not.toContain("aim: [09:36] - test aim");
+			expect(text).not.toContain("aim: 09:36 · test aim");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -602,7 +602,7 @@ describe("activity panel rendering", () => {
 			expect(firstHeaderLine).not.toContain("↑ 46.7k");
 			expect(firstHeaderLine).not.toContain("↓  4.6k");
 			// Aim prefix is static, content may be scrambled
-			expect(text).toContain("aim: [00:45] -");
+			expect(text).toContain("aim: 00:45 ·");
 			// Msg prefix is static, content may be scrambled
 			expect(text).toContain("msg: ↑ 46.7k ↓   4.6k ·");
 		} finally {
