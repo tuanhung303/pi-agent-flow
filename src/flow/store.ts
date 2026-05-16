@@ -42,6 +42,19 @@ function readState(cwd: string): GoalState {
   }
 }
 
+const MAX_HISTORY_ENTRIES = 5;
+const MAX_INTENT_LENGTH = 200;
+
+function pruneHistory(state: GoalState): void {
+  if (state.history.length > MAX_HISTORY_ENTRIES) {
+    state.history = state.history.slice(-MAX_HISTORY_ENTRIES);
+  }
+}
+
+function truncateIntent(intent: string): string {
+  return intent.length > MAX_INTENT_LENGTH ? intent.slice(0, MAX_INTENT_LENGTH) : intent;
+}
+
 function writeState(cwd: string, state: GoalState): void {
   atomicWriteJson(getStorePath(cwd), state);
 }
@@ -72,6 +85,7 @@ export function setGoal(
   };
   if (state.current) {
     state.history.push(state.current);
+    pruneHistory(state);
   }
   state.current = entry;
   writeState(cwd, state);
@@ -84,6 +98,7 @@ export function clearGoal(cwd: string): void {
     state.current.status = "abandoned";
     state.current.updatedAt = new Date().toISOString();
     state.history.push(state.current);
+    pruneHistory(state);
     state.current = undefined;
   }
   writeState(cwd, state);
@@ -121,7 +136,7 @@ export function recordFlowCompletion(
   if (!state.current) return undefined;
   state.current.completedFlows.push({
     type: flow.type,
-    intent: flow.intent,
+    intent: truncateIntent(flow.intent),
     aim: flow.aim,
     completedAt: new Date().toISOString(),
   });

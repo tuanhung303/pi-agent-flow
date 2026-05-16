@@ -59,15 +59,31 @@ IMPORTANT: You are a text generation assistant, not an agent. Do NOT attempt too
 const MAX_CONVERSATION_CHARS = 15000;
 
 function extractGoalFromPrompt(prompt: string): string {
+  const MAX_GOAL_LEN = 200;
+  // Helper: find first meaningful line and strip bullet/numbered prefixes
+  const pickFirstLine = (text: string): string | undefined => {
+    const lines = text.split('\n');
+    for (const raw of lines) {
+      const trimmed = raw.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const cleaned = trimmed.replace(/^[-*•]\s+|^\d+\.\s+/, '');
+      if (cleaned) return cleaned.length > MAX_GOAL_LEN ? cleaned.slice(0, MAX_GOAL_LEN).trimEnd() : cleaned;
+    }
+    return undefined;
+  };
+
   // Try to find ## Task section
   const taskMatch = prompt.match(/##\s*Task\s*\n([\s\S]*?)(?=\n##|$)/i);
-  if (taskMatch?.[1]?.trim()) return taskMatch[1].trim();
-  // Fallback: first non-empty, non-header line after ---
+  if (taskMatch?.[1]) {
+    const picked = pickFirstLine(taskMatch[1]);
+    if (picked) return picked;
+  }
+  // Fallback: first non-empty, non-header, non-bullet line after ---
   const bodyStart = prompt.indexOf('---', 3);
   if (bodyStart !== -1) {
     const body = prompt.slice(bodyStart + 3);
-    const lines = body.split('\n').filter(l => l.trim() && !l.startsWith('#') && !l.startsWith('---'));
-    if (lines[0]) return lines[0].trim();
+    const picked = pickFirstLine(body);
+    if (picked) return picked;
   }
   return 'Continue the work from the warped context';
 }
