@@ -614,12 +614,12 @@ function renderFlowCollapsed(
 	const prefixStub = `${actTree}${actLabel}`;
 	const budget = getTruncationBudget(visibleLength(prefixStub));
 	const actFullText = stripAnsi(lowerFirstWord(actStr));
-	const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
+	const initialActContent = actFullText.length > budget ? tailText(actFullText, budget) : actFullText;
 	container.addChild(new DynamicScrambleText(
 		`${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", initialActContent, theme, config)}`,
 		() => {
 			const now = Date.now();
-			const displayAct = truncateChars(actFullText, budget);
+			const displayAct = tailText(actFullText, budget);
 			const actContent = scrambleManager.updateAct(id, displayAct, now, isComplete, true).content;
 			const actLabel = ` cmd ▸ `;
 			const actPrefix = `${actTree}${actLabel}`;
@@ -930,7 +930,7 @@ function renderActivityPanel(
 		const prefixStub = `${actTree}${actLabel}`;
 		const budget = getTruncationBudget(visibleLength(prefixStub));
 		const actFullText = stripAnsi(lowerFirstWord(actStr));
-		const initialActContent = actFullText.length > budget ? actFullText.slice(0, budget) : actFullText;
+		const initialActContent = actFullText.length > budget ? tailText(actFullText, budget) : actFullText;
 		container.addChild(new DynamicScrambleText(
 			`${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", initialActContent, theme, config)}`,
 			() => {
@@ -938,7 +938,7 @@ function renderActivityPanel(
 				const actLabel = ` cmd ▸ `;
 				const actPrefix = `${actTree}${actLabel}`;
 				const freshBudget = getTruncationBudget(visibleLength(actPrefix));
-				const displayAct = truncateChars(actFullText, freshBudget);
+				const displayAct = tailText(actFullText, freshBudget);
 				const actContent = scrambleManager.updateAct(flowId, displayAct, now, flowComplete, true).content;
 				return `${applyRole("treeChars", actTree, theme, config)}${applyRole("prefixLabel", actLabel, theme, config)}${applyRole("actContent", actContent, theme, config)}`;
 			},
