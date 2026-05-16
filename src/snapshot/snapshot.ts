@@ -40,6 +40,144 @@ export interface SessionSnapshotSource {
 	getHeader: () => unknown;
 	getBranch: () => unknown[];
 }
+// ---------------------------------------------------------------------------
+// Snapshot JSONL types
+// ---------------------------------------------------------------------------
+
+/** A text part in message content. */
+interface TextPart {
+	type: "text";
+	text: string;
+}
+
+/** A tool call part in assistant message content. */
+interface ToolCallPart {
+	type: "toolCall";
+	name?: string;
+	toolName?: string;
+	id?: string;
+	toolCallId?: string;
+	arguments?: unknown;
+	input?: unknown;
+}
+
+/** A tool result part in tool message content. */
+interface ToolResultPart {
+	type: "toolResult";
+	toolCallId?: string;
+	content?: string | unknown;
+}
+
+/** Union of all content part types in snapshot messages. */
+type ContentPart = TextPart | ToolCallPart | ToolResultPart;
+
+/** Token usage attached to assistant messages. */
+interface MessageUsage {
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	cost?: { total?: number };
+	totalTokens?: number;
+	[key: string]: unknown;
+}
+
+/** A message inside a snapshot JSONL entry. */
+interface SnapshotMessage {
+	role: string;
+	content?: string | ContentPart[];
+	toolCallId?: string;
+	toolName?: string;
+	usage?: MessageUsage;
+	model?: string;
+	stopReason?: string;
+	errorMessage?: string;
+	details?: unknown;
+	id?: string;
+	parentId?: string;
+	parentMessageId?: string;
+	messageId?: string;
+	timestamp?: number;
+	[key: string]: unknown;
+}
+
+/** A session header entry (first line of snapshot JSONL). */
+interface SessionEntry {
+	type?: "session" | "header";
+	id?: string;
+	systemPrompt?: string;
+	version?: string;
+	timestamp?: string;
+	cwd?: string;
+	forkedFrom?: string;
+	forkedAt?: string;
+	parentFlow?: string;
+	depth?: number;
+	parentId?: string;
+	[key: string]: unknown;
+}
+
+/** A message entry in snapshot JSONL. */
+interface MessageEntry {
+	type: "message";
+	message: SnapshotMessage;
+	parentId?: string;
+	parentMessageId?: string;
+	id?: string;
+	[key: string]: unknown;
+}
+
+/** A system prompt event entry. */
+interface SystemEntry {
+	type: "system";
+	content: string;
+	[key: string]: unknown;
+}
+
+/** A compression-stats telemetry entry. */
+interface CompressionStatsEntry {
+	type: "compression-stats";
+	preBytes: number;
+	postBytes: number;
+	reductionPercent: number;
+	passesApplied: string[];
+}
+
+/** Config change entries that are dropped during sanitization. */
+interface ConfigEntry {
+	type: "model_change" | "thinking_level_change";
+	[key: string]: unknown;
+}
+
+/** Custom message entries that are dropped during sanitization. */
+interface CustomMessageEntry {
+	type: "custom_message";
+	[key: string]: unknown;
+}
+
+/** Parsed snapshot JSONL line with known fields. */
+interface SnapshotEntry {
+	type?: string;
+	message?: SnapshotMessage;
+	id?: string;
+	parentId?: string;
+	parentMessageId?: string;
+	systemPrompt?: string;
+	content?: string;
+	version?: string;
+	timestamp?: string | number;
+	cwd?: string;
+	forkedFrom?: string;
+	forkedAt?: string;
+	parentFlow?: string;
+	depth?: number;
+	preBytes?: number;
+	postBytes?: number;
+	reductionPercent?: number;
+	passesApplied?: string[];
+	[key: string]: unknown;
+}
+
 
 // ---------------------------------------------------------------------------
 // Session snapshot serialization
@@ -57,9 +195,9 @@ export function buildForkSessionSnapshotJsonl(
 	// Emit session header once, unless getBranch() already includes it as the
 	// first entry (some session managers include the header in the branch).
 	const firstBranch = branchEntries[0];
-	const headerId = (header as any)?.id;
-	const firstId = firstBranch && typeof firstBranch === "object" ? (firstBranch as any)?.id : undefined;
-	const firstType = firstBranch && typeof firstBranch === "object" ? (firstBranch as any)?.type : undefined;
+	const headerId = (header as SessionEntry)?.id;
+	const firstId = firstBranch && typeof firstBranch === "object" ? (firstBranch as SessionEntry)?.id : undefined;
+	const firstType = firstBranch && typeof firstBranch === "object" ? (firstBranch as SessionEntry)?.type : undefined;
 	if (
 		!firstBranch ||
 		typeof firstBranch !== "object" ||
@@ -71,7 +209,7 @@ export function buildForkSessionSnapshotJsonl(
 
 	// Emit system event so the JSONL is self-contained — parsers can reconstruct
 	// full context without needing the markdown section.
-	const systemPrompt = (header as any).systemPrompt;
+	const systemPrompt = (header as SessionEntry).systemPrompt;
 	if (typeof systemPrompt === "string" && systemPrompt) {
 		lines.push(JSON.stringify({ type: "system", content: systemPrompt }));
 	}
@@ -266,8 +404,8 @@ function buildDedupIndex(
 	const latestWebFetch = new Map<string, string>();
 
 	for (const line of lines) {
-		let entry: any;
-		try { entry = JSON.parse(line); } catch { continue; }
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { continue; }
 		if (entry?.type !== "message" || (entry.message?.role !== "tool" && entry.message?.role !== "toolResult")) continue;
 
 		const toolCallId = entry.message?.toolCallId;
@@ -275,7 +413,7 @@ function buildDedupIndex(
 		const toolName = toolCallIdToName.get(toolCallId);
 		if (toolName === "batch") {
 
-		const text = extractToolResultText(entry) ?? "";
+		const text = extractToolResultText(entry as MessageEntry) ?? "";
 		const textLines = text.replace(/\r\n/g, "\n").split("\n");
 
 		for (let i = 0; i < textLines.length; i++) {
@@ -711,8 +849,8 @@ function compressAskUserResult(text: string, args?: unknown): string {
 function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
 	const map = new Map<string, string>();
 	for (const line of lines) {
-		let entry: any;
-		try { entry = JSON.parse(line); } catch { continue; }
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { continue; }
 		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
@@ -748,18 +886,18 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 	if (cache.size === 0) {
 		const hasCompressible = lines.some((line) => {
 			try {
-				const entry = JSON.parse(line);
+				const entry: SnapshotEntry = JSON.parse(line) as SnapshotEntry;
 				return entry?.type === "message" && entry.message?.role === "assistant" &&
 					Array.isArray(entry.message.content) &&
-					entry.message.content.some((p: any) =>
+					entry.message.content.some((p: ContentPart) =>
 						p.type === "toolCall" &&
-						["batch_read", "batch", "web", "ask_user"].includes(p.name),
+						["batch_read", "batch", "web", "ask_user"].includes(p.name as string),
 					);
 			} catch { return false; }
 		});
 		const hasToolResultMessages = lines.some((line) => {
 			try {
-				const entry = JSON.parse(line);
+				const entry: SnapshotEntry = JSON.parse(line) as SnapshotEntry;
 				return entry?.type === "message" &&
 					(entry.message?.role === "tool" || entry.message?.role === "toolResult");
 			} catch { return false; }
@@ -775,14 +913,14 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 	// Build toolCallId → arguments mapping for all tools (needed for batch/web/ask_user metadata)
 	const toolCallIdToArgs = new Map<string, unknown>();
 	for (const line of lines) {
-		let entry: any;
-		try { entry = JSON.parse(line); } catch { continue; }
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { continue; }
 		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
 			if (part.type === "toolCall" && (part.id || part.toolCallId) && part.arguments) {
-				toolCallIdToArgs.set(part.id ?? part.toolCallId, part.arguments);
+				toolCallIdToArgs.set((part.id ?? part.toolCallId) as string, part.arguments);
 			}
 		}
 	}
@@ -795,8 +933,8 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 
 	// Second pass: compress matching tool results
 	for (const line of lines) {
-		let entry: any;
-		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { result.push(line); continue; }
 
 		if (entry?.type !== "message" || (entry.message?.role !== "tool" && entry.message?.role !== "toolResult")) {
 			result.push(line);
@@ -843,7 +981,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			if (!compressed || compressed.length === 0) {
 				// Cache miss (never populated or evicted) — do NOT pass megabytes of raw
 				// flow output verbatim into child context. Render a minimal placeholder.
-				originalText = extractToolResultText(entry) ?? "";
+				originalText = extractToolResultText(entry as MessageEntry) ?? "";
 				const rawContent = entry.message?.content;
 				const contentSize = rawContent
 					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
@@ -856,7 +994,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				
 				if (hasAnyUndefined) {
 					// Safety net: compression produced garbage, fall back to truncated raw.
-					originalText = extractToolResultText(entry) ?? "";
+					originalText = extractToolResultText(entry as MessageEntry) ?? "";
 					const size = originalText.length;
 					rendered = size > 2000
 						? originalText.slice(0, 2000) + "\n[truncated]"
@@ -869,7 +1007,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 
 		// --- Compress batch tool results (selective: compress bash, truncate reads, dedup writes/edits/deletes) ---
 		else if (toolName === "batch") {
-			originalText = extractToolResultText(entry) ?? "";
+			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			rendered = compressBatchResult(originalText, {
 				depth,
 				toolCallId,
@@ -881,7 +1019,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 
 		// --- Compress web tool results (Q1 dedup) ---
 		else if (toolName === "web") {
-			originalText = extractToolResultText(entry) ?? "";
+			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			const args = toolCallIdToArgs.get(toolCallId);
 			const { isSuperseded, marker } = checkWebDedup(args, toolCallId, dedupIndex);
 			if (isSuperseded) {
@@ -908,7 +1046,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 
 		// --- Compress ask_user tool results ---
 		else if (toolName === "ask_user") {
-			originalText = extractToolResultText(entry) ?? "";
+			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			const args = toolCallIdToArgs.get(toolCallId);
 			rendered = compressAskUserResult(originalText, args);
 		}
@@ -933,7 +1071,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					...entry,
 					message: {
 						...messageWithoutDetails,
-						content: entry.message.content.map((part: any) =>
+						content: (entry.message!.content as ContentPart[]).map((part: ContentPart) =>
 							part.type === "toolResult" && part.toolCallId === toolCallId
 								? { ...part, content: rendered }
 								: part,
@@ -954,7 +1092,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 }
 
 /** Extract text content from a tool result entry for compression analysis. */
-function extractToolResultText(entry: any): string | undefined {
+function extractToolResultText(entry: MessageEntry): string | undefined {
 	if (typeof entry.message?.content === "string") {
 		return entry.message.content;
 	}
@@ -996,8 +1134,8 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 	// Pass 1: Collect all batch_read toolCallIds from assistant messages.
 	const batchReadToolCallIds = new Set<string>();
 	for (const line of lines) {
-		let entry: any;
-		try { entry = JSON.parse(line); } catch { continue; }
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { continue; }
 
 		if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
 		const content = entry.message.content;
@@ -1005,7 +1143,7 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 
 		for (const part of content) {
 			if (part.type === "toolCall" && part.name === "batch_read" && (part.id || part.toolCallId)) {
-				batchReadToolCallIds.add(part.id ?? part.toolCallId);
+				batchReadToolCallIds.add((part.id ?? part.toolCallId) as string);
 			}
 		}
 	}
@@ -1015,8 +1153,8 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 	const result: string[] = [];
 
 	for (const line of lines) {
-		let entry: any;
-		try { entry = JSON.parse(line); } catch { result.push(line); continue; }
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { result.push(line); continue; }
 
 		if (entry?.type !== "message") {
 			result.push(line);
@@ -1024,26 +1162,26 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 		}
 
 		// Tool result message — skip if it's a batch_read result
-		if (entry.message.role === "tool" || entry.message.role === "toolResult") {
-			const toolCallId = entry.message.toolCallId ??
-				(Array.isArray(entry.message.content) ? entry.message.content.find((p: any) => p.type === "toolResult")?.toolCallId : undefined);
+		if (entry.message!.role === "tool" || entry.message!.role === "toolResult") {
+			const toolCallId = entry.message!.toolCallId ??
+				(Array.isArray(entry.message!.content) ? entry.message!.content.find((p: ContentPart) => p.type === "toolResult")?.toolCallId : undefined);
 			if (toolCallId && batchReadToolCallIds.has(toolCallId)) continue;
 			result.push(line);
 			continue;
 		}
 
-		if (entry.message.role !== "assistant") { result.push(line); continue; }
+		if (entry.message!.role !== "assistant") { result.push(line); continue; }
 
-		const content = entry.message.content;
+		const content = entry.message!.content;
 		if (!Array.isArray(content)) { result.push(line); continue; }
 
 		const hasBatchReadCall = content.some(
-			(part: any) => part.type === "toolCall" && part.name === "batch_read",
+			(part: ContentPart) => part.type === "toolCall" && part.name === "batch_read",
 		);
 		if (!hasBatchReadCall) { result.push(line); continue; }
 
 		const filteredContent = content.filter(
-			(part: any) => !(part.type === "toolCall" && part.name === "batch_read"),
+			(part: ContentPart) => !(part.type === "toolCall" && part.name === "batch_read"),
 		);
 
 		if (filteredContent.length === 0) {
@@ -1075,7 +1213,7 @@ function reparentOrphans(snapshot: string): string {
 	const survivingIds = new Set<string>();
 	for (const line of lines) {
 		try {
-			const entry = JSON.parse(line);
+			const entry: SnapshotEntry = JSON.parse(line) as SnapshotEntry;
 			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;
 			if (typeof id === "string" && id) survivingIds.add(id);
 			// Only ids of actual entries should be in survivingIds; parentId refs
@@ -1084,7 +1222,7 @@ function reparentOrphans(snapshot: string): string {
 	}
 	for (let i = 0; i < lines.length; i++) {
 		try {
-			let entry = JSON.parse(lines[i]);
+			let entry: SnapshotEntry = JSON.parse(lines[i]) as SnapshotEntry;
 			let modified = false;
 			const isMessageEntry = entry?.type === "message";
 
@@ -1103,14 +1241,15 @@ function reparentOrphans(snapshot: string): string {
 			}
 
 			// Fix message-level parentId for all entries.
-			if (entry.message) {
-				if (typeof entry.message.parentId === "string" && entry.message.parentId && !survivingIds.has(entry.message.parentId)) {
-					const { parentId: _pid, ...restMessage } = entry.message;
+			const msg = entry.message;
+			if (msg) {
+				if (typeof msg.parentId === "string" && msg.parentId && !survivingIds.has(msg.parentId)) {
+					const { parentId: _pid, ...restMessage } = msg;
 					entry = { ...entry, message: restMessage };
 					modified = true;
 				}
-				if (typeof entry.message.parentMessageId === "string" && entry.message.parentMessageId && !survivingIds.has(entry.message.parentMessageId)) {
-					const { parentMessageId: _pmid, ...restMessage } = entry.message;
+				if (typeof msg.parentMessageId === "string" && msg.parentMessageId && !survivingIds.has(msg.parentMessageId)) {
+					const { parentMessageId: _pmid, ...restMessage } = msg;
 					entry = { ...entry, message: restMessage };
 					modified = true;
 				}
@@ -1155,9 +1294,9 @@ export function sanitizeForkSnapshot(
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		let entry: any;
+		let entry: SnapshotEntry;
 		try {
-			entry = JSON.parse(line);
+			entry = JSON.parse(line) as SnapshotEntry;
 		} catch {
 			sanitizedLines.push(line);
 			continue;
@@ -1244,7 +1383,7 @@ export function sanitizeForkSnapshot(
 		if (
 			entry?.type === "message" &&
 			entry.message?.role === "system" &&
-			contentContainsSteeringHintTag(entry.message?.content)
+			contentContainsSteeringHintTag(entry.message?.content as string | Array<{ type: string; text?: string }>)
 		) {
 			subPasses.add("dropSlidingSystemPrompts");
 			continue;
@@ -1298,7 +1437,7 @@ export function sanitizeForkSnapshot(
 				// Strip cost sub-object from usage while preserving totalTokens and other fields.
 				let cleanedUsage = usage;
 				if (usage && typeof usage === "object" && "cost" in usage) {
-					const { cost, ...usageWithoutCost } = usage as any;
+					const { cost, ...usageWithoutCost } = usage;
 					cleanedUsage = usageWithoutCost;
 					stripped = true;
 				}
@@ -1324,18 +1463,18 @@ export function sanitizeForkSnapshot(
 				let modifiedContent = message.content;
 
 				// Strip sliding prompts
-				const afterSliding = stripSteeringHintFromContent(modifiedContent);
+				const afterSliding = stripSteeringHintFromContent(modifiedContent as string | Array<{ type: string; text?: string }>);
 				if (!isJsonEqual(afterSliding, modifiedContent)) {
-					modifiedContent = afterSliding;
+					modifiedContent = afterSliding as SnapshotMessage["content"];
 					changed = true;
 					subPasses.add("stripSteeringHints");
 				}
 
 				// Strip strategic hints from tool results
 				if (message.role === "tool" || message.role === "toolResult") {
-					const afterHints = stripStrategicHintsFromContent(modifiedContent);
+					const afterHints = stripStrategicHintsFromContent(modifiedContent as string | Array<{ type: string; text?: string }>);
 					if (!isJsonEqual(afterHints, modifiedContent)) {
-						modifiedContent = afterHints;
+						modifiedContent = afterHints as SnapshotMessage["content"];
 						changed = true;
 						subPasses.add("stripStrategicHints");
 					}
@@ -1352,8 +1491,8 @@ export function sanitizeForkSnapshot(
 						fullText = modifiedContent;
 					} else if (Array.isArray(modifiedContent)) {
 						fullText = modifiedContent
-							.filter((p: any) => p.type === "text" && typeof p.text === "string")
-							.map((p: any) => p.text)
+							.filter((p: ContentPart): p is TextPart => p.type === "text" && typeof p.text === "string")
+							.map((p: TextPart) => p.text)
 							.join("");
 					}
 					if (parentActivationRegex.test(fullText)) {
