@@ -156,6 +156,20 @@ This script is **idempotent** — safe to run multiple times. It:
 
 > 💡 **When to use it:** After a debugging session where you want to archive or diff the exact prompts that were sent to child flows. The synced artifacts are analysis material and can be committed if you are tracking format evolution, but they are not required for CI.
 
+## TUI-Safe Logging Convention
+
+**Never use `console.warn()` or `console.error()` in flow code.** During TUI rendering, stderr output briefly flashes on-screen before being overwritten by the next frame — this causes the "text appears then disappears" glitch.
+
+Instead, use the `logWarn` / `logError` functions from `src/log.ts`:
+
+| Function | TUI mode | Non-TUI mode (tests, CLI) |
+|----------|----------|---------------------------|
+| `logWarn(msg)` | Writes to `$TMPDIR/pi-agent-flow.log` | Falls back to `console.warn()` |
+| `logError(msg)` | Writes to `$TMPDIR/pi-agent-flow.log` | Falls back to `console.error()` |
+| `logToFile(msg)` | Always writes to log file | Always writes to log file |
+
+TUI mode is detected automatically when `PI_TUI_MODE=1`, `PI_FLOW_DEPTH > 0`, or `stdout.isTTY` is true.
+
 ## Flow Taxonomy
 
 Agent work is organized into two tiers. **Access is not the boundary — intent is.** All worker flows have full read/write access to files and the shell. What separates them is their *mission profile*.
@@ -242,6 +256,75 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_MAX_DEPTH` | Override the default delegation depth limit. |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_SESSION_MODE` | Override the session mode (`default`, `unsafe`, `failsafe`). |
+| `PI_TUI_MODE` | Set to `1` to route `logWarn`/`logError` to a log file instead of stderr, preventing on-screen text flash. Detected automatically when stdout is a TTY or `PI_FLOW_DEPTH > 0`. |
+| `PI_FLOW_LOG_FILE` | Override the default log file path (`$TMPDIR/pi-agent-flow.log`) for TUI-safe logging. Set to `/dev/null` to suppress entirely. |
+| `PI_FLOW_NO_STEERING` | Set to `1` to disable orchestrator steering hint injection. |
+| `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to disable `[Hint: Plan next step...]` after tool results. |
+| `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render). |
+| `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect, keep ripple/pulse. |
+
+## Flow Settings
+
+Control runtime behavior via slash commands, CLI flags, environment variables, or persistent settings in `.pi/settings.json`.
+
+### `/flow:settings` slash commands
+
+| Command | Usage |
+|---------|-------|
+| `show` | `/flow:settings show` — Display current settings and their sources. |
+| `steering` | `/flow:settings steering on\|off` — Enable/disable orchestrator steering hint injection. |
+| `strategic-hint` | `/flow:settings strategic-hint on\|off` — Enable/disable `[Hint: Plan next step...]` after tool results. |
+| `animation` | `/flow:settings animation on\|off` — Enable/disable all flow animations. |
+| `glitch` | `/flow:settings glitch on\|off` — Enable/disable glitch/scramble effect (ripple/pulse remain). |
+| `tool-optimize` | `/flow:settings tool-optimize on\|off` — Enable/disable tool-call optimization. |
+| `structured-output` | `/flow:settings structured-output on\|off` — Enable/disable structured JSON output from flows. |
+| `session-mode` | `/flow:settings session-mode <default\|unsafe\|failsafe>` — Set the session safety mode. |
+| `max-concurrency` | `/flow:settings max-concurrency <n>` — Set maximum concurrent flows. |
+| `reset` | `/flow:settings reset` — Reset all settings to their defaults. |
+
+### CLI flags
+
+Pass these when starting `pi`:
+
+| Flag | Effect |
+|------|--------|
+| `--no-steering` | Disable orchestrator steering hint injection. |
+| `--steering-prompt <text>` | Provide a custom steering prompt (implies `--no-steering` override). |
+| `--no-strategic-hint` | Disable `[Hint: Plan next step...]` after tool results. |
+| `--no-animation` | Disable all flow animation (instant render). |
+| `--no-glitch` | Disable glitch/scramble effect; ripple/pulse are preserved. |
+
+### Resolution priority
+
+When the same setting is defined in multiple places, the value is resolved as:
+
+**CLI flag > env var > `settings.json` > default**
+
+### Example `.pi/settings.json`
+
+```json
+{
+  "flowSettings": {
+    "steering": {
+      "enabled": true,
+      "prompt": "Plan next step..."
+    },
+    "strategicHint": {
+      "enabled": true
+    },
+    "animation": {
+      "enabled": true,
+      "glitch": true
+    },
+    "toolOptimize": false,
+    "structuredOutput": true,
+    "sessionMode": "default",
+    "maxConcurrency": 3
+  }
+}
+```
+
+> 💡 Settings are stored in `.pi/settings.json` and persisted across sessions. Use `/flow:settings reset` to discard them and fall back to defaults.
 
 ## Flow (Autonomous Continuation)
 
@@ -269,7 +352,8 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
 5. If `maxTokens` or `maxFlows` is exceeded, the goal **auto-pauses** silently without notifying the user.
 6. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
-7. Goals are **session-scoped** via `sessionId`; resuming in a new session still works but clears the old session binding.
+7. A **3-second post-completion hold** (`FLOW_COMPLETE_HOLD_MS`) delays the next spawn after a flow finishes, giving the user time to read the completed result before it scrolls off-screen.
+8. Goals are **session-scoped** via `sessionId`; resuming in a new session still works but clears the old session binding.
 
 ### Persistence
 
