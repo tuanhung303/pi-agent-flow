@@ -499,15 +499,15 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "warp",
 		label: "Warp",
-		description: "Distill conversation context and hand off to a fresh session. Use this when the endless loop budget is exceeded or when explicitly requested by the user to continue in a new session.",
+		description: "Distill context and hand off to a fresh session. Used by the endless loop when budget is exceeded, or when explicitly requested by the user.",
 		parameters: Type.Object({
 			goal: Type.Optional(Type.String({ description: "Optional goal for the new session." })),
 		}),
 		async execute(_toolCallId, params) {
 			const goal = (params as any).goal?.trim?.() ?? "";
-			pi.sendUserMessage(`/flow:warp${goal ? " " + goal : ""}`);
+			pi.sendUserMessage('/flow:warp ' + (goal || ''));
 			return {
-				content: [{ type: "text", text: "Warp command sent. A new session will be created with distilled context." }],
+				content: [{ type: "text", text: "Warp command sent. Switching to new session." }],
 				isError: false,
 			};
 		},
