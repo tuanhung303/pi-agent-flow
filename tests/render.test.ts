@@ -537,9 +537,9 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		expect(text).toContain("debug");
-		expect(text).toContain("aim:");
-		expect(text).toContain("├─ act:");
-		expect(text).toContain("msg:");
+		expect(text).toContain("aim ▸");
+		expect(text).toContain("├─ act ▸");
+		expect(text).toContain("msg ▸");
 	});
 
 	it("renders in-progress aim with a live countdown prefix", () => {
@@ -556,9 +556,9 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			expect(text).toContain("aim: 09:36 ·");
+			expect(text).toContain("aim ▸ 09:36 ·");
 			// Aim content is scrambled on first render for in-progress flows
-			expect(text).not.toContain("aim: 09:36 · test aim");
+			expect(text).not.toContain("aim ▸ 09:36 · test aim");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -577,7 +577,7 @@ describe("activity panel rendering", () => {
 		expect(headerLine).not.toContain("ctx:");
 		expect(headerLine).not.toContain("↑ 46.7k");
 		expect(headerLine).not.toContain("↓  4.6k");
-		expect(text).toContain("msg: ↑ 46.7k ↓   4.6k · Flow timed out after 600s.");
+		expect(text).toContain("msg ▸ ↑ 46.7k ↓   4.6k · Flow timed out after 600s.");
 	});
 
 	it("renders multi-flow aim countdown and msg token prefixes", () => {
@@ -602,9 +602,9 @@ describe("activity panel rendering", () => {
 			expect(firstHeaderLine).not.toContain("↑ 46.7k");
 			expect(firstHeaderLine).not.toContain("↓  4.6k");
 			// Aim prefix is static, content may be scrambled
-			expect(text).toContain("aim: 00:45 ·");
+			expect(text).toContain("aim ▸ 00:45 ·");
 			// Msg prefix is static, content may be scrambled
-			expect(text).toContain("msg: ↑ 46.7k ↓   4.6k ·");
+			expect(text).toContain("msg ▸ ↑ 46.7k ↓   4.6k ·");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -624,7 +624,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("act: 3 ·");
+		expect(text).toContain("act ▸ 3 ·");
 	});
 
 	it("renders ghost dashboard during zero state", () => {
@@ -638,14 +638,14 @@ describe("activity panel rendering", () => {
 		const headerLine = text.split("\n")[0];
 		// Header is scrambled on first render for in-progress flows
 		expect(headerLine.length).toBeGreaterThan(0);
-		expect(text).toContain("aim:");
+		expect(text).toContain("aim ▸");
 		// Aim content is scrambled on first render
 		expect(text).not.toContain("refactor"); // fully scrambled on first render
 		expect(text).toContain("↑     0");
 		expect(text).toContain("↓      0");
 		// Header stats are scrambled on first render, don't assert exact tps text
 		expect(text).not.toContain("ctx:");
-		expect(text).toContain("msg:");
+		expect(text).toContain("msg ▸");
 	});
 
 	it("hides acceptance line in collapsed view", () => {
@@ -716,8 +716,8 @@ describe("activity panel rendering", () => {
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
 		const scoutBlock = text.split("debug")[0];
-		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: ↑     0 ↓      0 · "));
-		expect(scoutBlock).toContain("msg:");
+		const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ↑     0 ↓      0 · "));
+		expect(scoutBlock).toContain("msg ▸");
 		expect(scoutBlock).not.toContain("stale completed text");
 	});
 
@@ -734,7 +734,7 @@ describe("activity panel rendering", () => {
 				streamingText: longStreaming,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult({ type: "debug" })] };
-			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg: ↑     0 ↓      0 · "));
+			const expectedBudget = getTruncationBudget(visibleLength("│  └─ msg ▸ ↑     0 ↓      0 · "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 
@@ -759,9 +759,9 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("aim:");
+		expect(text).toContain("aim ▸");
 		// Content is pre-truncated dynamically based on terminal width
-		const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
+		const dirLine = text.split("\n").find((l: string) => l.includes("aim ▸"));
 		expect(dirLine).toContain("...");
 	});
 
@@ -777,7 +777,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
 		expect(exeLine).toBeDefined();
 		// The act line should exist and be non-empty
 		expect(exeLine!.length).toBeGreaterThan(5);
@@ -794,7 +794,7 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
+		const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
 		expect(exeLine).toBeDefined();
 		// Should not contain newlines in the act line itself
 		expect(exeLine).not.toContain("\n");
@@ -809,8 +809,8 @@ describe("activity panel rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("├─ act: 0 · [n/a]");
-		expect(text).toContain("└─ msg:");
+		expect(text).toContain("├─ act ▸ 0 · [n/a]");
+		expect(text).toContain("└─ msg ▸");
 	});
 
 	it("passes full EXE text to TruncatedText in single flow collapsed", () => {
@@ -828,7 +828,7 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const exeLine = text.split("\n").find((l: string) => l.includes("├─ act:"));
+			const exeLine = text.split("\n").find((l: string) => l.includes("├─ act ▸"));
 			expect(exeLine).toBeDefined();
 			// The act line should exist and be non-empty
 			expect(exeLine!.length).toBeGreaterThan(5);
@@ -850,12 +850,12 @@ describe("activity panel rendering", () => {
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result, makeResult()] };
 			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, makeTheme(), undefined);
 			const text = extractText(rendered);
-			const dirLine = text.split("\n").find((l: string) => l.includes("aim:"));
+			const dirLine = text.split("\n").find((l: string) => l.includes("aim ▸"));
 			expect(dirLine).toBeDefined();
 			// Content is pre-truncated dynamically based on terminal width (columns=40)
 			expect(dirLine).toContain("...");
-			const expectedBudget = getTruncationBudget(visibleLength("│  ├─ aim: "));
-			expect(visibleLength(dirLine.split("aim:")[1].trim())).toBeLessThanOrEqual(expectedBudget);
+			const expectedBudget = getTruncationBudget(visibleLength("│  ├─ aim ▸ "));
+			expect(visibleLength(dirLine.split("aim ▸")[1].trim())).toBeLessThanOrEqual(expectedBudget);
 		} finally {
 			(process.stdout as any).columns = originalColumns;
 		}
@@ -872,7 +872,7 @@ describe("activity panel rendering", () => {
 				exitCode: -1,
 			});
 			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
-			const expectedBudget = getTruncationBudget(visibleLength("└─ msg: ↑     0 ↓      0 · "));
+			const expectedBudget = getTruncationBudget(visibleLength("└─ msg ▸ ↑     0 ↓      0 · "));
 			const expectedTail = tailText(longStreaming, expectedBudget);
 			const spy = vi.spyOn(scrambleManager, "updateMsg");
 
@@ -1262,7 +1262,7 @@ describe("formatFlowToolCall — batch", () => {
 		const rendered = renderSingleFlowResult(result, false, makeTheme(), streamingText);
 		const text = extractText(rendered);
 		expect(text).not.toContain(streamingText);
-		expect(text).toContain("└─ msg:");
+		expect(text).toContain("└─ msg ▸");
 	});
 
 	it("collapsed view does not fall back to flowOutput when streamingText is empty", () => {
