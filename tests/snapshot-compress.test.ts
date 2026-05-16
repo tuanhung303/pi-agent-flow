@@ -1409,6 +1409,16 @@ describe("compressToolResults — Q1 web dedup", () => {
 	});
 });
 
+function getAskUserText(result: string, tcId: string): string {
+	const lines = result.trimEnd().split("\n");
+	const toolLine = lines.find((l) =>
+		(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+		l.includes(`"toolCallId":"${tcId}"`),
+	)!;
+	const parsed = JSON.parse(toolLine);
+	return parsed.message.content[0].text;
+}
+
 describe("compressToolResults — ask_user", () => {
 	it("compresses answered result", () => {
 		const snapshot = makeSnapshot([
@@ -1495,6 +1505,213 @@ describe("compressToolResults — ask_user", () => {
 // ---------------------------------------------------------------------------
 // compressToolResults — flow cache miss fallback
 // ---------------------------------------------------------------------------
+describe("compressToolResults — A1 ask_user dedup", () => {
+	it("two ask_user calls with same question at depth 1 → first superseded, second survives", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getAskUserText(result, "tc1");
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc1Text).toContain('[ask_user] "Should we use Docker?" (superseded by later ask_user)');
+		expect(tc2Text).toContain('[ask_user] "Should we use Docker?" → "No"');
+		expect(tc2Text).not.toContain("(superseded");
+	});
+
+	it("two ask_user calls at depth 2+ → first dropped entirely, second survives", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		// tc2 survives
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc2Text).toContain('[ask_user] "Should we use Docker?" → "No"');
+		// tc1 toolResult removed entirely
+		const hasTc1ToolResult = result.trimEnd().split("\n").some((l) =>
+			l.includes('"role":"toolResult"') && l.includes('"toolCallId":"tc1"'),
+		);
+		expect(hasTc1ToolResult).toBe(false);
+		expect(result).not.toContain("(superseded");
+	});
+
+	it("different questions are not deduplicated", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "Use Kubernetes?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getAskUserText(result, "tc1");
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc1Text).toContain('[ask_user] "Use Docker?" → "Yes"');
+		expect(tc2Text).toContain('[ask_user] "Use Kubernetes?" → "No"');
+		expect(result).not.toContain("(superseded");
+	});
+
+	it("question normalization (case-insensitive, trimmed, sliced to 120)", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "  SHOULD we USE Docker?  " } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "should we use docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getAskUserText(result, "tc1");
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc1Text).toContain('[ask_user] "  SHOULD we USE Docker?  " (superseded by later ask_user)');
+		expect(tc2Text).toContain('[ask_user] "should we use docker?" → "No"');
+	});
+});
+
+describe("compressToolResults — B1 batch rollup", () => {
+	function getBatchText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`),
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("batch result with all superseded writes at depth 1 collapses to rollup line", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "--- write: src/a.ts (100 bytes) ---\n--- write: src/b.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }, { o: "write", p: "src/b.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- write: src/a.ts (300 bytes) ---\n--- write: src/b.ts (400 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toBe("[batch] 2 ops (all superseded or truncated by later operations)");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc2Text).toContain("[batch:write] src/a.ts (300 bytes)");
+		expect(tc2Text).toContain("[batch:write] src/b.ts (400 bytes)");
+	});
+
+	it("batch result with all superseded writes at depth 2+ collapses to terse rollup", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "--- write: src/a.ts (100 bytes) ---\n--- write: src/b.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }, { o: "write", p: "src/b.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- write: src/a.ts (300 bytes) ---\n--- write: src/b.ts (400 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toBe("[batch] 2 ops (superseded)");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc2Text).toContain("[batch:write] src/a.ts");
+		expect(tc2Text).toContain("[batch:write] src/b.ts");
+	});
+
+	it("batch result with mixed kept and superseded does not rollup", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }, { o: "write", p: "src/b.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "--- write: src/a.ts (100 bytes) ---\n--- write: src/b.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- write: src/a.ts (300 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getBatchText(result, "tc1");
+		// a is superseded, b is kept
+		expect(tc1Text).toContain("[batch:write] src/a.ts (superseded)");
+		expect(tc1Text).toContain("[batch:write] src/b.ts (200 bytes)");
+		expect(tc1Text).not.toContain("[batch] 2 ops");
+	});
+});
+
 describe("evictCacheOverflow", () => {
 	it("evicts oldest entries when cache exceeds the cap", () => {
 		const cache = new Map();
@@ -1676,8 +1893,8 @@ describe("compressToolResults — flow cache miss", () => {
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		// Must be the compact placeholder, NOT the bulky original
-		expect(text).toContain("[flow] prior result");
-		expect(text).toContain("full context unavailable (result not cached at this depth)");
+		expect(text).toContain("[flow:scout] completed · see prior session");
+		expect(text).not.toContain("full context unavailable");
 		expect(text.length).toBeLessThan(200);
 		expect(text).not.toContain("Flow: 1/1 completed");
 	});

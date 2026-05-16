@@ -375,6 +375,7 @@ interface DedupIndex {
 	latestDelete: Map<string, string>;
 	latestWebSearch: Map<string, string>;
 	latestWebFetch: Map<string, string>;
+	latestAskUser: Map<string, string>;
 }
 
 
@@ -392,6 +393,7 @@ function buildDedupIndex(
 	const latestDelete = new Map<string, string>();
 	const latestWebSearch = new Map<string, string>();
 	const latestWebFetch = new Map<string, string>();
+	const latestAskUser = new Map<string, string>();
 
 	for (const line of lines) {
 		let entry: SnapshotEntry;
@@ -449,6 +451,20 @@ function buildDedupIndex(
 		}
 		}
 
+		// Ask_user tool results — build A1 dedup index
+		if (toolName === "ask_user") {
+			const args = toolCallIdToArgs.get(toolCallId);
+			if (args && typeof args === "object") {
+				const question = (args as Record<string, unknown>).question;
+				if (typeof question === "string") {
+					const norm = question.trim().toLowerCase().slice(0, 120);
+					if (norm) {
+						latestAskUser.set(norm, toolCallId);
+					}
+				}
+			}
+		}
+
 		// Web tool results — build Q1 dedup index
 		if (toolName === "web") {
 			const args = toolCallIdToArgs.get(toolCallId);
@@ -468,7 +484,7 @@ function buildDedupIndex(
 		}
 	}
 
-	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch };
+	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch, latestAskUser };
 }
 
 /** Check if a web tool result is superseded by a later result with the same query or URL. */
@@ -808,6 +824,27 @@ function compressBatchResult(
 		i++;
 	}
 
+	// B1: If every line in out is superseded or truncated noise, collapse to single summary
+	const meaningfulOut = out.filter((l) => l.trim() !== "");
+	const isAllSupersededOrTruncated = meaningfulOut.length > 0 && meaningfulOut.every((l) =>
+		l.includes("(superseded)") ||
+		l.includes("content truncated") ||
+		l.includes("context map, truncated") ||
+		/^\[bash:(ok|pending|err)\] .+/.test(l) ||
+		/^\[rg:(ok|err)\] .+/.test(l),
+	);
+	// At depth 2+, superseded writes/edits are dropped entirely (no breadcrumbs),
+	// leaving out empty. If the original text had only section headers and no
+	// summary or other kept content, rollup to a single line.
+	const meaningfulLines = lines.filter((l) => l.trim() !== "");
+	const allLinesWereSectionHeaders = meaningfulLines.length > 0 && meaningfulLines.every((l) => isKnownSectionHeader(l));
+	if (isAllSupersededOrTruncated || (allLinesWereSectionHeaders && meaningfulOut.length === 0)) {
+		const opCount = meaningfulLines.length > 0 ? String(meaningfulLines.length) : "0";
+		return depth < 2
+			? `[batch] ${opCount} ops (all superseded or truncated by later operations)`
+			: `[batch] ${opCount} ops (superseded)`;
+	}
+
 	return out.join("\n");
 }
 
@@ -1016,12 +1053,18 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				// Cache miss (never populated or evicted) — do NOT pass megabytes of raw
 				// flow output verbatim into child context. Render a minimal placeholder.
 				originalText = extractToolResultText(entry as MessageEntry) ?? "";
-				const rawContent = entry.message?.content;
-				const contentSize = rawContent
-					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
-					: 0;
-				const size = originalText.length || contentSize || line.length;
-				rendered = `[flow] prior result · ${size} chars — full context unavailable (result not cached at this depth)`;
+				const flowArgs = toolCallIdToArgs.get(toolCallId);
+				let flowTypeSuffix = '';
+				if (flowArgs && typeof flowArgs === 'object') {
+					const flowArr = Array.isArray((flowArgs as Record<string, unknown>).flow)
+						? (flowArgs as Record<string, unknown>).flow as Array<Record<string, unknown>>
+						: undefined;
+					if (flowArr && flowArr.length > 0 && typeof flowArr[0].type === 'string') {
+						flowTypeSuffix = `:${flowArr[0].type}`;
+					}
+				}
+				const statusLabel = entry.message.isError ? 'failed' : 'completed';
+				rendered = `[flow${flowTypeSuffix}] ${statusLabel} · see prior session`;
 			} else {
 				const renderResults = compressed.map(renderCompressedFlowResult);
 				const hasAnyUndefined = renderResults.some(r => r === undefined);
@@ -1078,11 +1121,29 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			}
 		}
 
-		// --- Compress ask_user tool results ---
+		// --- Compress ask_user tool results (A1 dedup) ---
 		else if (toolName === "ask_user") {
 			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			const args = toolCallIdToArgs.get(toolCallId);
-			rendered = compressAskUserResult(originalText, args);
+			let question = "";
+			if (args && typeof args === "object") {
+				const q = (args as Record<string, unknown>).question;
+				if (typeof q === "string") {
+					question = q;
+				}
+			}
+			const normQuestion = question.trim().toLowerCase().slice(0, 120);
+			const latestTc = normQuestion ? dedupIndex.latestAskUser.get(normQuestion) : undefined;
+			if (latestTc && latestTc !== toolCallId) {
+				if (depth < 2) {
+					rendered = `[ask_user] "${question}" (superseded by later ask_user)`;
+				} else {
+					// At depth 2+, drop superseded ask_user results entirely
+					continue;
+				}
+			} else {
+				rendered = compressAskUserResult(originalText, args);
+			}
 		}
 
 		if (rendered !== undefined) {

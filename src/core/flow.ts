@@ -392,19 +392,9 @@ function buildFlowArgs(
 	const delegationRule = buildDelegationRule(canDelegate, guardLine);
 	const flowListSection = buildFlowListSection(canDelegate, discoveredFlows);
 
-	const timeBudgetHint =
-		sessionTimeoutMs > 0
-			? sessionMode === "snap"
-				? `Session mode: snap. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s. This is a quick-discovery sprint — prioritize Survey and Inspect, skip deep Trace, emit partial findings fast. Incomplete maps are acceptable.\n`
-				: `Session mode: ${sessionMode}. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
-			: "";
-
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 	const lineage = buildLineage(flow.name, parentFlowStack);
 	const parentLineageHint = buildParentLineageHint(parentFlowStack);
-	const projectHint = cwd && fs.existsSync(path.join(cwd, "CLAUDE.md"))
-		? `Project index available at CLAUDE.md (read for architecture context if needed).\n`
-		: "";
 	const activation =
 		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}" lineage="${lineage}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
