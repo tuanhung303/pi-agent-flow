@@ -198,6 +198,8 @@ function getErrorHint(error: string): string {
 		return "Verify the path exists.";
 	if (error.includes("is beyond end of file"))
 		return "Use a smaller offset within the file length.";
+	if (error.includes("ripgrep failed"))
+		return "Ripgrep crashed or was killed. Try narrowing the search path or adding max-count to limit output.";
 	return "";
 }
 
@@ -750,7 +752,7 @@ function execRg(args: string[], cwd: string): Promise<string[]> {
 					resolve([]);
 					return;
 				}
-				if ((err as any).code === "ENOBUFS") {
+				if ((err as any).code === "ENOBUFS" || (err as any).code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
 					reject(new Error("ripgrep output exceeded 10MB buffer limit. Use a more specific pattern or add max-count."));
 					return;
 				}
@@ -759,7 +761,9 @@ function execRg(args: string[], cwd: string): Promise<string[]> {
 					return;
 				}
 				const stderrMsg = stderr?.trim() ? ` — ${stderr.trim()}` : "";
-				reject(new Error(`ripgrep failed${stderrMsg}`));
+				const codeInfo = (err as any).code ? ` (code: ${(err as any).code})` : "";
+				const msgInfo = err.message ? `: ${err.message}` : "";
+				reject(new Error(`ripgrep failed${codeInfo}${msgInfo}${stderrMsg}`));
 				return;
 			}
 			const lines = stdout.split("\n").filter((line) => line.length > 0);
