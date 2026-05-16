@@ -34,7 +34,7 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoal, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup, getLoop } from "./flow/index.js";
+import { registerFlow, getGoal, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
 import * as sessionRegistry from "./core/session-registry.js";
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
@@ -49,8 +49,7 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./config/settings-resolver.js";
-import { distillForWarp, performWarp } from "./flow/perform-warp.js";
-import { extractGoalFromPrompt } from "./flow/warp-utils.js";
+
 import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
 import { logWarn, logError } from "./config/log.js";
 export { logWarn, logError };
@@ -497,92 +496,30 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	// Register the warp tool (directly executes the distillation and session creation pipeline)
+	// Register the warp tool — queues /flow:warp as a follow-up command
+	// The actual distillation and session creation happens in the command handler
+	// (ExtensionCommandContext has ctx.newSession; ExtensionContext does not).
 	pi.registerTool({
 		name: "warp",
 		label: "Warp",
 		description: [
 			"Distill conversation context into a structured project brief and spawn a fresh session.",
 			"Use this when the conversation context is too large, when switching topics, or when you want to hand off work to a clean session with a distilled brief.",
-			"The tool validates model availability and branch existence, then directly executes the warp pipeline without user review (since you are the requester).",
-			"Only works in interactive TUI mode. Not available in non-interactive (-p) mode because warp requires session management APIs.",
+			"The tool queues a /flow:warp command that executes after the current turn completes. In interactive mode the command handler performs the actual warp; in non-interactive (-p) mode the command will not trigger because there is no follow-up turn.",
 			"Parameters: { goal?: string } — optional goal override for the new session.",
 		].join("\n"),
 		parameters: Type.Object({
 			goal: Type.Optional(Type.String({ description: "Optional goal for the new session." })),
 		}),
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
-			if (typeof ctx.newSession !== "function") {
-				return {
-					content: [{ type: "text", text: "Warp requires an interactive Pi session. Run pi without -p flag to use warp." }],
-					isError: true,
-				};
-			}
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const goal = (params as any).goal?.trim?.() ?? "";
-
-			// Validate model
-			const model = ctx.model ?? ctx.modelRegistry?.getAvailable()?.[0];
-			if (!model) {
-				return {
-					content: [{ type: "text", text: "Warp failed: No model selected. Configure a model in Pi settings first." }],
-					isError: true,
-				};
+			if (typeof pi.sendUserMessage === "function") {
+				pi.sendUserMessage("/flow:warp " + goal, { deliverAs: "followUp" });
 			}
-
-			// Validate branch
-			const branch = ctx.sessionManager.getBranch();
-			if (!branch || branch.length === 0) {
-				return {
-					content: [{ type: "text", text: "Warp failed: Empty conversation — nothing to warp." }],
-					isError: true,
-				};
-			}
-
-			const activeGoal = getGoalForSession(ctx.cwd, ctx.sessionManager.getSessionId()) ?? getGoal(ctx.cwd);
-			const loop = getLoop(ctx.cwd);
-
-			let distilledPrompt: string;
-			try {
-				distilledPrompt = await distillForWarp(ctx, activeGoal, loop, {
-					signal,
-					userGoalOverride: goal || undefined,
-				});
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				logError(`[warp] distillation failed: ${message}`);
-				return {
-					content: [{ type: "text", text: `Warp failed: ${message}` }],
-					isError: true,
-				};
-			}
-
-			try {
-				const result = await performWarp(ctx, { type: "warp", intent: "LLM warp", aim: "Warp to fresh session" }, {
-					reviewedPrompt: distilledPrompt,
-					goalOverride: goal || undefined,
-				});
-
-				if (!result.success) {
-					return {
-						content: [{ type: "text", text: `Warp failed: ${result.error}` }],
-						isError: true,
-					};
-				}
-
-				const extractedGoal = extractGoalFromPrompt(distilledPrompt) || goal || "Continue the work from the warped context";
-
-				return {
-					content: [{ type: "text", text: `Warped to new session. Goal: ${extractedGoal}` }],
-					isError: false,
-				};
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				logError(`[warp] performWarp failed: ${message}`);
-				return {
-					content: [{ type: "text", text: `Warp failed: ${message}` }],
-					isError: true,
-				};
-			}
+			return {
+				content: [{ type: "text", text: "Warp queued — will execute after current turn completes" }],
+				isError: false,
+			};
 		},
 
 		renderCall: (args, theme) => renderWarpCall(args, theme),
