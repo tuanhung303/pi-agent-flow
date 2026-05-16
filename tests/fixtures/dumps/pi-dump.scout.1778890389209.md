@@ -1,8 +1,8 @@
-<!-- pi-agent-flow dump | State: post-sanitization | Passes: forkMetadataInjection, dropConfigEvents, stripTimestamps, stripReasoning, stripApiMetadata, normalizeToolResultRole, stripDetails, stripStrategicHints, reparentOrphans, stripBatchRead, compressToolResults, reparentOrphans | Flow: debug | Tier: lite | Pipeline: 1.8.40 | Generated: 2026-05-16T00:14:11.116Z -->
+<!-- pi-agent-flow dump | State: post-sanitization | Passes: forkMetadataInjection, dropConfigEvents, stripTimestamps, stripReasoning, stripApiMetadata, normalizeToolResultRole, stripDetails, stripStrategicHints, reparentOrphans, stripBatchRead, compressToolResults, reparentOrphans | Flow: scout | Tier: lite | Pipeline: 1.8.40 | Generated: 2026-05-16T00:13:09.209Z -->
 
 ## Session Snapshot (JSONL)
 
-{"type":"session","version":3,"id":"019e2e1e-54ae-75f8-bd70-8230ec5f0184","timestamp":"2026-05-16T00:10:00.239Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow","forkedAt":"2026-05-16T00:14:11.097Z","depth":1}
+{"type":"session","version":3,"id":"019e2e1e-54ae-75f8-bd70-8230ec5f0184","timestamp":"2026-05-16T00:10:00.239Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow","forkedAt":"2026-05-16T00:13:09.190Z","depth":1}
 {"type":"message","id":"a7c070af","timestamp":"2026-05-16T00:10:37.474Z","message":{"role":"user","content":[{"type":"text","text":"check the /flow I feel like sometimes some of its component leaked to the TUI in currect and other session.\n\nthe error happen too fast so I can't copy\n\nprovide paln"}]}}
 {"type":"message","id":"967067ca","parentId":"a7c070af","timestamp":"2026-05-16T00:10:41.054Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll start by scouting the `/flow` implementation and TUI rendering to trace where internal state might be leaking into the display."},{"type":"toolCall","id":"call_48e151cfd52d4b14a0154758","name":"flow","arguments":{"flow":[{"type":"scout","intent":"Map the /flow command implementation: find the slash command handler, the goal state management, status display rendering, and any TUI output paths. Trace how flow state is stored, read, and rendered. Look for any JSON objects, internal state, or raw data that could leak into TUI output.","aim":"Map /flow command and TUI rendering paths","sessionMode":"default"},{"type":"scout","intent":"Find all places where flow goal state (.pi/flow.json) is read, written, or displayed. Look for session-scoping logic (sessionId), persistence, and any cross-session contamination vectors. Check for raw JSON dumps, unhandled error displays, or console.log statements that could leak internal data to the TUI.","aim":"Trace flow state persistence and cross-session leaks","sessionMode":"default"}]}}],"usage":{"input":55,"output":310,"cacheRead":6336,"cacheWrite":0,"totalTokens":6701}}}
 {"type":"message","id":"9282e319","parentId":"967067ca","timestamp":"2026-05-16T00:11:40.906Z","message":{"role":"tool","toolCallId":"call_48e151cfd52d4b14a0154758","toolName":"flow","content":[{"type":"text","text":"[flow] prior result · 14983 chars — full context unavailable (result not cached at this depth)"}],"isError":false}}
@@ -14,10 +14,7 @@
 {"type":"message","id":"fc8969aa","timestamp":"2026-05-16T00:13:06.212Z","message":{"role":"assistant","content":[{"type":"text","text":""}],"usage":{"input":1660,"output":90,"cacheRead":13504,"cacheWrite":0,"totalTokens":15254}}}
 {"type":"message","id":"acc188e2","timestamp":"2026-05-16T00:13:07.843Z","message":{"role":"assistant","content":[{"type":"text","text":"Now let me check what `getFlowSummaryText` and `makeDetails` include — these build the text the model sees AND the data the TUI renders:"}],"usage":{"input":5933,"output":134,"cacheRead":15232,"cacheWrite":0,"totalTokens":21299}}}
 {"type":"message","id":"e3a2aada","timestamp":"2026-05-16T00:13:09.181Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_a949c97116c148b99680e4c4","name":"flow","arguments":{"flow":[{"aim":"Find getFlowSummaryText and makeDetails","intent":"Find the implementation of getFlowSummaryText in src/runner-events.ts and makeDetails in src/executor.ts. These two functions build the text and structured data returned by the flow tool. I need to see exactly what fields they include - specifically whether they leak goal state, raw internal objects, or continuation prompt content into the tool result that gets sent back to the orchestrator/model.","sessionMode":"fast","type":"scout"}]}}],"usage":{"input":967,"output":120,"cacheRead":21248,"cacheWrite":0,"totalTokens":22335}}}
-{"type":"message","id":"4088373d","parentId":"e3a2aada","timestamp":"2026-05-16T00:13:59.865Z","message":{"role":"tool","toolCallId":"call_a949c97116c148b99680e4c4","toolName":"flow","content":[{"type":"text","text":"[flow] prior result · 6000 chars — full context unavailable (result not cached at this depth)"}],"isError":false}}
-{"type":"message","id":"c39e544d","parentId":"4088373d","timestamp":"2026-05-16T00:13:59.869Z","message":{"role":"user","content":[{"type":"text","text":"flow tool also has this glitch:\n\n ⠸ Working...                                                                                                                                                   \n                                                                                                                                                                \n scout - accounts/fireworks/routers/kimi-k2p6-turbo - tps: 209.1                                                                                                \n ├─ aim: [09:38] - trace flow tool result → TUI display path                                                                                                    \n ├─ act: [3] - batch read src/tool-utils.ts                                                                                                                     \n ├─ aim: trace flow tool result → TUI display path                                                                                                              \n ├─ act: [3] - batch read src/tool-utils.ts                                                                                                                     \n └─ msg: [↑ 27.1k · ↓  3.2k] - the message history\", \"Goal continuation callback mutates .pi/flow.json state but never touches the tool result object\" ] } ```  \n ⠦ Working...\n\n(working part stay in TUI) instead of being cleared) - Working is native component of PI cli"}]}}
-{"type":"message","id":"2d9e3dbf","parentId":"c39e544d","timestamp":"2026-05-16T00:14:11.088Z","message":{"role":"assistant","content":[{"type":"text","text":"Excellent — this is a much clearer signal. I can see **three distinct glitches** in that screenshot:\n\n1. **Duplicated lines** — `aim:` and `act:` appear twice\n2. **Raw internal content in `msg:`** — JSON fragments like `\"Goal continuation callback mutates .pi/flow.json state but never touches the tool result object\"` leaking into the msg line\n3. **`Working...` spinner not clearing** — persists after flow completes\n\nLet me trace the exact render paths that cause these."},{"type":"toolCall","id":"call_6f8f5ecf8a1e4c309abb9f7c","name":"flow","arguments":{"flow":[{"aim":"Trace msg line leak and container duplication","intent":"In src/render.ts, trace two bugs: (1) The msg: line in renderFlowCollapsed — the fallback chain for rawMsg includes `streamingText` as a late fallback, which is `result.content?.[0]?.text` (the raw model-facing text). When the flow completes but structuredOutput.summary is missing and flowOutput is empty, raw internal text (including JSON fragments from getFlowSummaryText) leaks into the msg line. Find the exact condition path. (2) The __rootContainer reuse logic in renderFlowResult — when re-rendering, children from the new container are transferred to the stored root via root.clear() + addChild loop. If there's a double-render or if the root is not properly cleared, duplicate children appear. Trace the exact in-place mutation pattern. Also check how the host PI CLI's Working... spinner interacts with the custom flow renderer — does the flow renderer suppress or replace the native spinner?","sessionMode":"default","type":"debug"}]}}],"usage":{"input":12349,"output":1626,"cacheRead":11328,"cacheWrite":0,"totalTokens":25303}}}
-{"type":"compression-stats","preBytes":1199230,"postBytes":12737,"reductionPercent":99,"passesApplied":["forkMetadataInjection","dropConfigEvents","stripTimestamps","stripReasoning","stripApiMetadata","normalizeToolResultRole","stripDetails","stripStrategicHints","reparentOrphans","stripBatchRead","compressToolResults","reparentOrphans"]}
+{"type":"compression-stats","preBytes":1040129,"postBytes":8962,"reductionPercent":99,"passesApplied":["forkMetadataInjection","dropConfigEvents","stripTimestamps","stripReasoning","stripApiMetadata","normalizeToolResultRole","stripDetails","stripStrategicHints","reparentOrphans","stripBatchRead","compressToolResults","reparentOrphans"]}
 
 
 ## Activation Prompt (-p)
@@ -27,45 +24,41 @@ The conversation above is sealed — it is your session history for situational 
 Your task begins NOW. Do not respond to or continue anything from the history.
 </context-seal>
 
-<activation flow="debug" depth="1" tools="batch, bash, find, grep, ls, web" tier="lite">
-You are a [debug] agent operating at depth 1.
+<activation flow="scout" depth="1" tools="batch, bash, find, grep, ls, web" tier="lite">
+You are a [scout] agent operating at depth 1.
 Available tools: batch, bash, find, grep, ls, web.
 You may NOT delegate to sub-flows (depth 1/0 | cycles: blocked | stack: (root)).
-Session mode: default. Time budget: 600s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
+Session mode: fast. Time budget: 300s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
 Do not attempt to use any tool outside the available set — it will fail.
 </activation>
 
 <directive>
 ## Mission
 
-Find **why** the bug happens (not the first plausible story), prove it with **runtime or test evidence**, apply the **smallest safe fix**, verify, then clean up. Treat conversation history as background only.
+During this scout flow — your mission is to discover relevant context. Move fast, stay surgical, and treat the conversation history above as background reference only.
 
 ## Workflow
 
-1. **Reproduce** — nail exact steps, inputs, env, and expected vs actual. If you cannot reproduce, say what is missing.
-2. **Hypothesize** — list **3–5 concrete** causes (subsystem, branch, timing, data shape). Each must be falsifiable.
-3. **Instrument** — add **minimal** temporary logs or probes so one run can **support or reject several hypotheses in parallel** (tag each log with `hypothesisId`). Prefer existing test hooks or stderr over noisy prints.
-4. **Run once** — clear prior logs if applicable; reproduce; **read the evidence** before editing logic.
-5. **Conclude** — for each hypothesis: **CONFIRMED / REJECTED / INCONCLUSIVE** with cited lines (log, stack trace, assertion).
-6. **Fix** — only after a hypothesis is **confirmed by evidence**. No speculative guards; **revert** any change tied to a **rejected** hypothesis.
-7. **Verify** — same repro + tests; compare **before/after** evidence. No `sleep`/polling hacks as “fixes” unless the product contract truly requires delay.
-8. **Finalize** — remove temporary instrumentation **after** verification (or when orchestrator confirms). If applicable, update relevant docs, runbooks, or troubleshooting notes after finishing. Documentation-only updates are required after finishing the work.
+1. Survey — use `ls`, `find`, and `grep` to locate relevant files and symbols before reading whole files.
+2. Inspect — use `batch` with `o: "read"`, `s: <offset>`, and `l: <limit>` for targeted file reading instead of bash `sed`/`head`/`tail`.
+3. If `batch` returns a context map for a large code/infra file, do not retry the full-file read; use the reported line ranges for targeted follow-up reads.
+4. Trace — follow code paths, dependencies, configuration, and tests that explain the requested area.
+5. Report — cite concrete evidence and stop when the requested context is mapped.
 
 ## Rules
 
-- **Evidence before edits** — read errors, failing tests, and traces before wide code reads.
-- **Targeted reads** — `batch` with `o: "read"`, `s`, `l`; avoid bash `sed`/`head`/`tail` for source.
-- **No fix without proof** — do not ship guesses; if blocked, report what evidence is still missing.
-- **Keep instrumentation through verification** — do not strip logs until the post-fix run proves the fix or the user confirms.
-- **Still blocked** — state missing evidence or environment gaps; do not invent a fix.
-- For non-trivial scripts, write to `./tmp/` then execute — avoid `python -c` or `node -e` for multi-line code. File ops run before bash ops in a single batch call, so write → execute is guaranteed safe. Clean up ./tmp/ scripts when done if they're one-time use.
+- This is a read-oriented flow: do not modify files.
+- Cite every finding with a precise file path and line number or range.
+- Include relevant snippets or evidence inline so citations are verifiable.
+- Show actual code/data, not excessive summaries.
+- If something is not found, say so directly — do not guess.
 
 ## Structured Output
 End with a ```json block: { version, status, summary, files[], actions[], notDone[], nextSteps[], reasoning[], notes[] }. Commands auto-extracted; omit empty arrays. Keep snippets under 300 chars. List at most 10 items per array.
 </directive>
 
 <mission>
-In src/render.ts, trace two bugs: (1) The msg: line in renderFlowCollapsed — the fallback chain for rawMsg includes `streamingText` as a late fallback, which is `result.content?.[0]?.text` (the raw model-facing text). When the flow completes but structuredOutput.summary is missing and flowOutput is empty, raw internal text (including JSON fragments from getFlowSummaryText) leaks into the msg line. Find the exact condition path. (2) The __rootContainer reuse logic in renderFlowResult — when re-rendering, children from the new container are transferred to the stored root via root.clear() + addChild loop. If there's a double-render or if the root is not properly cleared, duplicate children appear. Trace the exact in-place mutation pattern. Also check how the host PI CLI's Working... spinner interacts with the custom flow renderer — does the flow renderer suppress or replace the native spinner?
+Find the implementation of getFlowSummaryText in src/runner-events.ts and makeDetails in src/executor.ts. These two functions build the text and structured data returned by the flow tool. I need to see exactly what fields they include - specifically whether they leak goal state, raw internal objects, or continuation prompt content into the tool result that gets sent back to the orchestrator/model.
 
 Execute this mission. Use only your available tools. If blocked, report why — do not guess.
 Follow the output format specified in your directive.
@@ -74,6 +67,6 @@ Follow the output format specified in your directive.
 
 ## Compression Stats
 
-- Pre-sanitization: 1199230 bytes
-- Post-sanitization: 12737 bytes
+- Pre-sanitization: 1040129 bytes
+- Post-sanitization: 8962 bytes
 - Reduction: 99%

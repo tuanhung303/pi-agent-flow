@@ -2,95 +2,56 @@
 
 This document tracks known misalignments between dump artifacts and the actual snapshot pipeline state.
 
-## Misalignment I — Orphan parentId after destructive passes
+## Post-Sync Findings (2026-05-16)
 
+After running `./scripts/sync-dumps.sh`, **2,630** `pi-dump.*` files and **111** `snapshot-dump.*` files were synced from `/tmp` into `dump-artifacts/`. Manifests (`MANIFEST.md`, `manifest.json`) were regenerated.
+
+### Misalignments Identified & Fixed
+
+#### A1 — Stale fixture dumps in `tests/fixtures/dumps/`
+**Status: FIXED**
+
+The `pi-dump.*.md` files in `tests/fixtures/dumps/` were a mix of old and new formats. Some lacked `Tier:` and `Pipeline:` fields; others used hardcoded pass lists. No tests in `tests/` reference `tests/fixtures/dumps/`, so the fixtures were orphaned.
+
+**Fix:** Removed all stale `pi-dump.*` fixtures and replaced them with **3 current-format representatives** copied from the synced `dump-artifacts/`:
+- `pi-dump.scout.1778872735967.md` + `.txt` — empty-snapshot scout (`Tier: lite | Pipeline: 1.8.40`)
+- `pi-dump.scout.1778890389209.md` + `.txt` — rich-context scout (`Tier: lite | Pipeline: 1.8.40`)
+- `pi-dump.build.1778872929174.md` + `.txt` — build flow (`Tier: flash | Pipeline: 1.8.40`)
+
+All three include the HTML comment header with dynamic `Passes:`, `Flow:`, `Tier:`, `Pipeline:`, and `Generated:` fields, plus `.txt` twins and compression stats.
+
+#### A3 — Legacy `snapshot-dump.*` artifacts in `tests/fixtures/dumps/`
+**Status: FIXED**
+
+Two legacy `snapshot-dump.*.md` files (pre-batch-refactor) remained in `tests/fixtures/dumps/`. They lacked HTML headers, `.txt` twins, dynamic compression-stats, and `Pipeline:` fields. No tests referenced them.
+
+**Fix:** Deleted all `snapshot-dump.*` files from `tests/fixtures/dumps/`.
+
+#### A2 — Stale docs/dump-analysis dumps
+**Status: NOT ADDRESSED IN THIS PASS**
+
+`docs/dump-analysis/` still contains a mix of pre- and post-tier/pipeline files. Since no tests depend on them and they are reference material only, they were left as-is. A README note could be added in a future pass.
+
+#### A4 — Orphan `.gitignore` entries
+**Status: NOT ADDRESSED IN THIS PASS**
+
+`.gitignore` still references `flow-artifacts/dumps/` and `dump-artifacts-representative/`, which do not exist. These are harmless and were left for a future housekeeping pass.
+
+## Historical Misalignments (Previously Fixed)
+
+### Misalignment I — Orphan parentId after destructive passes
 **Status: ALREADY FIXED**
 
 The second `reparentOrphans` pass runs after `stripBatchRead` and `compressToolResults` in `src/snapshot.ts:~943-955`. This ensures that any messages dropped by destructive passes have their orphaned children reparented to valid ancestors. No destructive passes run after the second `reparentOrphans` call.
 
-## Misalignment J — Header pass list drift from actual passesApplied
-
+### Misalignment J — Header pass list drift from actual passesApplied
 **Status: ALREADY FIXED**
 
 The header pass list is now derived dynamically from the compression-stats entry at `src/flow.ts:~603`. The dump builder reads `passesApplied` from the trailing JSONL entry and joins them into the HTML comment header. The header always reflects the actual passes that were applied.
 
-## Misalignment A1 — Stale fixture dumps in `tests/fixtures/dumps/`
-
-**Severity: Medium**
-
-The `pi-dump.*.md` files in `tests/fixtures/dumps/` use the old hardcoded 5-pass header (`stripSteeringHints, stripReasoning, stripBatchRead, compressToolResults, reparentOrphans`) and completely lack the `Tier:` and `Pipeline:` fields that current code adds.
-
-**Evidence:**
-- `tests/fixtures/dumps/pi-dump.build.1778859369354.md` header: `Passes: stripSteeringHints, stripReasoning, stripBatchRead, compressToolResults, reparentOrphans | Flow: build | Generated: 2026-05-15T15:36:09.354Z`
-- Current code (`src/flow.ts:~643`) produces: `Passes: <dynamic from compression-stats> | Flow: <name> | Tier: <tier> | Pipeline: <pipelineVersion> | Generated: <ISO>`
-- Fixture timestamps: May 15 22:43. Current dist build timestamp: May 16 06:48.
-- `tests/dump.test.ts` does NOT reference these fixtures; they are orphaned.
-
-**Root cause:** Fixtures were captured before the dynamic-header, tier, and pipeline additions were built into `dist/`. They reflect an older code state.
-
-**Recommended fix:** Remove stale `pi-dump.*` fixtures from `tests/fixtures/dumps/` and regenerate fresh fixtures with current code if fixtures are needed.
-
-## Misalignment A2 — Stale docs/dump-analysis dumps
-
-**Severity: Low**
-
-Some `pi-dump.*.md` files in `docs/dump-analysis/` lack `Tier:` and `Pipeline:` while sibling files in the same directory have them, creating an inconsistent reference corpus.
-
-**Evidence:**
-- `docs/dump-analysis/pi-dump.scout.1778860570616.md` header ends at `Flow: scout | Generated:` with no `Tier:` or `Pipeline:`.
-- `docs/dump-analysis/pi-dump.build.1778872299999.md` has `Tier: flash | Pipeline: 1.8.40`.
-- Both copied from `/tmp` on May 16 02:11, but were generated by different dist builds.
-
-**Root cause:** Dumps were collected across multiple code versions; older dist lacked the `Tier`/`Pipeline` header fields.
-
-**Recommended fix:** Add a note in `docs/dump-analysis/README.md` (or regenerate the directory) indicating which files were generated by which pipeline version.
-
-## Misalignment A3 — Legacy `snapshot-dump.*` artifacts in `tests/fixtures/dumps/`
-
-**Severity: Low–Medium**
-
-The `snapshot-dump.*.md` files in `tests/fixtures/dumps/` are pre-batch-refactor legacy artifacts. They lack HTML headers, `.txt` twins, dynamic compression-stats, and `Pipeline:` fields.
-
-**Evidence:**
-- `tests/fixtures/dumps/snapshot-dump.build.1778807715172.md` opens directly with `## Session Snapshot (JSONL)` — no `<!-- pi-agent-flow dump -->` header.
-- No `.txt` twin exists for any `snapshot-dump.*` file.
-- grep of `tests/` for `snapshot-dump` returned zero test references.
-- `CLAUDE.md` explicitly labels `snapshot-dump.*` as "legacy, pre-batch-refactor" and "safe to delete".
-
-**Root cause:** Format migration from `snapshot-dump.*` to `pi-dump.*` left old files behind.
-
-**Recommended fix:** Delete all `snapshot-dump.*` files from `tests/fixtures/dumps/`.
-
-## Misalignment A4 — Orphan `.gitignore` entries
-
-**Severity: Low**
-
-`.gitignore` references directories that do not exist in the repo.
-
-**Evidence:**
-- `.gitignore:12` — `flow-artifacts/dumps/` — directory does not exist.
-- `.gitignore:16-17` — `dump-artifacts/` and `dump-artifacts-representative/` — `dump-artifacts/` exists but only contains this analysis file; `dump-artifacts-representative/` does not exist.
-
-**Root cause:** Entries added for directories planned/created by prior build flows but never persisted.
-
-**Recommended fix:** Remove orphan `flow-artifacts/dumps/` and `dump-artifacts-representative/` entries from `.gitignore`.
-
-## Action Plan
-
-- [x] Misalignment I — Verified fixed in `src/snapshot.ts` (two reparentOrphans calls)
-- [x] Misalignment J — Verified fixed in `src/flow.ts` (dynamic header from compression-stats)
-- [x] Add orphan parentId regression test (behavioral)
-- [x] Add TTL cleanup for /tmp dump files
-- [x] Document dump format evolution in CLAUDE.md
-- [x] **A1** — Remove stale `pi-dump.*` fixtures from `tests/fixtures/dumps/` (or regenerate)
-- [x] **A2** — Add version note to `docs/dump-analysis/` or regenerate with current pipeline
-- [x] **A3** — Delete legacy `snapshot-dump.*` files from `tests/fixtures/dumps/`
-- [x] **A4** — Clean orphan `.gitignore` entries
-
 ## Verification
 
-Existing test assertions in `tests/snapshot-role-fix.test.ts` already validate:
-- Pass order: `reparentIndex1 < stripBatchIndex < compressIndex < reparentIndex2`
-- The full `sanitizeForkSnapshot` pipeline produces zero orphaned `parentId` references
-- `tests/snapshot-pipeline.test.ts` validates `VALID_PASS_NAMES` and dead-pass-name rejection
-- `tests/dump.test.ts` validates the full end-to-end dump format (header, JSONL, prompt, compression stats, .txt twin) against the current code path
+- `tests/snapshot-role-fix.test.ts` validates pass order and zero orphaned `parentId` references.
+- `tests/snapshot-pipeline.test.ts` validates `VALID_PASS_NAMES` and dead-pass-name rejection.
+- `tests/dump.test.ts` validates the full end-to-end dump format (header, JSONL, prompt, compression stats, `.txt` twin) against the current code path.
+- `npm test` and `npm run lint` pass after fixture refresh.

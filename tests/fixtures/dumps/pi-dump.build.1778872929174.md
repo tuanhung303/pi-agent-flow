@@ -1,8 +1,8 @@
-<!-- pi-agent-flow dump | State: post-sanitization | Passes: forkMetadataInjection, stripTimestamps, stripReasoning, stripApiMetadata, normalizeToolResultRole, stripDetails, stripStrategicHints, reparentOrphans, stripBatchRead, compressToolResults, reparentOrphans | Flow: build | Tier: flash | Pipeline: 1.8.40 | Generated: 2026-05-15T19:24:11.513Z -->
+<!-- pi-agent-flow dump | State: post-sanitization | Passes: forkMetadataInjection, stripTimestamps, stripReasoning, stripApiMetadata, normalizeToolResultRole, stripDetails, stripStrategicHints, reparentOrphans, stripBatchRead, compressToolResults, reparentOrphans | Flow: build | Tier: flash | Pipeline: 1.8.40 | Generated: 2026-05-15T19:22:09.174Z -->
 
 ## Session Snapshot (JSONL)
 
-{"type":"session","version":3,"id":"019e2875-b15f-707a-b3c2-e89e135f183c","timestamp":"2026-05-14T21:47:42.304Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow","forkedAt":"2026-05-15T19:24:11.502Z","depth":1}
+{"type":"session","version":3,"id":"019e2875-b15f-707a-b3c2-e89e135f183c","timestamp":"2026-05-14T21:47:42.304Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow","forkedAt":"2026-05-15T19:22:09.162Z","depth":1}
 {"type":"model_change","id":"717aab66","parentId":null,"timestamp":"2026-05-14T21:47:43.137Z","provider":"wafer","modelId":"glm-5.1"}
 {"type":"thinking_level_change","id":"07216867","parentId":"717aab66","timestamp":"2026-05-14T21:47:43.137Z","thinkingLevel":"high"}
 {"type":"message","id":"0d3b8f51","parentId":"07216867","timestamp":"2026-05-15T19:03:24.217Z","message":{"role":"user","content":[{"type":"text","text":"run the scout x2 flow sequentially\n\nthen ask another build export the flow context that in /tmp folder to here, to our repo so we can analyze the actual artifacts, correct and improve\n\nanalyze iterate to see if we have any misalignment in code/expectation      \nagainst the acutal extract/dump                                                 \n   \nprovide plan to address, correct\n\nobtain the main ideas of shared context among flows, be conservative in improments"}]}}
@@ -33,17 +33,7 @@
 {"type":"message","id":"310d0c69","parentId":"bf08398c","timestamp":"2026-05-15T19:17:50.912Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll implement all five fixes. Let me first re-read the exact lines I need to modify to give the build flow precise instructions."}],"usage":{"input":61011,"output":502,"cacheRead":0,"cacheWrite":0,"totalTokens":61513}}}
 {"type":"message","id":"c04ee85f","timestamp":"2026-05-15T19:21:50.588Z","message":{"role":"user","content":[{"type":"text","text":"continue"}]}}
 {"type":"message","id":"95e33020","parentId":"c04ee85f","timestamp":"2026-05-15T19:22:09.151Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_c268a99478e6401ab62d6d88","name":"flow","arguments":{"flow":[{"aim":"Implement P0-P4 shared context fixes","intent":"Implement five fixes across the pi-agent-flow codebase. Each fix is precisely scoped — read the files, make the exact changes described, verify with build + tests.\n\n## P0 — Fix Flow Result Cache Placeholder Text\n\nFile: `src/snapshot.ts`\n\nIn the `compressToolResults` function, find the line that renders the cache-miss placeholder for flow tool results. Currently it reads:\n```ts\nrendered = `[flow] prior result · ${size} chars (not cached or evicted)`;\n```\n\nChange it to:\n```ts\nrendered = `[flow] prior result · ${size} chars — full context unavailable (result not cached at this depth)`;\n```\n\nAlso in `src/executor.ts`, in the cache flow results loop (around line 445-470), after `const so = result.structuredOutput;` and `if (!so) continue;`, add a debug warning:\n```ts\nif (!so) {\n  console.warn(`[pi-agent-flow] Flow result for toolCallId=${toolCallId} type=${result.type} has no structuredOutput — cache entry skipped. This means child flows will see placeholder text instead of compressed results.`);\n  continue;\n}\n```\nNote: remove the existing `if (!so) continue;` and replace with this block.\n\n## P1 — Guard Against tier: undefined String Leakage\n\nFile: `src/flow.ts`\n\n1. At the top of `buildFlowArgs`, add an import for `getFlowTier` from `./agents.js`. Check if it's already imported — look at the existing imports at the top of the file. If `getFlowTier` is not imported, add it.\n\n2. In `buildFlowArgs`, find the activation line:\n```ts\nconst activation =\n    `\\n\\n<activation flow=\"${flow.name}\" depth=\"${currentDepth}\" tools=\"${availableTools}\" tier=\"${flow.tier}\">\\n` +\n```\nChange to:\n```ts\nconst effectiveTier = flow.tier ?? getFlowTier(flow.name);\nconst activation =\n    `\\n\\n<activation flow=\"${flow.name}\" depth=\"${currentDepth}\" tools=\"${availableTools}\" tier=\"${effectiveTier}\">\\n` +\n```\n\n3. In the dump header line (inside the `if (dumpPath)` block):\n```ts\nconst sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${flow.tier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;\n```\nChange `Tier: ${flow.tier}` to `Tier: ${effectiveTier}`. Note: `effectiveTier` is defined earlier in the function scope so it's available here.\n\nActually, `effectiveTier` is defined inside the `buildFlowArgs` function but the dump header code is in `runFlow`. So we need to compute it there too. Add before the dump block:\n```ts\nconst effectiveTier = flow.tier ?? getFlowTier(flow.name);\n```\nAnd use it in the sanitizationHeader.\n\n## P2 — Sanitize type:system JSONL Entries\n\nFile: `src/snapshot.ts`\n\nIn `sanitizeForkSnapshot`, after the header handling block (the `if (i === 0 ...)` block), add a new handler for `type: \"system\"` entries:\n\n```ts\n// Drop type: \"system\" entries — children receive their own directive in the <activation> block.\n// The parent orchestrator's system prompt is not relevant to children.\nif (entry?.type === \"system\") {\n    subPasses.add(\"dropSystemEvents\");\n    continue;\n}\n```\n\nPlace this AFTER the header handling block and BEFORE the sliding system prompt drop block (the `contentContainsSteeringHintTag` check). This ensures standalone `type: \"system\"` JSONL entries are removed.\n\n## P3 — Fix CLAUDE.md Naming Consistency\n\nFile: `CLAUDE.md`\n\nIn the \"What a snapshot dump looks like\" section, find the lines that reference `pi-snapshot`:\n- `export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot`\n- `ls -lh /tmp/pi-snapshot.*`\n- `pi-dump.scout.1715724000000.txt` (this one already says pi-dump which is correct)\n\nChange them to use `pi-dump` instead:\n- `export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump`\n- `ls -lh /tmp/pi-dump.*`\n\nThe example output `pi-dump.scout.1715724000000.txt` already uses the correct convention — leave it.\n\n## P4 — Fix Legacy Default Tools for Non-Optimized Mode\n\nFile: `src/flow.ts`\n\nIn `buildFlowArgs`, find the default tools definition:\n```ts\nconst defaultTools = toolOptimize\n    ? canDelegate\n        ? [\"batch\", \"bash\", \"flow\", \"web\"]\n        : [\"batch\", \"bash\", \"web\"]\n    : [\"read\", \"write\", \"edit\", \"batch\", \"bash\", \"flow\", \"web\"];\n```\n\nChange to:\n```ts\nconst defaultTools = toolOptimize\n    ? canDelegate\n        ? [\"batch\", \"bash\", \"flow\", \"web\"]\n        : [\"batch\", \"bash\", \"web\"]\n    : canDelegate\n        ? [\"batch\", \"bash\", \"flow\", \"web\"]\n        : [\"batch\", \"bash\", \"web\"];\n```\n\nRationale: `read`, `write`, `edit` are NOT registered for child flows (only `batch` is). Including them in the default tool list advertises unavailable tools. When `toolOptimize` is false, we should still use the same optimized tool names since the child's tool registry only has `batch` (which handles read/write/edit operations).\n\n## VERIFICATION\n\nAfter making all changes:\n1. Run `npm run build` — must succeed with zero errors\n2. Run `npm test` — must pass\n3. Run `npm run lint` — must pass\n\nIf any test fails, investigate and fix. Do NOT skip tests.","sessionMode":"long","type":"build"}]}}],"usage":{"input":63396,"output":1488,"cacheRead":0,"cacheWrite":0,"totalTokens":64884}}}
-{"type":"message","id":"a1fc9179","parentId":"95e33020","timestamp":"2026-05-15T19:23:38.874Z","message":{"role":"tool","toolCallId":"call_c268a99478e6401ab62d6d88","toolName":"flow","content":[{"type":"text","text":"[flow] prior result · 2054 chars (not cached — context unavailable at depth 1)"}],"isError":false}}
-{"type":"message","id":"6279f0a9","parentId":"a1fc9179","timestamp":"2026-05-15T19:23:42.920Z","message":{"role":"assistant","content":[{"type":"text","text":"Build flow shipped the changes, but reported P2, P3, and P4 as \"already correct.\" Let me verify this independently — my analysis showed concrete evidence that they were misaligned."}],"usage":{"input":578,"output":190,"cacheRead":64832,"cacheWrite":0,"totalTokens":65600}}}
-{"type":"custom_message","content":"You MUST call the flow tool now to advance the active goal.\nGoal: update CLAUDE.md with /flow-goal documentation\nCall the flow tool with: {\"flow\": [{\"type\": \"build\", \"intent\": \"update CLAUDE.md with /flow-goal documentation\", \"aim\": \"update CLAUDE.md with /flow-goal documentation\"}]}","display":false,"id":"77863cb0","timestamp":"2026-05-15T19:23:42.930Z"}
-{"type":"message","id":"adffa457","parentId":"77863cb0","timestamp":"2026-05-15T19:23:49.784Z","message":{"role":"assistant","content":[{"type":"text","text":"Let me first quickly verify the P2/P3/P4 state that the build flow claimed was \"already correct,\" then dispatch the requested flow."}],"usage":{"input":3277,"output":310,"cacheRead":63360,"cacheWrite":0,"totalTokens":66947}}}
-{"type":"message","id":"8899c2de","timestamp":"2026-05-15T19:23:51.990Z","message":{"role":"assistant","content":[{"type":"text","text":""}],"usage":{"input":1812,"output":95,"cacheRead":66944,"cacheWrite":0,"totalTokens":68851}}}
-{"type":"custom_message","content":"You MUST call the flow tool now to advance the active goal.\nGoal: update CLAUDE.md with /flow-goal documentation\nCall the flow tool with: {\"flow\": [{\"type\": \"build\", \"intent\": \"update CLAUDE.md with /flow-goal documentation\", \"aim\": \"update CLAUDE.md with /flow-goal documentation\"}]}","display":false,"id":"3d267fba","timestamp":"2026-05-15T19:23:51.996Z"}
-{"type":"message","id":"5ae9a997","parentId":"3d267fba","timestamp":"2026-05-15T19:23:57.849Z","message":{"role":"assistant","content":[{"type":"text","text":"All P0-P4 fixes verified as shipped ✅. Let me check one remaining spot for P1 (activation prompt tier guard), then dispatch the requested flow-goal docs build."}],"usage":{"input":2591,"output":493,"cacheRead":66624,"cacheWrite":0,"totalTokens":69708}}}
-{"type":"message","id":"c8359cc5","timestamp":"2026-05-15T19:24:00.342Z","message":{"role":"assistant","content":[{"type":"text","text":""}],"usage":{"input":412,"output":158,"cacheRead":69696,"cacheWrite":0,"totalTokens":70266}}}
-{"type":"custom_message","content":"You MUST call the flow tool now to advance the active goal.\nGoal: update CLAUDE.md with /flow-goal documentation\nCall the flow tool with: {\"flow\": [{\"type\": \"build\", \"intent\": \"update CLAUDE.md with /flow-goal documentation\", \"aim\": \"update CLAUDE.md with /flow-goal documentation\"}]}","display":false,"id":"46e09307","timestamp":"2026-05-15T19:24:00.349Z"}
-{"type":"message","id":"37ff716a","parentId":"46e09307","timestamp":"2026-05-15T19:24:11.494Z","message":{"role":"assistant","content":[{"type":"text","text":"All P0-P4 fixes confirmed shipped. Dispatching the requested flow-goal docs build now."},{"type":"toolCall","id":"call_9c557f5af1594a398182c71c","name":"flow","arguments":{"flow":[{"aim":"Update CLAUDE.md with flow-goal docs","intent":"Add a new section to CLAUDE.md documenting the /flow-goal autonomous continuation system. This is a slash-command + auto-continuation feature that lets the orchestrator pursue multi-step goals across multiple flow calls automatically.\n\n## What to document\n\nRead the source files first to ensure accuracy:\n- src/flow-goal/index.ts — barrel export and registration\n- src/flow-goal/types.ts — FlowGoalEntry, FlowGoalStatus, GoalContext types\n- src/flow-goal/command.ts — /flow-goal slash command with subcommands: set, clear, pause, resume, edit, status, show\n- src/flow-goal/continuation.ts — turn_end hook that auto-spawns flow calls to advance the goal\n- src/flow-goal/store.ts — .pi/flow-goal.json persistence with atomic writes\n\n## Where to add it in CLAUDE.md\n\nAdd a new top-level section after the existing \"## Environment Variables\" section (near the end of the file). Call it:\n\n## Flow Goal (Autonomous Continuation)\n\n## Content to include\n\n1. **Overview**: What /flow-goal does — enables autonomous multi-step goal pursuit. When a goal is active, the system automatically spawns flow calls after each turn_end to continue advancing the objective.\n\n2. **Slash command reference**: Document each subcommand:\n   - `/flow-goal set <objective>` — Set a new active goal. Options: `--acceptance <text>`, `--max-tokens <n>`, `--max-flows <n>`\n   - `/flow-goal clear` — Clear the active goal\n   - `/flow-goal pause` — Pause the active goal (stops auto-continuation)\n   - `/flow-goal resume` — Resume a paused goal\n   - `/flow-goal edit <new-objective>` — Edit the objective. Options: `--acceptance <text>`\n   - `/flow-goal status` — Show current goal status\n   - `/flow-goal show` — Alias for status\n\n3. **How it works (brief)**:\n   - On `turn_end`, if an active goal exists, the continuation hook checks token/flow budgets\n   - If under budget, it sends a message to the orchestrator instructing it to call the flow tool\n   - The spawned flow receives the goal as a `<flow-goal>` section in its activation prompt (see buildFlowArgs in src/flow.ts — search for `goalContext`)\n   - Completed flows are recorded in the goal state and tokens are accumulated\n   - If a budget is exceeded, the goal is auto-paused\n   - 5-second cooldown between auto-spawns to prevent rapid-fire\n\n4. **GoalContext in child flows**: When a goal is active, child flows receive a `<flow-goal>` block in their activation prompt containing the objective, acceptance criteria, and progress (flowCount/maxFlows). This is injected by buildFlowArgs when goalContext is provided.\n\n5. **Persistence**: Goals are stored in `.pi/flow-goal.json` in the project root. Add `.pi/flow-goal.json` to any .gitignore recommendations if relevant.\n\n6. **Environment variables**: Add `PI_FLOW_GOAL_AUTO_CONTINUE` if it exists (check the code). If not, note that auto-continuation is always-on when a goal is active.\n\n## Style guidelines\n- Match the existing CLAUDE.md tone: concise, practical, developer-focused\n- Use the same table/list formatting as existing sections\n- Keep it under 60 lines — this is a reference, not a tutorial\n- Include a brief usage example showing the typical set → auto-continue → pause/complete lifecycle\n\n## Also\n- Add `flow-goal.json` to the Environment Variables table if any env vars control it\n- Check if .pi/flow-goal.json should be mentioned in any .gitignore context","sessionMode":"default","type":"build"}]}}],"usage":{"input":3267,"output":947,"cacheRead":69184,"cacheWrite":0,"totalTokens":73398}}}
-{"type":"compression-stats","preBytes":1296343,"postBytes":36846,"reductionPercent":97,"passesApplied":["forkMetadataInjection","stripTimestamps","stripReasoning","stripApiMetadata","normalizeToolResultRole","stripDetails","stripStrategicHints","reparentOrphans","stripBatchRead","compressToolResults","reparentOrphans"]}
+{"type":"compression-stats","preBytes":824881,"postBytes":29663,"reductionPercent":96,"passesApplied":["forkMetadataInjection","stripTimestamps","stripReasoning","stripApiMetadata","normalizeToolResultRole","stripDetails","stripStrategicHints","reparentOrphans","stripBatchRead","compressToolResults","reparentOrphans"]}
 
 
 ## Activation Prompt (-p)
@@ -57,7 +47,7 @@ Your task begins NOW. Do not respond to or continue anything from the history.
 You are a [build] agent operating at depth 1.
 Available tools: batch, bash, find, grep, ls, web.
 You may NOT delegate to sub-flows (depth 1/0 | cycles: blocked | stack: (root)).
-Session mode: default. Time budget: 600s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
+Session mode: long. Time budget: 900s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
 Do not attempt to use any tool outside the available set — it will fail.
 </activation>
 
@@ -90,59 +80,127 @@ End with a ```json block: { version, status, summary, files[], actions[], notDon
 </directive>
 
 <mission>
-Add a new section to CLAUDE.md documenting the /flow-goal autonomous continuation system. This is a slash-command + auto-continuation feature that lets the orchestrator pursue multi-step goals across multiple flow calls automatically.
+Implement five fixes across the pi-agent-flow codebase. Each fix is precisely scoped — read the files, make the exact changes described, verify with build + tests.
 
-## What to document
+## P0 — Fix Flow Result Cache Placeholder Text
 
-Read the source files first to ensure accuracy:
-- src/flow-goal/index.ts — barrel export and registration
-- src/flow-goal/types.ts — FlowGoalEntry, FlowGoalStatus, GoalContext types
-- src/flow-goal/command.ts — /flow-goal slash command with subcommands: set, clear, pause, resume, edit, status, show
-- src/flow-goal/continuation.ts — turn_end hook that auto-spawns flow calls to advance the goal
-- src/flow-goal/store.ts — .pi/flow-goal.json persistence with atomic writes
+File: `src/snapshot.ts`
 
-## Where to add it in CLAUDE.md
+In the `compressToolResults` function, find the line that renders the cache-miss placeholder for flow tool results. Currently it reads:
+```ts
+rendered = `[flow] prior result · ${size} chars (not cached or evicted)`;
+```
 
-Add a new top-level section after the existing "## Environment Variables" section (near the end of the file). Call it:
+Change it to:
+```ts
+rendered = `[flow] prior result · ${size} chars — full context unavailable (result not cached at this depth)`;
+```
 
-## Flow Goal (Autonomous Continuation)
+Also in `src/executor.ts`, in the cache flow results loop (around line 445-470), after `const so = result.structuredOutput;` and `if (!so) continue;`, add a debug warning:
+```ts
+if (!so) {
+  console.warn(`[pi-agent-flow] Flow result for toolCallId=${toolCallId} type=${result.type} has no structuredOutput — cache entry skipped. This means child flows will see placeholder text instead of compressed results.`);
+  continue;
+}
+```
+Note: remove the existing `if (!so) continue;` and replace with this block.
 
-## Content to include
+## P1 — Guard Against tier: undefined String Leakage
 
-1. **Overview**: What /flow-goal does — enables autonomous multi-step goal pursuit. When a goal is active, the system automatically spawns flow calls after each turn_end to continue advancing the objective.
+File: `src/flow.ts`
 
-2. **Slash command reference**: Document each subcommand:
-   - `/flow-goal set <objective>` — Set a new active goal. Options: `--acceptance <text>`, `--max-tokens <n>`, `--max-flows <n>`
-   - `/flow-goal clear` — Clear the active goal
-   - `/flow-goal pause` — Pause the active goal (stops auto-continuation)
-   - `/flow-goal resume` — Resume a paused goal
-   - `/flow-goal edit <new-objective>` — Edit the objective. Options: `--acceptance <text>`
-   - `/flow-goal status` — Show current goal status
-   - `/flow-goal show` — Alias for status
+1. At the top of `buildFlowArgs`, add an import for `getFlowTier` from `./agents.js`. Check if it's already imported — look at the existing imports at the top of the file. If `getFlowTier` is not imported, add it.
 
-3. **How it works (brief)**:
-   - On `turn_end`, if an active goal exists, the continuation hook checks token/flow budgets
-   - If under budget, it sends a message to the orchestrator instructing it to call the flow tool
-   - The spawned flow receives the goal as a `<flow-goal>` section in its activation prompt (see buildFlowArgs in src/flow.ts — search for `goalContext`)
-   - Completed flows are recorded in the goal state and tokens are accumulated
-   - If a budget is exceeded, the goal is auto-paused
-   - 5-second cooldown between auto-spawns to prevent rapid-fire
+2. In `buildFlowArgs`, find the activation line:
+```ts
+const activation =
+    `\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${flow.tier}">\n` +
+```
+Change to:
+```ts
+const effectiveTier = flow.tier ?? getFlowTier(flow.name);
+const activation =
+    `\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}">\n` +
+```
 
-4. **GoalContext in child flows**: When a goal is active, child flows receive a `<flow-goal>` block in their activation prompt containing the objective, acceptance criteria, and progress (flowCount/maxFlows). This is injected by buildFlowArgs when goalContext is provided.
+3. In the dump header line (inside the `if (dumpPath)` block):
+```ts
+const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${flow.tier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
+```
+Change `Tier: ${flow.tier}` to `Tier: ${effectiveTier}`. Note: `effectiveTier` is defined earlier in the function scope so it's available here.
 
-5. **Persistence**: Goals are stored in `.pi/flow-goal.json` in the project root. Add `.pi/flow-goal.json` to any .gitignore recommendations if relevant.
+Actually, `effectiveTier` is defined inside the `buildFlowArgs` function but the dump header code is in `runFlow`. So we need to compute it there too. Add before the dump block:
+```ts
+const effectiveTier = flow.tier ?? getFlowTier(flow.name);
+```
+And use it in the sanitizationHeader.
 
-6. **Environment variables**: Add `PI_FLOW_GOAL_AUTO_CONTINUE` if it exists (check the code). If not, note that auto-continuation is always-on when a goal is active.
+## P2 — Sanitize type:system JSONL Entries
 
-## Style guidelines
-- Match the existing CLAUDE.md tone: concise, practical, developer-focused
-- Use the same table/list formatting as existing sections
-- Keep it under 60 lines — this is a reference, not a tutorial
-- Include a brief usage example showing the typical set → auto-continue → pause/complete lifecycle
+File: `src/snapshot.ts`
 
-## Also
-- Add `flow-goal.json` to the Environment Variables table if any env vars control it
-- Check if .pi/flow-goal.json should be mentioned in any .gitignore context
+In `sanitizeForkSnapshot`, after the header handling block (the `if (i === 0 ...)` block), add a new handler for `type: "system"` entries:
+
+```ts
+// Drop type: "system" entries — children receive their own directive in the <activation> block.
+// The parent orchestrator's system prompt is not relevant to children.
+if (entry?.type === "system") {
+    subPasses.add("dropSystemEvents");
+    continue;
+}
+```
+
+Place this AFTER the header handling block and BEFORE the sliding system prompt drop block (the `contentContainsSteeringHintTag` check). This ensures standalone `type: "system"` JSONL entries are removed.
+
+## P3 — Fix CLAUDE.md Naming Consistency
+
+File: `CLAUDE.md`
+
+In the "What a snapshot dump looks like" section, find the lines that reference `pi-snapshot`:
+- `export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-snapshot`
+- `ls -lh /tmp/pi-snapshot.*`
+- `pi-dump.scout.1715724000000.txt` (this one already says pi-dump which is correct)
+
+Change them to use `pi-dump` instead:
+- `export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump`
+- `ls -lh /tmp/pi-dump.*`
+
+The example output `pi-dump.scout.1715724000000.txt` already uses the correct convention — leave it.
+
+## P4 — Fix Legacy Default Tools for Non-Optimized Mode
+
+File: `src/flow.ts`
+
+In `buildFlowArgs`, find the default tools definition:
+```ts
+const defaultTools = toolOptimize
+    ? canDelegate
+        ? ["batch", "bash", "flow", "web"]
+        : ["batch", "bash", "web"]
+    : ["read", "write", "edit", "batch", "bash", "flow", "web"];
+```
+
+Change to:
+```ts
+const defaultTools = toolOptimize
+    ? canDelegate
+        ? ["batch", "bash", "flow", "web"]
+        : ["batch", "bash", "web"]
+    : canDelegate
+        ? ["batch", "bash", "flow", "web"]
+        : ["batch", "bash", "web"];
+```
+
+Rationale: `read`, `write`, `edit` are NOT registered for child flows (only `batch` is). Including them in the default tool list advertises unavailable tools. When `toolOptimize` is false, we should still use the same optimized tool names since the child's tool registry only has `batch` (which handles read/write/edit operations).
+
+## VERIFICATION
+
+After making all changes:
+1. Run `npm run build` — must succeed with zero errors
+2. Run `npm test` — must pass
+3. Run `npm run lint` — must pass
+
+If any test fails, investigate and fix. Do NOT skip tests.
 
 Execute this mission. Use only your available tools. If blocked, report why — do not guess.
 Follow the output format specified in your directive.
@@ -151,6 +209,6 @@ Follow the output format specified in your directive.
 
 ## Compression Stats
 
-- Pre-sanitization: 1296343 bytes
-- Post-sanitization: 36846 bytes
-- Reduction: 97%
+- Pre-sanitization: 824881 bytes
+- Post-sanitization: 29663 bytes
+- Reduction: 96%
