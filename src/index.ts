@@ -35,6 +35,7 @@ import {
 	configureSteering,
 } from "./steering/sliding-prompt.js";
 import { registerFlow, getGoal, recordFlowCompletion, addTokens } from "./flow/index.js";
+import * as sessionRegistry from "./core/session-registry.js";
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
 	resolveFlowDepthConfig,
@@ -219,6 +220,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Auto-discover flows on session start
 	pi.on("session_start", async (_event, ctx) => {
+		sessionRegistry.register(ctx.cwd, ctx.sessionManager.getSessionId());
 		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
 

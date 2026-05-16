@@ -88,14 +88,14 @@ function extractGoalFromPrompt(prompt: string): string {
   return 'Continue the work from the warped context';
 }
 
-export function setupWarpCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
+export function setupWarpCommand(pi: ExtensionAPI): void {
   pi.registerCommand("flow:warp", {
     description: "Warp to a new session with distilled context. Usage: /flow:warp [goal]",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const DEFAULT_WARP_GOAL = "Continue where we left off — summarize what we've done, where we are, and what the natural next step is.";
       const goal = args.trim() || DEFAULT_WARP_GOAL;
 
-      const cwd = getCwd() ?? ctx.cwd;
+      const cwd = ctx.cwd;
 
       // Ensure a model is available
       const model = ctx.model ?? ctx.modelRegistry?.getAvailable()?.[0];

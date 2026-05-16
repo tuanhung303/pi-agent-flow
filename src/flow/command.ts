@@ -33,7 +33,7 @@ function formatGoal(entry: NonNullable<ReturnType<typeof getGoal>>): string {
   return lines.join("\n");
 }
 
-export function setupFlowCommand(pi: ExtensionAPI, getCwd: () => string | undefined): void {
+export function setupFlowCommand(pi: ExtensionAPI): void {
   pi.registerCommand("flow:goal", {
     description:
       "Manage an active flow goal. Subcommands: set <objective> [--acceptance <text>] [--max-tokens <n>] [--max-flows <n>], clear, pause, resume, complete, edit <new-objective> [--acceptance <text>], status, show",

@@ -2,8 +2,8 @@ import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner
 import { getGoal, addTokens, updateGoalStatus } from "./store.js";
 import { budgetLimitTemplate, goalCompletedTemplate } from "./template-strings.js";
 import { logWarn } from '../config/log.js';
+import * as sessionRegistry from '../core/session-registry.js';
 
-let _currentSessionId: string | undefined;
 const SPAWN_COOLDOWN_MS = 5000;
 const _lastSpawnAt = new Map<string, number>();
 
@@ -36,28 +36,20 @@ export function markFlowCompleted(sessionId?: string): void {
   }
 }
 
-export function setupContinuation(
-  pi: ExtensionAPI,
-  getCwd: () => string | undefined,
-): void {
+export function setupContinuation(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
-    _currentSessionId = ctx.sessionManager.getSessionId();
+    sessionRegistry.register(ctx.cwd, ctx.sessionManager.getSessionId());
   });
 
   pi.on("turn_end", async (event: TurnEndEvent) => {
-    const cwd = getCwd();
+    const cwd = sessionRegistry.getCwd();
     if (!cwd) return;
 
     const goal = getGoal(cwd);
     if (!goal || goal.status !== "active") return;
     // Session guard: only continue goals bound to the current session.
-    // NOTE: _currentSessionId is a module-level singleton. If multiple sessions
-    // run concurrently in the same extension host, the most recent session_start
-    // overwrites this value, which can block the parent session's continuation
-    // after a warp. A proper fix requires the Pi framework to pass ctx into
-    // turn_end, or for the store to be keyed by sessionId.
-    if (goal.sessionId && goal.sessionId !== _currentSessionId) {
-      logWarn(`[pi-agent-flow] Continuation skipped: goal session ${goal.sessionId} ≠ active session ${_currentSessionId ?? '(none)'}`);
+    if (goal.sessionId && goal.sessionId !== sessionRegistry.getSessionId(cwd)) {
+      logWarn(`[pi-agent-flow] Continuation skipped: goal session ${goal.sessionId} ≠ active session ${sessionRegistry.getSessionId(cwd) ?? '(none)'}`);
       return;
     }
 
