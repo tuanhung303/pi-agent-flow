@@ -10,9 +10,9 @@ import { existsSync, readFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { FLOW_DEPTH_ENV, parseNonNegativeInt } from "./depth.js";
+import { FLOW_DEPTH_ENV, parseNonNegativeInt } from "../core/depth.js";
 import { getNotifyState, resetNotifyState } from "./notify-state.js";
-import { logError } from "./log.js";
+import { logError } from "../config/log.js";
 
 type TerminalBackend = "auto" | "osc777" | "osc99" | "none";
 type DesktopBackend = "auto" | "macos" | "linux" | "windows-toast" | "none";

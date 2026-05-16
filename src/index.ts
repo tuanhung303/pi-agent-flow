@@ -7,13 +7,13 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { setupNotify } from "./notify.js";
-import { discoverFlows, getFlowTier } from "./agents.js";
-import { getInheritedCliArgs } from "./cli-args.js";
-import { renderFlowCall, renderFlowResult } from "./render.js";
-import { terminateAllChildGroups } from "./flow.js";
-import { executeFlows } from "./executor.js";
-import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./tool-utils.js";
+import { setupNotify } from "./notify/notify.js";
+import { discoverFlows, getFlowTier } from "./core/agents.js";
+import { getInheritedCliArgs } from "./snapshot/cli-args.js";
+import { renderFlowCall, renderFlowResult } from "./tui/render.js";
+import { terminateAllChildGroups } from "./core/flow.js";
+import { executeFlows } from "./core/executor.js";
+import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./steering/tool-utils.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -21,30 +21,30 @@ import {
 	type PiAgentFlowAPI,
 } from "./types.js";
 import { createBatchTool, createBatchReadTool, BashProcessTracker, createBatchBashPollTool } from "./batch.js";
-import { createWebTool } from "./web-tool.js";
-import { createAskUserTool } from "./ask-user.js";
+import { createWebTool } from "./tools/web-tool.js";
+import { createAskUserTool } from "./tools/ask-user.js";
 import {
 	stripSteeringHintText,
 	stripSteeringHintsFromMessages,
 	makeSteeringHintMessage,
 	configureSteering,
-} from "./sliding-prompt.js";
+} from "./steering/sliding-prompt.js";
 import { registerFlow, getGoal, recordFlowCompletion, addTokens } from "./flow/index.js";
-import { createTimedBashToolDefinition } from "./timed-bash.js";
+import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
 	resolveFlowDepthConfig,
 	type FlowDepthConfig,
-} from "./depth.js";
+} from "./core/depth.js";
 import {
 	buildForkSessionSnapshotJsonl,
 	sanitizeForkSnapshot,
-} from "./snapshot.js";
+} from "./snapshot/snapshot.js";
 import {
 	resolveSettings,
 	type ResolvedSettings,
-} from "./settings-resolver.js";
-import { scrambleManager, setAnimationConfig } from "./scramble.js";
-export { logWarn, logError, logToFile } from "./log.js";
+} from "./config/settings-resolver.js";
+import { scrambleManager, setAnimationConfig } from "./tui/scramble.js";
+export { logWarn, logError, logToFile } from "./config/log.js";
 
 // ---------------------------------------------------------------------------
 // Persistent flow result cache — shared across execute() calls so historical
@@ -55,7 +55,7 @@ const flowResultCache = new Map<string, CompressedFlowResult[]>();
 import {
 	computeActiveTools,
 	buildBeforeAgentStartPrompt,
-} from "./flow-prompt.js";
+} from "./steering/flow-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Tool parameter schema
@@ -127,8 +127,8 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 }
 
 // Re-export compressToolResults and stripBatchReadToolCalls for tests
-export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot.js";
-export { type FlowColorConfig } from "./flow-colors.js";
+export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot/snapshot.js";
+export { type FlowColorConfig } from "./tui/flow-colors.js";
 
 // ---------------------------------------------------------------------------
 // Extension entry point

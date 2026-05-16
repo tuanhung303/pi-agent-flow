@@ -4,8 +4,8 @@
 
 import * as os from "node:os";
 import { Text, TruncatedText } from "@mariozechner/pi-tui";
-import { scrambleManager, runScrambleTimer } from "../scramble.js";
-import { stripAnsi } from "../render-utils.js";
+import { scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { stripAnsi } from "../tui/render-utils.js";
 import type { BatchTheme, OpResult } from "./constants.js";
 
 function shortenPath(p: string): string {

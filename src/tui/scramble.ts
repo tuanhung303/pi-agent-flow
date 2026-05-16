@@ -24,7 +24,7 @@
  *   tps: — flash on value change (cascade/ripple/illuminate only)
  */
 
-import type { UsageStats } from './types.js';
+import type { UsageStats } from '../types.js';
 import { stripAnsi, tailText, truncateChars } from './render-utils.js';
 import type { Component } from '@mariozechner/pi-tui';
 import { Text, truncateToWidth } from '@mariozechner/pi-tui';

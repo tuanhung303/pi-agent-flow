@@ -2,7 +2,7 @@
  * Pure utility functions for rendering - extracted for testability.
  */
 
-import type { UsageStats } from "./types.js";
+import type { UsageStats } from "../types.js";
 
 /**
  * Format a token count to exactly 5 characters with leading spaces.

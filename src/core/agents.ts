@@ -14,7 +14,7 @@ import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { logWarn } from "./log.js";
+import { logWarn } from "../config/log.js";
 
 export type FlowScope = "user" | "project" | "both" | "bundled" | "all";
 

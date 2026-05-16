@@ -3,7 +3,7 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
-import { getFlowFinalText } from "./runner-events.js";
+import { getFlowFinalText } from "./snapshot/runner-events.js";
 
 /** Aggregated token usage from a flow run. */
 export interface UsageStats {

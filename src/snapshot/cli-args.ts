@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parseAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
+import { parseAgentSessionMode, type AgentSessionMode } from "../core/session-mode.js";
 
 function looksLikeExplicitRelativePath(value: string): boolean {
 	return (

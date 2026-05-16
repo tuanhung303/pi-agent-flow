@@ -6,7 +6,7 @@
  * getTransitionAdvice() to generate advisory strings.
  */
 
-import { isFlowSuccess } from "./types.js";
+import { isFlowSuccess } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Transition descriptor
@@ -64,7 +64,7 @@ export function getTransitionAdvice(
 
 	for (const result of results) {
 		const resultType = result.type.toLowerCase();
-		const succeeded = isFlowSuccess(result as import("./types.js").SingleResult);
+		const succeeded = isFlowSuccess(result as import("../types.js").SingleResult);
 
 		for (const t of transitions) {
 			if (t.from.toLowerCase() !== resultType) continue;

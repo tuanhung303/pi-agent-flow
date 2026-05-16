@@ -8,7 +8,7 @@
 import * as os from "node:os";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text, TruncatedText } from "@mariozechner/pi-tui";
-import { getFlowSummaryText } from "./runner-events.js";
+import { getFlowSummaryText } from "../snapshot/runner-events.js";
 import {
 	type DisplayItem,
 	type SingleResult,
@@ -21,8 +21,8 @@ import {
 	getLastAssistantText,
 	isFlowError,
 	isFlowSuccess,
-} from "./types.js";
-import { formatBatchOpsSummary } from "./batch/render.js";
+} from "../types.js";
+import { formatBatchOpsSummary } from "../batch/render.js";
 import { scrambleManager, runScrambleTimer, DynamicScrambleText, getLiveText } from "./scramble.js";
 
 // ---------------------------------------------------------------------------

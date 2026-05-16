@@ -5,7 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { logWarn } from "./log.js";
+import { logWarn } from "../config/log.js";
 
 // ---------------------------------------------------------------------------
 // Constants

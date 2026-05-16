@@ -8,10 +8,10 @@
 import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Type, type TUnsafe } from "@sinclair/typebox";
-import { appendStrategicHintOnce } from "./tool-utils.js";
-import { setPendingDecision } from "./notify-state.js";
-import { scrambleManager, runScrambleTimer } from "./scramble.js";
-import { stripAnsi } from "./render-utils.js";
+import { appendStrategicHintOnce } from "../steering/tool-utils.js";
+import { setPendingDecision } from "../notify/notify-state.js";
+import { scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { stripAnsi } from "../tui/render-utils.js";
 import {
    Container,
    type Component,
@@ -32,7 +32,7 @@ import {
    truncateToWidth,
    wrapTextWithAnsi,
 } from "@mariozechner/pi-tui";
-import { renderSingleSelectRows, type QuestionOption } from "./single-select-layout.js";
+import { renderSingleSelectRows, type QuestionOption } from "../tui/single-select-layout.js";
 
 const ASK_USER_VERSION = "0.11.0";
 

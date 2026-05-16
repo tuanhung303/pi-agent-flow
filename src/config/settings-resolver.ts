@@ -7,7 +7,7 @@
 import * as os from "node:os";
 import * as fs from "node:fs";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type FlowConfig, discoverFlows } from "./agents.js";
+import { type FlowConfig, discoverFlows } from "../core/agents.js";
 import {
 	loadFlowModelConfigs,
 	loadFlowSettings,
@@ -18,15 +18,15 @@ import {
 	formatFlowModelStrategy,
 	type LoadedFlowModelConfigs,
 } from "./config.js";
-import { getInheritedCliArgs } from "./cli-args.js";
-import { parseBoolean, FLOW_TOOL_OPTIMIZE_ENV } from "./depth.js";
+import { getInheritedCliArgs } from "../snapshot/cli-args.js";
+import { parseBoolean, FLOW_TOOL_OPTIMIZE_ENV } from "../core/depth.js";
 import { logWarn } from "./log.js";
 import {
 	DEFAULT_AGENT_SESSION_MODE,
 	PI_FLOW_SESSION_MODE_ENV,
 	parseAgentSessionMode,
 	type AgentSessionMode,
-} from "./session-mode.js";
+} from "../core/session-mode.js";
 
 // Environment variables for steering and animation
 const PI_FLOW_NO_STEERING_ENV = "PI_FLOW_NO_STEERING";

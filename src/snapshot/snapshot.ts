@@ -25,16 +25,16 @@
 import {
 	type CompressedFlowResult,
 	isFlowError,
-} from "./types.js";
+} from "../types.js";
 import { stripReasoningFromAssistantMessage } from "./reasoning-strip.js";
 import {
 	stripSteeringHintFromContent,
 	stripSteeringHintText,
 	contentContainsSteeringHintTag,
 	isJsonEqual,
-} from "./sliding-prompt.js";
-import { stripStrategicHints, stripStrategicHintsFromContent } from "./tool-utils.js";
-import { logError } from "./log.js";
+} from "../steering/sliding-prompt.js";
+import { stripStrategicHints, stripStrategicHintsFromContent } from "../steering/tool-utils.js";
+import { logError } from "../config/log.js";
 import * as fs from "node:fs";
 
 // ---------------------------------------------------------------------------

@@ -11,20 +11,20 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { type FlowConfig, getFlowTier } from "./agents.js";
-import { getInheritedCliArgs } from "./cli-args.js";
-import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "./runner-events.js";
+import { getInheritedCliArgs } from "../snapshot/cli-args.js";
+import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "../snapshot/runner-events.js";
 import {
 	type SingleResult,
 	type FlowDetails,
 	emptyFlowUsage,
 	getFlowOutput,
 	normalizeFlowResult,
-} from "./types.js";
-import { extractStructuredOutput, generateCommandsFromHistory } from "./structured-output.js";
-import { setLiveText } from './scramble.js';
-import { logWarn, logError } from './log.js';
+} from "../types.js";
+import { extractStructuredOutput, generateCommandsFromHistory } from "../structured-output.js";
+import { setLiveText } from '../tui/scramble.js';
+import { logWarn, logError } from '../config/log.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
-import type { GoalContext } from "./flow/types.js";
+import type { GoalContext } from "../flow/types.js";
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;

@@ -1,4 +1,4 @@
-import { appendStrategicHintOnce } from "../tool-utils.js";
+import { appendStrategicHintOnce } from "../steering/tool-utils.js";
 
 /**
  * batch bash -- parallel bash execution and polling.
@@ -23,7 +23,7 @@ import {
 	MAX_BASH_OUTPUT_BYTES,
 	MAX_BASH_OUTPUT_LINES,
 } from "./constants.js";
-import { classifyDuration } from "../timed-bash.js";
+import { classifyDuration } from "../tools/timed-bash.js";
 
 // ---------------------------------------------------------------------------
 // Process tracker -- shared between batch and batch_bash_poll tools

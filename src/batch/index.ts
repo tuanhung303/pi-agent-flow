@@ -21,7 +21,7 @@ import {
 	normalizeBashOp,
 	executeBatchBash,
 } from "./batch-bash.js";
-import { appendStrategicHintOnce } from "../tool-utils.js";
+import { appendStrategicHintOnce } from "../steering/tool-utils.js";
 
 // Re-export polling tool factory and tracker from batch-bash
 export { BashProcessTracker, createBatchBashPollTool, pollBatchBashResults } from "./batch-bash.js";

@@ -12,18 +12,18 @@ import type {
 	FlowDetails,
 	CompressedFlowResult,
 	FlowMetrics,
-} from "./types.js";
-import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsage } from "./types.js";
-import { extractStructuredOutput } from "./structured-output.js";
+} from "../types.js";
+import { isFlowSuccess, isFlowError, isFlowComplete, getFlowOutput, emptyFlowUsage } from "../types.js";
+import { extractStructuredOutput } from "../structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
-import { getFlowSummaryText } from "./runner-events.js";
-import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "./config.js";
+import { getFlowSummaryText } from "../snapshot/runner-events.js";
+import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "../config/config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
-import { setFlowComplete } from "./notify-state.js";
-import { setLiveText } from './scramble.js';
-import { logWarn } from './log.js';
-import { markFlowCompleted } from './flow/index.js';
+import { setFlowComplete } from "../notify/notify-state.js";
+import { setLiveText } from '../tui/scramble.js';
+import { logWarn } from '../config/log.js';
+import { markFlowCompleted } from '../flow/index.js';
 
 // ---------------------------------------------------------------------------
 // Types

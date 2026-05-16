@@ -8,10 +8,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
-import { appendStrategicHintOnce } from "./tool-utils.js";
-import { scrambleManager, runScrambleTimer } from "./scramble.js";
-import { stripAnsi } from "./render-utils.js";
-import { logWarn } from "./log.js";
+import { appendStrategicHintOnce } from "../steering/tool-utils.js";
+import { scrambleManager, runScrambleTimer } from "../tui/scramble.js";
+import { stripAnsi } from "../tui/render-utils.js";
+import { logWarn } from "../config/log.js";
 
 // ---------------------------------------------------------------------------
 // Schema

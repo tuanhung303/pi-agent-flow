@@ -15,7 +15,7 @@
 
 import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
-import { appendStrategicHintOnce, appendTextToToolResult } from "./tool-utils.js";
+import { appendStrategicHintOnce, appendTextToToolResult } from "../steering/tool-utils.js";
 
 type TimingTier =
 	| "normal"
