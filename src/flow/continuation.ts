@@ -1,8 +1,14 @@
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
 import { getGoal, addTokens, updateGoalStatus } from "./store.js";
 import { budgetLimitTemplate, goalCompletedTemplate } from "./template-strings.js";
+import { logWarn } from '../config/log.js';
 
 let _currentSessionId: string | undefined;
+
+/** Expose current session ID for cross-module reads (e.g. warp goal binding). */
+export function getCurrentSessionId(): string | undefined {
+  return _currentSessionId;
+}
 const SPAWN_COOLDOWN_MS = 5000;
 const _lastSpawnAt = new Map<string, number>();
 
@@ -55,7 +61,10 @@ export function setupContinuation(
     // overwrites this value, which can block the parent session's continuation
     // after a warp. A proper fix requires the Pi framework to pass ctx into
     // turn_end, or for the store to be keyed by sessionId.
-    if (goal.sessionId && goal.sessionId !== _currentSessionId) return;
+    if (goal.sessionId && goal.sessionId !== _currentSessionId) {
+      logWarn(`[pi-agent-flow] Continuation skipped: goal session ${goal.sessionId} ≠ active session ${_currentSessionId ?? '(none)'}`);
+      return;
+    }
 
     // Detect agent-driven completion: parse assistant message for flow tool call with type='complete'
     const contentParts =

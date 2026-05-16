@@ -71,8 +71,8 @@ export interface FlowExecutorDeps {
 	flowResultCache: Map<string, CompressedFlowResult[]>;
 	/** Project flows directory. */
 	projectFlowsDir: string | null;
-	/** Session manager for fork snapshot. */
-	sessionManager: { getHeader: () => unknown; getBranch: () => unknown[] };
+	/** Session manager for fork snapshot and session identification. */
+	sessionManager: { getHeader: () => unknown; getBranch: () => unknown[]; getSessionId: () => string };
 	/** Whether UI is available for confirmation. */
 	hasUI: boolean;
 	/** UI confirmation callback. */
@@ -476,7 +476,7 @@ export async function executeFlows(
 
 	// Mark flow completion for the continuation hold — gives the user
 	// time to read the result before the next flow auto-spawns.
-	markFlowCompleted();
+	markFlowCompleted(deps.sessionManager.getSessionId());
 
 	// Goal continuation callback
 	if (deps.goalContinuationCallback) {

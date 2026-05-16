@@ -29,6 +29,7 @@ export {
 
 export { setupFlowCommand, setupContinuation, setupWarpCommand };
 export { markFlowCompleted } from "./continuation.js";
+export { getCurrentSessionId } from "./continuation.js";
 
 let _currentCwd: string | undefined;
 
