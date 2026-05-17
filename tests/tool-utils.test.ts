@@ -60,13 +60,21 @@ describe("appendDirectiveOnce", () => {
 		expect(result.content[0].text).toBe("error");
 	});
 
-	it("skips directive when already appended this turn", () => {
+	it("appends directive to each distinct result", () => {
 		const result1 = makeResult("first");
 		const result2 = makeResult("second");
 		appendDirectiveOnce(result1);
 		appendDirectiveOnce(result2);
 		expect(result1.content[0].text).toContain("[Directive:");
-		expect(result2.content[0].text).toBe("second");
+		expect(result2.content[0].text).toContain("[Directive:");
+	});
+
+	it("skips directive when already appended to the same result", () => {
+		const result = makeResult("only");
+		appendDirectiveOnce(result);
+		appendDirectiveOnce(result);
+		expect(result.content[0].text).toContain("[Directive:");
+		expect((result.content[0].text.match(/\[Directive:/g) || []).length).toBe(1);
 	});
 
 	it("skips directive when disabled via configureDirective(false)", () => {

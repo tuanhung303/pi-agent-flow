@@ -627,6 +627,9 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 		description:
 			"Manage flow settings. Subcommands: steering <on|off>, strategic-hint <on|off>, animation <on|off>, glitch <on|off>, tool-optimize <on|off>, structured-output <on|off>, session-mode <mode>, max-concurrency <n>, ask-user {enabled <on|off> | timeout <seconds>}, reset. Call with no args for interactive TUI.",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			if (!ctx.ui) {
+				return;
+			}
 			const cwd = ctx.cwd;
 			const trimmed = args.trim().toLowerCase();
 			const parts = trimmed.split(/\s+/);

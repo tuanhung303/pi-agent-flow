@@ -7,7 +7,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 import { getGoalForSession } from "./store.js";
-import { getLoop, recordSessionWarp, terminateLoop, setPendingWarpSessionId, clearPendingWarpSessionId } from "./loop.js";
+import { getLoop } from "./loop.js";
 import { distillForWarp, performWarp } from "./perform-warp.js";
 
 export function setupWarpCommand(pi: ExtensionAPI): void {

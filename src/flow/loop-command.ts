@@ -32,6 +32,9 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
     description:
       "Manage endless loop. Subcommands: enable, disable, status, stop, reset",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
+      if (!ctx.ui) {
+        return;
+      }
       const trimmed = args.trim();
       const firstSpace = trimmed.indexOf(" ");
       const sub = (firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace)).toLowerCase();

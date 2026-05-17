@@ -618,6 +618,14 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		reminderFilePath = path.join(reminderTmpDir, "reminder.txt");
 	}
 
+	if (signal?.aborted) {
+		result.exitCode = 130;
+		result.stopReason = "aborted";
+		result.errorMessage = "Flow was aborted.";
+		result.stderr = "Flow was aborted.";
+		return result;
+	}
+
 	try {
 		const piArgs = buildFlowArgs(
 			flow,

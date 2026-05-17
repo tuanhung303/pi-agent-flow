@@ -92,10 +92,11 @@ export function stripDirectivesFromMessages(messages: any[]): { messages: any[];
 	return { messages: result, changed };
 }
 
-let directiveAppendedThisTurn = false;
+const directiveTracker = new WeakMap<object, boolean>();
 
 export function resetDirectiveTracker(): void {
-	directiveAppendedThisTurn = false;
+	// WeakMap entries are garbage-collected with their result objects;
+	// no manual sweep required for per-result tracking.
 }
 
 /**
@@ -103,13 +104,13 @@ export function resetDirectiveTracker(): void {
  *
  * Skipped when PI_FLOW_NO_DIRECTIVE=1 (or legacy PI_FLOW_NO_STRATEGIC_HINT=1)
  * is set, when the result is an error, or when a directive was already
- * appended this turn.
+ * appended to this specific result.
  */
 export function appendDirectiveOnce(result: any, hintContext?: FlowHintContext): void {
 	if (!directiveEnabled) return;
 	if (result?.failed) return;
-	if (directiveAppendedThisTurn) return;
-	directiveAppendedThisTurn = true;
+	if (directiveTracker.has(result)) return;
+	directiveTracker.set(result, true);
 
 	let directive = DEFAULT_DIRECTIVE;
 	if (hintContext?.hasNotDone) {

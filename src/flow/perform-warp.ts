@@ -11,7 +11,7 @@ import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-age
 import { getGoalForSession, getGoal } from "./store.js";
 import { getLoop, recordSessionWarp, terminateLoop, setPendingWarpSessionId, clearPendingWarpSessionId } from "./loop.js";
 import { sanitizeBranchForWarp, SYSTEM_PROMPT, extractGoalFromPrompt, MAX_CONVERSATION_CHARS } from "./warp-utils.js";
-import { logWarn, logError } from "../config/log.js";
+import { logWarn } from "../config/log.js";
 import type { GoalEntry, LoopState } from "./types.js";
 
 export interface DistillOptions {
@@ -171,7 +171,6 @@ export async function performWarp(
         if (isLoopActive) {
           recordSessionWarp(cwd);
         }
-        newCtx.ui.notify?.("Warped to new session.", "info");
         newCtx.ui.setEditorText?.(warpedPrompt);
         newCtx.ui.notify?.("Warp ready. Submit when ready.", "info");
 
