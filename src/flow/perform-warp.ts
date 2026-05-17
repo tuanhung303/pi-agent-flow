@@ -168,11 +168,7 @@ export async function performWarp(
     const result = await ctx.newSession({
       parentSession: ctx.sessionManager.getSessionFile(),
       setup: async (sessionManager) => {
-        if (isLoopActive) {
-          recordSessionWarp(cwd);
-        }
-        // Seed the warp prompt as a user message in the new session
-        sessionManager.appendMessage({ role: "user", content: warpedPrompt });
+        if (isLoopActive) recordSessionWarp(cwd);
         // Set descriptive name
         sessionManager.appendSessionInfo(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
         // Extension state marker

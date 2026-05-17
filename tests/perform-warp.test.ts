@@ -136,7 +136,7 @@ describe("performWarp", () => {
     }));
   });
 
-  it("seeds new session via setup callback", async () => {
+  it("seeds new session via setup callback without appendMessage", async () => {
     setGoal(tmpDir, "Test goal");
     const appendMessage = vi.fn();
     const appendSessionInfo = vi.fn();
@@ -153,7 +153,7 @@ describe("performWarp", () => {
       reviewedPrompt: "---\ncontext: test\n---\nTask: do it",
     });
     expect(result.success).toBe(true);
-    expect(appendMessage).toHaveBeenCalledWith({ role: "user", content: "---\ncontext: test\n---\nTask: do it" });
+    expect(appendMessage).not.toHaveBeenCalled();
     expect(appendSessionInfo).toHaveBeenCalledWith("Warp: Task: do it");
     expect(appendCustomEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
@@ -186,7 +186,7 @@ describe("performWarp", () => {
       reviewedPrompt: "test prompt",
     });
     expect(result.success).toBe(true);
-    expect(appendMessage).toHaveBeenCalledWith({ role: "user", content: "test prompt\n\n[Loop: session 3, total tokens ≈ 5000]" });
+    expect(appendMessage).not.toHaveBeenCalled();
     expect(appendSessionInfo).toHaveBeenCalledWith("Warp: Test goal");
     expect(appendCustomEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
