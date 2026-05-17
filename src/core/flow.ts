@@ -503,6 +503,13 @@ export interface RunFlowOptions {
  * Spawn a single flow process with forked session context.
  *
  * Returns a SingleResult even on failure (exitCode > 0, stderr populated).
+ *
+ * Why `spawn` instead of `pi.exec()`:
+ * - `pi.exec()` is designed for simple command execution (one-shot, wait for exit).
+ * - Flows need process-group isolation (detached mode on Unix), signal propagation,
+ *   soft-timeout with background continuation, streaming stdout parsing, and
+ *   mid-flight kill semantics. `spawn` gives full control over stdio, process
+ *   groups, and lifecycle that `pi.exec()` does not expose.
  */
 export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const {
