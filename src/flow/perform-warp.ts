@@ -5,7 +5,7 @@
  * distillForWarp — shared LLM distillation logic.
  */
 
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { getGoalForSession, getGoal } from "./store.js";
@@ -106,6 +106,7 @@ export interface PerformWarpOptions {
   reviewedPrompt?: string;
   signal?: AbortSignal;
   goalOverride?: string;
+  pi?: ExtensionAPI;
 }
 
 export async function performWarp(
@@ -141,6 +142,36 @@ export async function performWarp(
       warpedPrompt += `\n\n[Loop: session ${loop.sessionCount}, total tokens ≈ ${loop.totalTokensAcrossSessions}]`;
     }
 
+    // Compute effective goal BEFORE newSession so source session markers can use it
+    const effectiveGoal =
+      opts?.goalOverride ??
+      (isLoopActive
+        ? loop.objective
+        : (extractGoalFromPrompt(warpedPrompt) || goal?.objective || "Continue the work from the warped context"));
+
+    // Source session: warp context marker (CustomMessageEntry — in LLM context)
+    if (opts?.pi) {
+      const warpSummary = `Session context warped to a new session. Goal: ${effectiveGoal}. The prior conversation has been distilled and transferred. Continue from where the warp prompt indicates.`;
+      opts.pi.sendMessage({
+        customType: "pi-agent-flow:warp-summary",
+        content: warpSummary,
+        display: true,
+        details: {
+          targetSessionId: "pending", // will be updated after newSession
+          goal: effectiveGoal,
+          timestamp: Date.now(),
+        },
+      });
+
+      // Source session: extension state (CustomEntry — not in LLM context)
+      opts.pi.appendEntry("pi-agent-flow:warp", {
+        sourceSessionId: currentSessionId,
+        goal: effectiveGoal,
+        timestamp: Date.now(),
+        passesApplied: [],
+      });
+    }
+
     const result = await ctx.newSession({
       parentSession: ctx.sessionManager.getSessionFile(),
       withSession: async (newCtx) => {
@@ -149,12 +180,18 @@ export async function performWarp(
         }
         newCtx.ui.notify?.("Warped to new session.", "info");
         await newCtx.sendUserMessage(warpedPrompt);
-        const effectiveGoal =
-          opts?.goalOverride ??
-          (isLoopActive
-            ? loop.objective
-            : (extractGoalFromPrompt(warpedPrompt) || goal?.objective || "Continue the work from the warped context"));
         newCtx.sendUserMessage(`/flow:goal set ${effectiveGoal}`);
+
+        // New session: set descriptive name
+        newCtx.setSessionName(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
+
+        // New session: extension state (CustomEntry)
+        newCtx.appendEntry("pi-agent-flow:warp", {
+          sourceSessionId: currentSessionId,
+          warpCount: isLoopActive ? loop.sessionCount : 1,
+          totalTokens: isLoopActive ? loop.totalTokensAcrossSessions : 0,
+          timestamp: Date.now(),
+        });
       },
     });
 

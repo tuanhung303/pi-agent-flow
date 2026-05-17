@@ -151,6 +151,7 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
       const result = await performWarp(ctx, { type: "warp", intent: "Manual warp", aim: "Warp to fresh session" }, {
         reviewedPrompt: warpedPrompt,
         goalOverride: args.trim() ? goal : undefined,
+        pi,
       });
 
       if (!result.success) {

@@ -22,6 +22,9 @@ declare module "@mariozechner/pi-coding-agent" {
 		registerCommand(name: string, config: { description: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }): void;
 		sendUserMessage(content: string, opts?: { deliverAs?: string }): void;
 		sendMessage(msg: { content: string; customType?: string; display?: boolean; details?: any }, opts?: { deliverAs?: string; triggerTurn?: boolean }): void;
+		appendEntry(customType: string, data?: unknown): void;
+		setSessionName(name: string): void;
+		getSessionName(): string | undefined;
 	}
 	export interface ExtensionContext {
 		cwd: string;
@@ -114,6 +117,8 @@ declare module "@mariozechner/pi-coding-agent" {
 	/** Fresh command-capable context bound to the replacement session after a session switch. */
 	export interface ReplacedSessionContext extends ExtensionCommandContext {
 		sendUserMessage(content: string, opts?: { deliverAs?: string }): Promise<void>;
+		setSessionName(name: string): void;
+		appendEntry(customType: string, data?: unknown): void;
 	}
 
 	/** Event payload for pi.on("turn_end", ...) callbacks. */
