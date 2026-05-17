@@ -1,98 +1,153 @@
-import { complete } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@mariozechner/pi-coding-agent";
+/**
+ * Warp extension - transfer context to a new focused session
+ *
+ * Instead of compacting (which is lossy), warp extracts what matters
+ * for your next task and creates a new session with a generated prompt.
+ *
+ * Usage:
+ *   /flow:warp now implement this for teams as well
+ *   /flow:warp execute phase one of the plan
+ *   /flow:warp check other places that need this fix
+ *
+ * The generated prompt appears as a draft in the editor for review/editing.
+ */
+
+import { complete, type Message } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, SessionEntry } from "@mariozechner/pi-coding-agent";
 import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
-import { sanitizeBranchForWarp, SYSTEM_PROMPT } from "./warp-utils.js";
 
-export function setupWarpCommand(pi: ExtensionAPI): void {
-  pi.registerCommand("flow:warp", {
-    description: "Warp to a new session with distilled context. Usage: /flow:warp [goal]",
-    handler: async (args: string, ctx: ExtensionCommandContext) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify?.("warp requires interactive mode", "error");
-        return;
-      }
-      if (!ctx.model) {
-        ctx.ui.notify?.("No model selected", "error");
-        return;
-      }
+const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
-      const goal = args.trim() || "Continue where we left off";
+1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)
+2. Lists any relevant files that were discussed or modified
+3. Clearly states the next task based on the user's goal
+4. Is self-contained - the new thread should be able to proceed without the old conversation
 
-      const branch = ctx.sessionManager.getBranch();
-      const messages = branch
-        .filter((entry): entry is SessionEntry & { type: "message" } => (entry as SessionEntry).type === "message")
-        .map((entry) => (entry as SessionEntry & { type: "message" }).message);
+Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here's the prompt" - just output the prompt itself.
 
-      if (messages.length === 0) {
-        ctx.ui.notify?.("No conversation to warp", "error");
-        return;
-      }
+Example output format:
+## Context
+We've been working on X. Key decisions:
+- Decision 1
+- Decision 2
 
-      const { messages: sanitized } = sanitizeBranchForWarp(messages);
-      const llmMessages = convertToLlm(sanitized);
-      const conversationText = serializeConversation(llmMessages);
-      const currentSessionFile = ctx.sessionManager.getSessionFile();
+Files involved:
+- path/to/file1.ts
+- path/to/file2.ts
 
-      const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-        const loader = new BorderedLoader(tui, theme, "Generating warp prompt...");
-        loader.onAbort = () => done(null);
+## Task
+[Clear description of what to do next based on user's goal]`;
 
-        const doGenerate = async () => {
-          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-          if (!auth.ok || !auth.apiKey) {
-            throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : (auth.error ?? "Auth error"));
-          }
+export default function (pi: ExtensionAPI) {
+	pi.registerCommand("flow:warp", {
+		description: "Warp to a new focused session",
+		handler: async (args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("warp requires interactive mode", "error");
+				return;
+			}
 
-          const response = await complete(
-            ctx.model!,
-            {
-              systemPrompt: SYSTEM_PROMPT,
-              messages: [{ role: "user", content: `## Conversation History\n\n${conversationText}\n\n## User's Goal\n\n${goal}` }],
-            },
-            { apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
-          );
+			if (!ctx.model) {
+				ctx.ui.notify("No model selected", "error");
+				return;
+			}
 
-          if (response.stopReason === "aborted") return null;
+			const goal = args.trim();
+			if (!goal) {
+				ctx.ui.notify("Usage: /flow:warp <goal for new thread>", "error");
+				return;
+			}
 
-          return response.content
-            .filter((c): c is { type: "text"; text: string } => c.type === "text")
-            .map((c) => c.text)
-            .join("\n");
-        };
+			// Gather conversation context from current branch
+			const branch = ctx.sessionManager.getBranch();
+			const messages = branch
+				.filter((entry): entry is SessionEntry & { type: "message" } => (entry as SessionEntry).type === "message")
+				.map((entry) => entry.message);
 
-        doGenerate()
-          .then(done)
-          .catch((err) => {
-            console.error("Warp generation failed:", err);
-            done(null);
-          });
+			if (messages.length === 0) {
+				ctx.ui.notify("No conversation to warp", "error");
+				return;
+			}
 
-        return loader;
-      });
+			// Convert to LLM format and serialize
+			const llmMessages = convertToLlm(messages);
+			const conversationText = serializeConversation(llmMessages);
+			const currentSessionFile = ctx.sessionManager.getSessionFile();
 
-      if (result === null || result === undefined) {
-        ctx.ui.notify?.("Cancelled", "info");
-        return;
-      }
+			// Generate the warp prompt with loader UI
+			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+				const loader = new BorderedLoader(tui, theme, `Generating warp prompt...`);
+				loader.onAbort = () => done(null);
 
-      const editedPrompt = await ctx.ui.editor("Edit warp prompt", result);
+				const doGenerate = async () => {
+					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
+					if (!auth.ok || !auth.apiKey) {
+						throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error);
+					}
 
-      if (editedPrompt === undefined) {
-        ctx.ui.notify?.("Cancelled", "info");
-        return;
-      }
+					const userMessage: Message = {
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: `## Conversation History\n\n${conversationText}\n\n## User's Goal for New Thread\n\n${goal}`,
+							},
+						],
+					};
 
-      const newSessionResult = await ctx.newSession({
-        parentSession: currentSessionFile,
-        withSession: async (replacementCtx) => {
-          replacementCtx.ui.setEditorText(editedPrompt);
-          replacementCtx.ui.notify("Warp ready. Submit when ready.", "info");
-        },
-      });
+					const response = await complete(
+						ctx.model!,
+						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
+						{ apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+					);
 
-      if (newSessionResult.cancelled) {
-        ctx.ui.notify?.("New session cancelled", "info");
-      }
-    },
-  });
+					if (response.stopReason === "aborted") {
+						return null;
+					}
+
+					return response.content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("\n");
+				};
+
+				doGenerate()
+					.then(done)
+					.catch((err) => {
+						console.error("Warp generation failed:", err);
+						done(null);
+					});
+
+				return loader;
+			});
+
+			if (result === null || result === undefined) {
+				ctx.ui.notify("Cancelled", "info");
+				return;
+			}
+
+			// Let user edit the generated prompt
+			const editedPrompt = await ctx.ui.editor("Edit warp prompt", result);
+
+			if (editedPrompt === undefined) {
+				ctx.ui.notify("Cancelled", "info");
+				return;
+			}
+
+			// Create new session with parent tracking. Use the replacement-session
+			// context for post-switch UI work; the original ctx is stale after a
+			// successful session replacement.
+			const newSessionResult = await ctx.newSession({
+				parentSession: currentSessionFile,
+				withSession: async (replacementCtx) => {
+					replacementCtx.ui.setEditorText(editedPrompt);
+					replacementCtx.ui.notify("Warp ready. Submit when ready.", "info");
+				},
+			});
+
+			if (newSessionResult.cancelled) {
+				ctx.ui.notify("New session cancelled", "info");
+			}
+		},
+	});
 }

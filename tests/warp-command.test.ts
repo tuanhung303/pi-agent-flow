@@ -17,15 +17,9 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   serializeConversation: vi.fn((msgs: any[]) => msgs.map((m: any) => m.content).join("\n")),
 }));
 
-vi.mock("../src/flow/warp-utils.js", () => ({
-  sanitizeBranchForWarp: vi.fn((msgs: any[]) => ({ messages: msgs })),
-  SYSTEM_PROMPT: "mock-system-prompt",
-}));
-
 import { complete } from "@mariozechner/pi-ai";
 import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
-import { sanitizeBranchForWarp, SYSTEM_PROMPT } from "../src/flow/warp-utils.js";
-import { setupWarpCommand } from "../src/flow/warp-command.js";
+import setupWarpCommand from "../src/flow/warp-command.js";
 
 describe("setupWarpCommand", () => {
   const registerCommand = vi.fn();
@@ -40,7 +34,7 @@ describe("setupWarpCommand", () => {
     expect(registerCommand).toHaveBeenCalledWith(
       "flow:warp",
       expect.objectContaining({
-        description: expect.stringContaining("Warp to a new session"),
+        description: expect.stringContaining("Warp to a new focused session"),
       }),
     );
   });
@@ -61,6 +55,18 @@ describe("setupWarpCommand", () => {
     expect(notify).toHaveBeenCalledWith("No model selected", "error");
   });
 
+  it("requires a non-empty goal", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const ctx = {
+      hasUI: true,
+      model: { provider: "test", id: "test" },
+      ui: { notify },
+    } as any;
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("Usage: /flow:warp <goal for new thread>", "error");
+  });
+
   it("requires non-empty conversation", async () => {
     const handler = registerCommand.mock.calls[0][1].handler;
     const notify = vi.fn();
@@ -70,7 +76,7 @@ describe("setupWarpCommand", () => {
       sessionManager: { getBranch: () => [] },
       ui: { notify },
     } as any;
-    await handler("", ctx);
+    await handler("my goal", ctx);
     expect(notify).toHaveBeenCalledWith("No conversation to warp", "error");
   });
 
@@ -112,17 +118,21 @@ describe("setupWarpCommand", () => {
 
     await handler("my goal", ctx);
 
-    expect(sanitizeBranchForWarp).toHaveBeenCalledWith([{ role: "user", content: "hi" }]);
     expect(convertToLlm).toHaveBeenCalledWith([{ role: "user", content: "hi" }]);
     expect(serializeConversation).toHaveBeenCalled();
     expect(complete).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        systemPrompt: "mock-system-prompt",
+        systemPrompt: expect.stringContaining("context transfer assistant"),
         messages: [
           expect.objectContaining({
             role: "user",
-            content: expect.stringContaining("my goal"),
+            content: [
+              expect.objectContaining({
+                type: "text",
+                text: expect.stringContaining("my goal"),
+              }),
+            ],
           }),
         ],
       }),
@@ -156,7 +166,7 @@ describe("setupWarpCommand", () => {
       },
     } as any;
 
-    await handler("", ctx);
+    await handler("my goal", ctx);
     expect(notify).toHaveBeenCalledWith("Cancelled", "info");
   });
 
@@ -181,7 +191,7 @@ describe("setupWarpCommand", () => {
       },
     } as any;
 
-    await handler("", ctx);
+    await handler("my goal", ctx);
     expect(notify).toHaveBeenCalledWith("Cancelled", "info");
   });
 
@@ -208,7 +218,7 @@ describe("setupWarpCommand", () => {
       newSession,
     } as any;
 
-    await handler("", ctx);
+    await handler("my goal", ctx);
     expect(notify).toHaveBeenCalledWith("New session cancelled", "info");
   });
 });

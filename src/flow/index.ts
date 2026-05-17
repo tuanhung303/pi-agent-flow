@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 import { setupFlowCommand } from "./command.js";
 import { setupSettingsCommand } from "./settings-command.js";
-import { setupWarpCommand } from "./warp-command.js";
+import setupWarpCommand from "./warp-command.js";
 import { setupLoopCommand } from "./loop-command.js";
 import { setupContinuation } from "./continuation.js";
 import { recordFlowCompletion, addTokens } from "./store.js";
