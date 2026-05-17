@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 import { setupFlowCommand } from "./command.js";
 import { setupSettingsCommand } from "./settings-command.js";
-import setupWarpCommand from "./warp-command.js";
+import setupWarp from "./warp.js";
 import { setupLoopCommand } from "./loop-command.js";
 import { setupContinuation } from "./continuation.js";
 import { recordFlowCompletion, addTokens } from "./store.js";
@@ -43,7 +43,7 @@ export {
   clearPendingWarpSessionId,
 } from "./loop.js";
 
-export { setupFlowCommand, setupContinuation, setupWarpCommand, setupLoopCommand };
+export { setupFlowCommand, setupContinuation, setupWarp, setupLoopCommand };
 export { markFlowCompleted, shutdownWakeup } from "./continuation.js";
 export { sessionRegistry };
 
@@ -54,7 +54,7 @@ export function registerFlow(pi: ExtensionAPI): void {
 
   setupFlowCommand(pi);
   setupSettingsCommand(pi);
-  setupWarpCommand(pi);
+  setupWarp(pi);
   setupLoopCommand(pi);
   setupContinuation(pi);
 }

@@ -13,7 +13,7 @@ workflow:
 2 Explore: map relevant patterns dependencies and existing architecture use batch with o read s offset l limit for targeted file reading instead of bash sed head tail enumerate exhaustively
 3 Evaluate: assess whether the change fits existing patterns or requires a clean migration prefer incremental improvement when safe endorse full cut redesign when the architecture demands it
 4 Design: produce a concrete plan with ordered tasks data flow module boundaries and interface contracts tag priorities P0-P3 cap each stage at 800 lines or 500 complex design bounded context buffers for large reads
-5 Review: check risks edge cases test strategy migration path and handoff to build include breaking-changes checklist require integration tests and give architecture soundness verdict
+5 Review: check risks edge cases test strategy migration path and transfer to build include breaking-changes checklist require integration tests and give architecture soundness verdict
 
 rules:
 Follow SOLID (Single Responsibility Open Closed Liskov Substitution Interface Segregation Dependency Inversion) DRY (Do Not Repeat Yourself) KISS (Keep It Simple Stupid)

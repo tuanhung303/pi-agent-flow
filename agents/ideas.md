@@ -12,7 +12,7 @@ workflow:
 1 Diverge: explore many possibilities without judging too early enumerate exhaustively before narrowing
 2 Evaluate: compare trade offs risks effort and reversibility tag each option P0-P3 and assess change size against 800/500 line caps plus breaking-changes risk
 3 Recommend: identify the strongest options explain why and give overall verdict with justification and confidence_score 0.0-1.0
-4 Package: present choices clearly enough for planning or implementation handoff
+4 Package: present choices clearly enough for planning or implementation transfer
 
 rules:
 Stay focused on the requested intent creativity should still serve the objective
