@@ -178,8 +178,8 @@ describe('formatCountdownRemaining', () => {
 
 describe('formatTps', () => {
   it('returns placeholder for zero or undefined', () => {
-    expect(formatTps(0)).toBe('----');
-    expect(formatTps(undefined)).toBe('----');
+    expect(formatTps(0)).toBe('-----');
+    expect(formatTps(undefined)).toBe('-----');
   });
 
   it('formats values < 100 with one decimal padded to 5', () => {
@@ -188,10 +188,10 @@ describe('formatTps', () => {
     expect(formatTps(99.9)).toBe(' 99.9 t/s');
   });
 
-  it('formats values >= 100 with no decimal padded to 5', () => {
-    expect(formatTps(114.2)).toBe('  114 t/s');
-    expect(formatTps(100)).toBe('  100 t/s');
-    expect(formatTps(999.9)).toBe(' 1000 t/s');
+  it('formats values >= 100 with one decimal padded to 5', () => {
+    expect(formatTps(114.2)).toBe('114.2 t/s');
+    expect(formatTps(100)).toBe('100.0 t/s');
+    expect(formatTps(999.9)).toBe('999.9 t/s');
   });
 });
 
