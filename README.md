@@ -1,13 +1,46 @@
+# Pi Agent Flow
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/pi-agent-flow"><img src="https://img.shields.io/npm/v/pi-agent-flow" alt="npm version"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/npm/l/pi-agent-flow" alt="license"></a>
+</p>
+
 <p align="center"><code>pi install npm:pi-agent-flow</code></p>
-<p align="center"><strong>Pi Agent Flow</strong> is a flow-state delegation extension for the <a href="https://pi.dev">Pi coding agent</a> that runs locally in your terminal.</p>
+
+<p align="center"><strong>Flow-state delegation</strong> for the <a href="https://pi.dev">Pi coding agent</a>. Isolate context, run specialist agents in parallel, and get structured results back.</p>
 
 ---
 
+## Why This Exists
+
+Long conversations bloat context, duplicate tool calls, and bury signal in noise. Pi Agent Flow solves this by forking each task into an isolated child process with only the context it needs. The parent stays clean; the workers stay focused.
+
+Four concrete benefits:
+
+1. **Avoid duplicate tool calls** — sub-agents no longer re-run the same `read`, `grep`, or `bash` probes the parent already performed.
+2. **Prevent context bloat** — long transcripts with repeated file listings stay out of the main conversation thread.
+3. **Eliminate unnecessary noise** — the parent sees only structured results instead of pages of intermediate reasoning.
+4. **Preserve focus** — each flow stays locked on its intent because it isn't distracted by unrelated earlier messages.
+
+## Quick Demo
+
+```shell
+# 1) Install the extension
+pi install npm:pi-agent-flow
+
+# 2) Start Pi and delegate two tasks in parallel
+pi
+{ "flow": [
+  { "type": "scout", "intent": "Map auth code", "aim": "Find JWT logic" },
+  { "type": "audit", "intent": "Audit auth module", "aim": "Security audit" }
+] }
+```
+
+The orchestrator spawns both flows concurrently. Each receives a sanitized fork of your session, runs in isolation, and returns structured JSON with a summary, files touched, and recommended next steps.
+
 ## Quickstart
 
-### Installing Pi Agent Flow
-
-Install via the Pi CLI from npm:
+Install via the Pi CLI:
 
 ```shell
 pi install npm:pi-agent-flow
@@ -15,22 +48,17 @@ pi install npm:pi-agent-flow
 
 Or add it to your Pi settings:
 
-```shell
-# ~/.pi/agent/settings.json
-{
-  "packages": [
-    "npm:pi-agent-flow"
-  ]
-}
+```json
+// ~/.pi/agent/settings.json
+{ "packages": ["npm:pi-agent-flow"] }
 ```
 
-Then start Pi and delegate tasks using flow states.
+Restart Pi and delegate tasks using `{ "flow": [...] }`.
 
 <details>
-<summary>You can also install from a local path.</summary>
+<summary>Install from a local clone</summary>
 
 ```shell
-# Install from a local clone
 git clone https://github.com/tuanhung303/pi-agent-flow.git
 cd pi-agent-flow
 pi install .
@@ -38,284 +66,71 @@ pi install .
 
 </details>
 
----
+## Core Concepts
+
+| Concept | What it means |
+|---|---|
+| **Orchestrator** | The main Pi agent that routes tasks and talks to you |
+| **Flows** | Isolated specialist workers (`scout`, `build`, `debug`, `audit`, `craft`, `ideas`) |
+| **Forked context** | Child processes receive a sanitized snapshot of your session |
+| **Structured results** | Every flow returns JSON with summary, files, actions, next steps |
+| **Parallel execution** | Batch independent flows with bounded concurrency |
+| **Clean slate** | Optional mode where a flow receives only your intent, no inherited history |
+
+When you delegate, the orchestrator spawns each flow as an isolated `pi` child process, injects your intent, and waits for structured output. The parent conversation stays lean because it only receives the final result, not the full reasoning transcript.
 
 ## Features
 
-### Flow System
-- **Flow-state delegation** — six bundled specialist flows (`scout`, `debug`, `build`, `craft`, `audit`, `ideas`) plus custom flows via Markdown front-matter
-- **Isolated forked context** — each flow runs as an isolated `pi` child process with a session snapshot (or clean slate when configured)
-- **Parallel execution** — batch independent flows into one call with bounded concurrency
-- **Depth guards & cycle prevention** — configurable max delegation depth (default: `3`) and automatic blocking of re-entering ancestor flows
-- **Post-flow advisories** — built-in transition matrix suggesting optimal next flows (e.g. `scout` → `build`, `debug` → `build`)
-- **Session timeout modes** — child flows use controlled budgets: `snap` (90s), `fast` (300s), `default` (600s), `long` (900s), or `extreme_long` (1200s)
-- **Two-stage timeout awareness** — flows receive deadline hints in their prompt; the parent UI shows live countdowns and injects warning reminders before hard kill
-- **Graceful shutdown** — parent `SIGINT`/`SIGTERM` propagates to all child process groups; orphaned sub-agents are force-killed after a grace period
-- **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
-- **Persistent flow mode** — switch global model strategies with `--flow-mode`; written to `settings.json` and remembered across sessions
+### Delegation
+- Six bundled specialist flows with tiered model selection (`lite` / `flash` / `full`)
+- Configurable max delegation depth (default: `3`) and automatic cycle prevention
+- Smart post-flow advisories suggesting the optimal next step (e.g. `scout` → `build`, `debug` → `audit`)
+
+### Isolation
+- Sanitized session snapshots forked to each child; steering hints and reasoning artifacts are stripped
+- Optional clean-slate mode (`inheritContext: false`) for unbiased creative work
+- Child flows see a `<context-seal>` telling them the parent's history is sealed reference only
+
+### Execution
+- Parallel flow batches with bounded concurrency (default: 4, capped to CPU count)
+- Five session modes from `snap` (90s) to `extreme_long` (1200s)
+- Graceful shutdown with two-stage timeout warnings, live `MM:SS` countdowns, and a 90-second reporting grace
 
 ### Tools
-- **Unified batch tools** — `batch` (read/write/edit/delete) and `batch_read` replace separate file tools for cross-cutting work
-- **Web tool** — built-in `web` search (Brave + DuckDuckGo) and page fetch with HTML→Markdown conversion
-- **Ask-user prompts** — interactive `ask_user` with overlay/inline display, preferred-choice guidance, comments, and optional timeouts
-- **Structured reports** — every flow returns structured output with `summary`, `files`, `actions`, `commands`, `notDone`, `nextSteps`, `reasoning`, and `notes`; optional JSON schema for machine-readable results
-- **Mechanically enriched commands** — bash commands in structured output are replaced with exact verbatim tool-call strings and annotated with `executionTime`
+- Unified `batch` / `batch_read` for cross-cutting file work (read, write, edit, delete in one call)
+- Built-in `web` search (Brave + DuckDuckGo) and fetch with HTML→Markdown conversion
+- `ask_user` interactive prompts for orchestrator decision-gathering; flows emit `⚠️ Decision Required` blocks instead
 
-### TUI & Rendering
-- **Rich activity panel** — collapsed view with per-flow stats, live countdowns, and expanded view with full reports and tool traces
-- **Glitch scramble animations** — `glitch` text animation on act, msg, TPS lines, and tool results
-- **Smooth streaming metrics** — token counters and smoothed TPS increment tick-by-tick during active streaming
-- **Dynamic notifications** — terminal and desktop alerts adapt their title/body based on flow completion state or pending `ask_user` decisions
+### Output
+- Structured JSON results with `summary`, `files`, `actions`, `notDone`, `nextSteps`, `reasoning`, and `notes`
+- Mechanically enriched bash commands with exact verbatim strings and execution times
+- `extensions` escape hatch for flow-specific data (audit findings, debug root cause, etc.)
 
 ### Developer Experience
-- **Local development loop** — `npm link` local checkout for instant iteration; `scripts/switch.sh` toggles between local and published builds
-- **Payload dump workflow** — capture exact child-flow prompts via `PI_FLOW_DUMP_SNAPSHOT` or `--dump`; sync to repo with `scripts/sync-dumps.sh`
-- **Steering hint** — lightweight routing reminder dynamically injected before each user message; stripped from child snapshots to avoid duplication
-- **Session snapshot sanitization** — removes steering hints, reasoning artifacts, and non-inheritable content before forking; compresses prior flow results into compact context maps
-- **Shared context inheritance** — child flows receive the parent's sanitized session automatically; write forward-looking intents and let the child pick up context from its inherited snapshot
-- **Project flow confirmation** — prompts before running project-local flows from `.pi/agents/` for security
-- **TUI-safe logging** — `logWarn`/`logError` routes to a log file instead of stderr during TUI rendering to prevent on-screen text flash
+- Local development loop with `npm link` and `scripts/switch.sh` to toggle local ↔ published builds
+- Payload dump workflow via `PI_FLOW_DUMP_SNAPSHOT` to inspect exact child prompts
+- TUI-safe logging (`logWarn`/`logError` write to file instead of stderr), glitch scramble animations, and live countdowns
 
-### Configuration
-- **Flow model strategies** — define tiered model chains (`lite` / `flash` / `full`) with `flowModelConfigs`; switch modes via `--flow-mode` (performance / balance / quality)
-- **Flow settings** — persistent runtime defaults under `flowSettings` (session mode, concurrency, tool optimization, structured output)
-- **CLI flags** — `--flow-max-depth`, `--flow-session-mode`, `--flow-max-concurrency`, `--no-steering`, `--no-animation`, and more
-- **Environment variables** — `PI_FLOW_DUMP_SNAPSHOT`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_TOOL_OPTIMIZE`, `PI_TUI_MODE`, and others
-
----
-
-## Why Flow Style?
-
-Flow-style delegation is designed for **context efficiency**. Instead of launching every sub-agent with the full, ever-growing conversation history, each flow receives only what it needs: your intent and (when appropriate) a sanitized session snapshot.
-
-This approach delivers four concrete benefits:
-
-1. **Avoid duplicate tool calls** — every sub-agent launch no longer re-runs the same `read`, `grep`, or `bash` probes that the parent already performed.
-2. **Prevent context bloat** — long transcripts with repeated file listings and command outputs are kept out of the main conversation thread.
-3. **Eliminate unnecessary noise** — the parent agent sees only structured results (`summary`, `notDone`, `nextSteps`, etc.) instead of pages of intermediate reasoning.
-4. **Preserve focus** — each flow stays locked on its intent because it isn't distracted by unrelated earlier messages.
-
-The result is faster, cheaper, and cleaner delegation: the main agent remains uncluttered while specialized flows do the heavy lifting in isolated contexts.
-
----
-
-## Shared Context
-
-When you delegate to a flow, the child agent receives an automatic **sanitized fork** of your current session. This lets you write concise intents that focus on **what new work to do** rather than restating the full problem.
-
-### How it works
-
-1. **Snapshot serialized** — your conversation (files read, commands run, prior flow results) is serialized into a JSONL snapshot.
-2. **Sanitized** — steering hints, reasoning/thinking artifacts, and other non-inheritable content are stripped.
-3. **Compressed** — prior flow tool results are compacted into short summaries: files touched, commands used, outcome status.
-4. **Forked** — the child agent loads this snapshot via `--session` at startup.
-
-### Writing good intents
-
-The child already sees what you've done. Write intents that say **what to do next**, not what context it needs:
-
-| ❌ Bad intent | ✅ Good intent |
-|---|---|
-| `"The auth module uses JWT tokens… inspect src/auth/ for security issues"` | `"Audit the auth module for security issues"` |
-| `"We already found the bug… run the failing test and fix it"` | `"Fix the failing test in tests/auth.test.ts"` |
-| `"The file structure is… implement the feature described in the PRD"` | `"Implement the feature described in the PRD"` |
-
-### Clean slate
-
-Set `inheritContext: false` in a custom flow's front-matter to start with a clean slate. The child receives only your `intent` — no inherited session. This is ideal for unbiased creative work in `ideas` flows.
-
-### What the child sees
-
-The child's `<context-seal>` prompt tells it: *"The conversation above is sealed — it is your session history for situational awareness only."* The child can reference files and findings already in context but shouldn't act as if it's still in the parent's conversation.
-
----
-
-## Bundled Flows
-
-| Flow | Purpose | Tools | Tier |
-|------|---------|-------|------|
-| `[scout]` | Discover files, trace code paths, map architecture | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
-| `[debug]` | Investigate logs, errors, stack traces, root causes, and fix bugs | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `lite` |
-| `[build]` | Implement features, fix bugs, write tests, deploy, and ship | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
-| `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
-| `[audit]` | Audit security, quality, correctness; fix safe issues autonomously | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
-| `[ideas]` | Generate ideas, explore possibilities, and think creatively using inherited context | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
-
-> **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
-
-> **Clean slate:** Set `inheritContext: false` in a custom flow's front-matter so it receives only the intent, ideal for unbiased creative work.
-
-> **Docs hygiene:** Bundled `build` and `debug` flows are instructed to update relevant documentation after their work when the findings or implementation change developer or operational knowledge. If no docs apply, they should state why in the final report.
-
-### Session modes
-
-Each flow call may set `sessionMode` to choose the child-agent time budget:
-
-| Mode | Budget | Recommended use |
-|------|-------:|-----------------|
-| `snap` | 90s | ultra-quick checks, single-file reads, tiny fixes |
-| `fast` | 300s | quick scouting, narrow checks, small design passes |
-| `default` | 600s | normal flow work; this is the default |
-| `long` | 900s | large builds, full test runs, broad refactors, complex debugging |
-| `extreme_long` | 1200s | very large refactors, extensive audits, or multi-step debugging sessions |
-
-Example:
-
-```json
-{
-  "flow": [
-    {
-      "type": "build",
-      "intent": "Run the full test suite and fix failures",
-      "aim": "Fix failing tests",
-      "sessionMode": "long"
-    }
-  ]
-}
-```
-
-The public interface is mode-based; arbitrary per-flow numeric timeouts are not exposed.
-
-### Timeout behavior
-
-Flows are aware of their deadline from the moment they start:
-
-- **Prompt injection** — the activation block includes the exact time budget and warns the agent to wrap up before the deadline.
-- **Parent UI countdown** — a live `MM:SS` countdown is shown next to the flow's aim while it runs.
-- **Two-stage warnings** — at 2 minutes before hard timeout a warning is injected into the child's reminder stream; at 2 minutes 15 seconds a final urge demands the agent stop all tool use and output structured findings.
-- **Grace period** — after the hard timeout fires, the agent gets a 90-second reporting grace to finish its summary before the process is force-killed.
-- **Graceful shutdown** — when the parent receives `SIGINT` or `SIGTERM`, the signal propagates to every child process group so sub-agents terminate cleanly instead of becoming orphans.
-
----
-
-## Flow Definitions
-
-Create `.md` files in `~/.pi/agent/agents/` (user-level) or `.pi/agents/` (project-level):
-
-```markdown
----
-name: myflow
-description: Short description of what this flow does
-tools: batch, bash
-model: github-copilot/gpt-5.5
-maxDepth: 1
-inheritContext: true
----
-
-During this myflow flow — your mission is ...
-
-When accomplished, end your response with:
-
-flow [myflow] accomplished
-
-[Summary] what was investigated
-
-[Done]
-- completed items
-
-[Not Done]
-- incomplete items and reasons
-
-[Next Steps]
-- recommended follow-up
-```
-
-### Front-matter options
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | `string` | Flow identifier (lowercase, required) |
-| `description` | `string` | Short summary (required) |
-| `tools` | `string \| string[]` | Tools available to this flow |
-| `model` | `string` | Override the model for this flow |
-| `thinking` | `string` | Thinking budget (e.g., `"low"`, `"medium"`, `"high"`) |
-| `maxDepth` | `number` | How many more delegation levels this flow may spawn |
-| `inheritContext` | `boolean` | Whether to fork parent session snapshot (`true`) or start clean (`false`) |
-| `tier` | `string` | Explicit tier override: `lite`, `flash`, or `full` |
-
----
-
-## Structured Output
-
-When `structuredOutput` is enabled (default), flows are instructed to append a JSON code block to their final response. The block is mechanically validated and enriched:
-
-- **Bash commands** are replaced with the exact verbatim strings from the actual tool calls, fixing the common LLM behaviour of paraphrasing `curl -s -X POST …` as `"curl GAWA baseline"`.
-- **Execution time** is captured from the timed-bash wrapper and attached to each bash command entry.
-
-Schema:
-
-```json
-{
-  "version": "1.0",
-  "status": "complete",
-  "summary": "2-3 sentence summary",
-  "files": [
-    { "path": "relative/path", "role": "read", "description": "why it matters", "snippet": "short excerpt", "ranges": [{ "start": 10, "end": 25, "label": "bug" }] }
-  ],
-  "actions": [
-    { "type": "read", "description": "what was done", "target": "file.ts", "result": "success", "evidence": "output or proof" }
-  ],
-  "commands": [
-    { "command": "curl -s -X POST https://api.example.com/v1/data", "tool": "bash", "executionTime": "1.2s (normal)" }
-  ],
-  "notDone": [
-    { "item": "unfinished work", "reason": "why it was not completed", "blocker": "blocking issue", "nextStep": "specific follow-up" }
-  ],
-  "nextSteps": ["recommended follow-up action"],
-  "reasoning": ["key hypothesis or inference"],
-  "notes": ["observation or warning"],
-  "extensions": { "flow-specific": "data" }
-}
-```
-
-Only include fields that have data. Omit empty arrays; missing array fields are acceptable.
-
----
-
-## Post-Flow Advisory Messages
-
-When certain flows complete, the system injects advisory messages suggesting follow-up flows. This keeps the agent on the optimal path without requiring the user to manually chain flows.
-
-### Built-in transition matrix
-
-| Source | Target | Condition | Advice |
-|--------|--------|-----------|--------|
-| `scout` | `build` | success | Context mapped. Consider running a [build] flow to implement changes, or [debug] if investigating an issue. |
-| `scout` | `debug` | success | Context mapped. Consider running a [debug] flow if investigating an issue. |
-| `debug` | `build` | success | The root cause has been identified. Consider running a [build] flow to implement the fix. |
-| `debug` | `audit` | success | Root cause identified. Consider running an [audit] flow to verify the fix area for related issues. |
-| `build` | `audit` | success | Consider running an [audit] flow to audit the changes for security, correctness, and code quality. |
-| `build` | `debug` | failure | Build failed. Consider running a [debug] flow to investigate the root cause. |
-| `audit` | `scout` | success | Audit complete. Consider running a [scout] flow to trace the audit findings across the codebase. |
-| `audit` | `build` | failure | Audit found issues. Consider running a [build] flow to fix them. |
-| `craft` | `build` | success | Plan ready. Consider running a [build] flow to implement the design. |
-| `ideas` | `craft` | success | Ideas explored. Consider running a [craft] flow to design the approach, or [build] to implement directly. |
-
-Advisories are smart: if the agent already included the suggested flow in the same batch, the advisory is suppressed to avoid redundancy.
-
----
+See [docs/FLOWS.md](docs/FLOWS.md), [docs/TOOLS.md](docs/TOOLS.md), and [docs/STRUCTURED-OUTPUT.md](docs/STRUCTURED-OUTPUT.md) for full details.
 
 ## Usage
 
 ### Single flow
-
 ```json
-{ "flow": [{ "type": "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "acceptance": "All auth files identified with JWT flow traced" }] }
+{ "flow": [{ "type": "scout", "intent": "Find auth code", "aim": "Find auth code" }] }
 ```
 
-### Batch multiple flows
-
+### Parallel flows
 ```json
 {
   "flow": [
-    { "type": "scout", "intent": "Find auth code", "aim": "Find auth code" },
-    { "type": "audit", "intent": "Audit auth module", "aim": "Audit auth module" }
+    { "type": "scout", "intent": "Map auth code", "aim": "Map auth" },
+    { "type": "audit", "intent": "Audit auth module", "aim": "Audit auth" }
   ]
 }
 ```
 
-### Override working directory or confirm project flows
-
+### Override working directory
 ```json
 {
   "flow": [
@@ -324,260 +139,82 @@ Advisories are smart: if the agent already included the suggested flow in the sa
 }
 ```
 
-Suppress the confirmation prompt before running project-local flows:
+### End-to-end example
+Chain discovery → audit → build to fix issues in one batch:
 
 ```json
 {
   "flow": [
-    { "type": "scout", "intent": "Map packages/ui", "aim": "Map UI package" }
-  ],
-  "confirmProjectFlows": false
+    { "type": "scout", "intent": "Map the auth module", "aim": "Map auth" },
+    { "type": "audit", "intent": "Audit auth for security issues", "aim": "Audit auth" },
+    { "type": "build", "intent": "Fix the issues found", "aim": "Fix auth issues", "acceptance": "All audit findings resolved" }
+  ]
 }
 ```
 
-Each flow item also accepts an optional `acceptance` field — a one-sentence success criteria stating what "done" looks like. This helps the flow self-assess completion.
+## Flow Loop & Warp
 
+Set a multi-step objective and the system auto-spawns flows to advance it after each turn.
 
+```bash
+/flow:goal set "Refactor tests to vitest" --acceptance "All tests pass" --max-flows 5
+/flow:goal status       # Check progress, budgets, and completed flows
+/flow:goal pause        # Stop auto-continuation
+/flow:goal resume       # Resume and immediately trigger the next flow
+/flow:goal edit "Refactor tests to vitest + coverage"   # Update objective
+/flow:goal complete     # Mark finished manually
+/flow:goal clear        # Mark abandoned and move to history
+```
 
+- **Auto-continuation** — after each turn, the orchestrator spawns the next flow until the goal is complete or budgets are exhausted
+- **Idle wake-up** — after ~10 min of inactivity, the system nudges the orchestrator to make safe, conservative progress
+- **Warp** — `/flow:warp` distills conversation context into a transfer prompt (## Context + ## Task) and spawns a new session with the goal preserved
+
+Goals persist in `.pi/flow.json`. Add `.pi/` to `.gitignore` — this is local runtime state.
+
+See [docs/FLOWS.md](docs/FLOWS.md#flow-loop--warp) for details.
+
+## Custom Flows
+
+Create `.md` files in `~/.pi/agent/agents/` (user-level) or `.pi/agents/` (project-level):
+
+```markdown
+---
+name: myflow
+description: Short description
+tools: batch, bash
+maxDepth: 1
 ---
 
-## Tools
+Your mission is ...
+```
 
-### `flow` — delegate to flow states
-
-The core delegation tool. Accepts an array of flow tasks and runs them in parallel with bounded concurrency (default: 4, capped to CPU count).
-
-### `batch` / `batch_read` — unified file operations
-
-When **tool optimization** is enabled (default), the separate `read` / `write` / `edit` tools are replaced by:
-
-- **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings.
-- **`batch_read`** — read-only variant for multiple reads. Small full-file reads return raw content; large full-file reads return code/infra context maps or total line counts, and oversized targeted reads are capped with continuation guidance.
-
-### `batch_bash_poll` — poll pending bash commands
-
-For child flows using the `batch` tool, `batch_bash_poll` lets the agent check on pending bash operations that exceeded the soft timeout. Pass the operation IDs from the pending results to retrieve completed output or see updated partial output.
-
-### `web` — search and fetch
-
-Built-in web operations (no API keys required):
-
-- **Search** — queries Brave and DuckDuckGo HTML endpoints, returns top results with titles, URLs, and snippets.
-- **Fetch** — downloads a page, converts HTML to Markdown via JSDOM + Turndown, saves to a temp file in the session directory, and returns a preview. Falls back through direct fetch → `r.jina.ai` → `curl`.
-
-In the collapsed activity panel, web operations display as compact one-line summaries (e.g., `search: "query"` or `fetch: example.com`). Like other tools, web results are scramble-animated in the collapsed view.
-
-### `ask_user` — interactive prompts
-
-Parameters:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `question` | `string` | The question to ask the user |
-| `options` | `Array<{title, description}>` | Optional multiple-choice answers; mark the preferred choice first |
-
-Timeout behavior is controlled globally via the `PI_ASK_USER_TIMEOUT` environment variable (seconds) or `flowSettings.askUser.timeout` in settings.
-
----
+See [docs/CUSTOM-FLOWS.md](docs/CUSTOM-FLOWS.md) for front-matter options and examples.
 
 ## Configuration
 
-### Flow model strategies
+Flow behavior is controlled via CLI flags, environment variables, and `.pi/settings.json`. Resolution priority: **CLI flag > env var > settings.json > default**.
 
-Use `flowModelConfigs` in your Pi settings to define tiered model strategies. Each tier (`lite`, `flash`, `full`) can specify a `primary` model and an optional `failover` array.
-
-```json
-{
-  "flowModelConfig": "balance",
-  "flowModelConfigs": {
-    "performance": {
-      "lite": { "primary": "github-copilot/gpt-5.4-mini", "failover": ["github-copilot/gpt-5.5"] },
-      "flash": { "primary": "github-copilot/gpt-5.5" },
-      "full": { "primary": "github-copilot/gpt-5.5" }
-    },
-    "balance": {
-      "lite": { "primary": "github-copilot/gpt-5.4-mini" },
-      "flash": { "primary": "github-copilot/gpt-5.5", "failover": ["github-copilot/gpt-5.4-mini"] },
-      "full": { "primary": "github-copilot/gpt-5.5" }
-    },
-    "quality": {
-      "lite": { "primary": "github-copilot/gpt-5.5" },
-      "flash": { "primary": "github-copilot/gpt-5.5" },
-      "full": { "primary": "github-copilot/gpt-5.5-large", "failover": ["github-copilot/gpt-5.5"] }
-    }
-  }
-}
-```
-
-- `performance` — favors speed and lower-cost models.
-- `balance` — best default mix of quality and cost.
-- `quality` — prefers the strongest models first.
-
-Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`.
-
-### Persistent flow mode switch
-
-Switch the global active strategy quickly with `--flow-mode`:
-
-```bash
-pi --flow-mode balance
-pi --flow-mode quality
-```
-
-`--flow-mode` updates `flowModelConfig` in global `~/.pi/agent/settings.json` (or `$PI_CODING_AGENT_DIR/settings.json`) and applies the mode immediately for the current invocation. The mode must already exist in the merged `flowModelConfigs`; project `.pi/settings.json` can still override global settings on later no-flag runs.
-
-On startup, the selected mode is printed in a compact notification:
-
-```
-mode: balance | lite: gpt-5.4-mini - flash: gpt-5.5 - full: gpt-5.5
-```
-
-Failover-only tiers are shown as `failover: model-a, model-b`. Verbose mode includes the flow names associated with each tier.
-
-### Flow settings
-
-You can also set flow runtime defaults under `flowSettings`:
-
-```json
-{
-  "flowSettings": {
-    "sessionMode": "default",
-    "maxConcurrency": 4,
-    "toolOptimize": true,
-    "structuredOutput": true
-  }
-}
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `sessionMode` | `default` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
-| `maxConcurrency` | `4` | Maximum parallel flows (capped to CPU count) |
-| `toolOptimize` | `true` | Use unified `batch`/`batch_read` instead of separate read/write/edit |
-| `structuredOutput` | `true` | Inject JSON structured-output instructions into flow prompts |
-
-Session mode precedence is:
-
-```txt
-per-flow sessionMode > --flow-session-mode > PI_FLOW_SESSION_MODE > flowSettings.sessionMode > default
-```
-
-### Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--flow-max-depth [n]` | Maximum delegation depth | `3` |
-| `--flow-prevent-cycles` | Block cyclic delegation | `true` |
-| `--no-flow-prevent-cycles` | Disable cycle prevention | — |
-| `--flow-model-config [name]` | Select a named model strategy for this invocation | `default` |
-| `--flow-mode [name]` | Persistently switch the global model strategy and apply it immediately | — |
-| `--flow-lite-model [model]` | Override the lite-tier model | — |
-| `--flow-flash-model [model]` | Override the flash-tier model | — |
-| `--flow-full-model [model]` | Override the full-tier model | — |
-| `--flow-session-mode [mode]` | Default child-flow session mode | `default` |
-| `--flow-max-concurrency [n]` | Maximum parallel flows | `4` |
-| `--tool-optimize` | Use unified `batch`/`batch_read` | `true` |
-
-### Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `PI_FLOW_DEPTH` | Current delegation depth |
-| `PI_FLOW_MAX_DEPTH` | Max allowed depth |
-| `PI_FLOW_STACK` | JSON array of ancestor flow names |
-| `PI_FLOW_PREVENT_CYCLES` | `"1"` or `"0"` |
-| `PI_FLOW_TOOL_OPTIMIZE` | `"1"` or `"0"` (overrides default tool optimization) |
-| `PI_FLOW_SESSION_MODE` | Default child-flow session mode: `fast`, `default`, `long`, or `extreme_long` |
-| `PI_FLOW_MAX_CONCURRENCY` | Maximum parallel flows |
-| `PI_FLOW_SPAWN_COMMAND` | Override the spawn command for exotic runtime environments (e.g. bundled with pkg/nexe) |
-| `PI_FLOW_DEADLINE_MS` | Absolute deadline timestamp (ms) propagated to child flows for timeout awareness |
-| `PI_FLOW_TOOL_SUMMARY_GRACE_MS` | Time before hard timeout when the agent should stop tool use and summarize (ms) |
-| `PI_FLOW_REMINDER_FILE` | Path to a file the parent writes warning messages into; the timed-bash wrapper reads it before each tool call |
-| `PI_FLOW_DEBUG_CONTEXT` | Set to `1` to emit context-compression telemetry to stderr |
-| `PI_OFFLINE` | Always set to `1` for child flow processes |
-| `PI_FLOW_NO_STEERING` | Set to `1` to disable orchestrator steering hint injection |
-| `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to suppress the strategic planning hints appended after tool calls |
-| `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render) |
-| `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect |
-| `PI_FLOW_LOG_FILE` | TUI-safe log file path (default: `$TMPDIR/pi-agent-flow.log`; set to `/dev/null` to suppress) |
-| `PI_FLOW_DUMP_MAX_AGE_HOURS` | Max age of dump files before auto-cleanup deletes them (default: `168` = 7 days) |
-| `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE` | Set to `1` to skip structured output directive if a provider rejects that prompt shape |
-
-### Notifications
-
-Terminal and desktop notifications fire when the agent finishes a turn and is waiting for you. They adapt dynamically: if a flow completed, the title shows the flow name and acceptance summary; if `ask_user` is pending, the title changes to "Decision Required".
-
-Configure notifications with global `~/.pi/agent/extensions/notify.json` or project `.pi/notify.json`. Project settings override global.
-
-```json
-{
-  "enabled": true,
-  "onlyWhenInteractive": true,
-  "title": "π",
-  "body": "task accomplished!",
-  "channels": {
-    "terminal": true,
-    "desktop": true,
-    "bell": true,
-    "sound": false
-  },
-  "terminal": { "backend": "auto" },
-  "desktop": { "backend": "auto" },
-  "sound": {
-    "backend": "auto",
-    "name": "Glass",
-    "linuxSoundId": "complete",
-    "frequencyHz": 1000,
-    "durationMs": 250,
-    "command": ""
-  }
-}
-```
-
-| Key | Description |
-|-----|-------------|
-| `enabled` | Master switch for notifications |
-| `onlyWhenInteractive` | Only notify when a UI is attached |
-| `channels.terminal` | OSC 777/99 terminal notifications |
-| `channels.desktop` | OS native notifications (macOS, Linux, Windows) |
-| `channels.bell` | Terminal bell |
-| `channels.sound` | System beep or custom sound |
-
-**Backends**
-
-| Channel | Backends |
-|---------|----------|
-| Terminal | `auto` (detect OSC support), `osc777`, `osc99`, `none` |
-| Desktop | `auto` (detect OS), `macos`, `linux`, `windows-toast`, `none` |
-| Sound | `auto`, `macos`, `linux`, `windows-beep`, `command`, `none` |
-
-When the terminal channel is active and the emulator supports visual OSC notifications (e.g. Warp, iTerm2, kitty), the auto-detected desktop channel is skipped to avoid duplicates.
-
----
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference (model strategies, flags, env vars, and slash commands).
 
 ## Local Development
 
-To test local changes with the `pi` CLI before publishing:
+Link the local checkout for instant iteration:
 
 ```shell
-# From the pi-agent-flow repo directory
-npm link
+./scripts/switch.sh       # Link local checkout (or `npm run switch:local`)
+npm run build             # Compile TypeScript → dist/
+# Quit pi and restart it to pick up the new dist/ via the symlink
 ```
 
-This creates a global symlink. The `pi` CLI loads the package via `"npm:pi-agent-flow"` in `~/.pi/agent/settings.json`, so changes are picked up immediately — restart `pi` after editing.
+Toggle back to the published version anytime with `./scripts/switch.sh`.
 
-To restore the published version:
+> ⚠️ Never run `pi update` while linked locally — it overwrites the symlink.
 
-```shell
-npm uninstall -g pi-agent-flow
-npm install -g pi-agent-flow
-```
+## Contributing
 
----
+PRs welcome. Please run `npm run lint` and `npm test` before submitting.
 
-## Docs
+## License
 
-- [**Pi Documentation**](https://pi.dev)
-- [**License**](./LICENSE)
-
-This repository is licensed under the [MIT License](LICENSE).
+[MIT](./LICENSE)
