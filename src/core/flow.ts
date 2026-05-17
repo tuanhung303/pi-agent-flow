@@ -48,7 +48,6 @@ import {
 	buildDelegationRule,
 	buildFlowListSection,
 	buildLineage,
-	buildParentLineageHint,
 	computeChildPropagation,
 } from "./delegation.js";
 
@@ -392,28 +391,13 @@ function buildFlowArgs(
 	const delegationRule = buildDelegationRule(canDelegate, guardLine);
 	const flowListSection = buildFlowListSection(canDelegate, discoveredFlows);
 
-	const timeBudgetHint =
-		sessionTimeoutMs > 0
-			? sessionMode === "snap"
-				? `Session mode: snap. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s. This is a quick-discovery sprint — prioritize Survey and Inspect, skip deep Trace, emit partial findings fast. Incomplete maps are acceptable.\n`
-				: `Session mode: ${sessionMode}. Time budget: ${Math.round(sessionTimeoutMs / 1000)}s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.\n`
-			: "";
-
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 	const lineage = buildLineage(flow.name, parentFlowStack);
-	const parentLineageHint = buildParentLineageHint(parentFlowStack);
-	const projectHint = cwd && fs.existsSync(path.join(cwd, "CLAUDE.md"))
-		? `Project index available at CLAUDE.md (read for architecture context if needed).\n`
-		: "";
 	const activation =
 		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}" lineage="${lineage}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
-		`Available tools: ${availableTools}.\n` +
 		`${delegationRule}\n` +
 		`${flowListSection}` +
-		`${parentLineageHint}` +
-		`${timeBudgetHint}` +
-		`${projectHint}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
 
@@ -494,6 +478,10 @@ export interface RunFlowOptions {
 	sessionMode?: AgentSessionMode;
 	/** Optional flow goal context to inject into the child prompt. */
 	goalContext?: GoalContext;
+	/** Compression statistics from sanitizeForkSnapshot for dump header generation. */
+	compressionStats?: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
+	/** Optional max context token budget to record in the result. */
+	maxContextTokens?: number;
 }
 
 /**
@@ -526,6 +514,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const flow = flows.find((f) => f.name === normalizedFlowName);
 	if (!flow) {
 		const available = flows.map((f) => `"${f.name}"`).join(", ") || "none";
+		const resolvedMaxContextTokens = opts.maxContextTokens ?? inheritedCliArgs.maxContextTokens;
 		return {
 			type: normalizedFlowName,
 			agentSource: "unknown",
@@ -535,6 +524,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			messages: [],
 			stderr: `Unknown flow: "${flowName}". Available flows: ${available}.`,
 			usage: emptyFlowUsage(),
+			...(resolvedMaxContextTokens !== undefined ? { maxContextTokens: resolvedMaxContextTokens } : {}),
 		};
 	}
 
@@ -543,6 +533,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	const startedAtMs = Date.now();
 	const deadlineAtMs = effectiveTimeout > 0 ? startedAtMs + effectiveTimeout : undefined;
 	const resolvedModel = model ?? flow.model ?? inheritedCliArgs.fallbackModel;
+	const resolvedMaxContextTokens = opts.maxContextTokens ?? inheritedCliArgs.maxContextTokens;
 	const result: SingleResult = {
 		type: normalizedFlowName,
 		agentSource: flow.source,
@@ -556,6 +547,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		model: resolvedModel,
 		startedAtMs,
 		...(deadlineAtMs !== undefined ? { deadlineAtMs } : {}),
+		...(resolvedMaxContextTokens !== undefined ? { maxContextTokens: resolvedMaxContextTokens } : {}),
 	};
 
 	let liveStreamingText = "";
@@ -633,19 +625,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			const promptIndex = piArgs.indexOf("-p");
 			const prompt = promptIndex >= 0 ? piArgs[promptIndex + 1] : "";
 
-			// Extract compression stats and applied passes from the trailing JSONL entry if present.
+			// Use out-of-band compression stats provided via RunFlowOptions.
 			let compressionStats = "";
 			let passesApplied: string[] = [];
-			if (forkSessionSnapshotJsonl) {
-				const lines = forkSessionSnapshotJsonl.trimEnd().split("\n");
-				const lastLine = lines[lines.length - 1];
-				try {
-					const lastEntry = JSON.parse(lastLine);
-					if (lastEntry?.type === "compression-stats") {
-						compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${lastEntry.preBytes} bytes\n- Post-sanitization: ${lastEntry.postBytes} bytes\n- Reduction: ${lastEntry.reductionPercent}%`;
-						passesApplied = Array.isArray(lastEntry.passesApplied) ? lastEntry.passesApplied : [];
-					}
-				} catch { /* ignore */ }
+			if (opts.compressionStats) {
+				compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${opts.compressionStats.preBytes} bytes\n- Post-sanitization: ${opts.compressionStats.postBytes} bytes\n- Reduction: ${opts.compressionStats.reductionPercent}%`;
+				passesApplied = Array.isArray(opts.compressionStats.passesApplied) ? opts.compressionStats.passesApplied : [];
 			}
 
 			const effectiveTier = flow.tier ?? getFlowTier(flow.name);

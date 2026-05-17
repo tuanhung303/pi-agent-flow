@@ -1,7 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults } from "../src/snapshot/snapshot.js";
+import { compressToolResults, compressFlowToolCallArgs, depthToPolicy, sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
+
+describe("depthToPolicy", () => {
+	it("maps depth 0 and 1 to full previews", () => {
+		const d0 = depthToPolicy(0);
+		const d1 = depthToPolicy(1);
+		for (const p of [d0, d1]) {
+			expect(p.showPreviews).toBe(true);
+			expect(p.showBytes).toBe(true);
+			expect(p.showSupersededBreadcrumbs).toBe(true);
+			expect(p.showEditBlocks).toBe(true);
+		}
+	});
+
+	it("maps depth 2+ to maximum compression", () => {
+		for (const depth of [2, 3, 5, 10]) {
+			const p = depthToPolicy(depth);
+			expect(p.showPreviews).toBe(false);
+			expect(p.showBytes).toBe(false);
+			expect(p.showSupersededBreadcrumbs).toBe(false);
+			expect(p.showEditBlocks).toBe(false);
+		}
+	});
+});
 import { evictCacheOverflow } from "../src/core/executor.js";
 import { stripStrategicHints } from "../src/steering/tool-utils.js";
+
+function parseSnapshot(snapshot: string): any[] {
+	return snapshot
+		.trimEnd()
+		.split("\n")
+		.filter((l) => l.length > 0)
+		.map((l) => JSON.parse(l));
+}
 
 // ---------------------------------------------------------------------------
 // stripStrategicHints
@@ -57,8 +88,9 @@ describe("compressToolResults — batch", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		expect(result).toContain("2 operations: 1 read, 1 bash");
-		expect(result).toContain("--- src/file.ts (42 lines, content truncated) ---");
-		expect(result).not.toContain("line 1\nline 2");
+		expect(result).toContain("--- src/file.ts (42 lines, preview) ---");
+		expect(result).toContain("line 1");
+		expect(result).toContain("line 2");
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -182,7 +214,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -212,7 +244,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -242,14 +274,132 @@ describe("compressToolResults — batch", () => {
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- README.md (10 lines, content truncated) ---");
-		expect(result).not.toContain("Some content after horizontal rule");
+		expect(result).toContain("--- README.md (10 lines, preview) ---");
+		expect(result).toContain("Some content after horizontal rule");
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		expect(text).toContain("[bash:ok] abc · exit 0 · 0.1s · 1 line\n> head:\noutput");
 		expect(result).not.toContain("--- bash [abc] exit 0 ---");
+	});
+
+	it("compresses rg sections at depth 1 with head preview", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\nsrc/core/flow.ts:10:export function run()\nsrc/core/flow.ts:20:export const x\nsrc/core/flow.ts:30:export class Flow\nsrc/core/flow.ts:40:export interface Options\nsrc/core/agents.ts:5:export interface Agent\nsrc/core/agents.ts:15:export class Builder\nsrc/core/agents.ts:25:export function create()\nsrc/core/agents.ts:35:export type Config\nsrc/config/config.ts:8:export interface Config\nsrc/config/config.ts:18:export function load()\nsrc/config/config.ts:28:export const defaults\nsrc/tools/web-tool.ts:12:export async function search()\nsrc/tools/web-tool.ts:22:export function fetch()\nsrc/tools/web-tool.ts:32:export function post()\nsrc/tools/web-tool.ts:42:export function put()",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:ok] src/core · 15 matches · 4 files");
+		expect(text).toContain("> head:");
+		expect(text).toContain("src/core/flow.ts:10:export function run()");
+		expect(text).toContain("src/core/flow.ts:20:export const x");
+		expect(text).toContain("src/core/flow.ts:30:export class Flow");
+		expect(text).not.toContain("src/tools/web-tool.ts:32:export function post()");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
+
+	it("compresses rg sections at depth 2+ without head preview", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\nsrc/core/flow.ts:10:export function run()\nsrc/core/flow.ts:20:export const x\nsrc/core/flow.ts:30:export class Flow\nsrc/core/flow.ts:40:export interface Options\nsrc/core/agents.ts:5:export interface Agent\nsrc/core/agents.ts:15:export class Builder\nsrc/core/agents.ts:25:export function create()\nsrc/core/agents.ts:35:export type Config\nsrc/config/config.ts:8:export interface Config\nsrc/config/config.ts:18:export function load()\nsrc/config/config.ts:28:export const defaults\nsrc/tools/web-tool.ts:12:export async function search()\nsrc/tools/web-tool.ts:22:export function fetch()\nsrc/tools/web-tool.ts:32:export function post()\nsrc/tools/web-tool.ts:42:export function put()",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:ok] src/core · 15 matches · 4 files");
+		expect(text).not.toContain("> head:");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
+
+	it("compresses rg error sections", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\nError: ENOENT",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:err] src/core · 1 line");
+		expect(result).not.toContain("--- rg: src/core ---");
+	});
+
+	it("compresses empty rg sections as 0 matches", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "rg", p: "src/core", q: "export" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 rg\n\n--- rg: src/core ---\n",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+		expect(text).toContain("[rg:ok] src/core · 0 matches");
+		expect(result).not.toContain("--- rg: src/core ---");
 	});
 });
 
@@ -675,13 +825,60 @@ describe("compressToolResults — W1 write dedup + E1 edit dedup", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		// Latest write kept at depth 2+ (compact, no bytes)
 		expect(result).toContain("[batch:write] src/config.ts");
 		expect(result).not.toContain("(200 bytes)");
 		// Superseded write removed entirely at depth 2+
 		expect(result).not.toContain("(superseded)");
 		expect(result).not.toContain("(100 bytes)");
+	});
+
+	it("S11: normalizes paths so ./src/index.ts and src/index.ts are treated as the same key", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "./src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: ./src/index.ts (100 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/index.ts (200 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		// tc1 should be superseded because tc2 writes the same normalized path
+		expect(tc1Text).toContain("[batch:write] ./src/index.ts (superseded)");
+		expect(tc2Text).toContain("[batch:write] src/index.ts (200 bytes)");
+		expect(tc2Text).not.toContain("(superseded)");
 	});
 });
 describe("compressToolResults — X1 bash compression (depth 1)", () => {
@@ -711,7 +908,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] npm-test-abc · exit 0 · 2.3s (avg) · 3 lines\n> head:\nPASS src/utils/parse.test.ts\nPASS src/core/flow.test.ts\nTests: 15 passed, 15 total");
 	});
@@ -736,7 +933,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] build-def · exit 0 · 8.1s (long) · 100 lines\n> head:\nline 1\nline 2\nline 3");
 		expect(text).not.toContain("line 100");
@@ -761,7 +958,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:pending] long-grep-ghi · still running · 3 lines partial\n> head:\nsrc/core/flow.ts:234\nsrc/core/agents.ts:89\nsrc/snapshot/snapshot.ts:176");
 	});
@@ -785,7 +982,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:err] lint-jkl · 1.2s (avg) · 2 lines stderr\n> stderr:\nsrc/core/flow.ts:45:3: Error: Unexpected token. (eslint)\nsrc/index.ts:12:1: Warning: Missing return type.");
 	});
@@ -809,7 +1006,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] git-status-mno · exit 0 · 0.1s (normal) · 0 lines");
 	});
@@ -833,7 +1030,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] check-node-pqr · exit 0 · 0.1s (normal) · 1 line\n> head:\nv20.12.2");
 		expect(text).toContain("[bash:ok] check-git-stu · exit 0 · 0.2s (normal) · 2 lines\n> head:\nOn branch main\nYour branch is up to date with 'origin/main'.");
@@ -858,7 +1055,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:err] err-stdout · 0.3s (avg) · 1 line stderr\n> stderr:\nfail stdout");
 	});
@@ -882,7 +1079,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:pending] pending-empty · still running · 0 lines partial");
 	});
@@ -906,7 +1103,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] echo-test · exit 0 · 0.1s (normal) · 2 lines\n> head:\n--- hello ---\ntrailing line");
 		expect(text).not.toContain("(content truncated)");
@@ -933,7 +1130,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] npm-test-abc · exit 0");
 		expect(result).not.toContain("PASS src/utils/parse.test.ts");
 		expect(result).not.toContain("> head:");
@@ -959,7 +1156,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] build-def · exit 0");
 		expect(result).not.toContain("line 1");
 		expect(result).not.toContain("> head:");
@@ -984,7 +1181,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:pending] long-grep-ghi · still running");
 		expect(result).not.toContain("src/core/flow.ts:234");
 		expect(result).not.toContain("> head:");
@@ -1009,7 +1206,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:err] lint-jkl");
 		expect(result).not.toContain("src/core/flow.ts:45:3");
 		expect(result).not.toContain("> stderr:");
@@ -1034,7 +1231,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] git-status-mno · exit 0");
 		expect(result).not.toContain("0 lines");
 	});
@@ -1058,12 +1255,450 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] check-node-pqr · exit 0");
 		expect(result).toContain("[bash:ok] check-git-stu · exit 0");
 		expect(result).not.toContain("v20.12.2");
 		expect(result).not.toContain("On branch main");
 		expect(result).not.toContain("> head:");
+	});
+});
+
+describe("compressToolResults — S4 batch_bash_poll compression", () => {
+	function getPollText(result: string): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes('"toolCallId":"tc1"')
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("compresses completed poll results at depth 1 with head preview", () => {
+		const longOutput = Array.from({ length: 1000 }, (_, i) => `poll line ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll1"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `--- [poll1] exit 0 ---\n[Execution time: 1.5s (avg)]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] poll1 · exit 0 · 1.5s (avg) · 1000 lines\n> head:\npoll line 1\npoll line 2\npoll line 3");
+		expect(text).not.toContain("poll line 1000");
+		expect(result).not.toContain("--- [poll1] exit 0 ---");
+	});
+
+	it("compresses still-running poll results at depth 1", () => {
+		const longOutput = Array.from({ length: 500 }, (_, i) => `pending ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll2"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `--- [poll2] still running ---\n[output so far]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] poll2 · still running · 500 lines partial\n> head:\npending 1\npending 2\npending 3");
+		expect(text).not.toContain("pending 500");
+	});
+
+	it("compresses error poll results at depth 1", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll3"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '--- [poll3] exit 1 ---\n[Execution time: 0.3s (avg)]\n[stderr]\nError: command failed',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] poll3 · exit 1 · 0.3s (avg) · 1 line stderr\n> stderr:\nError: command failed");
+	});
+
+	it("compresses poll results at depth 2+ to status only", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll4"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '--- [poll4] exit 0 ---\n[Execution time: 2.0s (long)]\noutput line 1\noutput line 2',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
+		expect(result).toContain("[bash:poll] poll4 · exit 0 · 2.0s (long)");
+		expect(result).not.toContain("output line 1");
+		expect(result).not.toContain("> head:");
+	});
+
+	it("compresses multi-poll results", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["a", "b"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '--- [a] exit 0 ---\n[Execution time: 0.5s (avg)]\nline a1\n\n--- [b] still running ---\n[output so far]\nline b1\nline b2',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] a · exit 0 · 0.5s (avg) · 1 line\n> head:\nline a1");
+		expect(text).toContain("[bash:poll] b · still running · 2 lines partial\n> head:\nline b1\nline b2");
+	});
+});
+
+describe("compressToolResults — B1 cross-turn bash dedup", () => {
+	function getBatchText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`),
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+	function getPollText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`),
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("deduplicates 3 identical bash commands across turns → only latest kept", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "ghi" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 bash\n\n--- bash [ghi] exit 0 ---\n[Execution time: 1.1s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		expect(result).toContain("[bash:ok] ghi · exit 0 · 1.1s · 1 line");
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[bash:ok] abc (superseded)");
+		expect(tc2Text).toContain("[bash:ok] def (superseded)");
+	});
+
+	it("drops superseded bash commands entirely at depth 2+", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).not.toContain("[bash:ok] abc");
+		expect(tc1Text).not.toContain("--- bash [abc]");
+		expect(result).toContain("[bash:ok] def · exit 0");
+	});
+
+	it("supersedes batch bash poll results when original bash is superseded", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: '1 operation: 1 bash\n\n--- bash [abc] pending ---\n[partial output]\nstill running\n[Use batch_bash_poll with i: ["abc"] to check results]',
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch_bash_poll", arguments: { i: ["abc"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toContain("[bash:pending] abc (superseded)");
+		const tc2Text = getPollText(result, "tc2");
+		expect(tc2Text).toContain("[bash:poll] abc (superseded)");
+		expect(result).toContain("[bash:ok] def · exit 0 · 1.2s · 1 line");
+	});
+
+	it("keeps different bash commands across turns", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm build", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 2.0s]\nBuilt",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[bash:ok] abc · exit 0 · 1.0s · 1 line");
+		expect(tc2Text).toContain("[bash:ok] def · exit 0 · 2.0s · 1 line");
+	});
+
+	it("keeps bash results when bashIdToCommand mapping is missing", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "read", p: "src/file.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[bash:ok] abc · exit 0 · 1.0s · 1 line");
+		expect(tc2Text).toContain("[bash:ok] def · exit 0 · 1.2s · 1 line");
+	});
+
+	it("handles mixed batch with superseded bash and kept read", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }, { o: "read", p: "src/config.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "2 operations: 1 bash, 1 read\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS\n\n--- src/config.ts (10 lines) ---\nline1\nline2",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toContain("[bash:ok] abc (superseded)");
+		expect(tc1Text).toContain("--- src/config.ts (10 lines, preview) ---");
+		expect(tc1Text).not.toContain("[batch] 2 ops");
 	});
 });
 
@@ -1146,7 +1781,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc3", content: "1. Node.js Streams\n   https://nodejs.org/api/stream.html\n   Everything" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		// Latest preserved (check parsed text to avoid JSON escaping)
 		const tc3Text = getWebText(result, "tc3");
 		expect(tc3Text).toContain('[web:search] "node.js streams" · 1 results · first: Node.js Streams');
@@ -1166,7 +1801,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "File: /tmp/abc.md\nTitle: Example\nContent length: 200 chars\n\nPreview: new" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc2Text = getWebText(result, "tc2");
 		expect(tc2Text).toContain("[web:fetch] https://example.com · \"Example\" · 200 chars");
 		const tc1Text = getWebText(result, "tc1");
@@ -1182,7 +1817,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "File: /tmp/abc.md\nTitle: Example Domain\nContent length: 500 chars\n\nPreview:\nMore text" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		const tc2Text = getWebText(result, "tc2");
 		expect(tc1Text).toContain('[web:search] "example.com homepage" · 1 results · first: Example Domain');
@@ -1202,7 +1837,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc4", content: "1. Result A updated\n   https://a.com\n   Info" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		// Rollup summary (no quotes, safe to check in raw JSON)
 		expect(result).toContain("[web] 3 unique queries (2 searches, 1 fetch) · latest per query below");
 		// Latest results — check parsed text to avoid JSON escaping
@@ -1226,7 +1861,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		expect(tc1Text).toContain("[web]");
 		expect(tc1Text).not.toContain("(superseded");
@@ -1240,7 +1875,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		const tc2Text = getWebText(result, "tc2");
 		// Neither should be superseded because empty normalized queries are not indexed
@@ -1254,7 +1889,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		expect(tc1Text).toBeTruthy();
 		expect(tc1Text).not.toContain("(superseded");
@@ -1266,7 +1901,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		expect(tc1Text).toBeTruthy();
 		expect(tc1Text).not.toContain("(superseded");
@@ -1280,7 +1915,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "1. Node.js Streams\n   https://nodejs.org\n   Info" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		// tc2 is latest
 		const tc2Text = getWebText(result, "tc2");
 		expect(tc2Text).toContain('[web:search] "  node.js streams  " · 1 results · first: Node.js Streams');
@@ -1290,6 +1925,16 @@ describe("compressToolResults — Q1 web dedup", () => {
 		expect(tc1Text).toContain('[web:search] "Node.JS STREAMS" (superseded by later search)');
 	});
 });
+
+function getAskUserText(result: string, tcId: string): string {
+	const lines = result.trimEnd().split("\n");
+	const toolLine = lines.find((l) =>
+		(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+		l.includes(`"toolCallId":"${tcId}"`),
+	)!;
+	const parsed = JSON.parse(toolLine);
+	return parsed.message.content[0].text;
+}
 
 describe("compressToolResults — ask_user", () => {
 	it("compresses answered result", () => {
@@ -1377,6 +2022,213 @@ describe("compressToolResults — ask_user", () => {
 // ---------------------------------------------------------------------------
 // compressToolResults — flow cache miss fallback
 // ---------------------------------------------------------------------------
+describe("compressToolResults — A1 ask_user dedup", () => {
+	it("two ask_user calls with same question at depth 1 → first superseded, second survives", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getAskUserText(result, "tc1");
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc1Text).toContain('[ask_user] "Should we use Docker?" (superseded by later ask_user)');
+		expect(tc2Text).toContain('[ask_user] "Should we use Docker?" → "No"');
+		expect(tc2Text).not.toContain("(superseded");
+	});
+
+	it("two ask_user calls at depth 2+ → first dropped entirely, second survives", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "Should we use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
+		// tc2 survives
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc2Text).toContain('[ask_user] "Should we use Docker?" → "No"');
+		// tc1 toolResult removed entirely
+		const hasTc1ToolResult = result.trimEnd().split("\n").some((l) =>
+			l.includes('"role":"toolResult"') && l.includes('"toolCallId":"tc1"'),
+		);
+		expect(hasTc1ToolResult).toBe(false);
+		expect(result).not.toContain("(superseded");
+	});
+
+	it("different questions are not deduplicated", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "Use Docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "Use Kubernetes?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getAskUserText(result, "tc1");
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc1Text).toContain('[ask_user] "Use Docker?" → "Yes"');
+		expect(tc2Text).toContain('[ask_user] "Use Kubernetes?" → "No"');
+		expect(result).not.toContain("(superseded");
+	});
+
+	it("question normalization (case-insensitive, trimmed, sliced to 120)", () => {
+		const snapshot = makeSnapshot([
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc1", name: "ask_user", arguments: { question: "  SHOULD we USE Docker?  " } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "User answered: Yes" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", toolCallId: "tc2", name: "ask_user", arguments: { question: "should we use docker?" } }] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getAskUserText(result, "tc1");
+		const tc2Text = getAskUserText(result, "tc2");
+		expect(tc1Text).toContain('[ask_user] "  SHOULD we USE Docker?  " (superseded by later ask_user)');
+		expect(tc2Text).toContain('[ask_user] "should we use docker?" → "No"');
+	});
+});
+
+describe("compressToolResults — B1 batch rollup", () => {
+	function getBatchText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`),
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("batch result with all superseded writes at depth 1 collapses to rollup line", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "--- write: src/a.ts (100 bytes) ---\n--- write: src/b.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }, { o: "write", p: "src/b.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- write: src/a.ts (300 bytes) ---\n--- write: src/b.ts (400 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toBe("[batch] 2 ops (all superseded or truncated by later operations)");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc2Text).toContain("[batch:write] src/a.ts (300 bytes)");
+		expect(tc2Text).toContain("[batch:write] src/b.ts (400 bytes)");
+	});
+
+	it("batch result with all superseded writes at depth 2+ collapses to terse rollup", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "--- write: src/a.ts (100 bytes) ---\n--- write: src/b.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }, { o: "write", p: "src/b.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- write: src/a.ts (300 bytes) ---\n--- write: src/b.ts (400 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toBe("[batch] 2 ops (superseded)");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc2Text).toContain("[batch:write] src/a.ts");
+		expect(tc2Text).toContain("[batch:write] src/b.ts");
+	});
+
+	it("batch result with mixed kept and superseded does not rollup", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }, { o: "write", p: "src/b.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "--- write: src/a.ts (100 bytes) ---\n--- write: src/b.ts (200 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/a.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- write: src/a.ts (300 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		// a is superseded, b is kept
+		expect(tc1Text).toContain("[batch:write] src/a.ts (superseded)");
+		expect(tc1Text).toContain("[batch:write] src/b.ts (200 bytes)");
+		expect(tc1Text).not.toContain("[batch] 2 ops");
+	});
+});
+
 describe("evictCacheOverflow", () => {
 	it("evicts oldest entries when cache exceeds the cap", () => {
 		const cache = new Map();
@@ -1558,8 +2410,8 @@ describe("compressToolResults — flow cache miss", () => {
 		const parsed = JSON.parse(toolLine);
 		const text = parsed.message.content[0].text;
 		// Must be the compact placeholder, NOT the bulky original
-		expect(text).toContain("[flow] prior result");
-		expect(text).toContain("full context unavailable (result not cached at this depth)");
+		expect(text).toContain("[flow:scout] completed · see prior session");
+		expect(text).not.toContain("full context unavailable");
 		expect(text.length).toBeLessThan(200);
 		expect(text).not.toContain("Flow: 1/1 completed");
 	});
@@ -1596,5 +2448,466 @@ describe("compressToolResults — flow cache miss", () => {
 		expect(text).toContain("[Flow: scout accomplished]");
 		expect(text).toContain("src/auth.ts");
 		expect(text).toContain("grep: JWT");
+	});
+
+	it("S6: granular flow cache fallback — only malformed entries fall back, valid siblings survive", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "flow", arguments: { flow: [{ type: "scout" }, { type: "build" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "Flow: 2/2 completed\n\nscout accomplished\n\nbuild accomplished",
+				},
+			},
+		]);
+
+		// Cache with one valid and one malformed result
+		const cache = new Map([[
+			"tc1",
+			[
+				{ type: "scout", status: "accomplished", files: [{ path: "src/auth.ts" }] },
+				{ type: "build", status: "accomplished", actions: [{ type: "", description: "" }] }, // malformed: empty type/action
+			],
+		]]);
+
+		const result = compressToolResults(snapshot, cache);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+
+		// Valid sibling should render normally
+		expect(text).toContain("[Flow: scout accomplished]");
+		expect(text).toContain("src/auth.ts");
+
+		// Malformed entry should get granular fallback, not trash the whole array
+		expect(text).toContain("[flow:build] accomplished (cache miss)");
+
+		// Should NOT fall back to the bulky raw text
+		expect(text).not.toContain("Flow: 2/2 completed");
+		expect(text.length).toBeLessThan(500);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// compressFlowToolCallArgs
+// ---------------------------------------------------------------------------
+
+describe("compressFlowToolCallArgs", () => {
+	it("compresses flow tool call arguments to compact summary", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: {
+								flow: [
+									{
+										type: "build",
+										aim: "Clean workspace and generate fresh dumps",
+										steps: ["step1", "step2", "step3", "step4", "step5", "step6"],
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		const lines = result.trimEnd().split("\n");
+		const assistantLine = lines.find((l) => l.includes('"role":"assistant"'))!;
+		const parsed = JSON.parse(assistantLine);
+		const toolCall = parsed.message.content[0];
+		expect(toolCall.name).toBe("flow");
+		expect(toolCall.arguments).toEqual({
+			type: "build",
+			aim: "Clean workspace and generate fresh dumps",
+			steps: 6,
+		});
+	});
+
+	it("leaves non-flow tool calls untouched", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "batch",
+							arguments: { o: [{ o: "read", p: "src/index.ts" }] },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"name":"batch"');
+		expect(result).toContain('"arguments":{"o":');
+	});
+
+	it("handles missing flow array gracefully", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: { intent: "do something" },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"arguments":{"intent":"do something"}');
+	});
+
+	it("handles empty flow array gracefully", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: { flow: [] },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"arguments":{"flow":[]}');
+	});
+
+	it("preserves toolCallId and id on compressed flow tool calls", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc-flow-1",
+							id: "tc-flow-1",
+							name: "flow",
+							arguments: {
+								flow: [{ type: "build", aim: "Fix bug" }],
+							},
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		const lines = result.trimEnd().split("\n");
+		const assistantLine = lines.find((l) => l.includes('"role":"assistant"'))!;
+		const parsed = JSON.parse(assistantLine);
+		const toolCall = parsed.message.content[0];
+		expect(toolCall.toolCallId).toBe("tc-flow-1");
+		expect(toolCall.id).toBe("tc-flow-1");
+		expect(toolCall.name).toBe("flow");
+	});
+
+	it("handles multiple flow tool calls in one message", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc-flow-a",
+							name: "flow",
+							arguments: {
+								flow: [{ type: "scout", aim: "Map files" }],
+							},
+						},
+						{
+							type: "toolCall",
+							toolCallId: "tc-flow-b",
+							name: "flow",
+							arguments: {
+								flow: [{ type: "build", aim: "Fix bug", steps: ["a", "b"] }],
+							},
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		const lines = result.trimEnd().split("\n");
+		const assistantLine = lines.find((l) => l.includes('"role":"assistant"'))!;
+		const parsed = JSON.parse(assistantLine);
+		const calls = parsed.message.content;
+		expect(calls).toHaveLength(2);
+		expect(calls[0].arguments).toEqual({ type: "scout", aim: "Map files", steps: undefined });
+		expect(calls[1].arguments).toEqual({ type: "build", aim: "Fix bug", steps: 2 });
+		expect(calls[0].toolCallId).toBe("tc-flow-a");
+		expect(calls[1].toolCallId).toBe("tc-flow-b");
+	});
+
+	it("returns part unchanged when flow element lacks type, aim, and steps", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: { flow: [{ other: "field" }] },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"arguments":{"flow":[{"other":"field"}]}');
+	});
+
+	it("preserves malformed arguments (null, string, number)", () => {
+		for (const malformed of [null, "string", 42]) {
+			const snapshot = makeSnapshot([
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								toolCallId: "tc1",
+								name: "flow",
+								arguments: malformed,
+							},
+						],
+					},
+				},
+			]);
+			const result = compressFlowToolCallArgs(snapshot);
+			expect(result).toContain(`"arguments":${JSON.stringify(malformed)}`);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// collapseEmptyAssistantMessages — low-signal extension
+// ---------------------------------------------------------------------------
+
+describe("sanitizeForkSnapshot — low-signal assistant collapse", () => {
+	it("collapses low-signal assistant messages (< 300 chars, no markers) and preserves totalTokens", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Okay, I will proceed with that." }],
+					usage: { totalTokens: 42, input: 10, output: 32 },
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content).toBe("[assistant: 42 tokens, no action]");
+		expect(assistant.message.usage).toEqual({ totalTokens: 42 });
+		expect(passesApplied).toContain("collapseEmptyAssistantMessages");
+	});
+
+	it("does not collapse assistant messages with actionable markers", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Check src/index.ts for the bug." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Check src/index.ts for the bug.");
+	});
+
+	it("does not collapse assistant messages with code blocks", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Use ```npm test``` to verify." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Use ```npm test``` to verify.");
+	});
+
+	it("does not collapse assistant messages with tool references", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Run [bash:ok] to check." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Run [bash:ok] to check.");
+	});
+
+	it("does not collapse assistant messages over 300 chars", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "A".repeat(301) }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("A".repeat(301));
+	});
+
+	it("does not collapse assistant messages at exactly 300 chars", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "A".repeat(300) }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("A".repeat(300));
+	});
+
+	it("preserves parentId on collapsed assistant messages", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{ type: "message", id: "msg-prev", message: { role: "user", content: "Do it" } },
+			{
+				type: "message",
+				id: "msg-parent",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Okay, I will proceed with that." }],
+					usage: { totalTokens: 42 },
+					parentId: "msg-prev",
+				},
+				parentId: "msg-prev",
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content).toBe("[assistant: 42 tokens, no action]");
+		expect(assistant.message.parentId).toBe("msg-prev");
+		expect(assistant.parentId).toBe("msg-prev");
+	});
+
+	it("collapses backtick-only prose without actual tool calls", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Right — `batch_read` is read-only and safe to ignore." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content).toBe("[assistant:continuation]");
+	});
+
+	it("does not collapse assistant messages with real file paths", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Check src/foo.ts for the bug." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Check src/foo.ts for the bug.");
 	});
 });

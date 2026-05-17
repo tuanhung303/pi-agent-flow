@@ -41,14 +41,12 @@ export function buildGuardLine(
 	preventCycles: boolean,
 	parentFlowStack: string[],
 ): string {
-	const stackLabel = parentFlowStack.length > 0 ? parentFlowStack.join(" -> ") : "(root)";
-	return `depth ${currentDepth}/${effectiveMaxDepth} | cycles: ${preventCycles ? "blocked" : "off"} | stack: ${stackLabel}`;
+	const stackLabel = parentFlowStack.length > 0 ? parentFlowStack.join(" -> ") : "root";
+	return `depth ${currentDepth}/${effectiveMaxDepth} · stack: ${stackLabel}`;
 }
 
 export function buildDelegationRule(canDelegate: boolean, guardLine: string): string {
-	return canDelegate
-		? `You may delegate to sub-flows (${guardLine}).`
-		: `You may NOT delegate to sub-flows (${guardLine}).`;
+	return `Deleg: ${canDelegate ? "on" : "off"} (${guardLine})`;
 }
 
 export function buildFlowListSection(
@@ -58,10 +56,7 @@ export function buildFlowListSection(
 	if (!canDelegate || discoveredFlows.length === 0) return "";
 	return (
 		`Available flows:\n${discoveredFlows
-			.map((f) => {
-				const badge = f.source === "project" ? " 🔒" : f.source === "user" ? " ⚙" : "";
-				return `- [${f.name}]${badge} — ${f.description}`;
-			})
+			.map((f) => `- ${f.name}`)
 			.join("\n")}\n`
 	);
 }
@@ -70,10 +65,8 @@ export function buildLineage(flowName: string, parentFlowStack: string[]): strin
 	return ["orchestrator", ...parentFlowStack, flowName].join(" → ");
 }
 
-export function buildParentLineageHint(parentFlowStack: string[]): string {
-	return parentFlowStack.length > 0
-		? `Spawned by: ${parentFlowStack.join(" → ")}.\n`
-		: "";
+export function buildParentLineageHint(_parentFlowStack: string[]): string {
+	return "";
 }
 
 // ---------------------------------------------------------------------------

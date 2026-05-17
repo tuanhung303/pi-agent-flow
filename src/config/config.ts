@@ -11,6 +11,7 @@ import * as path from "node:path";
 import { parseAgentSessionMode, type AgentSessionMode } from "../core/session-mode.js";
 import { type FlowTier } from "../core/agents.js";
 import { logWarn } from "./log.js";
+import { resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
 
 
 export interface FlowModelTierConfig {
@@ -58,6 +59,11 @@ export interface FlowSettings {
 		enabled?: boolean;
 		/** Auto-dismiss timeout in seconds. Default: 300 (5 min). */
 		timeout?: number;
+	};
+
+	loop?: {
+		/** Enable endless loop behavior. Default: false. */
+		enabled?: boolean;
 	};
 }
 
@@ -298,6 +304,15 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 		result.askUser = askUser;
 	}
 
+	// Parse nested loop settings
+	if (isPlainObject(obj.loop)) {
+		const loop: FlowSettings["loop"] = {};
+		if (typeof obj.loop.enabled === "boolean") {
+			loop.enabled = obj.loop.enabled;
+		}
+		result.loop = loop;
+	}
+
 	return result;
 }
 
@@ -509,6 +524,40 @@ export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStr
 		parts.push(`${tier}: ${value}`);
 	}
 	return `mode: ${modeName} | ${parts.join(" - ")}`;
+}
+
+export function resolveModelContextWindow(model?: string): number | undefined {
+	if (!model) return undefined;
+	// Prefer live models.json lookup (supports any provider/modelId format).
+	const fromModels = resolveModelContextWindowFromModels(model);
+	if (fromModels !== undefined) return fromModels;
+	// Fallback to hardcoded heuristics for bare model names without a provider prefix.
+	const m = model.toLowerCase();
+	// Claude
+	if (m.includes("claude-3.7-sonnet")) return 200_000;
+	if (m.includes("claude-3.5-sonnet")) return 200_000;
+	if (m.includes("claude-3-opus")) return 200_000;
+	if (m.includes("claude-3-sonnet")) return 200_000;
+	if (m.includes("claude-3-haiku")) return 200_000;
+	if (m.includes("claude")) return 200_000;
+	// OpenAI
+	if (m.includes("gpt-4o")) return 128_000;
+	if (m.includes("gpt-4-turbo")) return 128_000;
+	if (m.includes("gpt-4")) return m.includes("32k") ? 32_000 : 128_000;
+	if (m.includes("gpt-3.5-turbo")) return 16_000;
+	if (m.includes("o1") || m.includes("o3")) return 200_000;
+	// Gemini
+	if (m.includes("gemini-1.5-pro")) return 2_000_000;
+	if (m.includes("gemini-1.5-flash")) return 1_000_000;
+	if (m.includes("gemini-1.0-pro")) return 32_000;
+	if (m.includes("gemini")) return 1_000_000;
+	// DeepSeek
+	if (m.includes("deepseek")) return 64_000;
+	// Llama
+	if (m.includes("llama-3.1") || m.includes("llama3.1")) return 128_000;
+	if (m.includes("llama-3.2") || m.includes("llama3.2")) return 128_000;
+	if (m.includes("llama")) return 8_000;
+	return undefined;
 }
 
 export function writeFlowModelConfig(

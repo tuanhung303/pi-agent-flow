@@ -107,3 +107,10 @@ export interface CompressedFlowResult {
 	/** Error message for failed/aborted flows. */
 	error?: string;
 }
+
+export interface DepthPolicy {
+	showPreviews: boolean;
+	showBytes: boolean;
+	showSupersededBreadcrumbs: boolean;
+	showEditBlocks: boolean;
+}

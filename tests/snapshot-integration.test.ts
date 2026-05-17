@@ -27,22 +27,17 @@ function buildDumpArtifact(
 	flowName: string,
 	tier: string,
 	pipelineVersion: string,
+	passesApplied: string[],
+	stats?: { preBytes: number; postBytes: number; reductionPercent: number } | null,
 ): { md: string; txt: string } {
-	const lines = snapshot.trimEnd().split("\n");
-	const lastLine = lines[lines.length - 1];
 	let compressionStats = "";
-	let passesApplied: string[] = [];
-	try {
-		const lastEntry = JSON.parse(lastLine);
-		if (lastEntry?.type === "compression-stats") {
-			compressionStats =
-				`\n\n## Compression Stats\n\n` +
-				`- Pre-sanitization: ${lastEntry.preBytes} bytes\n` +
-				`- Post-sanitization: ${lastEntry.postBytes} bytes\n` +
-				`- Reduction: ${lastEntry.reductionPercent}%`;
-			passesApplied = Array.isArray(lastEntry.passesApplied) ? lastEntry.passesApplied : [];
-		}
-	} catch { /* ignore */ }
+	if (stats) {
+		compressionStats =
+			`\n\n## Compression Stats\n\n` +
+			`- Pre-sanitization: ${stats.preBytes} bytes\n` +
+			`- Post-sanitization: ${stats.postBytes} bytes\n` +
+			`- Reduction: ${stats.reductionPercent}%`;
+	}
 
 	const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "(none — cold start)";
 	const sanitizationHeader =
@@ -310,8 +305,8 @@ describe("SNAPSHOT INTEGRATION TEST — depth-aware compression & dump artifacts
 		expect(toolTexts).not.toContain("--- edit: src/routes/login.ts (1 block) ---");
 
 		// Read truncation
-		expect(toolTexts).toContain("--- src/middleware.ts (42 lines, content truncated) ---");
-		expect(toolTexts).not.toContain("export function middleware(req, res, next)");
+		expect(toolTexts).toContain("--- src/middleware.ts (42 lines, preview) ---");
+		expect(toolTexts).toContain("export function middleware(req, res, next)");
 
 		// Q1 web compression
 		expect(toolTexts).toContain("[web:search] \"jwt best practices node.js\" · 2 results · first: JWT Security Best Practices");
@@ -383,11 +378,11 @@ describe("SNAPSHOT INTEGRATION TEST — depth-aware compression & dump artifacts
 		]);
 
 		const snapshot = buildComplexSnapshot();
-		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, flowCache, { depth: 1 });
+		const { result, passesApplied, stats } = sanitizeForkSnapshot(snapshot, flowCache, { depth: 1 });
 		expect(result).toBeDefined();
 
 		const prompt = "spawn build, implement JWT middleware with RS256";
-		const { md, txt } = buildDumpArtifact(result!, prompt, "build", "flash", pipelineVersion);
+		const { md, txt } = buildDumpArtifact(result!, prompt, "build", "flash", pipelineVersion, passesApplied, stats);
 
 		// Write files
 		const mdPath = path.join(tmpDir, "pi-dump.build.test.md");
@@ -435,7 +430,7 @@ describe("SNAPSHOT INTEGRATION TEST — depth-aware compression & dump artifacts
 
 		// Verify JSONL entries are present
 		expect(mdContent).toContain('"type":"session"');
-		expect(mdContent).toContain('"type":"compression-stats"');
+
 	});
 
 	it("is orphan-free after full sanitization", () => {

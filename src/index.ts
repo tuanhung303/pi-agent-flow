@@ -34,8 +34,9 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
+import { registerFlow, getGoal, getGoalForSession, getLoop, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
 import * as sessionRegistry from "./core/session-registry.js";
+
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
 	resolveFlowDepthConfig,
@@ -49,8 +50,10 @@ import {
 	resolveSettings,
 	type ResolvedSettings,
 } from "./config/settings-resolver.js";
+
 import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
-export { logWarn, logError } from "./config/log.js";
+import { logWarn, logError } from "./config/log.js";
+export { logWarn, logError };
 
 // ---------------------------------------------------------------------------
 // Persistent flow result cache — shared across execute() calls so historical
@@ -134,7 +137,7 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 }
 
 // Re-export compressToolResults and stripBatchReadToolCalls for tests
-export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot/snapshot.js";
+export { compressToolResults, stripBatchReadToolCalls } from "./snapshot/snapshot.js";
 export { type FlowColorConfig } from "./tui/flow-colors.js";
 
 // ---------------------------------------------------------------------------
@@ -396,7 +399,7 @@ export default function (pi: ExtensionAPI) {
 				// artifacts before passing it to child flows.
 				// Uses the persistent module-level cache so historical flow results
 				// are properly compressed (not passed through verbatim).
-				const { result: forkSessionSnapshotJsonl } = sanitizeForkSnapshot(
+				const { result: forkSessionSnapshotJsonl, stats: forkSessionSnapshotStats } = sanitizeForkSnapshot(
 					buildForkSessionSnapshotJsonl(ctx.sessionManager),
 					flowResultCache,
 					{
@@ -420,7 +423,14 @@ export default function (pi: ExtensionAPI) {
 					return typeof inheritedValue === "string" && inheritedValue.trim() ? inheritedValue.trim() : undefined;
 				};
 
-				const activeGoal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+				let activeGoal = getGoalForSession(ctx.cwd, sessionRegistry.getSessionId(ctx.cwd));
+				if (!activeGoal) {
+					const anyGoal = getGoal(ctx.cwd);
+					if (anyGoal && anyGoal.status === "active") {
+						logWarn(`[pi-agent-flow] Session mismatch for goal: expected ${sessionRegistry.getSessionId(ctx.cwd)}, got ${anyGoal.sessionId ?? "none"}. Using goal anyway.`);
+						activeGoal = anyGoal;
+					}
+				}
 				const goalContext = activeGoal ? {
 					objective: activeGoal.objective,
 					acceptance: activeGoal.acceptance,
@@ -449,6 +459,7 @@ export default function (pi: ExtensionAPI) {
 						tierOverrideResolver: getTierOverride,
 						fallbackModel: inheritedCliArgs.fallbackModel,
 						forkSessionSnapshotJsonl,
+						forkSessionSnapshotStats,
 						flowResultCache,
 						projectFlowsDir: discovery.projectFlowsDir,
 						sessionManager: ctx.sessionManager,
@@ -485,6 +496,7 @@ export default function (pi: ExtensionAPI) {
 				renderFlowResult(result, expanded, theme, args),
 		});
 	}
+
 
 	// -------------------------------------------------------------------------
 	// Public plugin API — expose for third-party extensions

@@ -46,14 +46,16 @@ When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it fork
 | **W1** | Write deduplication (cross-turn) | ✅ Complete | `[batch:write] src/config.ts (1234 bytes)` | `[batch:write] src/config.ts` |
 | **E1** | Edit deduplication (cross-turn) | ✅ Complete | `[batch:edit] src/index.ts (2 blocks)` | `[batch:edit] src/index.ts` |
 | **Q1** | Web query deduplication | ✅ Complete | `[web:search] "query" · 2 results · first: Title` | `[web] N unique queries (S searches, F fetches) · latest per query below` |
+| **R1** | rg output compression | ✅ Complete | `[rg:ok] path · N matches · M files\n> head:\n...` | `[rg:ok] path · N matches · M files` |
+| **F1** | Flow tool call argument compression | ✅ Complete | `{type, aim, steps}` compact object | Same (pass-agnostic) |
+| **C1** | Low-signal assistant message collapsing | ✅ Complete | `[assistant: N tokens, no action]` | `[assistant:continuation]` (no tokens known) |
+| **Read Preview** | File read first/last 2 lines at depth 1 | ✅ Complete | `--- path (N lines, preview) ---` with first/last 2 lines | `--- path (N lines, content truncated) ---` |
 
 ### Pending / Future Work
 
 | Item | Why It Matters | File Hint |
 |------|--------------|-----------|
 | **Cross-turn bash dedup** | If parent runs `npm test` every turn, child sees N bash results. Low ROI because bash IDs are unique per batch call. | `compressBatchResult` already handles intra-batch dedup; cross-turn would require new `DedupIndex` category. |
-| **Read content truncation tuning** | Currently truncates to header only. Could preserve first/last N lines for context. | `compressBatchResult` read section handling (~line 480). |
-| **rg output compression** | `rg` results currently pass through verbatim. Could compress to `[rg] N matches in M files`. | `KNOWN_SECTION_HEADERS` in `snapshot.ts:~181`. |
 | **Structured output validation** | `renderCompressedFlowResult` returns `undefined` if >50% file entries lack `path`. This safety net could be tightened. | `src/snapshot/snapshot.ts:~93-170`. |
 | **Cache miss placeholder** | `[flow] prior result · N chars — full context unavailable` is conservative. Could include a one-line summary if structured output failed but raw text is short. | `compressToolResults` cache-miss branch (~line 780). |
 
@@ -74,14 +76,16 @@ From `sanitizeForkSnapshot` (`snapshot.ts:~900-1345`):
 11. `stripReasoning` — remove `<thinking>` blocks.
 12. `stripTimestamps` — remove inner `message.timestamp`.
 13. `stripApiMetadata` — remove `api`, `provider`, `model`, `stopReason`, `responseId`, `responseModel`, `cost` (preserve `usage.totalTokens`).
-14. `stripDetails` — remove `details` from tool/toolResult messages.
-15. `stripSteeringHints` — remove `<pi-flow-steering-hint>` blocks.
-16. `stripStrategicHints` — remove `[Hint: Plan next step...]` blocks.
-17. `compressParentActivation` — at depth ≥ 2, collapse parent `<context-seal>...<mission>` to one-line preview.
-18. `reparentOrphans` — fix `parentId` references to dropped messages.
-19. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).
-20. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1).
-21. `reparentOrphans` — second pass after message drops.
+14. `collapseEmptyAssistantMessages` — collapse empty/low-signal assistant messages to `[assistant: N tokens, no action]`.
+15. `stripDetails` — remove `details` from tool/toolResult messages.
+16. `stripSteeringHints` — remove `<pi-flow-steering-hint>` blocks.
+17. `stripStrategicHints` — remove `[Hint: Plan next step...]` blocks.
+18. `compressParentActivation` — at depth ≥ 2, collapse parent `<context-seal>...<mission>` to one-line preview.
+19. `reparentOrphans` — fix `parentId` references to dropped messages.
+20. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).
+21. `compressFlowToolCallArgs` — compress verbose `flow` tool call arguments in assistant messages to `{type, aim, steps}`.
+22. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1/R1).
+23. `reparentOrphans` — second pass after message drops.
 
 ---
 
@@ -148,7 +152,7 @@ cat $(ls -t /tmp/pi-dump.scout.*.md | head -1)
 - [ ] No `<context-seal>` blocks inside JSONL `user` messages at depth 1 (they should only appear in the `-p` prompt, not the JSONL).
 - [ ] At depth ≥ 2, any `<context-seal>` inside JSONL is compressed to `[Parent flow activation stripped]`.
 - [ ] No raw flow tool results > 2000 chars (must be `[Flow: X accomplished]` or cache-miss placeholder).
-- [ ] `compression-stats` JSONL entry is present as the last line.
+- [ ] `compression-stats` are present in the return value (out-of-band, not a JSONL line).
 - [ ] `passesApplied` array includes `compressToolResults`, `stripBatchRead`, `reparentOrphans`.
 
 ### Step 6 — Zero Tech Debt Checklist
@@ -216,11 +220,11 @@ cat $(ls -t /tmp/pi-dump.scout.*.md | head -1)
 
 2. **Depth behavior is contractual.** Depth 1 = moderate compression with previews. Depth 2+ = maximum compression, no previews. Child flows at depth 2+ expect terse context.
 
-3. **The `compression-stats` trailing JSONL entry must remain parseable.** Its schema is:
+3. **The `compression-stats` object must remain parseable.** Its schema is:
    ```json
-   { "type": "compression-stats", "preBytes": N, "postBytes": N, "reductionPercent": N, "passesApplied": ["..."] }
+   { "preBytes": N, "postBytes": N, "reductionPercent": N, "passesApplied": ["..."] }
    ```
-   Adding new fields is safe. Removing fields breaks `buildDumpArtifact` in `tests/snapshot-integration.test.ts` and any external parsers.
+   It is returned out-of-band from `sanitizeForkSnapshot`, not appended to the JSONL. Adding new fields is safe. Removing fields breaks `buildDumpArtifact` in `tests/snapshot-integration.test.ts` and any external parsers.
 
 4. **Dump artifact format is contractual.** The `.md` / `.txt` twin file format is consumed by developers for debugging. Changes to the markdown header must be backward-compatible.
 
@@ -303,12 +307,11 @@ const entries = lines.map(l => JSON.parse(l));
 
 const toolResults = entries.filter(e => e?.message?.role === 'tool');
 const totalToolBytes = toolResults.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
-const stats = entries.find(e => e?.type === 'compression-stats');
-
 console.log('Entries:', entries.length);
 console.log('Tool results:', toolResults.length);
 console.log('Tool result bytes:', totalToolBytes);
-console.log('Compression stats:', stats);
+// Note: compression-stats are returned out-of-band from sanitizeForkSnapshot,
+// not as a JSONL entry. Access them via the dump artifact's markdown header.
 
 // Find the largest tool result
 const largest = toolResults.reduce((max, e) => {

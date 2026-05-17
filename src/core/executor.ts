@@ -18,7 +18,7 @@ import { extractStructuredOutput } from "../snapshot/structured-output.js";
 import { getTransitionAdvice } from "./transitions.js";
 import { mapFlowConcurrent, runFlow } from "./flow.js";
 import { getFlowSummaryText } from "../snapshot/runner-events.js";
-import { normalizeFlowModeName, resolveFlowModelCandidates, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "../config/config.js";
+import { normalizeFlowModeName, resolveFlowModelCandidates, resolveModelContextWindow, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "../config/config.js";
 import { getAgentSessionTimeoutMs, resolveAgentSessionMode, type AgentSessionMode } from "./session-mode.js";
 import { setFlowComplete } from "../notify/notify-state.js";
 import { setLiveText } from '../tui/scramble/index.js';
@@ -68,6 +68,8 @@ export interface FlowExecutorDeps {
 	fallbackModel?: string;
 	/** Fork session snapshot JSONL. */
 	forkSessionSnapshotJsonl: string | null;
+	/** Compression statistics from sanitizeForkSnapshot for dump header generation. */
+	forkSessionSnapshotStats?: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
 	/** Flow result cache for compression. */
 	flowResultCache: Map<string, CompressedFlowResult[]>;
 	/** Project flows directory. */
@@ -358,6 +360,7 @@ export async function executeFlows(
 			if (candidateModel) attemptedModels.push(candidateModel);
 			const attemptStartMs = Date.now();
 			const attemptTimeoutMs = getAgentSessionTimeoutMs(sessionMode);
+			const maxContextTokens = resolveModelContextWindow(candidateModel);
 			allResults[index] = {
 				type: normalizedType,
 				agentSource: targetFlow?.source ?? "unknown",
@@ -370,6 +373,7 @@ export async function executeFlows(
 				model: candidateModel,
 				startedAtMs: attemptStartMs,
 				deadlineAtMs: attemptStartMs + attemptTimeoutMs,
+				...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
 			};
 			emitProgress();
 			result = await runFlow({
@@ -381,6 +385,7 @@ export async function executeFlows(
 				acceptance: item.acceptance,
 				taskCwd: item.cwd,
 				forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+				compressionStats: shouldInheritContext ? deps.forkSessionSnapshotStats : null,
 				parentDepth: currentDepth,
 				parentFlowStack: ancestorFlowStack,
 				maxDepth: effectiveMaxDepth,
@@ -389,6 +394,7 @@ export async function executeFlows(
 				structuredOutput,
 				sessionMode,
 				model: candidateModel,
+				maxContextTokens,
 				goalContext: deps.goalContext,
 				signal,
 				onUpdate: (partial) => {

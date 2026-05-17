@@ -88,6 +88,52 @@ describe("discoverFlows", () => {
 		expect(flowsByName.get("debug")?.systemPrompt).toContain("after finishing");
 		expect(flowsByName.get("debug")?.systemPrompt).toContain("Documentation-only updates are required after finishing the work");
 	});
+
+	it("parses space-separated tools from frontmatter correctly", () => {
+		const agentsDir = path.join(tmpDir, ".pi", "agents");
+		writeFlow(
+			agentsDir,
+			"scout.md",
+			`---\nname: scout\ndescription: Discovery\ntools: batch bash find grep ls web\n---\nScout prompt.`,
+		);
+
+		const result = discoverFlows(tmpDir, "project");
+		const scout = result.flows.find((f) => f.name === "scout");
+		expect(scout?.tools).toEqual(["batch", "bash", "find", "grep", "ls", "web"]);
+	});
+
+	it("parses comma-separated tools from frontmatter correctly", () => {
+		const agentsDir = path.join(tmpDir, ".pi", "agents");
+		writeFlow(
+			agentsDir,
+			"audit.md",
+			`---\nname: audit\ndescription: Audit\ntools: batch, bash, find, grep, ls, web\n---\nAudit prompt.`,
+		);
+
+		const result = discoverFlows(tmpDir, "project");
+		const audit = result.flows.find((f) => f.name === "audit");
+		expect(audit?.tools).toEqual(["batch", "bash", "find", "grep", "ls", "web"]);
+	});
+
+	it("parses mixed comma-and-space separated tools from frontmatter correctly", () => {
+		const agentsDir = path.join(tmpDir, ".pi", "agents");
+		writeFlow(
+			agentsDir,
+			"build.md",
+			`---\nname: build\ndescription: Build\ntools: batch, bash find, grep ls, web\n---\nBuild prompt.`,
+		);
+
+		const result = discoverFlows(tmpDir, "project");
+		const build = result.flows.find((f) => f.name === "build");
+		expect(build?.tools).toEqual(["batch", "bash", "find", "grep", "ls", "web"]);
+	});
+
+	it("parses bundled build flow tools without duplication", () => {
+		const result = discoverFlows(tmpDir, "bundled");
+		const build = result.flows.find((f) => f.name === "build");
+		expect(build).toBeDefined();
+		expect(build?.tools).toEqual(["batch", "bash", "find", "grep", "ls", "web"]);
+	});
 });
 
 describe("getFlowTier", () => {

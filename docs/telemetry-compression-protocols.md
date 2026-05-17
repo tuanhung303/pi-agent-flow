@@ -11,11 +11,16 @@ author: craft flow
 
 The shared context passed from parent to child flows is a sanitized JSONL snapshot. The sanitization pipeline in `src/snapshot/snapshot.ts` already achieves ~99% compression for many artifacts (reasoning stripping, API metadata removal, flow result truncation, read content stripping). [V] Verified against `tests/snapshot-compress.test.ts` and `docs/dump-artifacts/ANALYSIS.md`.
 
-The remaining gap is in **batch tool result compression** and **cross-turn deduplication**. Currently:
+The following protocols are implemented in `compressBatchResult` and `compressToolResults`:
 
-- `compressBatchResult` (`snapshot.ts:176–265`) truncates file reads but keeps **bash stdout/stderr, edit headers, write headers, delete headers, and rg output verbatim**.
-- `compressWebResult` (`snapshot.ts:267–306`) compresses a single web result to one line, but **does not deduplicate** if the same query is issued across multiple turns.
-- **No cross-turn deduplication** exists for writes, edits, deletes, or web queries. If `src/index.ts` is edited three times, all three edit headers survive into the child snapshot.
+- **X1** — Bash stdout/stderr compression into compact status lines.
+- **W1** — Cross-turn write deduplication (latest per file kept).
+- **E1** — Cross-turn edit deduplication (latest per file kept).
+- **Q1** — Cross-turn web query deduplication (latest per query/URL kept).
+- **R1** — rg output compression with match/file counts.
+- **Read Preview** — At depth 1, read results preserve first/last 2 lines; at depth 2+, header-only truncation.
+- **F1** — Flow tool call argument compression.
+- **C1** — Low-signal assistant message collapsing.
 
 [V] The archived dump artifacts in `docs/dump-artifacts/` consist primarily of `flow` tool results; batch tool results are not present in those files. The before/after examples below are drawn from the test suite (`tests/snapshot-compress.test.ts`) and the verified output formats in `src/batch/execute.ts` and `src/batch/index.ts`.
 
@@ -337,9 +342,15 @@ This shows how X1 composes with the **existing** snapshot compression (`compress
 ```
 4 operations: 2 read, 1 write, 1 bash
 
---- src/config.ts (45 lines, content truncated) ---
+--- src/config.ts (45 lines) ---
+export function init() { ... }
+// 43 more lines ...
+export default init;
 
---- src/core/flow.ts (128 lines, content truncated) ---
+--- src/core/flow.ts (128 lines) ---
+import { run } from './runner';
+// 126 more lines ...
+export type FlowConfig = { ... };
 
 --- write: src/config.ts (1234 bytes) ---
 
@@ -354,11 +365,17 @@ Tests: 42 passed, 42 total
 ```
 4 operations: 2 read, 1 write, 1 bash
 
---- src/config.ts (45 lines, content truncated) ---
+--- src/config.ts (45 lines, preview) ---
+export function init() { ... }
+[...43 lines truncated...]
+export default init;
 
---- src/core/flow.ts (128 lines, content truncated) ---
+--- src/core/flow.ts (128 lines, preview) ---
+import { run } from './runner';
+[...126 lines truncated...]
+export type FlowConfig = { ... };
 
---- write: src/config.ts (1234 bytes) ---
+[batch:write] src/config.ts (1234 bytes)
 
 [bash:ok] npm-test-xyz · exit 0 · 3.4s (avg) · 4 lines
 > head:
@@ -375,15 +392,15 @@ Tests: 42 passed, 42 total
 
 --- src/core/flow.ts (128 lines, content truncated) ---
 
---- write: src/config.ts (1234 bytes) ---
+[batch:write] src/config.ts
 
 [bash:ok] npm-test-xyz · exit 0
 ```
 
 ### Deduplication Rules
 - **Key:** `bashId` (the `i` field from the batch arguments, present in `--- bash [id] ...` delimiters).
-- Bash IDs are typically unique per `batch` call. Cross-turn bash deduplication is **not yet implemented**; each bash section is compressed independently.
-- `batch_bash_poll` results are out of scope for X1; they pass through a separate tool and should be addressed by a future `batch_bash_poll` compression pass.
+- Cross-turn bash deduplication is handled by **B1** (see below). Within a single turn, each bash section is compressed independently by X1.
+- `batch_bash_poll` results are compressed by the **S4** protocol and participate in B1 cross-turn dedup via the same `bashId` → normalized command mapping.
 
 ### Fallback Behavior
 - If the `--- bash [id] ...` pattern does not match, the line is preserved verbatim.
@@ -396,6 +413,107 @@ Tests: 42 passed, 42 total
 | 1000-line bash output | ~2500 tokens | ~12 tokens (depth 1) / ~6 tokens (depth 2+) | ~99.5% |
 | 50-line bash output | ~125 tokens | ~12 tokens | ~90% |
 | Pending bash (no change in size) | ~15 tokens | ~8 tokens | ~45% |
+
+---
+
+## B1 — Cross-Turn Bash Deduplication Protocol
+
+### Purpose
+Eliminate redundant bash execution history for the same command across turns. A child flow only needs to know the final result of a command, not every prior execution. B1 extends X1 by tracking which bash commands have been re-run and collapsing or dropping earlier results.
+
+[V] Verified in `tests/snapshot-compress.test.ts` under the `compressToolResults — B1 cross-turn bash dedup` suite.
+
+### How It Works
+1. **Pre-scan (`buildDedupIndex`):** For every `batch` tool call, extract bash operations from the arguments (`o`/`op` array). Normalize each command string (`trim` + collapse whitespace) and build two maps:
+   - `bashIdToCommand`: `bashId` → `normalizedCommand`
+   - `latestBash`: `normalizedCommand` → `latestBashId`
+2. **Emit (`compressBatchResult` + `compressBatchBashPollResult`):** When compressing a bash section or poll result, look up the section's `bashId` in `bashIdToCommand` to get its normalized command. If `latestBash` points to a *different* `bashId` for that command, this section is superseded.
+
+### Formats
+
+**Depth 1 — superseded batch bash (breadcrumb):**
+```
+[bash:ok] abc123 (superseded)
+```
+
+**Depth 1 — superseded poll result (breadcrumb):**
+```
+[bash:poll] abc123 (superseded)
+```
+
+**Depth 2+ — superseded bash/poll:**
+Dropped entirely (no breadcrumb). Only the latest execution survives.
+
+**Fully collapsed batch (all sections superseded or truncated):**
+```
+[batch] 3 ops (all superseded or truncated by later operations)
+```
+
+### Deduplication Rules
+- **Key:** normalized command string (`normalizeBashCommand(cmd)` = `cmd.trim().replace(/\s+/g, " ")`).
+- **Scope:** Cross-turn only. The latest execution of a given normalized command anywhere in the snapshot wins.
+- **Poll integration:** `batch_bash_poll` results are checked against the same index. If the polled `bashId` maps to a command that was later re-executed, the poll result is also superseded.
+- **Intra-batch:** If a single `batch` call contains multiple bash ops with the same normalized command, the last one in that call's argument array wins (because `latestBash` is overwritten during the pre-scan).
+- **Missing mapping:** If a bash section's `bashId` is not found in `bashIdToCommand` (e.g., the original batch call args are absent from the snapshot), the section is kept verbatim — never guessed as superseded.
+
+### Fallback Behavior
+- If `bashIdToCommand` or `latestBash` maps are missing, B1 is disabled and all bash sections are compressed normally by X1.
+- Error-status bash sections are NOT exempt from B1; the latest result (success or error) is always the authoritative one.
+- If a `batch_bash_poll` references a `bashId` that has no mapping, the poll result is kept.
+
+### Estimated Token Savings
+| Scenario | Current (X1 only) | B1 | Savings |
+|---|---|---|---|
+| Same command run 3 times across turns | ~36 tokens (3 compressed lines) | ~12 tokens (1 kept + 2 superseded) | ~67% |
+| 3 runs at depth 2+ (all dropped) | ~18 tokens (3 status lines) | ~6 tokens (1 latest only) | ~67% |
+| Poll result for superseded bash | ~10 tokens | ~4 tokens (breadcrumb) / 0 tokens (depth 2+) | ~60–100% |
+
+---
+
+## Read Preview Protocol
+
+### Purpose
+Preserve actionable file content for child flows at depth 1 while stripping full content at depth 2+. A child at depth 1 may need the first few lines (imports, exports, function signatures) and last few lines (closing braces, exports) to orient itself without re-reading the file.
+
+### Format
+
+**Depth 1 — reads with line count:**
+```
+--- src/config.ts (45 lines, preview) ---
+export function init() { ... }
+[...43 lines truncated...]
+export default init;
+```
+
+**Depth 1 — reads without line count:**
+```
+--- src/config.ts (preview) ---
+export function init() { ... }
+[...43 lines truncated...]
+export default init;
+```
+
+**Depth 2+ — header only:**
+```
+--- src/config.ts (45 lines, content truncated) ---
+```
+
+### Rules
+- If the file content is **≤ 4 lines**, emit all lines without a truncation marker.
+- If the file content is **> 4 lines**, emit the **first 2 lines**, a `[...N lines truncated...]` marker, and the **last 2 lines**.
+- Reads matched by `--- read: <path> ---` (error reads) are kept verbatim and are not truncated.
+- Context maps and file summaries (`--- path context map ---`) are always truncated to header-only regardless of depth.
+
+### Fallback Behavior
+- If the read section regex fails to match, the line passes through unchanged.
+- If content parsing encounters an unrecognized section header mid-content, parsing stops at that header.
+
+### Estimated Token Savings
+| Scenario | Current | Preview | Savings |
+|---|---|---|---|
+| 45-line read | ~45 tokens | ~8 tokens | ~82% |
+| 128-line read | ~128 tokens | ~8 tokens | ~94% |
+| 4-line read (no truncation) | ~4 tokens | ~4 tokens | 0% |
 
 ---
 
@@ -412,31 +530,23 @@ Deduplicate web search and fetch results across turns. The current `compressWebR
 
 If the same query appears in turn 2, turn 4, and turn 6, the child sees three lines.
 
-### Current Format (after — compression only, no dedup)
+### Current Format (after — compression + dedup)
 ```
 [web:search] "node.js streams" · 2 results · first: Node.js Streams
 ```
 
-### Proposed Future Work (Q1 dedup — not yet implemented)
-**Superseded query (breadcrumb):**
+**Superseded query (breadcrumb at depth 1):**
 ```
 [web:search] "node.js streams" (superseded by later search)
 ```
 
 **Depth 2+ — query list only:**
-Instead of individual lines, emit a single rolled-up line:
 ```
-[web] 3 unique searches · queries: node.js streams, vitest migration, typescript enums
-```
-
-Or, if the snapshot contains many web queries:
-```
-[web] 7 unique queries (3 searches, 4 fetches) · see latest per query below
+[web] 3 unique queries (3 searches, 0 fetches) · latest per query below
 [web:search] "node.js streams" · 2 results · first: Node.js Streams
-[web:fetch] https://example.com · "Example" · 4200 chars
 ```
 
-### Deduplication Rules (Proposed)
+### Deduplication Rules
 - **Search key:** normalized query string (`q` field), lowercased and trimmed.
 - **Fetch key:** normalized URL (`u` field), stripped of trailing slash and query params.
 - **Keep only the latest result** per key.
@@ -496,24 +606,30 @@ interface CompressToolResultsOptions {
   depth?: number; // 1 = moderate compression, 2+ = maximum compression
 }
 
-// Internal dedup index built during pre-scan (W1 + E1 + Q1)
+// Internal dedup index built during pre-scan (W1 + E1 + Q1 + B1)
 interface DedupIndex {
   latestWrite: Map<string, string>;      // normPath → toolCallId
   latestEdit: Map<string, string>;       // normPath → toolCallId
   latestDelete: Map<string, string>;     // normPath → toolCallId
   latestWebSearch: Map<string, string>;   // normQuery → toolCallId
   latestWebFetch: Map<string, string>;    // normUrl → toolCallId
+  latestAskUser: Map<string, string>;     // normQuestion → toolCallId
+  bashIdToCommand: Map<string, string>;   // bashId → normalizedCommand
+  latestBash: Map<string, string>;        // normalizedCommand → latestBashId
 }
 
 // Enhanced compressBatchResult signature
 function compressBatchResult(
   text: string,
   options?: {
-    depth?: number;
-    supersededWrites?: Set<string>;
-    supersededEdits?: Set<string>;
-    supersededDeletes?: Set<string>;
-    supersededBashes?: Set<string>;
+    depthPolicy?: DepthPolicy;
+    toolCallId?: string;
+    latestWrite?: Map<string, string>;
+    latestEdit?: Map<string, string>;
+    latestDelete?: Map<string, string>;
+    bashIdToCommand?: Map<string, string>;
+    latestBash?: Map<string, string>;
+    cwd?: string;
   }
 ): string;
 ```
@@ -535,6 +651,110 @@ These tokens are:
 
 ---
 
+## F1 — Flow Tool Call Argument Compression
+
+### Purpose
+Replace verbose `flow` tool call arguments in assistant messages with a compact summary. The child flow already receives its own `-p` activation prompt, so the full mission text inside the JSONL assistant message is pure duplication.
+
+### Current Format (before)
+```json
+{
+  "type": "toolCall",
+  "name": "flow",
+  "arguments": {
+    "flow": [
+      {
+        "type": "build",
+        "aim": "Clean workspace and generate fresh dumps",
+        "steps": ["step1", "step2", "step3", "step4", "step5", "step6"]
+      }
+    ]
+  }
+}
+```
+
+### Proposed Format (after)
+```json
+{
+  "type": "toolCall",
+  "name": "flow",
+  "arguments": {
+    "type": "build",
+    "aim": "Clean workspace and generate fresh dumps",
+    "steps": 6
+  }
+}
+```
+
+### Compression Rules
+- Extract `type`, `aim`, and `steps` (count) from the first element of `arguments.flow` array.
+- If `arguments.flow` is missing, empty, or the first element lacks all three fields, pass through unchanged.
+- `toolCallId`, `id`, and `name` are preserved exactly.
+- Multiple `flow` tool calls in a single assistant message are compressed independently.
+
+### Fallback Behavior
+- Non-flow tool calls pass through unchanged.
+- Malformed arguments (non-object, null) pass through unchanged.
+
+### Estimated Token Savings
+| Scenario | Current | F1 | Savings |
+|---|---|---|---|
+| Typical flow mission (200 chars) | ~50 tokens | ~8 tokens | ~84% |
+| Large flow with 10 steps | ~80 tokens | ~10 tokens | ~87% |
+
+---
+
+## C1 — Low-Signal Assistant Message Collapsing
+
+### Purpose
+Remove empty or low-signal assistant continuation messages that carry no actionable information. These messages bloat the context with noise like "Okay, I will proceed with that."
+
+### Criteria for Collapse
+An assistant message is collapsed when **all** of the following are true:
+- No tool calls present (`type: "toolCall"` parts).
+- Total text length < 300 characters.
+- No actionable markers: `[` (tool references), `` ` `` (code blocks), or `/` (file paths).
+
+### Current Format (before)
+```json
+{
+  "role": "assistant",
+  "content": [{ "type": "text", "text": "Okay, I will proceed with that." }],
+  "usage": { "totalTokens": 42, "input": 10, "output": 32 }
+}
+```
+
+### Proposed Format (after)
+```json
+{
+  "role": "assistant",
+  "content": "[assistant: 42 tokens, no action]",
+  "usage": { "totalTokens": 42 }
+}
+```
+
+If `totalTokens` is unknown:
+```json
+{
+  "role": "assistant",
+  "content": "[assistant:continuation]"
+}
+```
+
+### Conservation Rules
+- `usage.totalTokens` is preserved if present; all other `usage` fields are stripped.
+- `parentId` (both entry-level and message-level) is never modified.
+- Messages with tool calls are never collapsed, even if the text is short.
+- Messages at exactly 300 characters are **not** collapsed (strict `< 300` boundary).
+
+### Estimated Token Savings
+| Scenario | Current | C1 | Savings |
+|---|---|---|---|
+| Empty continuation message | ~12 tokens | ~4 tokens | ~67% |
+| Low-signal "I agree" message with usage | ~20 tokens | ~6 tokens | ~70% |
+
+---
+
 # Depth Behavior Matrix
 
 | Protocol | Depth 1 | Depth 2+ |
@@ -542,7 +762,11 @@ These tokens are:
 | **W1 (Write)** | `[batch:write] path (bytes)` | `[batch:write] path` |
 | **E1 (Edit)** | `[batch:edit] path (blocks)` | `[batch:edit] path` |
 | **X1 (Bash)** | `[bash:ok] id · exit N · tier · lines`<br>+ 3-line preview | `[bash:ok] id · exit N` |
-| **Q1 (Web)** | Individual compressed lines | Rolled-up `[web] N unique queries` list *(future work)* |
+| **B1 (Bash dedup)** | Superseded bash kept as `[bash:ok] id (superseded)` breadcrumb | Superseded bash dropped entirely; only latest command kept |
+| **F1 (Flow args)** | `{type, aim, steps}` compact object | Same (pass-agnostic) |
+| **C1 (Assistant collapse)** | `[assistant: N tokens, no action]` | `[assistant:continuation]` (no tokens known) |
+| **Read Preview** | `--- path (N lines, preview) ---` with first/last 2 lines | `--- path (N lines, content truncated) ---` header only |
+| **Q1 (Web)** | Individual compressed lines with superseded breadcrumbs | Rolled-up `[web] N unique queries` list at depth 2+ |
 
 ---
 
@@ -550,8 +774,9 @@ These tokens are:
 
 1. **Phase 1 (complete):** X1 bash compression — implemented and tested in `tests/snapshot-compress.test.ts`.
 2. **Phase 2 (complete):** W1 write dedup and E1 edit dedup — implemented and tested.
-3. **Phase 3 (future):** Q1 web query deduplication — lower-impact than bash compression but adds polish. Not yet implemented.
-4. **Rollback:** Each phase is a discrete function. If a phase causes regressions in child flows, it can be disabled by removing the relevant option pass or reverting to the previous `compressBatchResult` signature (the old function is a one-line fallback).
+3. **Phase 3 (complete):** Q1 web query deduplication — implemented and tested via `checkWebDedup` in `compressToolResults`.
+4. **Phase 4 (complete):** B1 cross-turn bash deduplication — implemented and tested. Supersedes prior bash executions (including `batch_bash_poll` results) when the same normalized command appears later in the snapshot.
+5. **Rollback:** Each phase is a discrete function. If a phase causes regressions in child flows, it can be disabled by removing the relevant option pass or reverting to the previous `compressBatchResult` signature (the old function is a one-line fallback).
 
 ---
 
@@ -569,8 +794,8 @@ These tokens are:
 
 # References
 
-- `src/snapshot/snapshot.ts` — `compressBatchResult` (`:176`), `compressWebResult` (`:267`), `compressToolResults` (`:350`), `sanitizeForkSnapshot` (`:681`)
+- `src/snapshot/snapshot.ts` — `compressBatchResult` (`:594`), `compressBatchBashPollResult` (`:1030`), `compressWebResult`, `compressToolResults` (`:1190`), `sanitizeForkSnapshot` (`:1550`)
 - `src/batch/execute.ts` — `buildContentText` (`:580`), `buildSummary` (`:636`)
 - `src/batch/index.ts` — bash result formatting (`:535–543`)
-- `tests/snapshot-compress.test.ts` — current compression behavior expectations
+- `tests/snapshot-compress.test.ts` — compression and dedup behavior expectations (X1, W1, E1, Q1, B1)
 - `docs/dump-artifacts/ANALYSIS.md` — dump artifact catalog and format evolution notes

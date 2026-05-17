@@ -39,9 +39,9 @@ export function formatFlowTypeName(type: string): string {
 
 /** Format tokens-per-second to a display string. */
 export function formatTps(value: number | undefined): string {
-	if (!value || value <= 0) return "-- tok/s";
-	if (value >= 100) return `${Math.round(value)} tok/s`;
-	return `${value.toFixed(1)} tok/s`;
+	if (!value || value <= 0) return "---- t/s";
+	if (value >= 100) return `${Math.round(value)} t/s`;
+	return `${value.toFixed(1)} t/s`;
 }
 
 export function italic(text: string): string {
@@ -57,7 +57,7 @@ export function formatCompactStats(
 	const tokenParts = [`▲ ${formatFixedTokens(usage.input || 0)}`];
 	let runtimeParts = [formatTps(usage.smoothedTps)];
 	if (!options.skipContext) {
-		runtimeParts.push(`ctx: ${formatFixedTokens(usage.contextTokens || 0)}`);
+		runtimeParts.push(formatFixedTokens(usage.contextTokens || 0));
 	}
 	const parts = options.skipTokens ? runtimeParts : [...tokenParts, ...runtimeParts];
 
@@ -69,7 +69,8 @@ export function formatCompactStats(
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
 		// Drop context tokens next.
-		const withoutContext = parts.filter((part) => !part.startsWith("ctx:"));
+		const tpsOnly = [formatTps(usage.smoothedTps)];
+		const withoutContext = options.skipTokens ? tpsOnly : [...tokenParts, ...tpsOnly];
 		narrow = withoutContext.join(" - ");
 		if (visibleLength(narrow) <= maxWidth) return narrow;
 
@@ -101,8 +102,8 @@ export function formatModelLabel(model: string | undefined, maxTail: number = 10
 	if (!model) return "";
 	const parts = model.split("/");
 	if (parts.length < 2) return model.toLowerCase();
-	const provider = parts[1];
-	const modelPath = parts.slice(2).join("/").toLowerCase();
+	const provider = parts[0];
+	const modelPath = parts.slice(1).join("/").toLowerCase();
 	const shortened = modelPath.length > maxTail ? "..." + modelPath.slice(-maxTail) : modelPath;
 	return `${provider}/${shortened}`;
 }
@@ -112,6 +113,16 @@ export function formatCountdownRemaining(deadlineAtMs?: number): string | undefi
 	const remaining = deadlineAtMs - Date.now();
 	if (remaining < 0) return undefined;
 	return formatCountdown(remaining);
+}
+
+export function formatContextLabel(ctxTokens: number, maxCtxTokens?: number): string {
+	if (maxCtxTokens === undefined) {
+		return formatFixedTokens(ctxTokens).trim();
+	}
+	if (ctxTokens === 0) {
+		return `-----/${formatFixedTokens(maxCtxTokens).trim()}`;
+	}
+	return `${formatFixedTokens(ctxTokens).trim()}/${formatFixedTokens(maxCtxTokens).trim()}`;
 }
 
 /** Regex matching ANSI escape sequences. */

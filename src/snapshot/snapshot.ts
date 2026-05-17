@@ -2,8 +2,7 @@
  * Two JSONL protocols are used in this codebase:
  *
  * 1. Fork Snapshot Protocol (snapshot.ts):
- *    Types: session, model_change, thinking_level_change, system, message,
- *           compression-stats
+ *    Types: session, model_change, thinking_level_change, message
  *    Purpose: Serialized session state passed to child flows via --session.
  *              Emitted by buildForkSessionSnapshotJsonl() and consumed by
  *              sanitizeForkSnapshot() before forking.
@@ -22,7 +21,7 @@
  * Extracted from index.ts for single-responsibility and testability.
  */
 
-import type { CompressedFlowResult } from "../types/output.js";
+import type { CompressedFlowResult, DepthPolicy } from "../types/output.js";
 import { stripReasoningFromAssistantMessage } from "./reasoning-strip.js";
 import {
 	stripSteeringHintFromContent,
@@ -31,6 +30,7 @@ import {
 } from "../steering/sliding-prompt.js";
 import { stripStrategicHintsFromContent } from "../steering/tool-utils.js";
 import { logError } from "../config/log.js";
+import * as path from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,22 +127,6 @@ interface MessageEntry {
 	[key: string]: unknown;
 }
 
-/** A system prompt event entry. */
-interface SystemEntry {
-	type: "system";
-	content: string;
-	[key: string]: unknown;
-}
-
-/** A compression-stats telemetry entry. */
-interface CompressionStatsEntry {
-	type: "compression-stats";
-	preBytes: number;
-	postBytes: number;
-	reductionPercent: number;
-	passesApplied: string[];
-}
-
 /** Config change entries that are dropped during sanitization. */
 interface ConfigEntry {
 	type: "model_change" | "thinking_level_change";
@@ -189,6 +173,26 @@ export function buildForkSessionSnapshotJsonl(
 	const header = sessionManager.getHeader();
 	if (!header || typeof header !== "object") return null;
 
+	// Compress cwd in session header: relative to repo root if under it,
+	// otherwise basename only. Saves ~50-100 bytes per snapshot.
+	const repoRoot = process.cwd();
+	let compressedHeader = header as SessionEntry;
+	if (typeof compressedHeader.cwd === "string") {
+		const cwd = compressedHeader.cwd;
+		let compressedCwd: string;
+		if (cwd === repoRoot) {
+			compressedCwd = ".";
+		} else if (cwd.startsWith(repoRoot + "/") || cwd.startsWith(repoRoot + "\\")) {
+			compressedCwd = cwd.slice(repoRoot.length + 1);
+		} else {
+			const lastSep = Math.max(cwd.lastIndexOf("/"), cwd.lastIndexOf("\\"));
+			compressedCwd = lastSep >= 0 ? cwd.slice(lastSep + 1) : cwd;
+		}
+		if (compressedCwd !== cwd) {
+			compressedHeader = { ...compressedHeader, cwd: compressedCwd };
+		}
+	}
+
 	const branchEntries = sessionManager.getBranch();
 	const lines: string[] = [];
 
@@ -204,14 +208,7 @@ export function buildForkSessionSnapshotJsonl(
 		(firstType !== "session" && firstType !== "header") ||
 		firstId !== headerId
 	) {
-		lines.push(JSON.stringify(header));
-	}
-
-	// Emit system event so the JSONL is self-contained — parsers can reconstruct
-	// full context without needing the markdown section.
-	const systemPrompt = (header as SessionEntry).systemPrompt;
-	if (typeof systemPrompt === "string" && systemPrompt) {
-		lines.push(JSON.stringify({ type: "system", content: systemPrompt }));
+		lines.push(JSON.stringify(compressedHeader));
 	}
 
 	for (const entry of branchEntries) lines.push(JSON.stringify(entry));
@@ -316,6 +313,12 @@ function isKnownSectionHeader(line: string): boolean {
 }
 
 /** Compress a single bash block into the X1 compact format. */
+/** Convert legacy depth number to DepthPolicy. */
+export function depthToPolicy(depth: number): DepthPolicy {
+	const isDepth1 = depth < 2;
+	return { showPreviews: isDepth1, showBytes: isDepth1, showSupersededBreadcrumbs: isDepth1, showEditBlocks: isDepth1 };
+}
+
 function compressBashSection(
 	bashId: string,
 	status: "ok" | "pending" | "error",
@@ -323,9 +326,9 @@ function compressBashSection(
 	timingTier: string | undefined,
 	stdoutLines: string[],
 	stderrLines: string[],
-	depth: number,
+	policy: DepthPolicy,
 ): string {
-	const isDepth1 = depth < 2;
+	const isDepth1 = policy.showPreviews;
 	const tier = timingTier ? ` · ${timingTier}` : "";
 	// Trim trailing empty lines inserted by multi-bash formatting
 	while (stdoutLines.length > 0 && stdoutLines[stdoutLines.length - 1] === "") stdoutLines.pop();
@@ -385,8 +388,31 @@ interface DedupIndex {
 	latestDelete: Map<string, string>;
 	latestWebSearch: Map<string, string>;
 	latestWebFetch: Map<string, string>;
+	latestAskUser: Map<string, string>;
+	bashIdToCommand: Map<string, string>;
+	latestBash: Map<string, string>;
 }
 
+
+/**
+ * Normalize a bash command string for use as a dedup key.
+ */
+function normalizeBashCommand(cmd: string): string {
+	return cmd.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Normalize a file path for use as a dedup key.
+ */
+function normalizeDedupPath(rawPath: string, cwd: string): string {
+	let p = rawPath.replace(/\\/g, "/");
+	if (p.startsWith("./")) {
+		p = p.slice(2);
+	}
+	p = path.resolve(cwd, p);
+	p = path.normalize(p);
+	return p;
+}
 
 /**
  * Scan all batch tool results in the snapshot and build a DedupIndex.
@@ -396,12 +422,17 @@ function buildDedupIndex(
 	lines: string[],
 	toolCallIdToName: Map<string, string>,
 	toolCallIdToArgs: Map<string, unknown>,
+	sessionCwd?: string,
 ): DedupIndex {
+	const cwd = sessionCwd ?? process.cwd();
 	const latestWrite = new Map<string, string>();
 	const latestEdit = new Map<string, string>();
 	const latestDelete = new Map<string, string>();
 	const latestWebSearch = new Map<string, string>();
 	const latestWebFetch = new Map<string, string>();
+	const latestAskUser = new Map<string, string>();
+	const bashIdToCommand = new Map<string, string>();
+	const latestBash = new Map<string, string>();
 
 	for (const line of lines) {
 		let entry: SnapshotEntry;
@@ -422,9 +453,9 @@ function buildDedupIndex(
 			// Successful write
 			const writeMatch = l.match(/^--- write: (.+) \((\d+) bytes\) ---$/);
 			if (writeMatch) {
-				const path = writeMatch[1].trim();
-				latestWrite.set(path, toolCallId);
-				latestEdit.delete(path); // write supersedes earlier edits
+				const normPath = normalizeDedupPath(writeMatch[1].trim(), cwd);
+				latestWrite.set(normPath, toolCallId);
+				latestEdit.delete(normPath); // write supersedes earlier edits
 				continue;
 			}
 
@@ -437,8 +468,8 @@ function buildDedupIndex(
 			// Successful edit
 			const editMatch = l.match(/^--- edit: (.+) \(([^)]*)\) ---$/);
 			if (editMatch) {
-				const path = editMatch[1].trim();
-				latestEdit.set(path, toolCallId);
+				const normPath = normalizeDedupPath(editMatch[1].trim(), cwd);
+				latestEdit.set(normPath, toolCallId);
 				continue;
 			}
 
@@ -451,12 +482,49 @@ function buildDedupIndex(
 			// Delete
 			const deleteMatch = l.match(/^--- delete: (.+) ---$/);
 			if (deleteMatch) {
-				const path = deleteMatch[1].trim();
-				latestDelete.set(path, toolCallId);
-				latestWrite.delete(path); // delete supersedes earlier writes
-				latestEdit.delete(path);   // delete supersedes earlier edits
+				const normPath = normalizeDedupPath(deleteMatch[1].trim(), cwd);
+				latestDelete.set(normPath, toolCallId);
+				latestWrite.delete(normPath); // delete supersedes earlier writes
+				latestEdit.delete(normPath);   // delete supersedes earlier edits
 			}
 		}
+
+		// B1: Extract bash commands from batch args for cross-turn dedup
+		const args = toolCallIdToArgs.get(toolCallId);
+		if (args && typeof args === "object") {
+			const a = args as Record<string, unknown>;
+			const ops = Array.isArray(a.o) ? a.o : Array.isArray(a.op) ? a.op : undefined;
+			if (ops) {
+				for (const op of ops) {
+					if (op && typeof op === "object") {
+						const opObj = op as Record<string, unknown>;
+						if (opObj.o === "bash" || opObj.op === "bash") {
+							const cmd = typeof opObj.c === "string" ? opObj.c : "";
+							const id = typeof opObj.i === "string" ? opObj.i : "";
+							if (cmd && id) {
+								const normCmd = normalizeBashCommand(cmd);
+								bashIdToCommand.set(id, normCmd);
+								latestBash.set(normCmd, id);
+							}
+						}
+					}
+				}
+			}
+		}
+		}
+
+		// Ask_user tool results — build A1 dedup index
+		if (toolName === "ask_user") {
+			const args = toolCallIdToArgs.get(toolCallId);
+			if (args && typeof args === "object") {
+				const question = (args as Record<string, unknown>).question;
+				if (typeof question === "string") {
+					const norm = question.trim().toLowerCase().slice(0, 120);
+					if (norm) {
+						latestAskUser.set(norm, toolCallId);
+					}
+				}
+			}
 		}
 
 		// Web tool results — build Q1 dedup index
@@ -478,7 +546,7 @@ function buildDedupIndex(
 		}
 	}
 
-	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch };
+	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch, latestAskUser, bashIdToCommand, latestBash };
 }
 
 /** Check if a web tool result is superseded by a later result with the same query or URL. */
@@ -527,16 +595,19 @@ function checkWebDedup(
 function compressBatchResult(
 	text: string,
 	options: {
-		depth?: number;
+		depthPolicy?: DepthPolicy;
 		toolCallId?: string;
 		latestWrite?: Map<string, string>;
 		latestEdit?: Map<string, string>;
 		latestDelete?: Map<string, string>;
+		bashIdToCommand?: Map<string, string>;
+		latestBash?: Map<string, string>;
+		cwd?: string;
 	} = {},
 ): string {
-	const depth = options.depth ?? 1;
-	const isDepth1 = depth < 2;
-	const { toolCallId, latestWrite, latestEdit, latestDelete } = options;
+	const policy = options.depthPolicy ?? depthToPolicy(1);
+	const { toolCallId, latestWrite, latestEdit, latestDelete, bashIdToCommand, latestBash } = options;
+	const cwd = options.cwd ?? process.cwd();
 
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
 
@@ -548,33 +619,33 @@ function compressBatchResult(
 	const lastDeleteIndex = new Map<string, number>();
 	for (let j = 0; j < lines.length; j++) {
 		const w = lines[j].match(/^--- write: (.+) \((\d+) bytes\) ---$/);
-		if (w) lastWriteIndex.set(w[1].trim(), j);
+		if (w) lastWriteIndex.set(normalizeDedupPath(w[1].trim(), cwd), j);
 		const e = lines[j].match(/^--- edit: (.+) \(([^)]*)\) ---$/);
-		if (e) lastEditIndex.set(e[1].trim(), j);
+		if (e) lastEditIndex.set(normalizeDedupPath(e[1].trim(), cwd), j);
 		const d = lines[j].match(/^--- delete: (.+) ---$/);
-		if (d) lastDeleteIndex.set(d[1].trim(), j);
+		if (d) lastDeleteIndex.set(normalizeDedupPath(d[1].trim(), cwd), j);
 	}
 
 	const out: string[] = [];
 	let i = 0;
 
-	const isSupersededWrite = (path: string, index: number) => {
+	const isSupersededWrite = (normPath: string, index: number) => {
 		if (!toolCallId) return false;
-		const latestTc = latestWrite?.get(path);
+		const latestTc = latestWrite?.get(normPath);
 		if (latestTc !== toolCallId) return true;
-		return lastWriteIndex.get(path) !== index;
+		return lastWriteIndex.get(normPath) !== index;
 	};
-	const isSupersededEdit = (path: string, index: number) => {
+	const isSupersededEdit = (normPath: string, index: number) => {
 		if (!toolCallId) return false;
-		const latestTc = latestEdit?.get(path);
+		const latestTc = latestEdit?.get(normPath);
 		if (latestTc !== toolCallId) return true;
-		return lastEditIndex.get(path) !== index;
+		return lastEditIndex.get(normPath) !== index;
 	};
-	const isSupersededDelete = (path: string, index: number) => {
+	const isSupersededDelete = (normPath: string, index: number) => {
 		if (!toolCallId) return false;
-		const latestTc = latestDelete?.get(path);
+		const latestTc = latestDelete?.get(normPath);
 		if (latestTc !== toolCallId) return true;
-		return lastDeleteIndex.get(path) !== index;
+		return lastDeleteIndex.get(normPath) !== index;
 	};
 
 	while (i < lines.length) {
@@ -587,11 +658,6 @@ function compressBatchResult(
 			const rawStatus = bashMatch[2];
 			const status: "ok" | "pending" | "error" = rawStatus.startsWith("exit") ? "ok" : rawStatus as "pending" | "error";
 			const exitCode = bashMatch[3] !== undefined ? Number(bashMatch[3]) : undefined;
-			i++;
-			let timingTier: string | undefined;
-			const stdoutLines: string[] = [];
-			let stderrLines: string[] = [];
-			let inStderr = false;
 			// Stricter section-end check for bash content: don't treat generic
 			// `--- text ---` lines as section headers (they could be bash output).
 			const isBashSectionEnd = (l: string) =>
@@ -603,6 +669,27 @@ function compressBatchResult(
 				/^--- delete: .+ ---$/.test(l) ||
 				/^--- read: .+ ---$/.test(l) ||
 				/^--- rg: .+ ---$/.test(l);
+
+			// B1 cross-turn bash dedup
+			const normCmd = bashIdToCommand?.get(bashId);
+			const isSupersededBash = normCmd ? latestBash?.get(normCmd) !== bashId : false;
+			if (isSupersededBash) {
+				if (policy.showSupersededBreadcrumbs) {
+					const statusTag = status === "ok" ? "ok" : status === "pending" ? "pending" : "err";
+					out.push(`[bash:${statusTag}] ${bashId} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isBashSectionEnd(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+
+			i++;
+			let timingTier: string | undefined;
+			const stdoutLines: string[] = [];
+			let stderrLines: string[] = [];
+			let inStderr = false;
 			while (i < lines.length && !isBashSectionEnd(lines[i])) {
 				const contentLine = lines[i];
 				const timingMatch = contentLine.match(/^\[Execution time: (.+)\]$/);
@@ -629,17 +716,79 @@ function compressBatchResult(
 			if (status === "error" && stderrLines.length === 0 && stdoutLines.length > 0) {
 				stderrLines = stdoutLines;
 			}
-			out.push(compressBashSection(bashId, status, exitCode, timingTier, stdoutLines, stderrLines, depth));
+			out.push(compressBashSection(bashId, status, exitCode, timingTier, stdoutLines, stderrLines, policy));
 			continue;
 		}
 
-		// File read section with content — truncate
+		// R1: rg output compression
+		const rgMatch = line.match(/^--- rg: (.+) ---$/);
+		if (rgMatch) {
+			const rgPath = rgMatch[1].trim();
+			i++;
+			const rgLines: string[] = [];
+			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+				rgLines.push(lines[i]);
+				i++;
+			}
+			// Trim trailing empty lines
+			while (rgLines.length > 0 && rgLines[rgLines.length - 1] === "") rgLines.pop();
+			const matchCount = rgLines.length;
+			// Detect error: batch tool outputs "Error: <msg>" for failed rg ops
+			const firstNonEmpty = rgLines.find((l) => l.trim() !== "");
+			const isError = firstNonEmpty?.startsWith("Error:") ?? false;
+			if (isError) {
+				const lineCount = rgLines.filter((l) => l.trim() !== "").length;
+				const linesLabel = lineCount === 1 ? "1 line" : `${lineCount} lines`;
+				out.push(`[rg:err] ${rgPath} · ${linesLabel}`);
+			} else if (matchCount === 0) {
+				out.push(`[rg:ok] ${rgPath} · 0 matches`);
+			} else {
+				// Extract unique file paths from rg output (format: path:line:content)
+				const fileSet = new Set(
+					rgLines
+						.map((l) => {
+							const colonIdx = l.indexOf(":");
+							return colonIdx > 0 ? l.slice(0, colonIdx) : "";
+						})
+						.filter(Boolean),
+				);
+				const fileCount = fileSet.size;
+				if (policy.showPreviews) {
+					const head = rgLines.slice(0, 3).join("\n");
+					out.push(`[rg:ok] ${rgPath} · ${matchCount} matches · ${fileCount} files\n> head:\n${head}`);
+				} else {
+					out.push(`[rg:ok] ${rgPath} · ${matchCount} matches · ${fileCount} files`);
+				}
+			}
+			i--; // will be incremented by loop
+			continue;
+		}
+
+		// File read section with content — preview or truncate
 		const readMatch = line.match(/^--- (.+) \((\d+) lines\) ---$/);
 		if (readMatch) {
-			out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, content truncated) ---`);
-			i++;
-			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+			if (policy.showPreviews) {
 				i++;
+				const contentLines: string[] = [];
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					contentLines.push(lines[i]);
+					i++;
+				}
+				const head = contentLines.slice(0, 2).join("\n");
+				const tail = contentLines.slice(-2).join("\n");
+				let previewText: string;
+				if (contentLines.length > 4) {
+					previewText = `${head}\n[...${contentLines.length - 4} lines truncated...]\n${tail}`;
+				} else {
+					previewText = contentLines.join("\n");
+				}
+				out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, preview) ---\n${previewText}`);
+			} else {
+				out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, content truncated) ---`);
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
 			}
 			continue;
 		}
@@ -655,14 +804,32 @@ function compressBatchResult(
 			continue;
 		}
 
-		// File read without line count — truncate
+		// File read without line count — preview or truncate
 		// Negative lookahead excludes bash/edit/write/delete/read-error sections that should be kept verbatim
 		const fallbackReadMatch = line.match(/^--- (?!bash \[|edit:|write:|delete:|read:)(.+) ---$/);
 		if (fallbackReadMatch) {
-			out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
-			i++;
-			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+			if (policy.showPreviews) {
 				i++;
+				const contentLines: string[] = [];
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					contentLines.push(lines[i]);
+					i++;
+				}
+				const head = contentLines.slice(0, 2).join("\n");
+				const tail = contentLines.slice(-2).join("\n");
+				let previewText: string;
+				if (contentLines.length > 4) {
+					previewText = `${head}\n[...${contentLines.length - 4} lines truncated...]\n${tail}`;
+				} else {
+					previewText = contentLines.join("\n");
+				}
+				out.push(`--- ${fallbackReadMatch[1]} (preview) ---\n${previewText}`);
+			} else {
+				out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
 			}
 			continue;
 		}
@@ -670,11 +837,12 @@ function compressBatchResult(
 		// Write section — W1 dedup and compression
 		const writeMatch = line.match(/^--- write: (.+) \((\d+) bytes\) ---$/);
 		if (writeMatch) {
-			const path = writeMatch[1].trim();
+			const rawPath = writeMatch[1].trim();
+			const normPath = normalizeDedupPath(rawPath, cwd);
 			const bytes = writeMatch[2];
-			if (isSupersededWrite(path, i)) {
-				if (isDepth1) {
-					out.push(`[batch:write] ${path} (superseded)`);
+			if (isSupersededWrite(normPath, i)) {
+				if (policy.showSupersededBreadcrumbs) {
+					out.push(`[batch:write] ${rawPath} (superseded)`);
 				}
 				i++;
 				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -682,10 +850,10 @@ function compressBatchResult(
 				}
 				continue;
 			}
-			if (isDepth1) {
-				out.push(`[batch:write] ${path} (${bytes} bytes)`);
+			if (policy.showBytes) {
+				out.push(`[batch:write] ${rawPath} (${bytes} bytes)`);
 			} else {
-				out.push(`[batch:write] ${path}`);
+				out.push(`[batch:write] ${rawPath}`);
 			}
 			i++;
 			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -709,11 +877,12 @@ function compressBatchResult(
 		// Edit section — E1 dedup and compression
 		const editMatch = line.match(/^--- edit: (.+) \(([^)]*)\) ---$/);
 		if (editMatch) {
-			const path = editMatch[1].trim();
+			const rawPath = editMatch[1].trim();
+			const normPath = normalizeDedupPath(rawPath, cwd);
 			const blockInfo = editMatch[2];
-			if (isSupersededEdit(path, i)) {
-				if (isDepth1) {
-					out.push(`[batch:edit] ${path} (superseded)`);
+			if (isSupersededEdit(normPath, i)) {
+				if (policy.showSupersededBreadcrumbs) {
+					out.push(`[batch:edit] ${rawPath} (superseded)`);
 				}
 				i++;
 				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -721,11 +890,11 @@ function compressBatchResult(
 				}
 				continue;
 			}
-			if (isDepth1) {
+			if (policy.showEditBlocks) {
 				const blocksLabel = blockInfo ? ` (${blockInfo})` : "";
-				out.push(`[batch:edit] ${path}${blocksLabel}`);
+				out.push(`[batch:edit] ${rawPath}${blocksLabel}`);
 			} else {
-				out.push(`[batch:edit] ${path}`);
+				out.push(`[batch:edit] ${rawPath}`);
 			}
 			i++;
 			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -749,10 +918,11 @@ function compressBatchResult(
 		// Delete section — keep existing format for non-superseded, skip superseded
 		const deleteMatch = line.match(/^--- delete: (.+) ---$/);
 		if (deleteMatch) {
-			const path = deleteMatch[1].trim();
-			if (isSupersededDelete(path, i)) {
-				if (isDepth1) {
-					out.push(`[batch:delete] ${path} (superseded)`);
+			const rawPath = deleteMatch[1].trim();
+			const normPath = normalizeDedupPath(rawPath, cwd);
+			if (isSupersededDelete(normPath, i)) {
+				if (policy.showSupersededBreadcrumbs) {
+					out.push(`[batch:delete] ${rawPath} (superseded)`);
 				}
 				i++;
 				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -772,6 +942,24 @@ function compressBatchResult(
 		// Everything else (summary, error generic, etc.) — keep as-is
 		out.push(line);
 		i++;
+	}
+
+	// B1: If every line in out is superseded or truncated noise, collapse to single summary
+	const meaningfulOut = out.filter((l) => l.trim() !== "");
+	// Single-pass rollup check: matches superseded breadcrumbs, truncated reads,
+	// and compact bash/rg lines. Equivalent to the previous multi-check logic.
+	const SUPERSEDED_OR_TRUNCATED_RE = /\(superseded\)|\(content truncated\)|\(context map, truncated\)|^\[bash:(ok|pending|err)\] |^\[bash:poll\] |^\[rg:(ok|err)\] /;
+	const isAllSupersededOrTruncated = meaningfulOut.length > 0 && meaningfulOut.every((l) => SUPERSEDED_OR_TRUNCATED_RE.test(l));
+	// At depth 2+, superseded writes/edits are dropped entirely (no breadcrumbs),
+	// leaving out empty. If the original text had only section headers and no
+	// summary or other kept content, rollup to a single line.
+	const meaningfulLines = lines.filter((l) => l.trim() !== "");
+	const allLinesWereSectionHeaders = meaningfulLines.length > 0 && meaningfulLines.every((l) => isKnownSectionHeader(l));
+	if (isAllSupersededOrTruncated || (allLinesWereSectionHeaders && meaningfulOut.length === 0)) {
+		const opCount = meaningfulLines.length > 0 ? String(meaningfulLines.length) : "0";
+		return policy.showSupersededBreadcrumbs
+			? `[batch] ${opCount} ops (all superseded or truncated by later operations)`
+			: `[batch] ${opCount} ops (superseded)`;
 	}
 
 	return out.join("\n");
@@ -839,6 +1027,117 @@ function compressAskUserResult(text: string, args?: unknown): string {
 	return `[ask_user] · ${text.length} chars`;
 }
 
+/** Compress batch_bash_poll tool result into compact metadata (S4 + B1). */
+function compressBatchBashPollResult(
+	text: string,
+	policy: DepthPolicy,
+	options?: {
+		bashIdToCommand?: Map<string, string>;
+		latestBash?: Map<string, string>;
+	},
+): string {
+	const lines = text.replace(/\r\n/g, "\n").split("\n");
+	const out: string[] = [];
+	let i = 0;
+	const isDepth1 = policy.showPreviews;
+	const isPollSectionEnd = (l: string) => /^--- \[.+\]/.test(l);
+
+	while (i < lines.length) {
+		const line = lines[i];
+		const completedMatch = line.match(/^--- \[([^\]]+)\] (exit (\d+)|interrupted) ---$/);
+		const pendingMatch = line.match(/^--- \[([^\]]+)\] still running ---$/);
+
+		if (completedMatch || pendingMatch) {
+			const id = (completedMatch ?? pendingMatch)![1];
+			const isCompleted = !!completedMatch;
+			const exitCode = completedMatch?.[3] !== undefined ? Number(completedMatch[3]) : undefined;
+
+			// B1 cross-turn bash dedup for poll results
+			const normCmd = options?.bashIdToCommand?.get(id);
+			const isSuperseded = normCmd ? options?.latestBash?.get(normCmd) !== id : false;
+			if (isSuperseded) {
+				if (policy.showSupersededBreadcrumbs) {
+					out.push(`[bash:poll] ${id} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isPollSectionEnd(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+
+			i++;
+			let timingTier: string | undefined;
+			const stdoutLines: string[] = [];
+			let stderrLines: string[] = [];
+			let inStderr = false;
+			while (i < lines.length && !isPollSectionEnd(lines[i])) {
+				const contentLine = lines[i];
+				const timingMatch = contentLine.match(/^\[Execution time: (.+)\]$/);
+				if (timingMatch) {
+					timingTier = timingMatch[1];
+				} else if (contentLine === "[stderr]") {
+					inStderr = true;
+				} else if (contentLine === "[output so far]") {
+					inStderr = false;
+				} else if (contentLine.trim() === "") {
+					// skip empty lines between sections
+				} else {
+					if (inStderr) {
+						stderrLines.push(contentLine);
+					} else {
+						stdoutLines.push(contentLine);
+					}
+				}
+				i++;
+			}
+			const tier = timingTier ? ` · ${timingTier}` : "";
+			if (isCompleted) {
+				const statusTag = exitCode !== undefined ? `exit ${exitCode}` : "interrupted";
+				const statusLabel = exitCode === 0 ? "ok" : "error";
+				if (statusLabel === "error" && stderrLines.length === 0 && stdoutLines.length > 0) {
+					stderrLines = stdoutLines;
+				}
+				const targetLines = statusLabel === "error" ? stderrLines : stdoutLines;
+				const lineCount = targetLines.length;
+				if (isDepth1) {
+					if (lineCount === 0) {
+						out.push(`[bash:poll] ${id} · ${statusTag}${tier} · 0 lines`);
+					} else {
+						const linesLabel = statusLabel === "error"
+							? (lineCount === 1 ? "1 line stderr" : `${lineCount} lines stderr`)
+							: (lineCount === 1 ? "1 line" : `${lineCount} lines`);
+						const headPrefix = statusLabel === "error" ? "> stderr:" : "> head:";
+						const head = targetLines.slice(0, 3).join("\n");
+						out.push(`[bash:poll] ${id} · ${statusTag}${tier} · ${linesLabel}\n${headPrefix}\n${head}`);
+					}
+				} else {
+					out.push(`[bash:poll] ${id} · ${statusTag}${tier}`);
+				}
+			} else {
+				const lineCount = stdoutLines.length;
+				const linesLabel = lineCount === 1 ? "1 line partial" : `${lineCount} lines partial`;
+				if (isDepth1) {
+					if (lineCount === 0) {
+						out.push(`[bash:poll] ${id} · still running · 0 lines partial`);
+					} else {
+						const head = stdoutLines.slice(0, 3).join("\n");
+						out.push(`[bash:poll] ${id} · still running · ${linesLabel}\n> head:\n${head}`);
+					}
+				} else {
+					out.push(`[bash:poll] ${id} · still running`);
+				}
+			}
+			continue;
+		}
+
+		out.push(line);
+		i++;
+	}
+
+	return out.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Shared: toolCallId → toolName mapping
 // ---------------------------------------------------------------------------
@@ -878,7 +1177,8 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
  * - `batch_read` results: replaced with compact metadata (paths + op count)
  *   since children have `batch` and can re-read files themselves.
  */
-export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>, depth: number = 1): string {
+export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>, depthPolicy?: DepthPolicy): string {
+	const policy = depthPolicy ?? depthToPolicy(1);
 	const lines = snapshot.trimEnd().split("\n");
 
 	// Quick check: if there are no flow cache entries and no compressible tool calls,
@@ -891,7 +1191,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					Array.isArray(entry.message.content) &&
 					entry.message.content.some((p: ContentPart) =>
 						p.type === "toolCall" &&
-						["batch_read", "batch", "web", "ask_user"].includes(p.name as string),
+						["batch_read", "batch", "web", "ask_user", "batch_bash_poll"].includes(p.name as string),
 					);
 			} catch { return false; }
 		});
@@ -925,8 +1225,21 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		}
 	}
 
+	// Extract session cwd from header for path normalization
+	let sessionCwd = process.cwd();
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { continue; }
+		if (entry?.type === "session" || entry?.type === "header") {
+			if (typeof entry.cwd === "string") {
+				sessionCwd = entry.cwd;
+				break;
+			}
+		}
+	}
+
 	// === PASS 1 (pre-scan): Build DedupIndex for batch and web tool results (W1 + E1 + Q1) ===
-	const dedupIndex = buildDedupIndex(lines, toolCallIdToName, toolCallIdToArgs);
+	const dedupIndex = buildDedupIndex(lines, toolCallIdToName, toolCallIdToArgs, sessionCwd);
 
 	const result: string[] = [];
 	let webSummaryEmitted = false;
@@ -982,26 +1295,35 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				// Cache miss (never populated or evicted) — do NOT pass megabytes of raw
 				// flow output verbatim into child context. Render a minimal placeholder.
 				originalText = extractToolResultText(entry as MessageEntry) ?? "";
-				const rawContent = entry.message?.content;
-				const contentSize = rawContent
-					? (typeof rawContent === "string" ? rawContent.length : JSON.stringify(rawContent).length)
-					: 0;
-				const size = originalText.length || contentSize || line.length;
-				rendered = `[flow] prior result · ${size} chars — full context unavailable (result not cached at this depth)`;
-			} else {
-				const renderResults = compressed.map(renderCompressedFlowResult);
-				const hasAnyUndefined = renderResults.some(r => r === undefined);
-				
-				if (hasAnyUndefined) {
-					// Safety net: compression produced garbage, fall back to truncated raw.
-					originalText = extractToolResultText(entry as MessageEntry) ?? "";
-					const size = originalText.length;
-					rendered = size > 2000
-						? originalText.slice(0, 2000) + "\n[truncated]"
-						: originalText;
-				} else {
-					rendered = renderResults.filter((r): r is string => r !== undefined).join("\n\n");
+				const flowArgs = toolCallIdToArgs.get(toolCallId);
+				let flowTypeSuffix = '';
+				if (flowArgs && typeof flowArgs === 'object') {
+					const flowArr = Array.isArray((flowArgs as Record<string, unknown>).flow)
+						? (flowArgs as Record<string, unknown>).flow as Array<Record<string, unknown>>
+						: undefined;
+					if (flowArr && flowArr.length > 0 && typeof flowArr[0].type === 'string') {
+						flowTypeSuffix = `:${flowArr[0].type}`;
+					} else if (typeof (flowArgs as Record<string, unknown>).type === 'string') {
+						flowTypeSuffix = `:${(flowArgs as Record<string, unknown>).type}`;
+					}
 				}
+				const statusLabel = entry.message.isError ? 'failed' : 'completed';
+				rendered = `[flow${flowTypeSuffix}] ${statusLabel} · see prior session`;
+			} else {
+				const renderedParts: string[] = [];
+				for (const r of compressed) {
+					const renderedResult = renderCompressedFlowResult(r);
+					if (renderedResult === undefined) {
+						// Granular fallback: only this element is malformed, don't waste
+						// valid siblings by falling back the entire array to raw text.
+						const flowType = r.type ?? "unknown";
+						const status = r.status ?? "unknown";
+						renderedParts.push(`[flow:${flowType}] ${status} (cache miss)`);
+					} else {
+						renderedParts.push(renderedResult);
+					}
+				}
+				rendered = renderedParts.join("\n\n");
 			}
 		}
 
@@ -1009,11 +1331,23 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		else if (toolName === "batch") {
 			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			rendered = compressBatchResult(originalText, {
-				depth,
+				depthPolicy: policy,
 				toolCallId,
 				latestWrite: dedupIndex.latestWrite,
 				latestEdit: dedupIndex.latestEdit,
 				latestDelete: dedupIndex.latestDelete,
+				bashIdToCommand: dedupIndex.bashIdToCommand,
+				latestBash: dedupIndex.latestBash,
+				cwd: sessionCwd,
+			});
+		}
+
+		// --- Compress batch_bash_poll tool results (S4 + B1) ---
+		else if (toolName === "batch_bash_poll") {
+			originalText = extractToolResultText(entry as MessageEntry) ?? "";
+			rendered = compressBatchBashPollResult(originalText, policy, {
+				bashIdToCommand: dedupIndex.bashIdToCommand,
+				latestBash: dedupIndex.latestBash,
 			});
 		}
 
@@ -1023,7 +1357,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			const args = toolCallIdToArgs.get(toolCallId);
 			const { isSuperseded, marker } = checkWebDedup(args, toolCallId, dedupIndex);
 			if (isSuperseded) {
-				if (depth < 2) {
+				if (policy.showSupersededBreadcrumbs) {
 					rendered = marker;
 				} else {
 					// At depth 2+, drop superseded web results entirely
@@ -1031,7 +1365,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				}
 			} else {
 				rendered = compressWebResult(originalText, args);
-				if (depth >= 2 && !webSummaryEmitted) {
+				if (!policy.showSupersededBreadcrumbs && !webSummaryEmitted) {
 					const searchCount = dedupIndex.latestWebSearch.size;
 					const fetchCount = dedupIndex.latestWebFetch.size;
 					const total = searchCount + fetchCount;
@@ -1044,11 +1378,29 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			}
 		}
 
-		// --- Compress ask_user tool results ---
+		// --- Compress ask_user tool results (A1 dedup) ---
 		else if (toolName === "ask_user") {
 			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			const args = toolCallIdToArgs.get(toolCallId);
-			rendered = compressAskUserResult(originalText, args);
+			let question = "";
+			if (args && typeof args === "object") {
+				const q = (args as Record<string, unknown>).question;
+				if (typeof q === "string") {
+					question = q;
+				}
+			}
+			const normQuestion = question.trim().toLowerCase().slice(0, 120);
+			const latestTc = normQuestion ? dedupIndex.latestAskUser.get(normQuestion) : undefined;
+			if (latestTc && latestTc !== toolCallId) {
+				if (policy.showSupersededBreadcrumbs) {
+					rendered = `[ask_user] "${question}" (superseded by later ask_user)`;
+				} else {
+					// At depth 2+, drop superseded ask_user results entirely
+					continue;
+				}
+			} else {
+				rendered = compressAskUserResult(originalText, args);
+			}
 		}
 
 		if (rendered !== undefined) {
@@ -1106,13 +1458,7 @@ function extractToolResultText(entry: MessageEntry): string | undefined {
 	return undefined;
 }
 
-/**
- * Backward-compatible alias for compressToolResults.
- * @deprecated Use compressToolResults instead.
- */
-export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
-	return compressToolResults(snapshot, cache);
-}
+
 
 // ---------------------------------------------------------------------------
 // batch_read tool call stripping
@@ -1128,6 +1474,49 @@ export function compressFlowToolResults(snapshot: string, cache: Map<string, Com
  * results causes strict API providers (e.g. kimi-coding, DeepSeek) to reject
  * the request with `tool_call_id is not found`.
  */
+/**
+ * Check if an assistant message is empty (continuation marker with no semantic value).
+ * Empty means: no substantive text, no tool calls.
+ */
+function isEmptyAssistantMessage(message: SnapshotMessage): boolean {
+	if (message.role !== "assistant") return false;
+
+	const content = message.content;
+
+	// Null/undefined/empty string
+	if (content === null || content === undefined || content === "") return true;
+
+	// Whitespace-only string
+	if (typeof content === "string" && content.trim() === "") return true;
+
+	// Array content: check for no text parts or only whitespace text parts, and NO tool calls
+	if (Array.isArray(content)) {
+		const hasToolCall = content.some((p) => (p as ContentPart).type === "toolCall");
+		if (hasToolCall) return false;
+
+		const textParts = content.filter(
+			(p): p is TextPart =>
+				(p as ContentPart).type === "text" && typeof (p as TextPart).text === "string",
+		);
+		if (textParts.length === 0) return true;
+
+		const allWhitespace = textParts.every((p) => p.text.trim() === "");
+		if (allWhitespace) return true;
+
+		// Low-signal detection: short text with no actionable markers
+		const fullText = textParts.map((p) => p.text).join("");
+		if (fullText.length < 300) {
+			const hasFilePath = /\w+\.\w+/.test(fullText);
+			const hasToolReference = /\[[a-z_]+[^\]]*\]/.test(fullText);
+			const hasCodeBlock = fullText.includes("```");
+			const hasActionableMarkers = hasFilePath || hasToolReference || hasCodeBlock;
+			if (!hasActionableMarkers) return true;
+		}
+	}
+
+	return false;
+}
+
 export function stripBatchReadToolCalls(snapshot: string): string {
 	const lines = snapshot.trimEnd().split("\n");
 
@@ -1185,7 +1574,9 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 		);
 
 		if (filteredContent.length === 0) {
-			filteredContent.push({ type: "text", text: "" });
+			// Skip assistant messages that have no content after stripping batch_read
+			// — an empty text placeholder wastes tokens and conveys nothing.
+			continue;
 		}
 
 		result.push(JSON.stringify({
@@ -1193,6 +1584,80 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 			message: {
 				...entry.message,
 				content: filteredContent,
+			},
+		}));
+	}
+
+	return `${result.join("\n")}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Flow tool call argument compression
+// ---------------------------------------------------------------------------
+
+/**
+ * Compress verbose `flow` tool call arguments in assistant messages.
+ *
+ * The child flow already receives its own `-p` activation prompt, so the full
+ * mission text inside the JSONL assistant message is pure duplication.
+ * Replaces the arguments with a compact summary `{type, aim, steps}`.
+ */
+export function compressFlowToolCallArgs(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { result.push(line); continue; }
+
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+			result.push(line);
+			continue;
+		}
+
+		const content = entry.message.content;
+		if (!Array.isArray(content)) {
+			result.push(line);
+			continue;
+		}
+
+		let modified = false;
+		const newContent = content.map((part: ContentPart) => {
+			if (part.type !== "toolCall" || part.name !== "flow") return part;
+
+			const args = part.arguments;
+			if (!args || typeof args !== "object") return part;
+
+			const flowArr = Array.isArray((args as Record<string, unknown>).flow)
+				? (args as Record<string, unknown>).flow as Array<Record<string, unknown>>
+				: undefined;
+
+			if (!flowArr || flowArr.length === 0) return part;
+
+			const firstFlow = flowArr[0];
+			const type = typeof firstFlow?.type === "string" ? firstFlow.type : undefined;
+			const aim = typeof firstFlow?.aim === "string" ? firstFlow.aim : undefined;
+			const steps = Array.isArray(firstFlow?.steps) ? firstFlow.steps.length : undefined;
+
+			if (!type && !aim && steps === undefined) return part;
+
+			modified = true;
+			return {
+				...part,
+				arguments: { type, aim, steps },
+			};
+		});
+
+		if (!modified) {
+			result.push(line);
+			continue;
+		}
+
+		result.push(JSON.stringify({
+			...entry,
+			message: {
+				...entry.message,
+				content: newContent,
 			},
 		}));
 	}
@@ -1280,12 +1745,18 @@ export interface SanitizeForkSnapshotOptions {
 	depth?: number;
 }
 
+export interface SanitizeForkSnapshotResult {
+	result: string | null;
+	passesApplied: string[];
+	stats: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[]; passDeltas?: Record<string, number> } | null;
+}
+
 export function sanitizeForkSnapshot(
 	snapshot: string | null,
 	cache: Map<string, CompressedFlowResult[]> = new Map(),
 	options?: SanitizeForkSnapshotOptions,
-): { result: string | null; passesApplied: string[] } {
-	if (!snapshot) return { result: snapshot, passesApplied: [] };
+): SanitizeForkSnapshotResult {
+	if (!snapshot) return { result: snapshot, passesApplied: [], stats: null };
 
 	const preBytes = snapshot.length;
 	const lines = snapshot.trimEnd().split("\n");
@@ -1304,21 +1775,8 @@ export function sanitizeForkSnapshot(
 
 		let changed = false;
 
-		// Header (first line): merge fork metadata and replace parent system prompt.
+		// Header (first line): replace parent system prompt.
 		if (i === 0 && entry && typeof entry === "object") {
-			// Inject fork metadata so children know their lineage.
-			if (options && (options.forkedFrom || options.forkedAt || options.parentFlow || options.depth !== undefined)) {
-				entry = {
-					...entry,
-					...(options.forkedFrom !== undefined ? { forkedFrom: options.forkedFrom } : {}),
-					...(options.forkedAt !== undefined ? { forkedAt: options.forkedAt } : {}),
-					...(options.parentFlow !== undefined ? { parentFlow: options.parentFlow } : {}),
-					...(options.depth !== undefined ? { depth: options.depth } : {}),
-				};
-				changed = true;
-				subPasses.add("forkMetadataInjection");
-			}
-
 			// Replace the parent orchestrator system prompt with a brief note.
 			// Children receive their own directive in the <activation> block.
 			if (entry.systemPrompt && typeof entry.systemPrompt === "string") {
@@ -1423,10 +1881,11 @@ export function sanitizeForkSnapshot(
 			}
 
 			// Strip API metadata fields that children don't need (~5-7 KB per assistant message).
-			// IMPORTANT: keep `usage` (including `totalTokens`). The child `pi` process replays
+			// IMPORTANT: keep `usage.totalTokens` ONLY. The child `pi` process replays
 			// this JSONL and core/session code reads `message.usage.totalTokens`; stripping
 			// `usage` causes: Cannot read properties of undefined (reading 'totalTokens').
-			// Strip `cost` from `usage` — it's always zeros in forked context and children never need it.
+			// Other fields (input, output, cacheRead, cacheWrite) are consumed only from
+			// live child stdout events (runner-events.ts), never from fork snapshot replay.
 			if (message.role === "assistant") {
 				const { api, provider, model, stopReason, responseId, responseModel, usage, ...rest } = message;
 				let stripped = false;
@@ -1434,18 +1893,37 @@ export function sanitizeForkSnapshot(
 					stopReason !== undefined || responseId !== undefined || responseModel !== undefined) {
 					stripped = true;
 				}
-				// Strip cost sub-object from usage while preserving totalTokens and other fields.
-				let cleanedUsage = usage;
-				if (usage && typeof usage === "object" && "cost" in usage) {
-					const { cost, ...usageWithoutCost } = usage;
-					cleanedUsage = usageWithoutCost;
-					stripped = true;
+				// Compress usage to totalTokens only — child pi replay requires totalTokens.
+				// Other fields (input, output, cacheRead, cacheWrite) are consumed only from
+				// live child stdout events (runner-events.ts), never from fork snapshot replay.
+				let cleanedUsage: { totalTokens?: number } | undefined;
+				if (usage && typeof usage === "object") {
+					const ttl = (usage as Record<string, unknown>).totalTokens;
+					if (typeof ttl === "number") {
+						cleanedUsage = { totalTokens: ttl };
+						stripped = true;
+					}
 				}
 				if (stripped) {
 					message = { ...rest, ...(cleanedUsage !== undefined ? { usage: cleanedUsage } : {}) };
 					changed = true;
 					subPasses.add("stripApiMetadata");
 				}
+			}
+
+			// Collapse empty/low-signal assistant messages to a minimal continuation marker.
+			if (message.role === "assistant" && isEmptyAssistantMessage(message)) {
+				const totalTokens = message.usage?.totalTokens;
+				const { usage: _usage, ...rest } = message;
+				message = {
+					...rest,
+					...(totalTokens !== undefined ? { usage: { totalTokens } } : {}),
+					content: totalTokens !== undefined
+						? `[assistant: ${totalTokens} tokens, no action]`
+						: "[assistant:continuation]",
+				};
+				changed = true;
+				subPasses.add("collapseEmptyAssistantMessages");
 			}
 
 			// Strip `details` from tool/toolResult messages — carries FlowDetails UI metadata
@@ -1533,27 +2011,39 @@ export function sanitizeForkSnapshot(
 	}
 
 	const passesApplied: string[] = [];
+	const passDeltas: Record<string, number> = {};
+	const measureBytes = (s: string) => new TextEncoder().encode(s).length;
 
 	let sanitized = `${sanitizedLines.join("\n")}\n`;
 	passesApplied.push(...subPasses);
+	passDeltas["mainLoop"] = measureBytes(sanitized);
 
 	// Reparent orphaned parentIds after steering-hint messages were dropped.
 	sanitized = reparentOrphans(sanitized);
 	passesApplied.push("reparentOrphans");
+	passDeltas["reparentOrphans1"] = measureBytes(sanitized);
 
 	// Strip batch_read tool calls from assistant messages.
 	// Children don't have batch_read in their active tools.
 	sanitized = stripBatchReadToolCalls(sanitized);
 	passesApplied.push("stripBatchRead");
+	passDeltas["stripBatchRead"] = measureBytes(sanitized);
+
+	// Compress verbose flow tool call arguments in assistant messages.
+	sanitized = compressFlowToolCallArgs(sanitized);
+	passesApplied.push("compressFlowToolCallArgs");
+	passDeltas["compressFlowToolCallArgs"] = measureBytes(sanitized);
 
 	// Compress tool results (flow, batch, web, ask_user).
-	sanitized = compressToolResults(sanitized, cache, options?.depth ?? 1);
+	sanitized = compressToolResults(sanitized, cache, depthToPolicy(options?.depth ?? 1));
 	passesApplied.push("compressToolResults");
+	passDeltas["compressToolResults"] = measureBytes(sanitized);
 
 	// Reparent again after stripBatchRead and compressToolResults may have
 	// dropped additional messages, leaving new orphaned parentIds.
 	sanitized = reparentOrphans(sanitized);
 	passesApplied.push("reparentOrphans");
+	passDeltas["reparentOrphans2"] = measureBytes(sanitized);
 
 	// Telemetry: measure total delta across sanitization, stripping, and compression.
 	const postBytes = sanitized.length;
@@ -1561,16 +2051,15 @@ export function sanitizeForkSnapshot(
 	if (DEBUG_CONTEXT) {
 		logError(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
 	}
-	// Always emit compression-stats as a trailing metadata entry so the dump contains
-	// observability data regardless of DEBUG_CONTEXT setting.
-	sanitized = sanitized.trimEnd() + "\n" + JSON.stringify({
-		type: "compression-stats",
+	// Stats are returned out-of-band for dump consumers only.
+	// Do NOT append to child-visible JSONL — it's telemetry noise for the model.
+	const stats = {
 		preBytes,
 		postBytes,
 		reductionPercent: Number(reduction),
 		passesApplied,
+		passDeltas,
+	};
 
-	}) + "\n";
-
-	return { result: sanitized, passesApplied };
+	return { result: sanitized, passesApplied, stats };
 }

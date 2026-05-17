@@ -13,6 +13,7 @@ import {
   updateGoalStatus,
   updateGoalObjective,
 } from "./store.js";
+import { getLoop, terminateLoop } from "./loop.js";
 
 function formatGoal(entry: NonNullable<ReturnType<typeof getGoal>>): string {
   const lines = [
@@ -69,7 +70,7 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
 
           const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
           pi.sendMessage(
-            { content: `New goal active. Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to start executing.${acceptanceLine}`, display: false },
+            { content: `New goal active. Objective: ${entry.objective}. Call the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas) to start executing.${acceptanceLine}`, display: false },
             { triggerTurn: true }
           );
           break;
@@ -118,7 +119,7 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
 
             const acceptanceLine = entry.acceptance ? `\nAcceptance: ${entry.acceptance}` : '';
             pi.sendMessage(
-              { content: `Goal resumed. Continue execution by calling the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas).${acceptanceLine}`, display: false },
+              { content: `Goal resumed. Objective: ${entry.objective}. Continue execution by calling the flow tool with an appropriate type (scout, craft, build, audit, debug, ideas).${acceptanceLine}`, display: false },
               { triggerTurn: true }
             );
           }
@@ -179,6 +180,10 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
             const entry = updateGoalStatus(cwd, "completed");
             if (entry) {
               ctx.ui.notify?.("Goal marked as completed", "info");
+              const loop = getLoop(cwd);
+              if (loop && loop.status !== "terminated") {
+                terminateLoop(cwd, "goal_completed");
+              }
             }
           } else if (getGoal(cwd)) {
             ctx.ui.notify?.("No active goal in this session to complete", "error");

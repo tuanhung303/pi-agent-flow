@@ -48,7 +48,7 @@ function getLiveTextWithFallback(id: string): string | undefined {
 	const fallbackId = id.includes("#") ? "collapsed" + id.slice(id.indexOf("#")) : "collapsed";
 	return getLiveText(fallbackId);
 }
-import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatCountdownRemaining } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatContextLabel } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -554,21 +554,23 @@ function renderFlowCollapsed(
 
 	const isComplete = r.exitCode !== -1;
 
-	// Build header stats: countdown · tok/s
-	const countdown = formatCountdownRemaining(r.deadlineAtMs);
+	// Build header stats: ctxLabel · t/s
 	const statsParts: string[] = [];
-	if (countdown) statsParts.push(countdown);
+	if (r.maxContextTokens !== undefined || r.usage.contextTokens > 0) {
+		const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
+		statsParts.push(ctxLabel);
+	}
 	const tpsValue = r.usage.smoothedTps;
 	const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
-	if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
-	else statsParts.push("-- tok/s");
+	if (tpsDisplay) statsParts.push(`${tpsDisplay} t/s`);
+	else statsParts.push("---- t/s");
 	let displayStats = statsParts.join(" · ");
 
 	// Flash TPS value when it changes
 	if (tpsDisplay) {
 		const scrambledTps = scrambleManager.updateTps(id, tpsDisplay, now, isComplete, true);
 		if (scrambledTps !== tpsDisplay) {
-			displayStats = displayStats.replace(`${tpsDisplay} tok/s`, `${scrambledTps} tok/s`);
+			displayStats = displayStats.replace(`${tpsDisplay} t/s`, `${scrambledTps} t/s`);
 		}
 	}
 	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
@@ -860,14 +862,16 @@ function renderActivityPanel(
 		const headerPrefix = isLast ? "└─" : "├─";
 		const headerPrefixLen = visibleLength(headerPrefix) + 1 + visibleLength(typeName) + visibleLength(modelLabel ? `    ${modelLabel} · ` : "    ");
 
-		// Build header stats: countdown · tok/s
-		const countdown = formatCountdownRemaining(r.deadlineAtMs);
+		// Build header stats: ctxLabel · t/s
 		const statsParts: string[] = [];
-		if (countdown) statsParts.push(countdown);
+		if (r.maxContextTokens !== undefined || r.usage.contextTokens > 0) {
+			const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
+			statsParts.push(ctxLabel);
+		}
 		const tpsValue = r.usage.smoothedTps;
 		const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
-		if (tpsDisplay) statsParts.push(`${tpsDisplay} tok/s`);
-		else statsParts.push("-- tok/s");
+		if (tpsDisplay) statsParts.push(`${tpsDisplay} t/s`);
+		else statsParts.push("---- t/s");
 		let displayStats = statsParts.join(" · ");
 
 		const flowComplete = r.exitCode !== -1;
@@ -876,7 +880,7 @@ function renderActivityPanel(
 		if (tpsDisplay) {
 			const scrambledTps = scrambleManager.updateTps(flowId, tpsDisplay, now, flowComplete, true);
 			if (scrambledTps !== tpsDisplay) {
-				displayStats = displayStats.replace(`${tpsDisplay} tok/s`, `${scrambledTps} tok/s`);
+				displayStats = displayStats.replace(`${tpsDisplay} t/s`, `${scrambledTps} t/s`);
 			}
 		}
 
@@ -1008,3 +1012,5 @@ function renderMultiFlowCollapsed(
 ): Container {
 	return renderActivityPanel(results, theme, baseId, config);
 }
+
+

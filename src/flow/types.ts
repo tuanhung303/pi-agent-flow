@@ -2,7 +2,7 @@
  * Flow goal types — autonomous continuation state for multi-step goals.
  */
 
-export type GoalStatus = "active" | "paused" | "budget_limited" | "completed" | "abandoned";
+export type GoalStatus = "active" | "paused" | "budget_limited" | "completed" | "abandoned" | "warped";
 
 export interface GoalEntry {
   /** Unique goal identifier (timestamp-based). */
@@ -34,12 +34,20 @@ export interface GoalEntry {
   sessionId?: string;
 }
 
-export interface WarpEntry {
-  id: string;
-  parentSession: string;
-  goal: string;
-  createdAt: string;
-  depth: number;
+export type LoopStatus = "active" | "paused" | "terminated";
+
+export type LoopTerminationReason = "goal_completed" | "user_disabled" | "budget_exhausted";
+
+export interface LoopState {
+  objective: string;
+  status: LoopStatus;
+  sessionCount: number;
+  totalTokensAcrossSessions: number;
+  totalFlowsAcrossSessions: number;
+  terminatedAt?: string;
+  terminationReason?: LoopTerminationReason;
+  /** When an auto-warp is in progress, the session ID we expect to resume in. */
+  pendingWarpSessionId?: string;
 }
 
 export interface GoalState {
@@ -47,8 +55,8 @@ export interface GoalState {
   current?: GoalEntry;
   /** Previously completed or abandoned goals. */
   history: GoalEntry[];
-  /** Recorded session warps. */
-  warps?: WarpEntry[];
+  /** Endless loop state, if any. */
+  loop?: LoopState;
 }
 
 export interface GoalContext {

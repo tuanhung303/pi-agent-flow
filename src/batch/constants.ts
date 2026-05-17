@@ -19,6 +19,54 @@ export const MAX_BASH_OUTPUT_BYTES = 100 * 1024; // 100KB
 export const MAX_BASH_OUTPUT_LINES = 4000;
 
 // ---------------------------------------------------------------------------
+// Shell output compression
+// ---------------------------------------------------------------------------
+
+export const COMPRESS_TOKEN_FLOOR = 50;
+export const COMPRESS_VERBATIM_MAX_TOKENS = 8000;
+export const COMPRESS_SAFETY_SCAN_HEAD = 5;
+export const COMPRESS_SAFETY_SCAN_TAIL = 5;
+export const COMPRESS_SAFETY_SCAN_MAX_NEEDLES = 20;
+export const COMPRESS_TERSE_MIN_SAVINGS_PCT = 3;
+export const COMPRESS_PASSTHROUGH_PATTERNS: RegExp[] = [
+	/\bnpm\s+(run\s+(dev|watch|serve)|start)\b/,
+	/\byarn\s+(run\s+(dev|watch|serve)|start)\b/,
+	/\bpnpm\s+(run\s+(dev|watch|serve)|start)\b/,
+	/\bcargo\s+(watch|run)\b/,
+	/\bpython\s+-m\s+http\.server\b/,
+	/\blive-server\b/,
+	/\bpi\b/,
+	/\blean-ctx\b/,
+	/\b(az|gcloud|firebase)\s+(login|auth)\b/,
+	/\bnext\s+dev\b/,
+	/\bnuxt\s+dev\b/,
+	/\bsvelte-kit\s+dev\b/,
+	/\bastro\s+dev\b/,
+	/\bnodemon\b/,
+	/\bwebpack-dev-server\b/,
+];
+export const COMPRESS_VERBATIM_PATTERNS: RegExp[] = [
+	/\b(cat|curl|jq|yq|head|tail|less|more)\b/,
+	/\bkubectl\s+get\b.*\s+-o\s*(yaml|json)\b/,
+	/\bdocker\s+inspect\b/,
+	/\bterraform\s+output\b/,
+	/\bstripe\s+\S+\s+list\b/,
+	/\bgh\s+api\b/,
+];
+export const COMPRESS_SAFETY_NEEDLES: string[] = [
+	"error",
+	"failed",
+	"fatal",
+	"panic",
+	"exception",
+	"aborted",
+	"warning",
+	"critical",
+	"ERR",
+];
+export const RG_SIGNATURES_MAX_FILES = 10;
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -59,6 +107,7 @@ export interface ContextMapEntry {
 	startLine: number;
 	endLine: number;
 	parent?: string;
+	signature?: string;
 }
 
 export interface OpResult {
@@ -76,6 +125,7 @@ export interface OpResult {
 	warning?: string;
 	truncated?: boolean;
 	nextOffset?: number;
+	enclosingSignatures?: Record<string, string>;
 	error?: string;
 	hint?: string;
 	id?: string;

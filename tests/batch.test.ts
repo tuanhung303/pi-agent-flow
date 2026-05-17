@@ -492,6 +492,71 @@ describe("batch tool", () => {
 		});
 	});
 
+
+	it("attaches enclosing signatures when l is false", async () => {
+		const ts = `export class Foo {\n  bar(): number {\n    return 1;\n  }\n}\n`;
+		fs.writeFileSync(path.join(tmpDir, "sig.ts"), ts, "utf-8");
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ o: [{ o: "rg", p: ".", q: "return 1", l: false }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0].status).toBe("ok");
+		expect(result.details.results[0].enclosingSignatures).toBeDefined();
+		const sigs = result.details.results[0].enclosingSignatures;
+		expect(Object.keys(sigs!).length).toBe(1);
+		const matchKey = Object.keys(sigs!)[0];
+		expect(matchKey).toContain("sig.ts");
+		expect(sigs![matchKey]).toBe("bar(): number");
+		expect(result.content[0].text).toContain("bar(): number");
+		expect(result.content[0].text).toContain("→");
+	});
+
+	it("skips signatures when l is true (files-only mode)", async () => {
+		const ts = `export class Foo {\n  bar(): number {\n    return 1;\n  }\n}\n`;
+		fs.writeFileSync(path.join(tmpDir, "sig2.ts"), ts, "utf-8");
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ o: [{ o: "rg", p: ".", q: "return 1", l: true }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0].status).toBe("ok");
+		expect(result.details.results[0].enclosingSignatures).toBeUndefined();
+		expect(result.content[0].text).toContain("sig2.ts");
+		expect(result.content[0].text).not.toContain("bar(): number");
+	});
+
+	it("skips signatures when > RG_SIGNATURES_MAX_FILES unique files", async () => {
+		for (let i = 0; i < 12; i++) {
+			fs.writeFileSync(
+				path.join(tmpDir, `many${i}.ts`),
+				`export class C${i} {\n  m${i}(): number {\n    return ${i};\n  }\n}\n`,
+				"utf-8",
+			);
+		}
+
+		const tool = createTool();
+		const result = await tool.execute(
+			"call-1",
+			{ o: [{ o: "rg", p: ".", q: "return", l: false }] },
+			undefined,
+			undefined,
+			makeCtx(tmpDir),
+		);
+
+		expect(result.details.results[0].status).toBe("ok");
+		expect(result.details.results[0].enclosingSignatures).toBeUndefined();
+	});
 	describe("write operations", () => {
 		it("creates a new file", async () => {
 			const tool = createTool();

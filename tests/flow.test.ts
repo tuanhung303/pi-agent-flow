@@ -109,7 +109,7 @@ describe("runFlow case-insensitive lookup", () => {
 		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
 		const args = spawnCall[1] as string[];
 		const prompt = args[args.indexOf("-p") + 1];
-		expect(prompt).toContain("Session mode: long. Time budget: 900s total.");
+		expect(prompt).not.toContain("Session mode: long. Time budget: 900s total.");
 		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("90000");
 
 		mockProc.emit("close", 0);
@@ -1095,9 +1095,9 @@ describe("timeout two-stage behavior", () => {
 		const spawnCall = vi.mocked(childProcess.spawn).mock.calls[0];
 		const args = spawnCall[1] as string[];
 		const prompt = args[args.indexOf("-p") + 1];
-		expect(prompt).toContain("Session mode: fast. Time budget: 300s total.");
-		expect(prompt).toContain("Long-running tools may be interrupted near the deadline");
-		expect(prompt).toContain("output structured findings immediately");
+		expect(prompt).not.toContain("Session mode: fast. Time budget: 300s total.");
+		expect(prompt).not.toContain("Long-running tools may be interrupted near the deadline");
+		expect(prompt).not.toContain("output structured findings immediately");
 		expect((spawnCall[2] as any).env.PI_FLOW_TOOL_SUMMARY_GRACE_MS).toBe("30000");
 
 		// Advance to 135s before timeout (165s elapsed, urge fires here)
@@ -1489,10 +1489,10 @@ describe("acceptance field propagation", () => {
 		const prompt = args[args.indexOf("-p") + 1];
 
 		expect(prompt).toContain("Available flows:");
-		expect(prompt).toContain("- [scout] — Discovery flow");
-		expect(prompt).toContain("- [build] — Implement, test, verify, ship.");
-		expect(prompt).toContain("- [audit] 🔒 — Audit security, quality, correctness; fix safe issues.");
-		expect(prompt).toContain("You may delegate to sub-flows (depth 2/3 | cycles: blocked | stack: orchestrator).");
+		expect(prompt).toContain("- scout");
+		expect(prompt).toContain("- build");
+		expect(prompt).toContain("- audit");
+		expect(prompt).toContain("Deleg: on (depth 2/3 · stack: orchestrator)");
 		expect(prompt).toContain("<activation flow=\"scout\"");
 
 		mockProc.emit("close", 0);
@@ -1528,7 +1528,7 @@ describe("acceptance field propagation", () => {
 		const prompt = args[args.indexOf("-p") + 1];
 
 		expect(prompt).not.toContain("Available flows:");
-		expect(prompt).toContain("You may NOT delegate to sub-flows (depth 3/3 | cycles: blocked | stack: orchestrator -> scout).");
+		expect(prompt).toContain("Deleg: off (depth 3/3 · stack: orchestrator -> scout)");
 
 		mockProc.emit("close", 0);
 		await promise;

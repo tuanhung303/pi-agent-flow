@@ -39,6 +39,8 @@ export interface SingleResult {
 	deadlineAtMs?: number;
 	/** Live in-progress text for status rendering; not part of the final flow report. */
 	streamingText?: string;
+	/** Max context-window size advertised by the model, if known. */
+	maxContextTokens?: number;
 	/** Structured JSON output parsed from the flow's final response. */
 	structuredOutput?: import("./output.js").FlowStructuredOutput;
 }

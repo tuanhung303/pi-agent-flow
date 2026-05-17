@@ -16,6 +16,7 @@
 import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
 import { appendStrategicHintOnce, appendTextToToolResult } from "../steering/tool-utils.js";
+import { compressOutput } from "../batch/shell-compress.js";
 
 type TimingTier =
 	| "normal"
@@ -223,6 +224,16 @@ export function createTimedBashToolDefinition(
 					onUpdate,
 					ctx,
 				);
+
+				// Apply shell output compression to the bash result content
+				const textPart = result?.content?.find?.((c: any) => c.type === "text");
+				if (textPart && typeof textPart.text === "string") {
+					const { stdout, savingsPct } = compressOutput(params.command, textPart.text, "");
+					if (savingsPct > 0) {
+						textPart.text = stdout;
+					}
+				}
+
 				const duration = Date.now() - start;
 				const report = classifyDuration(duration);
 				const appendix = formatTimingAppendix(report);

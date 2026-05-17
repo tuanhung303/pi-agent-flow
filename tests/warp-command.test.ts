@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractGoalFromPrompt } from "../src/flow/warp-command.js";
+import { extractGoalFromPrompt } from "../src/flow/warp-utils.js";
 
 describe("extractGoalFromPrompt", () => {
 	it("extracts end_goal from YAML frontmatter", () => {

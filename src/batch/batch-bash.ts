@@ -1,4 +1,5 @@
 import { appendStrategicHintOnce } from "../steering/tool-utils.js";
+import { compressOutput } from "./shell-compress.js";
 
 /**
  * batch bash -- parallel bash execution and polling.
@@ -108,8 +109,18 @@ export class BashProcessTracker {
 		child.on("close", (code) => {
 			this.running.delete(id);
 
-			const stdout = truncateBashOutput(rp.stdoutChunks.join(""));
-			const stderr = truncateBashOutput(rp.stderrChunks.join(""));
+			let stdout: string;
+			let stderr: string;
+			try {
+				const rawStdout = rp.stdoutChunks.join("");
+				const rawStderr = rp.stderrChunks.join("");
+				const { stdout: compressedStdout, stderr: compressedStderr } = compressOutput(rp.command, rawStdout, rawStderr);
+				stdout = truncateBashOutput(compressedStdout);
+				stderr = truncateBashOutput(compressedStderr);
+			} catch {
+				stdout = truncateBashOutput(rp.stdoutChunks.join(""));
+				stderr = truncateBashOutput(rp.stderrChunks.join(""));
+			}
 			const duration = Date.now() - rp.startedAt;
 			const report = classifyDuration(duration);
 
@@ -130,8 +141,18 @@ export class BashProcessTracker {
 
 			const duration = Date.now() - rp.startedAt;
 			const report = classifyDuration(duration);
-			const stdout = truncateBashOutput(rp.stdoutChunks.join(""));
-			const stderr = truncateBashOutput(rp.stderrChunks.join("")) || err.message;
+			let stdout: string;
+			let stderr: string;
+			try {
+				const rawStdout = rp.stdoutChunks.join("");
+				const rawStderr = rp.stderrChunks.join("");
+				const { stdout: compressedStdout, stderr: compressedStderr } = compressOutput(rp.command, rawStdout, rawStderr);
+				stdout = truncateBashOutput(compressedStdout);
+				stderr = truncateBashOutput(compressedStderr) || err.message;
+			} catch {
+				stdout = truncateBashOutput(rp.stdoutChunks.join(""));
+				stderr = truncateBashOutput(rp.stderrChunks.join("")) || err.message;
+			}
 
 			this.completed.set(id, {
 				id,

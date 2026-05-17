@@ -21,7 +21,6 @@ function parseSnapshot(snapshot: string): any[] {
 }
 
 const VALID_PASS_NAMES = new Set([
-	"forkMetadataInjection",
 	"stripSystemPrompt",
 	"stripSessionId",
 	"dropSlidingSystemPrompts",
@@ -41,6 +40,8 @@ const VALID_PASS_NAMES = new Set([
 	"stripBatchRead",
 	"compressToolResults",
 	"compressParentActivation",
+	"collapseEmptyAssistantMessages",
+	"compressFlowToolCallArgs",
 ]);
 
 const KNOWN_DEAD_PASS_NAMES = new Set(["sanitizeMessages"]);
@@ -413,21 +414,22 @@ describe("HEADER ROUND-TRIP TEST", () => {
 			},
 		]);
 
-		const { result } = sanitizeForkSnapshot(snapshot, flowCache);
+		const { result, stats } = sanitizeForkSnapshot(snapshot, flowCache);
 		expect(result).toBeDefined();
+		expect(stats).toBeDefined();
 
-		// Extract compression-stats from the trailing entry (same pipeline as flow.ts)
+		// Stats are returned out-of-band; the JSONL must NOT contain compression-stats.
 		const lines = result!.trimEnd().split("\n");
 		const lastLine = lines[lines.length - 1];
 		const lastEntry = JSON.parse(lastLine);
-		expect(lastEntry?.type).toBe("compression-stats");
+		expect(lastEntry?.type).not.toBe("compression-stats");
 
-		const passesApplied: string[] = Array.isArray(lastEntry.passesApplied)
-			? lastEntry.passesApplied
+		const passesApplied: string[] = Array.isArray(stats?.passesApplied)
+			? stats!.passesApplied
 			: [];
-		const preBytes = lastEntry.preBytes;
-		const postBytes = lastEntry.postBytes;
-		const reductionPercent = lastEntry.reductionPercent;
+		const preBytes = stats!.preBytes;
+		const postBytes = stats!.postBytes;
+		const reductionPercent = stats!.reductionPercent;
 
 		// Replicate the exact dump-building logic from src/flow.ts
 		const flowName = "scout";
@@ -451,7 +453,7 @@ describe("HEADER ROUND-TRIP TEST", () => {
 			``,
 			`## Session Snapshot (JSONL)`,
 			``,
-			...result!.split("\n"),
+			...result!.trimEnd().split("\n"),
 			``,
 			`## Activation Prompt (-p)`,
 			``,
@@ -492,6 +494,113 @@ describe("HEADER ROUND-TRIP TEST", () => {
 
 // ---------------------------------------------------------------------------
 // 4. CUSTOM MESSAGE / CONFIG EVENT DROP TEST
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 5. COLLAPSE EMPTY ASSISTANT MESSAGES TEST
+// ---------------------------------------------------------------------------
+
+describe("COLLAPSE EMPTY ASSISTANT MESSAGES", () => {
+	it("collapses empty, whitespace-only, and empty-array assistant messages and strips usage", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1", systemPrompt: "You are helpful" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-empty-string",
+					content: "",
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-whitespace",
+					content: "   \n\t  ",
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-empty-array",
+					content: [],
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-whitespace-array",
+					content: [{ type: "text", text: "  " }, { type: "text", text: "\n" }],
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-with-tool",
+					content: [
+						{ type: "text", text: "  " },
+						{ type: "toolCall", id: "tc1", name: "batch" },
+					],
+					usage: { totalTokens: 10 },
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "msg-with-text",
+					content: [{ type: "text", text: "Hello — see [batch] results." }],
+					usage: { totalTokens: 10 },
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map());
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+
+		const emptyString = entries.find((e: any) => e?.message?.id === "msg-empty-string");
+		expect(emptyString?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(emptyString?.message?.usage).toEqual({ totalTokens: 10 });
+
+		const whitespace = entries.find((e: any) => e?.message?.id === "msg-whitespace");
+		expect(whitespace?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(whitespace?.message?.usage).toEqual({ totalTokens: 10 });
+
+		const emptyArray = entries.find((e: any) => e?.message?.id === "msg-empty-array");
+		expect(emptyArray?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(emptyArray?.message?.usage).toEqual({ totalTokens: 10 });
+
+		const whitespaceArray = entries.find((e: any) => e?.message?.id === "msg-whitespace-array");
+		expect(whitespaceArray?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(whitespaceArray?.message?.usage).toEqual({ totalTokens: 10 });
+
+		const withTool = entries.find((e: any) => e?.message?.id === "msg-with-tool");
+		expect(withTool?.message?.content).not.toBe("[assistant:continuation]");
+		expect(withTool?.message?.content).toEqual([
+			{ type: "text", text: "  " },
+			{ type: "toolCall", id: "tc1", name: "batch" },
+		]);
+		expect(withTool?.message?.usage).toBeDefined();
+
+		const withText = entries.find((e: any) => e?.message?.id === "msg-with-text");
+		expect(withText?.message?.content).toEqual([{ type: "text", text: "Hello — see [batch] results." }]);
+		expect(withText?.message?.usage).toBeDefined();
+
+		expect(passesApplied).toContain("collapseEmptyAssistantMessages");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 6. CUSTOM MESSAGE / CONFIG EVENT DROP TEST
 // ---------------------------------------------------------------------------
 
 describe("CUSTOM MESSAGE / CONFIG EVENT DROP TEST", () => {

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
 	compressToolResults,
 	stripBatchReadToolCalls,
+	depthToPolicy,
 	sanitizeForkSnapshot,
 } from "../src/snapshot/snapshot.js";
 import { STEERING_HINT } from "../src/steering/sliding-prompt.js";
@@ -120,8 +121,8 @@ describe("compressToolResults with production JSONL `id` field", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 
-		expect(result).toContain("content truncated");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("preview");
+		expect(result).toContain("line 1");
 	});
 
 	it("compresses web tool results when toolCall uses `id` field", () => {
@@ -424,7 +425,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		expect(result).not.toContain("some result");
 	});
 
-	it("handles assistant with only batch_read `id`-field calls (adds empty text part)", () => {
+	it("handles assistant with only batch_read `id`-field calls (drops the message)", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -442,7 +443,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 
 		const parsed = parseSnapshot(result);
 		const assistantMsg = parsed.find((e: any) => e.message?.role === "assistant");
-		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
+		expect(assistantMsg).toBeUndefined();
 	});
 
 	it("drops tool results when role is 'tool' (backward compat)", () => {
@@ -572,8 +573,8 @@ describe("role field: 'toolResult' is required for matching", () => {
 		const result = compressToolResults(snapshot, new Map());
 
 		// role: "tool" is also matched (backward compat with both "tool" and "toolResult")
-		expect(result).toContain("content truncated");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("preview");
+		expect(result).toContain("line 1");
 	});
 
 	it("compressToolResults processes tool results with role 'toolResult'", () => {
@@ -602,8 +603,8 @@ describe("role field: 'toolResult' is required for matching", () => {
 		const result = compressToolResults(snapshot, new Map());
 
 		// With role: "toolResult", compressToolResults processes and truncates
-		expect(result).toContain("content truncated");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("preview");
+		expect(result).toContain("line 1");
 	});
 
 	it("stripBatchReadToolCalls drops orphans with role 'tool' (backward compat)", () => {
@@ -738,7 +739,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 				type: "message",
 				message: {
 					role: "assistant",
-					content: [{ type: "text", text: "Here is the summary of the codebase." }],
+					content: [{ type: "text", text: "Here is the summary of the codebase — see [scout] results." }],
 					timestamp: 6,
 				},
 			},
@@ -767,7 +768,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 
 		// Other messages preserved
 		expect(result).toContain("Read the codebase");
-		expect(result).toContain("Here is the summary of the codebase.");
+		expect(result).toContain("Here is the summary of the codebase — see [scout] results.");
 		expect(result).toContain("Now implement the feature");
 		expect(result).toContain("Let me read the files.");
 	});
@@ -1023,7 +1024,10 @@ describe("sanitizeForkSnapshot preserves assistant usage", () => {
 		const assistant = entries.find((e: any) => e?.message?.role === "assistant");
 
 		expect(assistant?.message?.usage?.totalTokens).toBe(8821);
-		expect(assistant?.message?.usage?.input).toBe(10);
+		expect(assistant?.message?.usage?.input).toBeUndefined();
+		expect(assistant?.message?.usage?.output).toBeUndefined();
+		expect(assistant?.message?.usage?.cacheRead).toBeUndefined();
+		expect(assistant?.message?.usage?.cacheWrite).toBeUndefined();
 		expect(assistant?.message?.api).toBeUndefined();
 		expect(assistant?.message?.provider).toBeUndefined();
 		expect(assistant?.message?.model).toBeUndefined();
@@ -1085,7 +1089,7 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		const entries = parseSnapshot(result!);
 
 		// batch_read tool call and result should be stripped
-		expect(entries.some((e: any) => e?.message?.content?.some((c: any) => c?.name === "batch_read"))).toBe(false);
+		expect(entries.some((e: any) => Array.isArray(e?.message?.content) && e?.message?.content?.some((c: any) => c?.name === "batch_read"))).toBe(false);
 		expect(entries.some((e: any) => e?.message?.toolCallId === "br-1")).toBe(false);
 
 		// Collect surviving IDs
@@ -1161,7 +1165,7 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		expect(entries.some((e: any) => Array.isArray(e?.message?.content) && e.message.content.some((c: any) => c?.name === "batch_read"))).toBe(false);
 		expect(entries.some((e: any) => e?.message?.toolCallId === "br-1")).toBe(false);
 
-		// Collect surviving IDs (excluding compression-stats)
+		// Collect surviving IDs
 		const survivingIds = new Set<string>();
 		for (const entry of entries) {
 			const id = entry?.message?.id ?? entry?.message?.messageId ?? entry?.id;

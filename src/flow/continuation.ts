@@ -1,6 +1,9 @@
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
 import { getGoal, addTokens, updateGoalStatus } from "./store.js";
 import { budgetLimitTemplate, idleWakeupTemplate, continuationPromptTemplate } from "./template-strings.js";
+import { getLoop } from "./loop.js";
+import { buildAutoWarpPrompt } from "./auto-warp.js";
+import { loopContinuationPromptTemplate, loopWakeupTemplate } from "./loop-templates.js";
 import { logWarn } from '../config/log.js';
 import * as sessionRegistry from '../core/session-registry.js';
 
@@ -82,15 +85,25 @@ export function setupContinuation(pi: ExtensionAPI): void {
       const now = Date.now();
       if (now - lastActivity > IDLE_WAKEUP_MS) {
         _lastTurnEndAt.set(sessionId, now);
+        const loop = getLoop(cwd);
         const maxFlowsClause = goal.maxFlows !== undefined ? `/${goal.maxFlows}` : '';
         const tokenInfo = `${goal.totalTokens}${goal.maxTokens !== undefined ? `/${goal.maxTokens}` : ''}`;
         const acceptanceClause = goal.acceptance ? `\nAcceptance: ${goal.acceptance}` : '';
-        const prompt = idleWakeupTemplate
-          .replace("{{objective}}", goal.objective)
-          .replace("{{acceptanceClause}}", acceptanceClause)
-          .replace("{{flowCount}}", String(goal.completedFlows.length))
-          .replace("{{maxFlows}}", String(goal.maxFlows ?? "unlimited"))
-          .replace("{{totalTokens}}", tokenInfo);
+        const prompt = (loop?.status === "active")
+          ? loopWakeupTemplate
+              .replace("{{objective}}", goal.objective)
+              .replace("{{acceptanceClause}}", acceptanceClause)
+              .replace("{{flowCount}}", String(goal.completedFlows.length))
+              .replace("{{maxFlows}}", String(goal.maxFlows ?? "unlimited"))
+              .replace("{{totalTokens}}", tokenInfo)
+              .replace("{{sessionCount}}", String(loop.sessionCount))
+              .replace("{{totalTokensAcrossSessions}}", String(loop.totalTokensAcrossSessions))
+          : idleWakeupTemplate
+              .replace("{{objective}}", goal.objective)
+              .replace("{{acceptanceClause}}", acceptanceClause)
+              .replace("{{flowCount}}", String(goal.completedFlows.length))
+              .replace("{{maxFlows}}", String(goal.maxFlows ?? "unlimited"))
+              .replace("{{totalTokens}}", tokenInfo);
         pi.sendMessage({ content: prompt, display: false }, { triggerTurn: true });
       }
     }, WAKEUP_CHECK_INTERVAL_MS);
@@ -102,6 +115,13 @@ export function setupContinuation(pi: ExtensionAPI): void {
 
     const goal = getGoal(cwd);
     if (!goal || goal.status !== "active") return;
+
+    const loop = getLoop(cwd);
+    // Guard: if a warp is pending for a different session, skip continuation.
+    if (loop?.pendingWarpSessionId && loop.pendingWarpSessionId !== sessionRegistry.getSessionId(cwd)) {
+      return;
+    }
+
     // Session guard: only continue goals bound to the current session.
     if (goal.sessionId && goal.sessionId !== sessionRegistry.getSessionId(cwd)) {
       logWarn(`[pi-agent-flow] Continuation skipped: goal session ${goal.sessionId} ≠ active session ${sessionRegistry.getSessionId(cwd) ?? '(none)'}`);
@@ -140,6 +160,11 @@ export function setupContinuation(pi: ExtensionAPI): void {
 
     // Budget guards — actually pause when exceeded
     if (overTokens || overFlows) {
+      if (loop?.status === "active") {
+        const warpPrompt = buildAutoWarpPrompt(goal, loop);
+        pi.sendMessage({ content: warpPrompt, display: false }, { triggerTurn: true });
+        return;
+      }
       updateGoalStatus(cwd, "paused");
       const pausedPrompt = budgetLimitTemplate
         .replace("{{objective}}", goal.objective)
@@ -156,13 +181,23 @@ export function setupContinuation(pi: ExtensionAPI): void {
     const tokenInfo = `${goal.totalTokens}${goal.maxTokens !== undefined ? `/${goal.maxTokens}` : ''}`;
     const acceptanceClause = goal.acceptance ? `\nAcceptance: ${goal.acceptance}` : '';
 
-    const continuationPrompt = continuationPromptTemplate
-      .replace('{{objective}}', goal.objective)
-      .replace('{{acceptanceClause}}', acceptanceClause)
-      .replace('{{flowCount}}', String(flowCount))
-      .replace('{{maxFlowsClause}}', maxFlowsClause)
-      .replace('{{tokenInfo}}', tokenInfo)
-      .replace('{{userMessage}}', messageText);
+    const continuationPrompt = (loop?.status === "active")
+      ? loopContinuationPromptTemplate
+          .replace('{{objective}}', goal.objective)
+          .replace('{{acceptanceClause}}', acceptanceClause)
+          .replace('{{flowCount}}', String(flowCount))
+          .replace('{{maxFlowsClause}}', maxFlowsClause)
+          .replace('{{tokenInfo}}', tokenInfo)
+          .replace('{{userMessage}}', messageText)
+          .replace('{{sessionCount}}', String(loop.sessionCount))
+          .replace('{{totalTokensAcrossSessions}}', String(loop.totalTokensAcrossSessions))
+      : continuationPromptTemplate
+          .replace('{{objective}}', goal.objective)
+          .replace('{{acceptanceClause}}', acceptanceClause)
+          .replace('{{flowCount}}', String(flowCount))
+          .replace('{{maxFlowsClause}}', maxFlowsClause)
+          .replace('{{tokenInfo}}', tokenInfo)
+          .replace('{{userMessage}}', messageText);
 
     pi.sendMessage({ content: continuationPrompt, display: false }, { triggerTurn: true });
   });
