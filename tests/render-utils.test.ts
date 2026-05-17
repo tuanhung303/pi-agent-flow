@@ -9,6 +9,7 @@ import {
   formatModelLabel,
   formatCountdownRemaining,
   formatContextLabel,
+  formatTps,
 } from '../src/tui/render-utils.js';
 
 describe('visibleLength', () => {
@@ -172,6 +173,25 @@ describe('formatCountdownRemaining', () => {
 
   it('returns undefined for past deadlines', () => {
     expect(formatCountdownRemaining(Date.now() - 1000)).toBeUndefined();
+  });
+});
+
+describe('formatTps', () => {
+  it('returns placeholder for zero or undefined', () => {
+    expect(formatTps(0)).toBe('----');
+    expect(formatTps(undefined)).toBe('----');
+  });
+
+  it('formats values < 100 with one decimal padded to 5', () => {
+    expect(formatTps(12.3)).toBe(' 12.3 t/s');
+    expect(formatTps(9.1)).toBe('  9.1 t/s');
+    expect(formatTps(99.9)).toBe(' 99.9 t/s');
+  });
+
+  it('formats values >= 100 with no decimal padded to 5', () => {
+    expect(formatTps(114.2)).toBe('  114 t/s');
+    expect(formatTps(100)).toBe('  100 t/s');
+    expect(formatTps(999.9)).toBe(' 1000 t/s');
   });
 });
 

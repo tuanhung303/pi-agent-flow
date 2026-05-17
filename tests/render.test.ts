@@ -392,22 +392,22 @@ describe("lowerFirstWord", () => {
 
 describe("formatTps", () => {
 	it("returns dash for undefined", () => {
-		expect(formatTps(undefined)).toBe(" ---- t/s");
+		expect(formatTps(undefined)).toBe("----");
 	});
 	it("returns dash for zero", () => {
-		expect(formatTps(0)).toBe(" ---- t/s");
+		expect(formatTps(0)).toBe("----");
 	});
 	it("returns dash for negative", () => {
-		expect(formatTps(-5)).toBe(" ---- t/s");
+		expect(formatTps(-5)).toBe("----");
 	});
 	it("shows one decimal when value < 100", () => {
 		expect(formatTps(76.2)).toBe(" 76.2 t/s");
 	});
 	it("shows fixed-width decimal when value >= 100", () => {
-		expect(formatTps(142.7)).toBe("142.7 t/s");
+		expect(formatTps(142.7)).toBe("  143 t/s");
 	});
 	it("shows fixed-width decimal when value is exactly 100", () => {
-		expect(formatTps(100)).toBe("100.0 t/s");
+		expect(formatTps(100)).toBe("  100 t/s");
 	});
 	it("pads small values to fixed width", () => {
 		expect(formatTps(7.3)).toBe("  7.3 t/s");
@@ -422,37 +422,37 @@ describe("formatCompactStats", () => {
 	it("full usage → dashboard format", () => {
 		const usage = { input: 2000, output: 500, toolCalls: 4, contextTokens: 21000 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k -  ---- t/s - 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k - ---- - 21.0k - k2.6");
 	});
 
 	it("minimal usage → shows 0 for all metrics", () => {
 		const usage = { input: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲   100 -  ---- t/s -     0");
+		expect(result).toBe("▲   100 - ---- -     0");
 	});
 
 	it("no usage → shows placeholders", () => {
-		expect(formatCompactStats({})).toBe("▲     0 -  ---- t/s -     0");
+		expect(formatCompactStats({})).toBe("▲     0 - ---- -     0");
 	});
 
 	it("only model → placeholders + model", () => {
-		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 -  ---- t/s -     0 - gpt-4o");
+		expect(formatCompactStats({}, "gpt-4o")).toBe("▲     0 - ---- -     0 - gpt-4o");
 	});
 
 	it("strips provider prefix from model", () => {
 		expect(formatCompactStats({}, "github-copilot/gpt-5.5")).toBe(
-			"▲     0 -  ---- t/s -     0 - gpt-5.5",
+			"▲     0 - ---- -     0 - gpt-5.5",
 		);
 	});
 
 	it("tokens only → all metrics shown", () => {
 		const usage = { input: 5000, output: 1000 };
-		expect(formatCompactStats(usage)).toBe("▲  5.0k -  ---- t/s -     0");
+		expect(formatCompactStats(usage)).toBe("▲  5.0k - ---- -     0");
 	});
 
 	it("with context tokens", () => {
 		const usage = { input: 0, output: 0, toolCalls: 3, contextTokens: 6000 };
-		expect(formatCompactStats(usage)).toBe("▲     0 -  ---- t/s -  6.0k");
+		expect(formatCompactStats(usage)).toBe("▲     0 - ---- -  6.0k");
 	});
 
 	it("with smoothedTps value", () => {
@@ -488,19 +488,19 @@ describe("formatCompactStats", () => {
 	it("with zero smoothedTps shows dash", () => {
 		const usage = { input: 1000, output: 500, smoothedTps: 0 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲  1.0k -  ---- t/s -     0");
+		expect(result).toBe("▲  1.0k - ---- -     0");
 	});
 
 	it("with high smoothedTps shows fixed-width decimal", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 142.7 };
 		const result = formatCompactStats(usage, "K2.6");
-		expect(result).toBe("▲  2.0k - 142.7 t/s - 21.0k - k2.6");
+		expect(result).toBe("▲  2.0k -   143 t/s - 21.0k - k2.6");
 	});
 
 	it("with exactly 100 smoothedTps shows fixed-width decimal", () => {
 		const usage = { input: 2000, output: 500, contextTokens: 21000, smoothedTps: 100 };
 		const result = formatCompactStats(usage);
-		expect(result).toBe("▲  2.0k - 100.0 t/s - 21.0k");
+		expect(result).toBe("▲  2.0k -   100 t/s - 21.0k");
 	});
 
 	it("narrows when maxWidth is tight", () => {
@@ -951,7 +951,7 @@ describe("expanded view rendering", () => {
 		const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
 		const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, makeTheme(), undefined);
 		const text = extractText(rendered);
-		expect(text).toContain("▲  9.8k -  ---- t/s - 10.0k - mimo-v2.5-pro");
+		expect(text).toContain("▲  9.8k - ---- - 10.0k - mimo-v2.5-pro");
 	});
 
 	it("context tokens on separate line", () => {
