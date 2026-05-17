@@ -109,7 +109,6 @@ export interface ExtensionContext {
 		sessionManager: SessionManager;
 		newSession(opts?: {
 			parentSession?: string;
-			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 			setup?: (sessionManager: SessionManager) => Promise<void>;
 		}): Promise<{ cancelled: boolean }>;
 		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
@@ -123,13 +122,6 @@ export interface ExtensionContext {
 			getApiKeyAndHeaders(model: any): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
 		};
 		model?: any;
-	}
-
-	/** Fresh command-capable context bound to the replacement session after a session switch. */
-	export interface ReplacedSessionContext extends ExtensionCommandContext {
-		sendUserMessage(content: string, opts?: { deliverAs?: string }): Promise<void>;
-		setSessionName(name: string): void;
-		appendEntry(customType: string, data?: unknown): void;
 	}
 
 	/** Event payload for pi.on("turn_end", ...) callbacks. */

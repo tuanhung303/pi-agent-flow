@@ -114,7 +114,8 @@ describe("performWarp", () => {
     setGoal(tmpDir, "Test goal");
     const sendMessage = vi.fn();
     const appendEntry = vi.fn();
-    const pi = { sendMessage, appendEntry };
+    const sendUserMessage = vi.fn();
+    const pi = { sendMessage, appendEntry, sendUserMessage };
     const ctx = {
       cwd: tmpDir,
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
@@ -135,39 +136,33 @@ describe("performWarp", () => {
     }));
   });
 
-  it("seeds new session via withSession callback", async () => {
+  it("seeds new session via setup callback", async () => {
     setGoal(tmpDir, "Test goal");
-    const notify = vi.fn();
-    const setEditorText = vi.fn();
-    const setSessionName = vi.fn();
-    const appendEntry = vi.fn();
-    const newCtx = {
-      ui: { notify, setEditorText },
-      setSessionName,
-      appendEntry,
-    };
+    const appendMessage = vi.fn();
+    const appendSessionInfo = vi.fn();
+    const appendCustomEntry = vi.fn();
+    const sessionManager = { appendMessage, appendSessionInfo, appendCustomEntry };
     const ctx = {
       cwd: tmpDir,
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
-      newSession: vi.fn().mockImplementation(({ withSession }: any) => {
-        return withSession(newCtx).then(() => ({ cancelled: false }));
+      newSession: vi.fn().mockImplementation(({ setup }: any) => {
+        return Promise.resolve().then(() => setup(sessionManager)).then(() => ({ cancelled: false }));
       }),
     } as any;
     const result = await performWarp(ctx, {
       reviewedPrompt: "---\ncontext: test\n---\nTask: do it",
     });
     expect(result.success).toBe(true);
-    expect(notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
-    expect(setEditorText).toHaveBeenCalledWith("---\ncontext: test\n---\nTask: do it");
-    expect(setSessionName).toHaveBeenCalledWith("Warp: Task: do it");
-    expect(appendEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
+    expect(appendMessage).toHaveBeenCalledWith({ role: "user", content: "---\ncontext: test\n---\nTask: do it" });
+    expect(appendSessionInfo).toHaveBeenCalledWith("Warp: Task: do it");
+    expect(appendCustomEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
       warpCount: 1,
       totalTokens: 0,
     }));
   });
 
-  it("sets correct warpCount and totalTokens when loop is active via withSession", async () => {
+  it("sets correct warpCount and totalTokens when loop is active via setup", async () => {
     setGoal(tmpDir, "Test goal");
     setLoop(tmpDir, {
       objective: "Test goal",
@@ -176,33 +171,65 @@ describe("performWarp", () => {
       totalTokensAcrossSessions: 5000,
       totalFlowsAcrossSessions: 0,
     });
-    const notify = vi.fn();
-    const setEditorText = vi.fn();
-    const setSessionName = vi.fn();
-    const appendEntry = vi.fn();
-    const newCtx = {
-      ui: { notify, setEditorText },
-      setSessionName,
-      appendEntry,
-    };
+    const appendMessage = vi.fn();
+    const appendSessionInfo = vi.fn();
+    const appendCustomEntry = vi.fn();
+    const sessionManager = { appendMessage, appendSessionInfo, appendCustomEntry };
     const ctx = {
       cwd: tmpDir,
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
-      newSession: vi.fn().mockImplementation(({ withSession }: any) => {
-        return withSession(newCtx).then(() => ({ cancelled: false }));
+      newSession: vi.fn().mockImplementation(({ setup }: any) => {
+        return Promise.resolve().then(() => setup(sessionManager)).then(() => ({ cancelled: false }));
       }),
     } as any;
     const result = await performWarp(ctx, {
       reviewedPrompt: "test prompt",
     });
     expect(result.success).toBe(true);
-    expect(notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
-    expect(setEditorText).toHaveBeenCalledWith("test prompt\n\n[Loop: session 3, total tokens ≈ 5000]");
-    expect(setSessionName).toHaveBeenCalledWith("Warp: Test goal");
-    expect(appendEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
+    expect(appendMessage).toHaveBeenCalledWith({ role: "user", content: "test prompt\n\n[Loop: session 3, total tokens ≈ 5000]" });
+    expect(appendSessionInfo).toHaveBeenCalledWith("Warp: Test goal");
+    expect(appendCustomEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
       warpCount: 3,
       totalTokens: 5000,
     }));
+  });
+
+  it("triggers agent processing via sendUserMessage when pi is provided and not cancelled", async () => {
+    setGoal(tmpDir, "Test goal");
+    const sendUserMessage = vi.fn();
+    const sendMessage = vi.fn();
+    const appendEntry = vi.fn();
+    const pi = { sendUserMessage, sendMessage, appendEntry };
+    const ctx = {
+      cwd: tmpDir,
+      sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
+      newSession: vi.fn().mockResolvedValue({ cancelled: false }),
+    } as any;
+    const result = await performWarp(ctx, {
+      reviewedPrompt: "test prompt",
+      pi,
+    });
+    expect(result.success).toBe(true);
+    expect(sendUserMessage).toHaveBeenCalledWith("test prompt");
+  });
+
+  it("does not trigger sendUserMessage when warp is cancelled", async () => {
+    setGoal(tmpDir, "Test goal");
+    const sendUserMessage = vi.fn();
+    const sendMessage = vi.fn();
+    const appendEntry = vi.fn();
+    const pi = { sendUserMessage, sendMessage, appendEntry };
+    const ctx = {
+      cwd: tmpDir,
+      sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
+      newSession: vi.fn().mockResolvedValue({ cancelled: true }),
+    } as any;
+    const result = await performWarp(ctx, {
+      reviewedPrompt: "test prompt",
+      pi,
+    });
+    expect(result.success).toBe(false);
+    expect(sendUserMessage).not.toHaveBeenCalled();
   });
 });

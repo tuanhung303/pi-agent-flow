@@ -167,14 +167,16 @@ export async function performWarp(
 
     const result = await ctx.newSession({
       parentSession: ctx.sessionManager.getSessionFile(),
-      withSession: async (newCtx) => {
+      setup: async (sessionManager) => {
         if (isLoopActive) {
           recordSessionWarp(cwd);
         }
-        newCtx.ui.notify?.("Warp ready. Submit when ready.", "info");
-        newCtx.ui.setEditorText?.(warpedPrompt);
-        newCtx.setSessionName(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
-        newCtx.appendEntry("pi-agent-flow:warp", {
+        // Seed the warp prompt as a user message in the new session
+        sessionManager.appendMessage({ role: "user", content: warpedPrompt });
+        // Set descriptive name
+        sessionManager.appendSessionInfo(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
+        // Extension state marker
+        sessionManager.appendCustomEntry("pi-agent-flow:warp", {
           sourceSessionId: currentSessionId,
           warpCount: isLoopActive ? loop.sessionCount : 1,
           totalTokens: isLoopActive ? loop.totalTokensAcrossSessions : 0,
@@ -182,6 +184,12 @@ export async function performWarp(
         });
       },
     });
+
+    // After newSession, send the prompt to trigger agent processing
+    // (setup callback has no UI access, so we use pi.sendUserMessage post-switch)
+    if (opts?.pi && !result.cancelled) {
+      opts.pi.sendUserMessage(warpedPrompt);
+    }
 
     if (result.cancelled) {
       return { success: false, error: "Warp cancelled." };
