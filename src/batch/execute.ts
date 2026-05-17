@@ -34,6 +34,7 @@ import {
 	expandTilde,
 	validatePath,
 } from "./fuzzy-edit.js";
+import { applyPatch } from "./apply-patch.js";
 import { buildFileContextMap } from "./symbols.js";
 
 // ---------------------------------------------------------------------------
@@ -236,7 +237,7 @@ export async function executeOperations(
 	onUpdate?: BatchOnUpdate,
 ): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
-	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, error: 0, skipped: 0 };
+	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, patch: 0, error: 0, skipped: 0 };
 	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
 	const aggregateLimitSkipped: { path: string }[] = [];
@@ -510,6 +511,23 @@ export async function executeOperations(
 					break;
 				}
 
+				case "patch": {
+					if (!op.c && op.c !== "") {
+						throw new Error("c (patch text) is required for patch operations.");
+					}
+					const { affected, exact } = await applyPatch(op.c!, cwd);
+					results.push({
+						op: "patch",
+						path: op.p,
+						status: "ok",
+						affected,
+						exact,
+						warning: pathWarning,
+					});
+					counts.patch++;
+					break;
+				}
+
 				default:
 					throw new Error(`Unknown operation type: ${op.o}`);
 			}
@@ -576,14 +594,14 @@ export async function executeOperations(
 
 function buildSummary(
 	results: OpResult[],
-	counts: { read: number; write: number; edit: number; delete: number; rg: number; error: number; skipped: number },
+	counts: { read: number; write: number; edit: number; delete: number; rg: number; patch: number; error: number; skipped: number },
 	errors: { path: string; op: string; message: string; hint?: string }[],
 	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
 	aggregateLimitSkipped: { path: string }[] = [],
 	aggregateByteLimitSkipped: { path: string }[] = [],
 ): string {
 	const totalSuccess =
-		counts.read + counts.write + counts.edit + counts.delete + counts.rg;
+		counts.read + counts.write + counts.edit + counts.delete + counts.rg + counts.patch;
 	const totalOps = totalSuccess + counts.error + counts.skipped;
 
 	const parts: string[] = [];
@@ -634,6 +652,17 @@ function buildSummary(
 
 	if (byType.bash?.length) {
 		typeSummaries.push(`bash: [${byType.bash.length} cmd${byType.bash.length > 1 ? 's' : ''}]`);
+	}
+
+	if (byType.patch?.length) {
+		const affected = byType.patch.flatMap(r => {
+			const parts: string[] = [];
+			if (r.affected?.added.length) parts.push(`A ${r.affected.added.map(p => path.basename(p)).join(', ')}`);
+			if (r.affected?.modified.length) parts.push(`M ${r.affected.modified.map(p => path.basename(p)).join(', ')}`);
+			if (r.affected?.deleted.length) parts.push(`D ${r.affected.deleted.map(p => path.basename(p)).join(', ')}`);
+			return parts;
+		});
+		typeSummaries.push(`patch: [${affected.join(', ')}]`);
 	}
 
 	if (counts.error === 0) {
@@ -734,6 +763,12 @@ function buildContentText(summary: string, results: OpResult[]): string {
 			}
 		} else if (r.status === "error") {
 			sections.push(`\n--- ${r.op}: ${r.path} ---\nError: ${r.error}`);
+		} else if (r.op === "patch" && r.status === "ok") {
+			const parts: string[] = [];
+			if (r.affected?.added.length) parts.push(`A ${r.affected.added.join(', ')}`);
+			if (r.affected?.modified.length) parts.push(`M ${r.affected.modified.join(', ')}`);
+			if (r.affected?.deleted.length) parts.push(`D ${r.affected.deleted.join(', ')}`);
+			sections.push(`\n--- patch: ${r.path} ---\n${parts.join('\n')}`);
 		} else if (r.status === "skipped") {
 			sections.push(`\n--- ${r.op}: ${r.path} ---\n${r.error ?? "Skipped"}`);
 		}

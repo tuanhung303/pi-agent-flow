@@ -105,7 +105,7 @@ export interface EditReplacement {
 }
 
 export interface FileOpInput {
-	o: "read" | "write" | "edit" | "delete" | "bash" | "rg";
+	o: "read" | "write" | "edit" | "delete" | "bash" | "rg" | "patch";
 	p: string;
 	c?: string;
 	e?: EditReplacement[];
@@ -140,7 +140,7 @@ export interface ContextMapEntry {
 }
 
 export interface OpResult {
-	op: "read" | "write" | "edit" | "delete" | "bash" | "rg";
+	op: "read" | "write" | "edit" | "delete" | "bash" | "rg" | "patch";
 	path: string;
 	status: "ok" | "error" | "skipped" | "pending";
 	content?: string;
@@ -173,6 +173,8 @@ export interface OpResult {
 	q?: string;
 	s?: number;
 	l?: number;
+	affected?: { added: string[]; modified: string[]; deleted: string[] };
+	exact?: boolean;
 }
 
 export interface ReadOptions {

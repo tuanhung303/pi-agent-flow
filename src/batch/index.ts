@@ -46,12 +46,13 @@ const FileOp = Type.Object({
 		Type.Literal("delete"),
 		Type.Literal("bash"),
 		Type.Literal("rg"),
+		Type.Literal("patch"),
 	]),
 	p: Type.String({ description: "Path to the file (relative or absolute). Use 'bash' or any string for o: 'bash'." }),
 	c: Type.Optional(
 		Type.String({
 			description:
-				"File content for o: 'write'. Shell command for o: 'bash'.",
+				"File content for o: 'write'. Shell command for o: 'bash'. Patch text for o: 'patch'.",
 		}),
 	),
 	e: Type.Optional(
@@ -215,6 +216,7 @@ function normalizeOp(raw: Record<string, unknown>): Record<string, unknown> {
 
 	// Map content
 	if (raw.c !== undefined) op.c = raw.c;
+	else if (raw.patch !== undefined) op.c = raw.patch;
 	else if (raw.content !== undefined) op.c = raw.content;
 
 	// Map edits
@@ -404,6 +406,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 		"Each edit matches the on-disk file, not prior ops in the same call — so order within a file's `e` array doesn't matter.",
 		"Bash ops run in parallel. Use i (id) to track them. Use `batch_bash_poll` to check on pending commands.",
 		"Before calling `batch`, plan: list every file you need to read, edit, or create, and every command you need to run — then put them ALL in one call.",
+		"Use o:'patch' with c:'<patch text>' for multi-file changes using the OpenAI apply_patch format. Patch ops run sequentially like other file ops.",
 		"For non-trivial scripts (Python, Node, shell), write the script to ./tmp/ first with o:'write', then execute it with o:'bash'. File ops always run before bash ops, so the write is guaranteed to complete before execution. This avoids escaping issues, produces better error traces, and leaves the script inspectable for debugging.",
 	];
 	if (toolOptimize) {
@@ -413,7 +416,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 		name: "batch",
 		label: "batch",
 		description: [
-			"Batch operations — run multiple file ops (read/write/edit/delete) and bash commands in a single call.",
+			"Batch operations — run multiple file ops (read/write/edit/delete/patch) and bash commands in a single call.",
 			"Each file operation is independent: edits are matched against the current on-disk file, not against prior operations in the same call.",
 			"File operations execute sequentially in array order; each operation executes independently and failures are reported per-operation without stopping remaining ops.",
 			"Bash operations (o: 'bash') run in parallel after all file ops complete. Bash ops do NOT skip each other on failure.",

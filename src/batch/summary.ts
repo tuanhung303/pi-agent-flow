@@ -65,6 +65,10 @@ function formatOpSummary(op: { o: string; p: string; e?: unknown[]; c?: string; 
 			return `rg ${op.q ?? "?"} in ${shortPath}${op.t ? ` (${op.t})` : ""}`;
 		case "delete":
 			return `delete ${shortPath}`;
+		case "patch": {
+			const patchPreview = op.c ? ` (${op.c.split("\n")[0]}…)` : "";
+			return `patch${patchPreview}`;
+		}
 		default:
 			return `${op.o} ${shortPath}`;
 	}
