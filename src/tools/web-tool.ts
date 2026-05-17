@@ -100,6 +100,7 @@ export function createWebTool() {
 			"Pass ops as an array: [{ o: 'fetch', u: '<url>', f: 'markdown' }] to download a URL. Content is saved to a temp file — use the `read` tool to access it in chunks.",
 			"The `web` tool returns the file path, title, content length, and a short preview of the content when fetching.",
 			"Do NOT ask the `web` tool a question directly. Search or fetch first, then read the results or file to find what you need.",
+			`Results are truncated to ${DEFAULT_MAX_LINES} lines and ${DEFAULT_MAX_BYTES} bytes per Pi spec.`,
 		],
 		parameters: webSchema,
 

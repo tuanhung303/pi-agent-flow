@@ -469,7 +469,7 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 		].join("\n"),
 		promptSnippet: "Poll pending bash commands for results",
 		promptGuidelines: [
-			"Use batch_bash_poll to check on bash commands that returned pending from a batch call.",
+			"Use `batch_bash_poll` to check on bash commands that returned pending from a batch call.",
 			"Pass the `i` (id) values from the pending results.",
 		],
 		parameters: BatchBashPollParams,

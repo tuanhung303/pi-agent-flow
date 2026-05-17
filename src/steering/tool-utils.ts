@@ -107,7 +107,7 @@ export function resetDirectiveTracker(): void {
  */
 export function appendDirectiveOnce(result: any, hintContext?: FlowHintContext): void {
 	if (!directiveEnabled) return;
-	if (result?.isError) return;
+	if (result?.failed) return;
 	if (directiveAppendedThisTurn) return;
 	directiveAppendedThisTurn = true;
 

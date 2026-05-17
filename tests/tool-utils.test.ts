@@ -55,7 +55,7 @@ describe("appendDirectiveOnce", () => {
 	});
 
 	it("skips directive on error results", () => {
-		const result = { ...makeResult("error"), isError: true };
+		const result = { ...makeResult("error"), failed: true };
 		appendDirectiveOnce(result);
 		expect(result.content[0].text).toBe("error");
 	});

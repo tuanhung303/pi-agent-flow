@@ -2943,7 +2943,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.isError).toBeFalsy();
+			expect(result.failed).toBeFalsy();
 			expect(result.content[0].text).toContain("1 operations: 1 rg");
 			expect(result.content[0].text).toContain("alpha.txt");
 		});
@@ -2966,7 +2966,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.isError).toBeFalsy();
+			expect(result.failed).toBeFalsy();
 			expect(result.content[0].text).toContain("alpha content");
 			expect(result.content[0].text).toContain("beta.txt");
 		});

@@ -240,7 +240,7 @@ export async function executeOperations(
 		}
 
 		try {
-			const resolvedPath = await validatePath(op.p, cwd);
+			const { path: resolvedPath, warning: pathWarning } = await validatePath(op.p, cwd);
 
 			switch (op.o) {
 				case "read": {
@@ -338,7 +338,7 @@ export async function executeOperations(
 						status: "ok",
 						content: finalContent,
 						totalLines: totalFileLines,
-						warning: safetyWarning,
+						warning: [pathWarning, safetyWarning].filter(Boolean).join("\n") || undefined,
 						truncated: finalTruncated || undefined,
 						nextOffset,
 					});
@@ -359,6 +359,7 @@ export async function executeOperations(
 						path: op.p,
 						status: "ok",
 						bytes: Buffer.byteLength(op.c!, "utf-8"),
+						warning: pathWarning,
 					});
 					counts.write++;
 					break;
@@ -392,6 +393,7 @@ export async function executeOperations(
 						path: op.p,
 						status: "ok",
 						blocksChanged,
+						warning: pathWarning,
 					});
 					counts.edit++;
 					break;
@@ -413,7 +415,7 @@ export async function executeOperations(
 						}
 						await fs.unlink(resolvedPath);
 					});
-					results.push({ op: "delete", path: op.p, status: "ok" });
+					results.push({ op: "delete", path: op.p, status: "ok", warning: pathWarning });
 					counts.delete++;
 					break;
 				}
@@ -442,6 +444,7 @@ export async function executeOperations(
 						content,
 						totalLines: matches.length,
 						enclosingSignatures,
+						warning: pathWarning,
 					});
 					counts.rg++;
 					break;

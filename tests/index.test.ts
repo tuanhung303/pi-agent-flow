@@ -430,7 +430,7 @@ describe("flow tool execute", () => {
 			makeMockCtx(tmpDir),
 		);
 
-		expect(result.isError).toBeFalsy();
+		expect(result.failed).toBeFalsy();
 		expect(runFlow).toHaveBeenCalledTimes(1);
 		const runFlowArgs = vi.mocked(runFlow).mock.calls[0][0];
 		expect(runFlowArgs.flowName).toBe("scout");
@@ -1127,7 +1127,7 @@ describe("flow tool execute", () => {
 		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("model-a");
 		// Second call with model-b (failover)
 		expect(vi.mocked(runFlow).mock.calls[1][0].model).toBe("model-b");
-		expect(result.isError).toBeFalsy();
+		expect(result.failed).toBeFalsy();
 	});
 
 	it("stops on first successful attempt", async () => {
@@ -1239,7 +1239,7 @@ describe("flow tool execute", () => {
 		);
 
 		expect(runFlow).toHaveBeenCalledTimes(2);
-		// isError should be set on the result's details, not directly on the return
+		// failed should be set on the result's details, not directly on the return
 		const lastResult = vi.mocked(runFlow).mock.results[0]?.value;
 	});
 

@@ -289,7 +289,7 @@ declare module "@mariozechner/pi-agent-core" {
 	export interface AgentToolResult<T = any> {
 		content: any[];
 		details?: T;
-		isError?: boolean;
+		failed?: boolean;
 		_toolCallId?: string;
 	}
 }

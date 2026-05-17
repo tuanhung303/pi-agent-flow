@@ -102,7 +102,7 @@ export interface ExecuteFlowParams {
 export interface ExecuteFlowResult {
 	content: Array<{ type: string; text: string }>;
 	details: FlowDetails;
-	isError?: boolean;
+	failed?: boolean;
 	_toolCallId?: string;
 }
 
@@ -236,7 +236,7 @@ export async function executeFlows(
 					text: `Blocked: cycle detected. Flow(s) in stack: ${violations.join(", ")}\nStack: ${stack}`,
 				}],
 				details: makeDetails([]),
-				isError: true,
+				failed: true,
 			};
 		}
 	}
@@ -249,7 +249,7 @@ export async function executeFlows(
 			return {
 				content: [{ type: "text", text: blocked ?? "Canceled: project-local flows not approved." }],
 				details: makeDetails([]),
-				isError: !blocked,
+				failed: !blocked,
 			};
 		}
 	}

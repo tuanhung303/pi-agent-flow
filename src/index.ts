@@ -595,7 +595,7 @@ export default function (pi: ExtensionAPI) {
 					toolCallId,
 				);
 
-				if (result.isError) {
+				if (result.failed) {
 					const text = result.content?.[0]?.text ?? "Flow execution failed";
 					throw new Error(text);
 				}
@@ -603,6 +603,7 @@ export default function (pi: ExtensionAPI) {
 				const flowToolResult = {
 					content: result.content,
 					details: result.details,
+					failed: result.failed,
 					_toolCallId: toolCallId,
 				} as any;
 				// Build adaptive directive context from flow results
