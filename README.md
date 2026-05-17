@@ -48,7 +48,7 @@ pi install .
 - **Parallel execution** — batch independent flows into one call with bounded concurrency
 - **Depth guards & cycle prevention** — configurable max delegation depth (default: `3`) and automatic blocking of re-entering ancestor flows
 - **Post-flow advisories** — built-in transition matrix suggesting optimal next flows (e.g. `scout` → `build`, `debug` → `build`)
-- **Session timeout modes** — child flows use controlled budgets: `fast` (300s), `default` (600s), `long` (900s), or `extreme_long` (1200s)
+- **Session timeout modes** — child flows use controlled budgets: `snap` (90s), `fast` (300s), `default` (600s), `long` (900s), or `extreme_long` (1200s)
 - **Two-stage timeout awareness** — flows receive deadline hints in their prompt; the parent UI shows live countdowns and injects warning reminders before hard kill
 - **Graceful shutdown** — parent `SIGINT`/`SIGTERM` propagates to all child process groups; orphaned sub-agents are force-killed after a grace period
 - **Model tiering & failover** — flows map to `lite` / `flash` / `full` tiers with primary + failover model chains
@@ -139,7 +139,7 @@ The child's `<context-seal>` prompt tells it: *"The conversation above is sealed
 | `[build]` | Implement features, fix bugs, write tests, deploy, and ship | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
 | `[craft]` | Plan structure, break down requirements, design solutions | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
 | `[audit]` | Audit security, quality, correctness; fix safe issues autonomously | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
-| `[ideas]` | Generate ideas, explore possibilities, and think creatively using inherited context | `batch`, `bash`, `web` | `full` |
+| `[ideas]` | Generate ideas, explore possibilities, and think creatively using inherited context | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
 
 > **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
 
@@ -153,6 +153,7 @@ Each flow call may set `sessionMode` to choose the child-agent time budget:
 
 | Mode | Budget | Recommended use |
 |------|-------:|-----------------|
+| `snap` | 90s | ultra-quick checks, single-file reads, tiny fixes |
 | `fast` | 300s | quick scouting, narrow checks, small design passes |
 | `default` | 600s | normal flow work; this is the default |
 | `long` | 900s | large builds, full test runs, broad refactors, complex debugging |
@@ -262,7 +263,8 @@ Schema:
   ],
   "nextSteps": ["recommended follow-up action"],
   "reasoning": ["key hypothesis or inference"],
-  "notes": ["observation or warning"]
+  "notes": ["observation or warning"],
+  "extensions": { "flow-specific": "data" }
 }
 ```
 
@@ -367,16 +369,14 @@ In the collapsed activity panel, web operations display as compact one-line summ
 
 ### `ask_user` — interactive prompts
 
-Parameters beyond the basic `question`, `options`, `allowMultiple`, `allowFreeform`, `allowCancel`:
+Parameters:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `context` | `string` | Summary of findings to show before the question |
-| `allowComment` | `boolean` | Collect an optional freeform comment after selection (default: false) |
-| `displayMode` | `"overlay" \| "inline"` | UI rendering mode; overlay shows a centered modal, inline renders in-place (default: overlay) |
-| `overlayToggleKey` | `string` | Shortcut for hiding/showing the overlay popup (default: `alt+o`; pass `"off"` to disable) |
-| `commentToggleKey` | `string` | Shortcut for toggling the comment row when `allowComment` is true (default: `ctrl+g`) |
-| `timeout` | `number` | Auto-dismiss after N milliseconds; returns null (cancelled) when expired |
+| `question` | `string` | The question to ask the user |
+| `options` | `Array<{title, description}>` | Optional multiple-choice answers; mark the preferred choice first |
+
+Timeout behavior is controlled globally via the `PI_ASK_USER_TIMEOUT` environment variable (seconds) or `flowSettings.askUser.timeout` in settings.
 
 ---
 
