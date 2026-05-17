@@ -109,7 +109,7 @@ export interface ExtensionContext {
 		sessionManager: SessionManager;
 		newSession(opts?: {
 			parentSession?: string;
-			setup?: (sessionManager: SessionManager) => Promise<void>;
+			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 		}): Promise<{ cancelled: boolean }>;
 		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
 		waitForIdle(): Promise<void>;
@@ -122,6 +122,12 @@ export interface ExtensionContext {
 			getApiKeyAndHeaders(model: any): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
 		};
 		model?: any;
+	}
+
+	export interface ReplacedSessionContext extends ExtensionCommandContext {
+		sendUserMessage(content: string, opts?: { deliverAs?: string }): Promise<void>;
+		setSessionName(name: string): void;
+		appendEntry(customType: string, data?: unknown): void;
 	}
 
 	/** Event payload for pi.on("turn_end", ...) callbacks. */

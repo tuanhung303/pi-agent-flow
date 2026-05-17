@@ -167,25 +167,18 @@ export async function performWarp(
 
     const result = await ctx.newSession({
       parentSession: ctx.sessionManager.getSessionFile(),
-      setup: async (sessionManager) => {
+      withSession: async (newCtx) => {
         if (isLoopActive) recordSessionWarp(cwd);
-        // Set descriptive name
-        sessionManager.appendSessionInfo(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
-        // Extension state marker
-        sessionManager.appendCustomEntry("pi-agent-flow:warp", {
+        newCtx.setSessionName(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
+        newCtx.appendEntry("pi-agent-flow:warp", {
           sourceSessionId: currentSessionId,
           warpCount: isLoopActive ? loop.sessionCount : 1,
           totalTokens: isLoopActive ? loop.totalTokensAcrossSessions : 0,
           timestamp: Date.now(),
         });
+        await newCtx.sendUserMessage(warpedPrompt);
       },
     });
-
-    // After newSession, send the prompt to trigger agent processing
-    // (setup callback has no UI access, so we use pi.sendUserMessage post-switch)
-    if (opts?.pi && !result.cancelled) {
-      opts.pi.sendUserMessage(warpedPrompt);
-    }
 
     if (result.cancelled) {
       return { success: false, error: "Warp cancelled." };
