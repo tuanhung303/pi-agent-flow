@@ -12,8 +12,8 @@ import { discoverFlows, getFlowTier } from "./core/agents.js";
 import { getInheritedCliArgs } from "./snapshot/cli-args.js";
 import { renderFlowCall, renderFlowResult } from "./tui/render.js";
 import { terminateAllChildGroups } from "./core/flow.js";
-import { executeFlows } from "./core/executor.js";
-import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./steering/tool-utils.js";
+import { executeFlows, evictCacheOverflow } from "./core/executor.js";
+import { appendDirectiveOnce, resetDirectiveTracker, configureDirective, stripDirectivesFromMessages, type FlowHintContext } from "./steering/tool-utils.js";
 import type {
 	SingleResult,
 	FlowDetails,
@@ -60,6 +60,97 @@ export { logWarn, logError };
 // flow results are compressed properly in fork snapshots.
 // ---------------------------------------------------------------------------
 const flowResultCache = new Map<string, CompressedFlowResult[]>();
+
+/**
+ * Reconstruct flowResultCache from an existing session branch after restart.
+ * Scans tool results for the "flow" tool and rebuilds CompressedFlowResult
+ * entries so child-fork compression works immediately without waiting for
+ * new flows to complete.
+ */
+function reconstructFlowResultCache(
+	sessionManager: { getBranch: () => unknown[] },
+	cache: Map<string, CompressedFlowResult[]>,
+): void {
+	const branch = sessionManager.getBranch();
+	if (!Array.isArray(branch) || branch.length === 0) return;
+
+	// Pass 1: map toolCallId -> "flow" from assistant messages
+	const toolCallIdToName = new Map<string, string>();
+	for (const entry of branch) {
+		if (!entry || typeof entry !== "object") continue;
+		const e = entry as Record<string, unknown>;
+		if (e.type !== "message") continue;
+		const msg = e.message as Record<string, unknown> | undefined;
+		if (!msg || msg.role !== "assistant") continue;
+		const content = msg.content;
+		if (!Array.isArray(content)) continue;
+		for (const part of content) {
+			if (!part || typeof part !== "object") continue;
+			const p = part as Record<string, unknown>;
+			if (p.type === "toolCall" && p.name === "flow") {
+				const tcId = (p.id ?? p.toolCallId) as string | undefined;
+				if (tcId) toolCallIdToName.set(tcId, "flow");
+			}
+		}
+	}
+
+	// Pass 2: scan tool/toolResult messages and rebuild cache
+	for (const entry of branch) {
+		if (!entry || typeof entry !== "object") continue;
+		const e = entry as Record<string, unknown>;
+		if (e.type !== "message") continue;
+		const msg = e.message as Record<string, unknown> | undefined;
+		if (!msg || (msg.role !== "tool" && msg.role !== "toolResult")) continue;
+
+		let toolCallId: string | undefined;
+		if (typeof msg.toolCallId === "string" && msg.toolCallId.trim()) {
+			toolCallId = msg.toolCallId;
+		} else if (Array.isArray(msg.content)) {
+			for (const part of msg.content) {
+				if (!part || typeof part !== "object") continue;
+				const p = part as Record<string, unknown>;
+				if (p.type === "toolResult" && typeof p.toolCallId === "string" && p.toolCallId.trim()) {
+					toolCallId = p.toolCallId;
+					break;
+				}
+			}
+		}
+		if (!toolCallId || toolCallIdToName.get(toolCallId) !== "flow") continue;
+
+		const details = msg.details as Record<string, unknown> | undefined;
+		if (!details || !Array.isArray(details.results)) continue;
+
+		const results = details.results as Array<Record<string, unknown>>;
+		const compressed: CompressedFlowResult[] = [];
+		for (const r of results) {
+			const so = r.structuredOutput as Record<string, unknown> | undefined;
+			if (!so) continue;
+			const c: CompressedFlowResult = {
+				type: typeof r.type === "string" ? r.type : "unknown",
+				status: typeof r.exitCode === "number" && r.exitCode === 0 ? "accomplished" : "failed",
+			};
+			if (typeof r.intent === "string") c.intent = r.intent;
+			if (typeof r.aim === "string") c.aim = r.aim;
+			if (typeof so.summary === "string") c.summary = so.summary;
+			if (Array.isArray(so.files)) c.files = so.files as CompressedFlowResult["files"];
+			if (Array.isArray(so.actions)) c.actions = so.actions as CompressedFlowResult["actions"];
+			if (Array.isArray(so.commands)) c.commands = so.commands as CompressedFlowResult["commands"];
+			if (Array.isArray(so.notDone)) c.notDone = so.notDone as CompressedFlowResult["notDone"];
+			if (Array.isArray(so.nextSteps)) c.nextSteps = so.nextSteps as CompressedFlowResult["nextSteps"];
+			if (Array.isArray(so.reasoning)) c.reasoning = so.reasoning as CompressedFlowResult["reasoning"];
+			if (Array.isArray(so.notes)) c.notes = so.notes as CompressedFlowResult["notes"];
+			if (typeof r.errorMessage === "string") c.error = r.errorMessage;
+			compressed.push(c);
+		}
+		if (compressed.length > 0) {
+			const existing = cache.get(toolCallId) ?? [];
+			existing.push(...compressed);
+			cache.set(toolCallId, existing);
+		}
+	}
+
+	evictCacheOverflow(cache);
+}
 
 import {
 	computeActiveTools,
@@ -228,9 +319,15 @@ export default function (pi: ExtensionAPI) {
 		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
 
+		// Reconstruct historical flow result cache so fork snapshots can compress
+		// past flow results immediately (instead of showing placeholder text until
+		// new flows complete). bashTracker is created fresh below — pending OS
+		// processes are inherently lost across restarts, which is expected.
+		reconstructFlowResultCache(ctx.sessionManager, flowResultCache);
+
 		// Wire resolved settings to modules
 		configureSteering({ enabled: resolved.steeringEnabled, customPrompt: resolved.steeringCustomPrompt });
-		configureStrategicHint(resolved.steeringStrategicHint);
+		configureDirective(resolved.steeringStrategicHint);
 		scrambleManager.setAnimationConfig({ enabled: resolved.animationEnabled, glitch: resolved.animationGlitch });
 
 		// Only restrict tools for the main orchestrator (depth 0).
@@ -271,6 +368,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		flowResultCache.clear();
 		_sessionCtx = undefined;
+		// bashTracker and its pending OS processes are discarded on restart.
+		// This is expected — child process state is not serializable.
 		if (bashTracker) {
 			try { bashTracker.abortAll(); } catch { /* best-effort */ }
 			bashTracker = undefined;
@@ -282,7 +381,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("turn_start", () => {
 		if (currentDepth > 0 || !resolved) return;
 		pi.setActiveTools(computeActiveTools(resolved.toolOptimize));
-		resetStrategicHintTracker();
+		resetDirectiveTracker();
 	});
 
 	// Inject available flows into the system prompt.
@@ -313,7 +412,10 @@ export default function (pi: ExtensionAPI) {
 		if (currentDepth > 0) return undefined;
 
 		// Always strip old steering hint messages to prevent accumulation
-		const { messages, changed: messagesChanged } = stripSteeringHintsFromMessages(event.messages);
+		const { messages: steeringStrippedMessages, changed: steeringChanged } = stripSteeringHintsFromMessages(event.messages);
+		// Also strip directive hints (adaptive hints appended to tool results)
+		const { messages, changed: directiveChanged } = stripDirectivesFromMessages(steeringStrippedMessages);
+		const messagesChanged = steeringChanged || directiveChanged;
 
 		// Find latest user message
 		const userIndices = messages
@@ -503,7 +605,19 @@ export default function (pi: ExtensionAPI) {
 					details: result.details,
 					_toolCallId: toolCallId,
 				} as any;
-				appendStrategicHintOnce(flowToolResult);
+				// Build adaptive directive context from flow results
+				const hintContext: FlowHintContext = { hasNotDone: false, statusVague: false };
+				if (result.details?.results && Array.isArray(result.details.results)) {
+					for (const r of result.details.results) {
+						if (r.structuredOutput?.notDone?.length) {
+							hintContext.hasNotDone = true;
+						}
+						if (!r.structuredOutput || !["complete", "partial", "blocked"].includes(r.structuredOutput.status)) {
+							hintContext.statusVague = true;
+						}
+					}
+				}
+				appendDirectiveOnce(flowToolResult, hintContext);
 				return flowToolResult;
 			},
 
