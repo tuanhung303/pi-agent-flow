@@ -129,7 +129,7 @@ const FileOp = Type.Object({
 export const WeavePatchParams = Type.Object({
 	o: Type.Array(FileOp, {
 		description:
-			"Ordered list of operations. File ops (read/write/edit/delete) execute sequentially — on failure, remaining file ops are skipped. Bash ops (bash) run in parallel after file ops complete and do not skip each other on failure.",
+			"Ordered list of operations. File ops (read/write/edit/delete) execute sequentially — each operation executes independently; failures are reported per-operation without stopping remaining ops. Bash ops (bash) run in parallel after file ops complete and do not skip each other on failure.",
 	}),
 });
 
@@ -191,7 +191,7 @@ const BatchReadOp = Type.Union([
 export const BatchReadParams = Type.Object({
 	o: Type.Array(BatchReadOp, {
 		description:
-			"Ordered list of read operations. Executed sequentially. On failure, remaining operations are skipped.",
+			"Ordered list of read operations. Executed sequentially. Each operation executes independently; failures are reported per-operation without stopping remaining ops.",
 	}),
 });
 
@@ -325,7 +325,7 @@ export function createBatchReadTool() {
 		label: "batch_read",
 		description: [
 			"Batch read-only file operations — run multiple read ops in a single call.",
-			"Each operation is independent and executes sequentially in array order; on failure, remaining operations are skipped.",
+			"Each operation is independent and executes sequentially in array order; failures are reported per-operation without stopping remaining ops.",
 			`Full-file reads up to ${SAFE_FULL_READ_LIMIT} lines return raw content; larger full-file reads return a context map for code/infra files or total lines for plain text.`,
 			`Targeted reads with l over ${TARGETED_READ_LINE_LIMIT} are clamped with a continuation warning; a single line over the byte limit still errors.`,
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
@@ -415,7 +415,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 		description: [
 			"Batch operations — run multiple file ops (read/write/edit/delete) and bash commands in a single call.",
 			"Each file operation is independent: edits are matched against the current on-disk file, not against prior operations in the same call.",
-			"File operations execute sequentially in array order; on failure, remaining file operations are skipped.",
+			"File operations execute sequentially in array order; each operation executes independently and failures are reported per-operation without stopping remaining ops.",
 			"Bash operations (o: 'bash') run in parallel after all file ops complete. Bash ops do NOT skip each other on failure.",
 			`Bash ops use c (command), i (id), t (timeout, default ${BASH_SOFT_TIMEOUT_MS}ms), h (cwd). Commands exceeding the soft timeout return "pending" status with last 50 lines of output; poll with batch_bash_poll.`,
 			`Bash output is truncated to ${MAX_BASH_OUTPUT_LINES} lines / ${(MAX_BASH_OUTPUT_BYTES / 1024).toFixed(0)} KB. File reads are truncated to ${MAX_LINES} lines / ${(MAX_BYTES / 1024).toFixed(0)} KB.`,
@@ -461,25 +461,22 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 				}
 			}
 
-			// Execute file ops first (sequential, skip-on-failure)
+			// Execute file ops first (sequential)
 			let fileContentText = "";
 			let fileResults: import("./constants.js").OpResult[] = [];
-			let fileFailed = false;
 
 			if (fileOps.length > 0) {
 				const fileOutput = await executeOperations(fileOps, ctx.cwd, signal);
 				fileContentText = fileOutput.contentText;
 				fileResults = fileOutput.results;
-				fileFailed = fileOutput.results.some((r) => r.status === "error");
 			}
 
-			// Execute bash ops in parallel (independent of file failures,
-			// unless ALL ops are file+bash and a file op failed before any bash op)
-			// Per spec: file op failure skips bash ops
+			// Execute bash ops in parallel after file ops complete.
+			// Bash ops run regardless of file op failures.
 			let bashResults: import("./constants.js").OpResult[] = [];
 			let bashContentText = "";
 
-			if (bashOps.length > 0 && !fileFailed && bashTracker) {
+			if (bashOps.length > 0 && bashTracker) {
 				const normalizedBashOps = bashOps.map((op) => ({
 					i: op.i ?? generateBashId(),
 					c: op.c ?? "",
@@ -515,17 +512,6 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 					}
 				}
 				bashContentText = bashLines.join("\n");
-			} else if (bashOps.length > 0 && fileFailed) {
-				// File ops failed — mark bash ops as skipped
-				bashResults = bashOps.map((op) => ({
-					op: "bash" as const,
-					path: op.p,
-					status: "skipped" as const,
-					id: op.i,
-					command: op.c,
-					error: "Skipped: a file operation failed.",
-				}));
-				bashContentText = `\n--- bash: ${bashOps.length} command(s) skipped (file op failed) ---`;
 			} else if (bashOps.length > 0 && !bashTracker) {
 				bashResults = bashOps.map((op) => ({
 					op: "bash" as const,

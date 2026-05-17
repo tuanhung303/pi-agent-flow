@@ -459,14 +459,14 @@ describe("batch tool with bash operations", () => {
 		tracker.abortAll();
 	});
 
-	it("file op failure skips bash ops", async () => {
+	it("file op failure does not skip bash ops", async () => {
 		const tool = createBatchTool(tracker);
 		const result = await tool.execute(
 			"call-1",
 			{
 				o: [
 					{ o: "read", p: "nonexistent.txt" },
-					{ o: "bash", c: "echo should-not-run", i: "skip1" },
+					{ o: "bash", c: "echo still-runs", i: "still1" },
 				],
 			},
 			undefined,
@@ -476,8 +476,8 @@ describe("batch tool with bash operations", () => {
 
 		expect(result.details.results[0].status).toBe("error");
 		expect(result.details.results[1]).toMatchObject({
-			status: "skipped",
-			error: expect.stringContaining("file operation failed"),
+			status: "ok",
+			stdout: expect.stringContaining("still-runs"),
 		});
 	});
 

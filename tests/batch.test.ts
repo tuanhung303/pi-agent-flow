@@ -1086,8 +1086,8 @@ describe("batch tool", () => {
 		});
 	});
 
-	describe("skip-on-failure", () => {
-		it("skips remaining operations after failure", async () => {
+	describe("continue-on-failure", () => {
+		it("continues remaining operations after failure", async () => {
 			fs.writeFileSync(path.join(tmpDir, "ok.txt"), "ok\n", "utf-8");
 
 			const tool = createTool();
@@ -1097,7 +1097,7 @@ describe("batch tool", () => {
 					o: [
 						{ op: "read", path: "ok.txt" },
 						{ op: "read", path: "missing.txt" },
-						{ op: "write", path: "skipped.txt", content: "should not be written\n" },
+						{ op: "write", path: "continued.txt", content: "should be written\n" },
 					],
 				},
 				undefined,
@@ -1107,24 +1107,24 @@ describe("batch tool", () => {
 
 			expect(result.details.results[0].status).toBe("ok");
 			expect(result.details.results[1].status).toBe("error");
-			expect(result.details.results[2].status).toBe("skipped");
+			expect(result.details.results[2].status).toBe("ok");
 
-			// The skipped write should not have created the file
-			expect(fs.existsSync(path.join(tmpDir, "skipped.txt"))).toBe(false);
+			// The write should still have been created despite prior read failure
+			expect(fs.existsSync(path.join(tmpDir, "continued.txt"))).toBe(true);
 
-			// Summary should show the failure with hint
-			expect(result.content[0].text).toContain("1 failed, 1 skipped");
-			expect(result.content[0].text).toContain("1 read ok");
+			// Summary should show the failure without skipped count
+			expect(result.content[0].text).toContain("1 failed");
+			expect(result.content[0].text).toContain("1 read, 1 write ok");
 		});
 
-		it("continues after skipped operations are not executed", async () => {
+		it("continues after failure — write runs even if prior read failed", async () => {
 			const tool = createTool();
 			const result = await tool.execute(
 				"call-1",
 				{
 					o: [
 						{ op: "read", path: "nonexistent.txt" },
-						{ op: "write", path: "should-skip.txt", content: "nope\n" },
+						{ op: "write", path: "should-run.txt", content: "yep\n" },
 					],
 				},
 				undefined,
@@ -1133,7 +1133,8 @@ describe("batch tool", () => {
 			);
 
 			expect(result.details.results[0].status).toBe("error");
-			expect(result.details.results[1].status).toBe("skipped");
+			expect(result.details.results[1].status).toBe("ok");
+			expect(fs.existsSync(path.join(tmpDir, "should-run.txt"))).toBe(true);
 		});
 	});
 
@@ -1598,7 +1599,7 @@ describe("batch tool", () => {
 				{
 					o: [
 						{ op: "read", path: "missing.txt" },
-						{ op: "write", path: "skipped.txt", content: "nope" },
+						{ op: "write", path: "continued.txt", content: "nope" },
 					],
 				},
 				undefined,
@@ -1607,7 +1608,8 @@ describe("batch tool", () => {
 			);
 
 			const text = result.content[0].text;
-			expect(text).toContain("1 failed, 1 skipped");
+			expect(text).toContain("1 failed");
+			expect(text).toContain("1 write ok");
 			expect(text).toContain("read missing.txt:");
 			expect(text).toContain("— Verify the path exists.");
 		});

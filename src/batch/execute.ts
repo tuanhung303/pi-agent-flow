@@ -215,8 +215,6 @@ export async function executeOperations(
 	options: ExecuteOptions = {},
 ): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
-	let failed = false;
-
 	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, error: 0, skipped: 0 };
 	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
@@ -229,12 +227,6 @@ export async function executeOperations(
 	for (const op of operations) {
 		if (signal?.aborted) {
 			results.push({ op: op.o, path: op.p, status: "skipped", error: "Operation aborted." });
-			counts.skipped++;
-			continue;
-		}
-
-		if (failed) {
-			results.push({ op: op.o, path: op.p, status: "skipped" });
 			counts.skipped++;
 			continue;
 		}
@@ -427,7 +419,7 @@ export async function executeOperations(
 					}
 					const searchPath = (rgOp.p.startsWith("~") || path.isAbsolute(rgOp.p)) ? resolvedPath : rgOp.p;
 					const args = buildRgArgs({ ...rgOp, p: searchPath });
-					const matches = await execRg(args, cwd);
+					const matches = await execRg(args, cwd, signal);
 					const content = matches.join("\n");
 
 					// Try to attach enclosing signatures (only when we have line numbers)
@@ -454,7 +446,6 @@ export async function executeOperations(
 					throw new Error(`Unknown operation type: ${op.o}`);
 			}
 		} catch (err) {
-			failed = true;
 			counts.error++;
 			const message = err instanceof Error ? err.message : String(err);
 
@@ -755,9 +746,9 @@ function groupRgMatchesByFile(content: string, sigMap: Record<string, string>): 
 	return out.join("\n");
 }
 
-function execRg(args: string[], cwd: string): Promise<string[]> {
+function execRg(args: string[], cwd: string, signal?: AbortSignal): Promise<string[]> {
 	return new Promise((resolve, reject) => {
-		execFile("rg", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+		const child = execFile("rg", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
 			if (err) {
 				// ripgrep exits with code 1 when no matches are found
 				if ((err as any).code === 1) {
@@ -781,5 +772,17 @@ function execRg(args: string[], cwd: string): Promise<string[]> {
 			const lines = stdout.split("\n").filter((line) => line.length > 0);
 			resolve(lines);
 		});
+		if (signal) {
+			const onAbort = () => {
+				try { child.kill("SIGTERM"); } catch { /* already dead */ }
+				reject(new Error("Aborted"));
+			};
+			if (signal.aborted) {
+				onAbort();
+			} else {
+				signal.addEventListener("abort", onAbort, { once: true });
+				child.on("close", () => signal.removeEventListener("abort", onAbort));
+			}
+		}
 	});
 }
