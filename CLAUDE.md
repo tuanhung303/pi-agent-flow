@@ -392,7 +392,7 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 | `edit` | `/flow:goal edit <new-objective> [--acceptance <text>]` — Updates the objective and optionally the acceptance criteria. |
 | `complete` | `/flow:goal complete` — Marks the current goal as completed. |
 | `status`, `show` | `/flow:goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
-| `warp` | `/flow:warp [goal]` — Distills conversation context into a structured project brief (YAML frontmatter + body) and spawns a new session with the goal auto-set. Preserves unresolved blockers, key files, and end-goal intent, plus an execution plan with phased flows. If no goal is provided, a default continuation goal is used. |
+| `warp` | `/flow:warp [goal]` — Distills conversation context into a simple context-transfer prompt (## Context + ## Task) and spawns a new session with the goal auto-set. Preserves unresolved blockers, key files, and end-goal intent. If no goal is provided, a default continuation goal is used. |
 
 > **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow:goal complete`. The agent cannot self-terminate a goal — only the user can end it.
 
@@ -408,71 +408,36 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 
 #### Warp output format
 
-Warp produces a structured **Frontmatter + Body Hybrid** prompt:
+Warp produces a simple **context-transfer prompt** with two markdown sections:
 
-- **Frontmatter** (YAML between `---` delimiters) contains:
-  - `context` — orientation summary
-  - `end_goal` — the finish line
-  - `decisions` — choices already made
-  - `files` — files touched and what changed
-  - `open_items` — unresolved work or questions
-  - `watch_out` — edge cases and fragile assumptions
-  - `context_gathering` — initial discovery aim and scope
-  - `execution_plan` — phased, parallelizable flow assignments with dependencies and deliverables
-  - `success_criteria` — testable completion conditions
-
-- **Body** (after the closing `---`) is a concise Task section restating the immediate next action.
+- **## Context** — orientation summary, decisions made, files touched, unresolved blockers, and edge cases
+- **## Task** — the immediate next action to take
 
 Example distilled prompt:
 
-```yaml
----
-context: Refactoring the auth layer from Express middleware to NestJS guards.
-end_goal: All endpoints protected by NestJS guards with zero regressions.
-decisions:
-  - Use @nestjs/passport with JWT strategy
-  - Skip session auth; keep stateless only
-files:
-  - src/auth/jwt.strategy.ts — created, basic validate()
-  - src/auth/auth.module.ts — registered JwtStrategy
-open_items:
-  - Role-based access not implemented yet
-  - E2E tests failing after guard injection (needs debug)
-watch_out:
-  - JWT secret is overridden by AUTH_SECRET env var in CI
-  - src/auth/auth.module.ts exports order matters for DI
-context_gathering:
-  aim: Map current middleware usage so guards can replace them cleanly
-  scope:
-    - grep for app.use() auth middleware
-    - list all route files with @UseGuards or equivalent
-execution_plan:
-  - phase: Discover
-    parallel: false
-    flow: scout
-    task: Map every route and middleware file that touches authentication
-    produces: A markdown checklist of files to convert
-  - phase: Convert
-    parallel: true
-    group: A
-    flow: build
-    task: Replace middleware with JwtAuthGuard on each mapped route
-    depends_on: [Discover]
-    produces: All routes use @UseGuards(JwtAuthGuard)
-  - phase: Verify
-    parallel: false
-    flow: audit
-    task: Run E2E suite and confirm zero auth-related failures
-    depends_on: [Convert]
-    produces: E2E tests green
-success_criteria:
-  - All routes protected by JwtAuthGuard
-  - E2E auth tests pass
-  - No middleware remains in src/
----
+## Context
 
-Task: Complete the Discover phase by mapping middleware usage, then begin Convert on the first batch of routes.
-```
+We've been refactoring the auth layer from Express middleware to NestJS guards.
+
+Key decisions:
+- Use @nestjs/passport with JWT strategy
+- Skip session auth; keep stateless only
+
+Files involved:
+- `src/auth/jwt.strategy.ts` — created, basic validate()
+- `src/auth/auth.module.ts` — registered JwtStrategy
+
+Unresolved work / blockers:
+- Role-based access not implemented yet
+- E2E tests failing after guard injection (needs debug)
+
+Edge cases to watch:
+- JWT secret is overridden by AUTH_SECRET env var in CI
+- `src/auth/auth.module.ts` exports order matters for DI
+
+## Task
+
+Complete the Discover phase by mapping middleware usage, then begin Convert on the first batch of routes.
 
 ### How it works
 
