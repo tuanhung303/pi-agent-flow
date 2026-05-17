@@ -1,87 +1,97 @@
-/**
- * /flow:warp slash command registration.
- *
- * Distills conversation context and spawns a new session with the warped prompt.
- */
-
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { BorderedLoader } from "@mariozechner/pi-coding-agent";
-import { getGoalForSession } from "./store.js";
-import { getLoop } from "./loop.js";
-import { distillForWarp, performWarp } from "./perform-warp.js";
+import { complete } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@mariozechner/pi-coding-agent";
+import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { sanitizeBranchForWarp, SYSTEM_PROMPT } from "./warp-utils.js";
 
 export function setupWarpCommand(pi: ExtensionAPI): void {
   pi.registerCommand("flow:warp", {
     description: "Warp to a new session with distilled context. Usage: /flow:warp [goal]",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      if (!ctx.ui) {
+      if (!ctx.hasUI) {
+        ctx.ui.notify?.("warp requires interactive mode", "error");
         return;
       }
-      const DEFAULT_WARP_GOAL = "Continue where we left off — summarize what we've done, where we are, and what the natural next step is.";
-      const goal = args.trim() || DEFAULT_WARP_GOAL;
-
-      const cwd = ctx.cwd;
-
-      // Ensure a model is available
-      const model = ctx.model ?? ctx.modelRegistry?.getAvailable()?.[0];
-      if (!model) {
-        ctx.ui.notify?.("No model selected. Configure a model in Pi settings first.", "error");
+      if (!ctx.model) {
+        ctx.ui.notify?.("No model selected", "error");
         return;
       }
 
-      // Gather conversation
+      const goal = args.trim() || "Continue where we left off";
+
       const branch = ctx.sessionManager.getBranch();
-      if (!branch || branch.length === 0) {
-        ctx.ui.notify?.("Empty conversation — nothing to warp.", "error");
+      const messages = branch
+        .filter((entry): entry is SessionEntry & { type: "message" } => (entry as SessionEntry).type === "message")
+        .map((entry) => (entry as SessionEntry & { type: "message" }).message);
+
+      if (messages.length === 0) {
+        ctx.ui.notify?.("No conversation to warp", "error");
         return;
       }
 
-      const activeGoal = getGoalForSession(cwd, ctx.sessionManager.getSessionId());
-      const loop = getLoop(cwd);
+      const { messages: sanitized } = sanitizeBranchForWarp(messages);
+      const llmMessages = convertToLlm(sanitized);
+      const conversationText = serializeConversation(llmMessages);
+      const currentSessionFile = ctx.sessionManager.getSessionFile();
 
-      let warpError: string | undefined;
-
-      const distilledPrompt = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+      const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
         const loader = new BorderedLoader(tui, theme, "Generating warp prompt...");
         loader.onAbort = () => done(null);
-        distillForWarp(ctx, activeGoal, loop, { signal: loader.signal, userGoalOverride: args.trim() || undefined })
-          .then((r) => done(r))
-          .catch((err) => { warpError = err instanceof Error ? err.message : "Unknown error"; done(null); });
+
+        const doGenerate = async () => {
+          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
+          if (!auth.ok || !auth.apiKey) {
+            throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : (auth.error ?? "Auth error"));
+          }
+
+          const response = await complete(
+            ctx.model!,
+            {
+              systemPrompt: SYSTEM_PROMPT,
+              messages: [{ role: "user", content: `## Conversation History\n\n${conversationText}\n\n## User's Goal\n\n${goal}` }],
+            },
+            { apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+          );
+
+          if (response.stopReason === "aborted") return null;
+
+          return response.content
+            .filter((c): c is { type: "text"; text: string } => c.type === "text")
+            .map((c) => c.text)
+            .join("\n");
+        };
+
+        doGenerate()
+          .then(done)
+          .catch((err) => {
+            console.error("Warp generation failed:", err);
+            done(null);
+          });
+
         return loader;
       });
 
-      if (distilledPrompt === null || distilledPrompt === undefined) {
-        if (warpError) {
-          ctx.ui.notify?.(`Warp generation failed: ${warpError}`, "error");
-        } else {
-          ctx.ui.notify?.("Warp cancelled.", "info");
-        }
+      if (result === null || result === undefined) {
+        ctx.ui.notify?.("Cancelled", "info");
         return;
       }
 
-      let reviewedPrompt: string | undefined;
-      if (loop?.status !== "active") {
-        // Present for review
-        reviewedPrompt = await ctx.ui.editor("Edit warp prompt", distilledPrompt);
-        if (reviewedPrompt === undefined) {
-          ctx.ui.notify?.("Warp cancelled by user.", "info");
-          return;
-        }
-        reviewedPrompt = (reviewedPrompt ?? distilledPrompt).trim();
+      const editedPrompt = await ctx.ui.editor("Edit warp prompt", result);
+
+      if (editedPrompt === undefined) {
+        ctx.ui.notify?.("Cancelled", "info");
+        return;
       }
 
-      const warpedPrompt = reviewedPrompt ?? distilledPrompt.trim();
-
-      const result = await performWarp(ctx, {
-        reviewedPrompt: warpedPrompt,
-        goalOverride: args.trim() ? goal : undefined,
-        pi,
+      const newSessionResult = await ctx.newSession({
+        parentSession: currentSessionFile,
+        withSession: async (replacementCtx) => {
+          replacementCtx.ui.setEditorText(editedPrompt);
+          replacementCtx.ui.notify("Warp ready. Submit when ready.", "info");
+        },
       });
 
-      if (!result.success) {
-        ctx.ui.notify?.(`Warp failed: ${result.error}`, "error");
-      } else {
-        ctx.ui.notify?.("Warped to new session.", "info");
+      if (newSessionResult.cancelled) {
+        ctx.ui.notify?.("New session cancelled", "info");
       }
     },
   });

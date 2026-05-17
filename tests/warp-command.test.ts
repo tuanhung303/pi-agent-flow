@@ -1,127 +1,214 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@mariozechner/pi-ai", () => ({
+  complete: vi.fn(),
+}));
+
+vi.mock("@mariozechner/pi-coding-agent", () => ({
+  BorderedLoader: class {
+    signal = new AbortController().signal;
+    onAbort?: () => void;
+    constructor(_tui: any, _theme: any, _text: string) {}
+    invalidate() {}
+    render(_width: number): string[] { return []; }
+    handleInput?(_data: string): void {}
+  },
+  convertToLlm: vi.fn((msgs: any[]) => msgs),
+  serializeConversation: vi.fn((msgs: any[]) => msgs.map((m: any) => m.content).join("\n")),
+}));
+
+vi.mock("../src/flow/warp-utils.js", () => ({
+  sanitizeBranchForWarp: vi.fn((msgs: any[]) => ({ messages: msgs })),
+  SYSTEM_PROMPT: "mock-system-prompt",
+}));
+
+import { complete } from "@mariozechner/pi-ai";
+import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { sanitizeBranchForWarp, SYSTEM_PROMPT } from "../src/flow/warp-utils.js";
 import { setupWarpCommand } from "../src/flow/warp-command.js";
-import { extractGoalFromPrompt } from "../src/flow/warp-utils.js";
-
-vi.mock("../src/flow/perform-warp.js", () => ({
-	distillForWarp: vi.fn(),
-	performWarp: vi.fn().mockResolvedValue({ success: true }),
-}));
-
-vi.mock("../src/flow/store.js", () => ({
-	getGoalForSession: vi.fn().mockReturnValue(null),
-}));
-
-vi.mock("../src/flow/loop.js", () => ({
-	getLoop: vi.fn().mockReturnValue(null),
-}));
-
-import { distillForWarp, performWarp } from "../src/flow/perform-warp.js";
-
-describe("extractGoalFromPrompt", () => {
-	it("extracts end_goal from YAML frontmatter", () => {
-		const prompt = `---\ncontext: Refactoring auth layer\nend_goal: All endpoints protected by NestJS guards with zero regressions\ndecisions:\n  - Use JWT\n---\n\n## Task\n\nDo something else.`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe(
-			"All endpoints protected by NestJS guards with zero regressions. Context: Refactoring auth layer",
-		);
-	});
-
-	it("combines end_goal and context when both fit within MAX_GOAL_LEN", () => {
-		const prompt = `---\ncontext: Refactoring auth layer\nend_goal: All endpoints protected by NestJS guards with zero regressions\n---\n\n## Task\n\nDo the thing.`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe(
-			"All endpoints protected by NestJS guards with zero regressions. Context: Refactoring auth layer",
-		);
-	});
-
-	it("falls back to end_goal alone when combined string exceeds MAX_GOAL_LEN", () => {
-		const longContext = "a".repeat(250);
-		const prompt = `---\ncontext: ${longContext}\nend_goal: Short goal here\n---\n\n## Task\n\nDo the thing.`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe("Short goal here");
-	});
-
-	it("falls back to ## Task section when no end_goal in frontmatter", () => {
-		const prompt = `---\ncontext: Some context\n---\n\n## Task\n\nMigrate tests to vitest and verify all pass\n\n## Other\n\nStuff.`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe("Migrate tests to vitest and verify all pass");
-	});
-
-	it("falls back to first body line when no end_goal and no ## Task", () => {
-		const prompt = `---\ncontext: Some context\n---\n\nMigrate everything to the new framework now`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe("Migrate everything to the new framework now");
-	});
-
-	it("returns generic string when nothing matches", () => {
-		const prompt = `---\n---\n\n\n\n`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe("Continue the work from the warped context");
-	});
-
-	it("truncates end_goal if it exceeds MAX_GOAL_LEN alone", () => {
-		const longGoal = "a".repeat(250);
-		const prompt = `---\nend_goal: ${longGoal}\n---\n\n## Task\n\nShort task.`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe(longGoal.slice(0, 200));
-	});
-
-	it("handles optional quotes around end_goal and context values", () => {
-		const prompt = `---\ncontext: "Quoted context"\nend_goal: 'Quoted goal'\n---\n\n## Task\n\nOther.`;
-		const result = extractGoalFromPrompt(prompt);
-		expect(result).toBe("Quoted goal. Context: Quoted context");
-	});
-});
 
 describe("setupWarpCommand", () => {
-	const registerCommand = vi.fn();
-	const pi = {
-		registerCommand,
-		sendMessage: vi.fn(),
-		appendEntry: vi.fn(),
-	};
+  const registerCommand = vi.fn();
+  const pi = { registerCommand };
 
-	beforeEach(() => {
-		vi.clearAllMocks();
-		setupWarpCommand(pi as any);
-	});
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupWarpCommand(pi as any);
+  });
 
-	it("registers the flow:warp command", () => {
-		expect(registerCommand).toHaveBeenCalledWith("flow:warp", expect.any(Object));
-	});
+  it("registers the flow:warp command", () => {
+    expect(registerCommand).toHaveBeenCalledWith(
+      "flow:warp",
+      expect.objectContaining({
+        description: expect.stringContaining("Warp to a new session"),
+      }),
+    );
+  });
 
-	it("passes pi to performWarp", async () => {
-		(distillForWarp as any).mockResolvedValue("distilled prompt");
+  it("requires interactive mode", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const ctx = { hasUI: false, ui: { notify } } as any;
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("warp requires interactive mode", "error");
+  });
 
-		const handler = registerCommand.mock.calls[0][1].handler;
+  it("requires a model", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const ctx = { hasUI: true, model: null, ui: { notify } } as any;
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("No model selected", "error");
+  });
 
-		const ctx = {
-			cwd: "/test",
-			model: { provider: "test", id: "test" },
-			modelRegistry: {
-				getAvailable: () => [{ provider: "test", id: "test" }],
-				getApiKeyAndHeaders: () => ({ ok: true, apiKey: "key" }),
-			},
-			sessionManager: {
-				getSessionId: () => "s1",
-				getBranch: () => [{ type: "message", message: { role: "user", content: "hi" } }],
-			},
-			ui: {
-				custom: vi.fn().mockResolvedValue("distilled prompt"),
-				editor: vi.fn().mockResolvedValue("distilled prompt"),
-				notify: vi.fn(),
-			},
-		} as any;
+  it("requires non-empty conversation", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const ctx = {
+      hasUI: true,
+      model: { provider: "test", id: "test" },
+      sessionManager: { getBranch: () => [] },
+      ui: { notify },
+    } as any;
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("No conversation to warp", "error");
+  });
 
-		await handler("My goal", ctx);
+  it("generates warp prompt and creates new session", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const editor = vi.fn().mockResolvedValue("edited prompt");
+    const setEditorText = vi.fn();
+    const newSession = vi.fn().mockResolvedValue({ cancelled: false });
+    const getApiKeyAndHeaders = vi.fn().mockResolvedValue({ ok: true, apiKey: "key", headers: {} });
 
-		expect(performWarp).toHaveBeenCalledWith(
-			ctx,
-			expect.objectContaining({
-				reviewedPrompt: "distilled prompt",
-				goalOverride: "My goal",
-				pi,
-			}),
-		);
-	});
+    (complete as any).mockResolvedValue({
+      stopReason: "end",
+      content: [{ type: "text", text: "generated prompt" }],
+    });
+
+    const branch = [{ type: "message", message: { role: "user", content: "hi" } }];
+    const ctx = {
+      hasUI: true,
+      model: { provider: "test", id: "test" },
+      modelRegistry: { getApiKeyAndHeaders },
+      sessionManager: {
+        getBranch: () => branch,
+        getSessionFile: () => "/tmp/session",
+      },
+      ui: {
+        notify,
+        editor,
+        setEditorText,
+        custom: vi.fn().mockImplementation((factory) => {
+          return new Promise((resolve) => {
+            const done = (val: any) => resolve(val);
+            factory({}, {}, {}, done);
+          });
+        }),
+      },
+      newSession,
+    } as any;
+
+    await handler("my goal", ctx);
+
+    expect(sanitizeBranchForWarp).toHaveBeenCalledWith([{ role: "user", content: "hi" }]);
+    expect(convertToLlm).toHaveBeenCalledWith([{ role: "user", content: "hi" }]);
+    expect(serializeConversation).toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        systemPrompt: "mock-system-prompt",
+        messages: [
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("my goal"),
+          }),
+        ],
+      }),
+      expect.anything(),
+    );
+    expect(editor).toHaveBeenCalledWith("Edit warp prompt", "generated prompt");
+    expect(newSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentSession: "/tmp/session",
+        withSession: expect.any(Function),
+      }),
+    );
+  });
+
+  it("cancels when custom returns null", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const ctx = {
+      hasUI: true,
+      model: { provider: "test", id: "test" },
+      modelRegistry: {
+        getApiKeyAndHeaders: vi.fn().mockResolvedValue({ ok: true, apiKey: "key", headers: {} }),
+      },
+      sessionManager: {
+        getBranch: () => [{ type: "message", message: { role: "user", content: "hi" } }],
+        getSessionFile: () => "/tmp/session",
+      },
+      ui: {
+        notify,
+        custom: vi.fn().mockResolvedValue(null),
+      },
+    } as any;
+
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("Cancelled", "info");
+  });
+
+  it("cancels when editor returns undefined", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const editor = vi.fn().mockResolvedValue(undefined);
+    const ctx = {
+      hasUI: true,
+      model: { provider: "test", id: "test" },
+      modelRegistry: {
+        getApiKeyAndHeaders: vi.fn().mockResolvedValue({ ok: true, apiKey: "key", headers: {} }),
+      },
+      sessionManager: {
+        getBranch: () => [{ type: "message", message: { role: "user", content: "hi" } }],
+        getSessionFile: () => "/tmp/session",
+      },
+      ui: {
+        notify,
+        editor,
+        custom: vi.fn().mockResolvedValue("generated prompt"),
+      },
+    } as any;
+
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("Cancelled", "info");
+  });
+
+  it("notifies when new session is cancelled", async () => {
+    const handler = registerCommand.mock.calls[0][1].handler;
+    const notify = vi.fn();
+    const editor = vi.fn().mockResolvedValue("edited prompt");
+    const newSession = vi.fn().mockResolvedValue({ cancelled: true });
+    const ctx = {
+      hasUI: true,
+      model: { provider: "test", id: "test" },
+      modelRegistry: {
+        getApiKeyAndHeaders: vi.fn().mockResolvedValue({ ok: true, apiKey: "key", headers: {} }),
+      },
+      sessionManager: {
+        getBranch: () => [{ type: "message", message: { role: "user", content: "hi" } }],
+        getSessionFile: () => "/tmp/session",
+      },
+      ui: {
+        notify,
+        editor,
+        custom: vi.fn().mockResolvedValue("generated prompt"),
+      },
+      newSession,
+    } as any;
+
+    await handler("", ctx);
+    expect(notify).toHaveBeenCalledWith("New session cancelled", "info");
+  });
 });

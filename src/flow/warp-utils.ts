@@ -1,5 +1,5 @@
 /**
- * Shared warp utilities — sanitization, system prompt, and goal extraction.
+ * Shared warp utilities — sanitization and system prompt.
  */
 
 import { stripReasoningFromAssistantMessage } from "../snapshot/reasoning-strip.js";
@@ -9,9 +9,6 @@ import {
   contentContainsSteeringHintTag,
 } from "../steering/sliding-prompt.js";
 import { stripStrategicHintsFromContent } from "../steering/tool-utils.js";
-import { logError } from "../config/log.js";
-
-export const MAX_CONVERSATION_CHARS = 15000;
 
 export function sanitizeBranchForWarp(messages: any[]): { messages: any[]; passesApplied: string[] } {
   const passesApplied = new Set<string>();
@@ -159,46 +156,3 @@ RULES:
 Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here is the prompt" — just output the prompt itself.
 
 IMPORTANT: You are a text generation assistant, not an agent. Do NOT attempt tool calls, file operations, code execution, or any actions. Output ONLY the structured prompt text.`;
-
-export function extractGoalFromPrompt(prompt: string): string {
-  const MAX_GOAL_LEN = 200;
-  // Helper: find first meaningful line and strip bullet/numbered prefixes
-  const pickFirstLine = (text: string): string | undefined => {
-    const lines = text.split('\n');
-    for (const raw of lines) {
-      const trimmed = raw.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const cleaned = trimmed.replace(/^[-*•]\s+|^\d+\.\s+/, '');
-      if (cleaned) return cleaned.length > MAX_GOAL_LEN ? cleaned.slice(0, MAX_GOAL_LEN).trimEnd() : cleaned;
-    }
-    return undefined;
-  };
-
-  // Strategy 1: Parse end_goal from YAML frontmatter
-  const endGoalMatch = prompt.match(/^end_goal:\s*["']?(.+?)["']?\s*$/m);
-  if (endGoalMatch?.[1]) {
-    const endGoal = endGoalMatch[1].trim();
-    const contextMatch = prompt.match(/^context:\s*["']?(.+?)["']?\s*$/m);
-    if (contextMatch?.[1]) {
-      const context = contextMatch[1].trim();
-      const combined = `${endGoal}. Context: ${context}`;
-      if (combined.length <= MAX_GOAL_LEN) return combined;
-    }
-    return endGoal.length > MAX_GOAL_LEN ? endGoal.slice(0, MAX_GOAL_LEN).trimEnd() : endGoal;
-  }
-
-  // Try to find ## Task section
-  const taskMatch = prompt.match(/##\s*Task\s*\n([\s\S]*?)(?=\n##|$)/i);
-  if (taskMatch?.[1]) {
-    const picked = pickFirstLine(taskMatch[1]);
-    if (picked) return picked;
-  }
-  // Fallback: first non-empty, non-header, non-bullet line after ---
-  const bodyStart = prompt.indexOf('---', 3);
-  if (bodyStart !== -1) {
-    const body = prompt.slice(bodyStart + 3);
-    const picked = pickFirstLine(body);
-    if (picked) return picked;
-  }
-  return 'Continue the work from the warped context';
-}

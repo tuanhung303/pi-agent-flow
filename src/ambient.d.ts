@@ -36,6 +36,13 @@ declare module "@mariozechner/pi-coding-agent" {
 	appendSessionInfo(name: string): string;
 	appendCustomEntry(customType: string, data?: unknown): string;
 }
+export interface SessionEntry {
+	id: string;
+	type: string;
+	message?: any;
+	customType?: string;
+	data?: any;
+}
 export interface ExtensionContext {
 		cwd: string;
 		hasUI: boolean;
@@ -98,12 +105,12 @@ export interface ExtensionContext {
 		hasUI: boolean;
 		ui: {
 			confirm: (title: string, body: string) => Promise<boolean>;
-			notify?: (message: string, type: string) => void;
+			notify: (message: string, type: string) => void;
 			select: (prompt: string, options: string[], opts?: any) => Promise<string | null>;
 			input: (prompt: string, placeholder: string, opts?: any) => Promise<string | null>;
 			custom: <T>(factory: (...args: any[]) => any, options?: any) => Promise<T | undefined>;
 			onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => (() => void);
-			setEditorText?: (text: string) => void;
+			setEditorText: (text: string) => void;
 			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
 		sessionManager: SessionManager;
