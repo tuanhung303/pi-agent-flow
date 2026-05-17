@@ -39,9 +39,9 @@ export function formatFlowTypeName(type: string): string {
 
 /** Format tokens-per-second to a display string. */
 export function formatTps(value: number | undefined): string {
-	if (!value || value <= 0) return "-- tok/s";
-	if (value >= 100) return `${Math.round(value)} tok/s`;
-	return `${value.toFixed(1)} tok/s`;
+	if (!value || value <= 0) return "-- t/s";
+	if (value >= 100) return `${Math.round(value)} t/s`;
+	return `${value.toFixed(1)} t/s`;
 }
 
 export function italic(text: string): string {
