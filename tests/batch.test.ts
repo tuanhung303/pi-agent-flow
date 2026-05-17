@@ -39,7 +39,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 1 × read");
+			expect(result.content[0].text).toContain("read: [test.txt]");
     expect(result.content[0].text).toContain("--- test.txt (2 lines) ---");
     expect(result.content[0].text).toContain("hello world");
 			expect(result.details.results[0]).toMatchObject({
@@ -69,7 +69,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 2 × read");
+			expect(result.content[0].text).toContain("read: [a.txt, b.txt]");
     expect(result.content[0].text).toContain("--- a.txt (2 lines) ---");
     expect(result.content[0].text).toContain("content a");
     expect(result.content[0].text).toContain("--- b.txt (2 lines) ---");
@@ -572,7 +572,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 1 × write");
+			expect(result.content[0].text).toContain("write: [new.txt]");
     expect(result.content[0].text).toContain("write: new.txt");
     expect(result.content[0].text).toContain("12 bytes");
 			expect(result.details.results[0]).toMatchObject({
@@ -639,7 +639,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 2 × write");
+			expect(result.content[0].text).toContain("write: [x.txt, y.txt]");
     expect(result.content[0].text).toContain("write: x.txt");
     expect(result.content[0].text).toContain("write: y.txt");
 			expect(fs.readFileSync(path.join(tmpDir, "x.txt"), "utf-8")).toBe("x\n");
@@ -668,7 +668,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 1 × edit");
+			expect(result.content[0].text).toContain("edit: [edit.txt]");
     expect(result.content[0].text).toContain("edit: edit.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "edit",
@@ -739,7 +739,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 2 × edit");
+			expect(result.content[0].text).toContain("edit: [a.txt, b.txt]");
     expect(result.content[0].text).toContain("edit: a.txt");
     expect(result.content[0].text).toContain("edit: b.txt");
 			expect(fs.readFileSync(path.join(tmpDir, "a.txt"), "utf-8")).toBe("ALPHA\n");
@@ -989,7 +989,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 1 × delete");
+			expect(result.content[0].text).toContain("delete: [delete-me.txt]");
 			expect(result.content[0].text).toContain("delete: delete-me.txt");
 			expect(result.details.results[0]).toMatchObject({
 				op: "delete",
@@ -1040,7 +1040,7 @@ describe("batch tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 1 × read, 1 × write, 1 × edit");
+			expect(result.content[0].text).toContain("read: [existing.txt], write: [new.txt], edit: [existing.txt]");
     expect(result.content[0].text).toContain("--- existing.txt");
     expect(result.content[0].text).toContain("write: new.txt");
     expect(result.content[0].text).toContain("edit: existing.txt");
@@ -1114,7 +1114,7 @@ describe("batch tool", () => {
 
 			// Summary should show the failure without skipped count
 			expect(result.content[0].text).toContain("1 failed");
-			expect(result.content[0].text).toContain("operations: 1 × read, 1 × write");
+			expect(result.content[0].text).toContain("read: [ok.txt], write: [continued.txt]");
 		});
 
 		it("continues after failure — write runs even if prior read failed", async () => {
@@ -1609,7 +1609,7 @@ describe("batch tool", () => {
 
 			const text = result.content[0].text;
 			expect(text).toContain("1 failed");
-			expect(text).toContain("operations: 1 × write");
+			expect(text).toContain("write: [continued.txt]");
 			expect(text).toContain("read missing.txt:");
 			expect(text).toContain("— Verify the path exists.");
 		});
@@ -2259,10 +2259,10 @@ describe("edge cases", () => {
 			);
 
 			const text = result.content[0].text;
-			expect(text).toContain("2 × read");
-			expect(text).toContain("2 × write");
-			expect(text).toContain("2 × edit");
-			expect(text).toContain("2 × delete");
+			expect(text).toContain("read: [r1.txt, r2.txt]");
+			expect(text).toContain("write: [w1.txt, w2.txt]");
+			expect(text).toContain("edit: [e1.txt, e2.txt]");
+			expect(text).toContain("delete: [d1.txt, d2.txt]");
 		});
 
 		it("includes byte truncation warning in summary", async () => {
@@ -2353,7 +2353,7 @@ describe("edge cases", () => {
 				path: "new.txt",
 				status: "ok",
 			});
-			expect(result.content[0].text).toContain("1 × write");
+			expect(result.content[0].text).toContain("write: [new.txt]");
 		});
 	});
 
@@ -2526,7 +2526,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 1 × read");
+			expect(result.content[0].text).toContain("read: [test.txt]");
 			expect(result.details.results[0]).toMatchObject({
 				op: "read",
 				path: "test.txt",
@@ -2552,7 +2552,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 2 × read");
+			expect(result.content[0].text).toContain("read: [a.txt, b.txt]");
 			expect(result.details.results).toHaveLength(2);
 		});
 
@@ -2948,7 +2948,7 @@ describe("batch_read tool", () => {
 			);
 
 			expect(result.failed).toBeFalsy();
-			expect(result.content[0].text).toContain("operations: 1 × rg");
+			expect(result.content[0].text).toContain("rg: [\"alpha\"]");
 			expect(result.content[0].text).toContain("alpha.txt");
 		});
 
@@ -2998,7 +2998,7 @@ describe("batch_read tool", () => {
 				makeCtx(tmpDir),
 			);
 
-			expect(result.content[0].text).toContain("operations: 2 × read");
+			expect(result.content[0].text).toContain("read: [a.txt, b.txt]");
 			expect(updates.length).toBeGreaterThanOrEqual(1);
 			const lastUpdate = updates[updates.length - 1];
 			expect(lastUpdate.content[0].text).toContain("operations:");

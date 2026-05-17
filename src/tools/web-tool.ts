@@ -77,14 +77,22 @@ function formatWebOpsSummary(args: Record<string, unknown>): string {
 		if (op.o === "search") return `search: "${op.q ?? ""}"`;
 		if (op.o === "fetch") return `fetch: ${op.u ?? ""}`;
 	}
-	const counts = { search: 0, fetch: 0 };
+	const byType: Record<string, Array<{ q?: string; u?: string }>> = {};
 	for (const op of ops) {
-		if (op.o === "search") counts.search++;
-		else if (op.o === "fetch") counts.fetch++;
+		if (!byType[op.o]) byType[op.o] = [];
+		byType[op.o].push(op);
 	}
 	const parts: string[] = [];
-	if (counts.search) parts.push(`${counts.search} × search`);
-	if (counts.fetch) parts.push(`${counts.fetch} × fetch`);
+	if (byType.search?.length) {
+		const queries = byType.search.map(op => `"${op.q ?? ""}"`);
+		const display = queries.length > 2 ? `${queries.slice(0, 2).join(", ")}, +${queries.length - 2} more` : queries.join(", ");
+		parts.push(`search: [${display}]`);
+	}
+	if (byType.fetch?.length) {
+		const urls = byType.fetch.map(op => op.u ?? "");
+		const display = urls.length > 2 ? `${urls.slice(0, 2).join(", ")}, +${urls.length - 2} more` : urls.join(", ");
+		parts.push(`fetch: [${display}]`);
+	}
 	return parts.join(", ");
 }
 

@@ -164,6 +164,9 @@ export interface OpResult {
 	stderr?: string;
 	duration?: number;
 	timingTier?: string;
+	q?: string;
+	s?: number;
+	l?: number;
 }
 
 export interface ReadOptions {

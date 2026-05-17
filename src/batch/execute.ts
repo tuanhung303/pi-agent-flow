@@ -237,6 +237,7 @@ export async function executeOperations(
 		finalUpdateEmitted = isFinal;
 		lastUpdateTime = now;
 		const partialSummary = buildSummary(
+			results,
 			counts,
 			errors,
 			truncatedFiles,
@@ -255,7 +256,7 @@ export async function executeOperations(
 		if (signal?.aborted) {
 			for (let j = i; j < operations.length; j++) {
 				const r = operations[j];
-				results.push({ op: r.o, path: r.p, status: "skipped", error: "Operation aborted." });
+				results.push({ op: r.o, path: r.p, status: "skipped", error: "Operation aborted.", s: r.s, l: r.l, q: r.q });
 				counts.skipped++;
 			}
 			emitPartialUpdate();
@@ -273,6 +274,8 @@ export async function executeOperations(
 							path: op.p,
 							status: "skipped",
 							error: `Skipped: aggregate line limit of ${MAX_TOTAL_RESULT_LINES} already reached. Use separate batch/batch_read calls.`,
+							s: op.s,
+							l: op.l,
 						});
 						counts.skipped++;
 						aggregateLimitSkipped.push({ path: op.p });
@@ -285,6 +288,8 @@ export async function executeOperations(
 							path: op.p,
 							status: "skipped",
 							error: `Skipped: aggregate byte limit of ${BATCH_READ_MAX_TOTAL_BYTES} already reached. Use separate batch/batch_read calls.`,
+							s: op.s,
+							l: op.l,
 						});
 						counts.skipped++;
 						aggregateByteLimitSkipped.push({ path: op.p });
@@ -364,6 +369,8 @@ export async function executeOperations(
 						warning: [pathWarning, safetyWarning].filter(Boolean).join("\n") || undefined,
 						truncated: finalTruncated || undefined,
 						nextOffset,
+						s: op.s,
+						l: op.l,
 					});
 					counts.read++;
 					break;
@@ -468,6 +475,7 @@ export async function executeOperations(
 						totalLines: matches.length,
 						enclosingSignatures,
 						warning: pathWarning,
+						q: rgOp.q,
 					});
 					counts.rg++;
 					break;
@@ -513,13 +521,16 @@ export async function executeOperations(
 				status: "error",
 				error: message,
 				hint,
+				s: op.s,
+				l: op.l,
+				q: op.q,
 			});
 		}
 		emitPartialUpdate();
 	}
 	emitPartialUpdate();
 	// Build the enhanced summary and content text
-	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
+	const summary = buildSummary(results, counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
 	const contentText = buildContentText(summary, results);
 
 	return { summary, contentText, results };
@@ -530,6 +541,7 @@ export async function executeOperations(
 // ---------------------------------------------------------------------------
 
 function buildSummary(
+	results: OpResult[],
 	counts: { read: number; write: number; edit: number; delete: number; rg: number; error: number; skipped: number },
 	errors: { path: string; op: string; message: string; hint?: string }[],
 	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
@@ -542,32 +554,57 @@ function buildSummary(
 
 	const parts: string[] = [];
 
-	// Build the success breakdown
-	const successParts: string[] = [];
-	if (counts.read > 0)
-		successParts.push(
-			`${counts.read} × read`,
-		);
-	if (counts.write > 0)
-		successParts.push(
-			`${counts.write} × write`,
-		);
-	if (counts.edit > 0)
-		successParts.push(
-			`${counts.edit} × edit`,
-		);
-	if (counts.delete > 0)
-		successParts.push(
-			`${counts.delete} × delete`,
-		);
-	if (counts.rg > 0)
-		successParts.push(
-			`${counts.rg} × rg`,
-		);
+	// Group successful results by op type
+	const byType: Record<string, OpResult[]> = {};
+	for (const r of results) {
+		if (r.status === 'ok') {
+			if (!byType[r.op]) byType[r.op] = [];
+			byType[r.op].push(r);
+		}
+	}
+
+	const typeSummaries: string[] = [];
+
+	if (byType.read?.length) {
+		const files = byType.read.map(r => {
+			const base = path.basename(r.path);
+			if (r.s || r.l) {
+				const start = r.s ?? 1;
+				const end = r.l ? start + r.l - 1 : '';
+				return `${base}:${start}-${end}`;
+			}
+			return base;
+		});
+		typeSummaries.push(`read: [${files.join(', ')}]`);
+	}
+
+	if (byType.write?.length) {
+		typeSummaries.push(`write: [${byType.write.map(r => path.basename(r.path)).join(', ')}]`);
+	}
+
+	if (byType.edit?.length) {
+		typeSummaries.push(`edit: [${byType.edit.map(r => path.basename(r.path)).join(', ')}]`);
+	}
+
+	if (byType.delete?.length) {
+		typeSummaries.push(`delete: [${byType.delete.map(r => path.basename(r.path)).join(', ')}]`);
+	}
+
+	if (byType.rg?.length) {
+		const patterns = byType.rg.map(r => {
+			const q = r.q ?? '?';
+			return q.length > 15 ? `"${q.slice(0, 15)}…"` : `"${q}"`;
+		});
+		typeSummaries.push(`rg: [${patterns.join(', ')}]`);
+	}
+
+	if (byType.bash?.length) {
+		typeSummaries.push(`bash: [${byType.bash.length} cmd${byType.bash.length > 1 ? 's' : ''}]`);
+	}
 
 	if (counts.error === 0) {
 		// All success (or skipped)
-		const summaryParts = [...successParts];
+		const summaryParts = [...typeSummaries];
 		if (counts.skipped > 0) summaryParts.push(`${counts.skipped} skipped`);
 		parts.push(`operations: ${summaryParts.join(", ")}`);
 	} else {
@@ -576,7 +613,7 @@ function buildSummary(
 			`${counts.error} failed${counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}`,
 		);
 		if (totalSuccess > 0) {
-			parts.push(`  operations: ${successParts.join(", ")}`);
+			parts.push(`  ${typeSummaries.join(", ")}`);
 		}
 		for (const err of errors) {
 			const hint = err.hint ?? "";
