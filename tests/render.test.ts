@@ -12,7 +12,7 @@ import {
 	getTruncationBudget,
 	stripAnsi,
 } from "../src/tui/render-utils.js";
-import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter } from "../src/tui/render.js";
+import { renderFlowCall, renderFlowResult, renderSingleFlowResult, resetAnonymousFlowIdCounter, reconstructHeader } from "../src/tui/render.js";
 import { scrambleManager, DynamicScrambleText } from "../src/tui/scramble/index.js";
 import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../src/types/flow.js";
 import type { Text, TruncatedText } from "@mariozechner/pi-tui";
@@ -1310,6 +1310,142 @@ describe("formatFlowToolCall — batch", () => {
 		const rendered = renderSingleFlowResult(result, false, makeTheme(), "");
 		const text = extractText(rendered);
 		expect(text).not.toContain(flowOutput);
+	});
+});
+
+function makeAnsiTheme() {
+	const fg = (color: string, text: string) => `\x1b[${color}m${text}\x1b[39m`;
+	const bold = (s: string) => `\x1b[1m${s}\x1b[22m`;
+	return { fg, bg: (c: string, t: string) => t, bold };
+}
+
+function extractRawText(node: any): string {
+	if (node instanceof DynamicScrambleText) {
+		return node.render(200).join("\n");
+	} else if ("text" in node && typeof node.text === "string") {
+		return node.text;
+	} else if ("children" in node && Array.isArray(node.children)) {
+		return node.children.map((child: any) => extractRawText(child)).join("\n");
+	}
+	return String(node);
+}
+
+describe("header ANSI style preservation during animation", () => {
+	it("reconstructHeader applies segment styles by length", () => {
+		const segments = [
+			{ text: "scout", style: (s: string) => `\x1b[accentm${s}\x1b[39m` },
+			{ text: "    openai/gpt-4o · ", style: (s: string) => `\x1b[mutedm${s}\x1b[39m` },
+			{ text: "▲  1.0k - ----- -  5.0k", style: (s: string) => `\x1b[mutedm${s}\x1b[39m` },
+		];
+		const result = reconstructHeader("scout    openai/gpt-4o · ▲  1.0k - ----- -  5.0k", segments);
+		expect(result).toBe(
+			"\x1b[accentmscout\x1b[39m\x1b[mutedm    openai/gpt-4o · \x1b[39m\x1b[mutedm▲  1.0k - ----- -  5.0k\x1b[39m",
+		);
+	});
+
+	it("reconstructHeader handles optional error segment", () => {
+		const segments = [
+			{ text: "scout", style: (s: string) => `\x1b[accentm${s}\x1b[39m` },
+			{ text: " [timeout]", style: (s: string) => `\x1b[errorm${s}\x1b[39m` },
+		];
+		const result = reconstructHeader("scout [timeout]", segments);
+		expect(result).toBe("\x1b[accentmscout\x1b[39m\x1b[errorm [timeout]\x1b[39m");
+	});
+
+	it("preserves multi-segment ANSI styles in collapsed header during animation", () => {
+		const originalUpdateText = scrambleManager.updateText.bind(scrambleManager);
+		const spy = vi.spyOn(scrambleManager, "updateText").mockImplementation((id, key, text, now, isComplete, staticLine) => {
+			if (key === "header") {
+				return { label: "header", content: text, isAnimating: true };
+			}
+			return originalUpdateText(id, key, text, now, isComplete, staticLine);
+		});
+
+		try {
+			const theme = makeAnsiTheme();
+			const result = makeResult({
+				type: "scout",
+				model: "openai/gpt-4o",
+				exitCode: -1,
+				usage: { input: 1000, output: 200, contextTokens: 5000, turns: 1, toolCalls: 0 },
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, theme, undefined);
+
+			const raw = extractRawText(rendered);
+			const headerLine = raw.split("\n")[0];
+
+			expect(headerLine).toContain("\x1b[accentmscout\x1b[39m");
+			expect(headerLine).toContain("\x1b[mutedm    openai/gpt-4o · \x1b[39m");
+			expect(headerLine).toContain("\x1b[mutedm5.0k · -----\x1b[39m");
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("preserves error ANSI style in expanded header during animation", () => {
+		const originalUpdateText = scrambleManager.updateText.bind(scrambleManager);
+		const spy = vi.spyOn(scrambleManager, "updateText").mockImplementation((id, key, text, now, isComplete, staticLine) => {
+			if (key === "header") {
+				return { label: "header", content: text, isAnimating: true };
+			}
+			return originalUpdateText(id, key, text, now, isComplete, staticLine);
+		});
+
+		try {
+			const theme = makeAnsiTheme();
+			const result = makeResult({
+				type: "scout",
+				exitCode: 1,
+				stopReason: "timeout",
+				messages: [makeTextMessage("Error occurred")],
+			});
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, true, theme, undefined);
+
+			const raw = extractRawText(rendered);
+			const lines = raw.split("\n");
+			const headerLine = lines[0];
+
+			expect(headerLine).toContain("\x1b[accentmscout\x1b[39m");
+			expect(headerLine).toContain("\x1b[errorm [timeout]\x1b[39m");
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("preserves multi-segment ANSI styles in activity panel header during animation", () => {
+		const originalUpdateText = scrambleManager.updateText.bind(scrambleManager);
+		const spy = vi.spyOn(scrambleManager, "updateText").mockImplementation((id, key, text, now, isComplete, staticLine) => {
+			if (key === "header") {
+				return { label: "header", content: text, isAnimating: true };
+			}
+			return originalUpdateText(id, key, text, now, isComplete, staticLine);
+		});
+
+		try {
+			const theme = makeAnsiTheme();
+			const result1 = makeResult({
+				type: "debug",
+				model: "openai/gpt-4o",
+				exitCode: -1,
+				usage: { input: 1000, output: 200, contextTokens: 5000, turns: 1, toolCalls: 0 },
+			});
+			const result2 = makeResult({ type: "scout" });
+			const details: FlowDetails = { mode: "flow", flowStyle: "fork", projectAgentsDir: null, results: [result1, result2] };
+			const rendered = renderFlowResult({ content: [{ type: "text", text: "" }], details }, false, theme, undefined);
+
+			const raw = extractRawText(rendered);
+			const lines = raw.split("\n");
+			const headerLine = lines[0];
+
+			expect(headerLine).toContain("\x1b[dimm├─ \x1b[39m");
+			expect(headerLine).toContain("\x1b[accentmdebug\x1b[39m");
+			expect(headerLine).toContain("\x1b[mutedm    openai/gpt-4o · \x1b[39m");
+			expect(headerLine).toContain("\x1b[mutedm5.0k · -----\x1b[39m");
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });
 
