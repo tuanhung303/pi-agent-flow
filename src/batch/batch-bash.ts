@@ -277,14 +277,23 @@ export function truncateBashOutput(
 	const resultBytes = Buffer.byteLength(result, "utf-8");
 	if (resultBytes > maxBytes) {
 		const buf = Buffer.from(result, "utf-8");
-		// Find last newline before maxBytes
+		// Find last newline before maxBytes, never cutting inside a multi-byte UTF-8 character
 		let cutAt = maxBytes;
-		while (cutAt > 0 && buf[cutAt] !== 0x0a) {
+		while (cutAt > 0) {
+			// Skip UTF-8 continuation bytes so we land on a character boundary
+			while (cutAt > 0 && (buf[cutAt] & 0xc0) === 0x80) {
+				cutAt--;
+			}
+			if (cutAt <= 0) break;
+			if (buf[cutAt] === 0x0a) break;
 			cutAt--;
 		}
 		if (cutAt <= 0) {
-			// No newline found within safe range; force cut at maxBytes
+			// No newline found within safe range; force cut at maxBytes aligned to char boundary
 			cutAt = maxBytes;
+			while (cutAt > 0 && (buf[cutAt] & 0xc0) === 0x80) {
+				cutAt--;
+			}
 		}
 		result = buf.slice(0, cutAt).toString("utf-8");
 		result += `\n[... truncated at ${(maxBytes / 1024).toFixed(0)} KB, ${totalBytes} total ...]`;

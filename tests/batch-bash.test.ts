@@ -49,6 +49,21 @@ describe("truncateBashOutput", () => {
 		expect(result).toContain("[... truncated at 100 lines, 5000 total ...]");
 		expect(Buffer.byteLength(result, "utf-8")).toBeLessThanOrEqual(12 * 1024);
 	});
+
+	it("truncates multi-byte UTF-8 safely without mojibake", () => {
+		// Single line (no newlines) forces byte truncation to hit maxBytes exactly
+		const prefix = "a".repeat(98); // 98 bytes
+		const cjk = "中"; // 3 bytes: E4 B8 AD
+		const emoji = "😀"; // 4 bytes: F0 9F 98 80
+		const text = prefix + cjk + emoji + " trailing text";
+		const maxBytes = 100; // lands inside the CJK character (second continuation byte)
+
+		const result = truncateBashOutput(text, maxBytes, 10000);
+		// Must not contain Unicode replacement character (sign of invalid UTF-8 slicing)
+		expect(result).not.toContain("\uFFFD");
+		// Must contain truncation marker
+		expect(result).toContain("[... truncated at");
+	});
 });
 
 describe("BashProcessTracker", () => {
