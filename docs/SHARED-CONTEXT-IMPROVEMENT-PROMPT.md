@@ -1,6 +1,6 @@
 # Shared Context Compression Pipeline — Living Improvement Prompt
 
-> **Version:** 1.0.0
+> **Version:** 1.1.0
 > **Scope:** `src/snapshot/snapshot.ts` sanitization pipeline
 > **Goal:** Continuously improve the shared context passed from parent → child flows while maintaining zero regression risk.
 > **Target audience:** Any future agent (craft / build / audit) tasked with compression pipeline work.
@@ -15,7 +15,7 @@ When the root state transitions to a child flow (e.g. `scout`, `build`), it fork
 
 | File | Role | Key Symbols (line numbers) |
 |------|------|---------------------------|
-| `src/snapshot/snapshot.ts` | Pipeline core | `sanitizeForkSnapshot` (~900), `compressToolResults` (~350), `compressBatchResult` (~420), `compressWebResult` (~267), `compressAskUserResult` (~305), `buildDedupIndex` (~380), `compressBashSection` (~200), `renderCompressedFlowResult` (~93), `stripBatchReadToolCalls` (~600) |
+| `src/snapshot/snapshot.ts` | Pipeline core | `sanitizeForkSnapshot` (~1758), `compressToolResults` (~350), `compressBatchResult` (~420), `compressWebResult` (~267), `compressAskUserResult` (~305), `buildDedupIndex` (~380), `compressBashSection` (~200), `renderCompressedFlowResult` (~93), `stripBatchReadToolCalls` (~600) |
 | `src/snapshot/reasoning-strip.ts` | Thinking block removal | `stripReasoningFromAssistantMessage` |
 | `src/steering/sliding-prompt.ts` | Steering hint removal | `stripSteeringHintFromContent`, `contentContainsSteeringHintTag` |
 | `src/steering/tool-utils.ts` | Directive hint removal | `stripDirectivesFromContent` (legacy alias `stripStrategicHintsFromContent`) |
@@ -29,7 +29,7 @@ When the root state transitions to a child flow (e.g. `scout`, `build`), it fork
 ### How the Pipeline Works (High-Level)
 
 1. `buildForkSessionSnapshotJsonl()` serializes parent session → raw JSONL.
-2. `sanitizeForkSnapshot()` runs 15+ ordered passes (see Current State below).
+2. `sanitizeForkSnapshot()` runs 22 unique passes (23 total applications with `reparentOrphans` twice) (see Current State below).
 3. `compressToolResults()` does a two-pass scan: pre-scan builds `DedupIndex`, second pass emits compact text.
 4. Result is written to `/tmp/pi-agent-flow-<id>/flow-<name>.jsonl` and passed to child via `--session`.
 5. The child also receives an activation prompt (`-p`) with `<context-seal>`, `<activation>`, `<directive>`, `<mission>`.
@@ -61,11 +61,11 @@ When the root state transitions to a child flow (e.g. `scout`, `build`), it fork
 
 ### Sanitization Passes (Exact Order)
 
-From `sanitizeForkSnapshot` (`snapshot.ts:~900-1345`):
+From `sanitizeForkSnapshot` (`snapshot.ts:~2025-2100`):
 
-1. `forkMetadataInjection` — inject `forkedFrom`, `forkedAt`, `parentFlow`, `depth` into header.
-2. `stripSystemPrompt` — replace parent system prompt with placeholder.
-3. `stripSessionId` — rename `id` → `parentId`.
+1. `stripSystemPrompt` — replace parent system prompt with placeholder.
+2. `stripSessionId` — rename `id` → `parentId`.
+3. `stripUnknownHeaderFields` — whitelist session header keys to prevent metadata leaks.
 4. `dropSystemEvents` — drop standalone `type: "system"` entries.
 5. `dropCustomMessages` — drop `type: "custom_message"`.
 6. `dropConfigEvents` — drop `model_change`, `thinking_level_change`.
@@ -74,18 +74,60 @@ From `sanitizeForkSnapshot` (`snapshot.ts:~900-1345`):
 9. `dropSlidingSystemPrompts` — drop `role: "system"` containing steering tags.
 10. `normalizeToolResultRole` — `toolResult` → `tool`.
 11. `stripReasoning` — remove `<thinking>` blocks.
-12. `stripTimestamps` — remove inner `message.timestamp`.
+12. `stripTimestamps` — remove outer entry and inner `message.timestamp`.
 13. `stripApiMetadata` — remove `api`, `provider`, `model`, `stopReason`, `responseId`, `responseModel`, `cost` (preserve `usage.totalTokens`).
 14. `collapseEmptyAssistantMessages` — collapse empty/low-signal assistant messages to `[assistant: N tokens, no action]`.
 15. `stripDetails` — remove `details` from tool/toolResult messages.
 16. `stripSteeringHints` — remove `<pi-flow-steering-hint>` blocks.
-17. `stripDirectives` — remove `[Directive: ...]` blocks (legacy alias `stripStrategicHints`).
+17. `stripStrategicHints` — remove `[Directive: ...]` blocks (alias `stripDirectives`).
 18. `compressParentActivation` — at depth ≥ 2, collapse parent `<context-seal>...<mission>` to one-line preview.
 19. `reparentOrphans` — fix `parentId` references to dropped messages.
 20. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).
 21. `compressFlowToolCallArgs` — compress verbose `flow` tool call arguments in assistant messages to `{type, aim, steps}`.
 22. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1/R1).
-23. `reparentOrphans` — second pass after message drops.
+23. `reparentOrphans` — second pass after `stripBatchRead` and `compressToolResults` may have dropped additional messages.
+
+---
+
+## Integration Validation Instruments
+
+Two standalone Node scripts in `./tmp/` provide automated, reproducible validation of the context pipeline. Run them before manual inspection.
+
+### `./tmp/validate-context-pipeline.js` — Synthetic Pipeline Test
+
+Builds a representative snapshot with all tool types (batch_read, flow, web, ask_user, empty assistant), runs `sanitizeForkSnapshot` end-to-end, and asserts:
+
+- 12+ unique passes applied (current baseline).
+- `reparentOrphans` appears exactly twice.
+- Zero forbidden placeholders (`[orchestrator:thinking]`, `[user:mission …]`, `[user:ack]`).
+- All original user message content preserved verbatim.
+- `batch_read` tool calls and results fully stripped.
+- Flow cache hits compress to `[Flow: X accomplished]`.
+- API metadata, details, reasoning, and inner timestamps stripped.
+- Orphan-free `parentId` graph after all drops.
+
+```bash
+npm run build
+node ./tmp/validate-context-pipeline.js
+```
+
+**Assertion:** Output ends with `✅ All synthetic assertions passed.`
+
+### `./tmp/analyze-dump.js` — Real Dump Analyzer
+
+Scans the newest `/tmp/pi-dump.*.md` file, parses the HTML header, JSONL, and compression stats. Reports:
+
+- Placeholder vs. real message ratio.
+- Forbidden placeholder detection (short messages only, to avoid false positives on long prose).
+- Flow tool call param completeness (`type` and `aim` preserved).
+- Compression ratio from the markdown stats block.
+
+```bash
+# After capturing a live dump (see Step 4 below)
+node ./tmp/analyze-dump.js
+```
+
+**Assertion:** Output includes `✅ Zero forbidden placeholders` and `✅ Flow tool params preserved` for every flow tool call.
 
 ---
 
@@ -120,7 +162,7 @@ npm test -- --run tests/snapshot-integration.test.ts
 npm test -- --run
 ```
 
-**Assertion:** `980 passed` (current baseline). Any drop means a regression elsewhere in the codebase.
+**Assertion:** `1292 passed` (current baseline). Any drop means a regression elsewhere in the codebase.
 
 ### Step 4 — Live Dump Verification
 
@@ -138,10 +180,28 @@ pi -p "spawn scout, run ls command, web search for node.js streams"
 5. The `.md` JSONL section does **not** contain `<thinking>` (reasoning stripped).
 6. The `.md` JSONL section does **not** contain `batch_read` (stripped).
 7. The `.md` JSONL section does **not** contain raw HTML from web results (Q1 must compress to `[web:...]`).
+8. Run the real-dump instrument:
+   ```bash
+   node ./tmp/analyze-dump.js
+   ```
+   **Assertion:** `✅ Zero forbidden placeholders` and every flow tool call shows `✅ Flow tool params preserved`.
 
-### Step 5 — Child Context Inspection (Manual)
+### Step 5 — Synthetic & Child Context Inspection
 
-Read the dump file and verify:
+Run the synthetic validator first, then inspect the real dump manually.
+
+```bash
+# Synthetic validation (requires dist/)
+npm run build
+node ./tmp/validate-context-pipeline.js
+```
+
+**Synthetic assertions:**
+- [ ] Output ends with `✅ All synthetic assertions passed.`
+- [ ] `reparentOrphans` appears exactly twice in the pass list.
+- [ ] Unique pass count is 12+ (current baseline).
+
+Then read the latest real dump and verify manually:
 
 ```bash
 # Find the latest scout dump
@@ -214,6 +274,8 @@ cat $(ls -t /tmp/pi-dump.scout.*.md | head -1)
 
 5. **Never emit `console.warn/error` in flow code.** Use `logWarn`/`logError` from `src/config/log.ts` to avoid TUI text flash.
 
+6. **Never emit synthetic placeholders in child-visible context.** Narrative placeholders such as `[orchestrator:thinking]`, `[user:mission …]`, or `[user:ack]` waste child tokens and mislead the model. The pipeline must preserve original user message content verbatim and compress assistant/tool messages to factual tokens only.
+
 ### Soft Constraints (Changing These Requires Migration)
 
 1. **Format tokens must remain recognizable.** `[bash:ok]`, `[batch:write]`, `[batch:edit]`, `[web:search]`, `[web:fetch]`, `[ask_user]`, `[Flow: X Y]` are parsed by child flows (informally). If you change the prefix, update `docs/telemetry-compression-protocols.md` and `tests/snapshot-compress.test.ts`.
@@ -277,7 +339,7 @@ At each step, ask:
 - **Gate 2 (Isolate):** Can I reproduce the bloat in a unit test with < 20 lines of snapshot JSONL? If no, the artifact is too complex to safely compress.
 - **Gate 3 (Design):** Does this change alter an existing format token? If yes, does the child still understand it? If no → redesign.
 - **Gate 4 (Implement):** Did I add a fallback that preserves verbatim output when parsing fails? If no → add fallback before continuing.
-- **Gate 5 (Verify):** Did `npm test -- --run` show 971+ passes with zero failures? If no → fix.
+- **Gate 5 (Verify):** Did `npm test -- --run` show 1292+ passes with zero failures? If no → fix.
 - **Gate 6 (Document):** Did I update the spec? If no → do not commit.
 
 ---
@@ -376,6 +438,7 @@ find /tmp -name 'pi-dump.*' -mtime +7 -delete
 |------|-------|--------|-------------|
 | 2026-05-17 | craft | Initial prompt document created | N/A |
 | 2026-05-17 | build | Q1 web query deduplication — cross-turn dedup with depth-aware rollup | 5 new tests in `tests/snapshot-compress.test.ts` |
+| 2026-05-18 | build | Stage 1 fixes: bumped prompt to v1.1.0, fixed `sanitizeForkSnapshot` line refs to ~2025-2100, added `stripUnknownHeaderFields` pass, added `validate-context-pipeline.js` and `analyze-dump.js` instruments, updated baseline to 1292 tests, narrative pass reverted (`stripOrchestratorNarrative`, `stripUserMissionManifestos`, `stripConversationalAcks` removed) | `tmp/validate-context-pipeline.js`, `tmp/analyze-dump.js` |
 
 ---
 

@@ -1363,7 +1363,7 @@ describe("DEFENSE IN DEPTH — child context whitelist & blacklist", () => {
 			{
 				type: "session",
 				id: "sess-parent",
-				systemPrompt: "You are the root state.",
+				systemPrompt: "You are in the primary flow.",
 				version: "1.2.3",
 				timestamp: "2026-05-17T00:00:00.000Z",
 				cwd: "/Users/__blitzzz/Documents/GitHub/pi-agent-flow",

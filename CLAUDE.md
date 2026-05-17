@@ -13,7 +13,7 @@
 | **Docs** | [`docs/CONTEXT-DIAGNOSTICS.md`](docs/CONTEXT-DIAGNOSTICS.md) — diagnose high token counts in child flows • [`docs/agent-context-dump.md`](docs/agent-context-dump.md) — verbatim child context dump anatomy • [`docs/agent-payload-example.md`](docs/agent-payload-example.md) — exact payload reproduction from source code • [`docs/autonomous-pi-testing.md`](docs/autonomous-pi-testing.md) — scripted Pi sessions over PTY • [`docs/scout-report.md`](docs/scout-report.md) — generated codebase map • [`docs/telemetry-compression-protocols.md`](docs/telemetry-compression-protocols.md) — W1/E1/X1/Q1 compression protocol specs • [`docs/SHARED-CONTEXT-IMPROVEMENT-PROMPT.md`](docs/SHARED-CONTEXT-IMPROVEMENT-PROMPT.md) — living improvement prompt for context compression pipeline • [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — configuration reference (flags, env vars, settings) • [`docs/FLOWS.md`](docs/FLOWS.md) — bundled flows, session modes, timeout behavior, flow loop & warp • [`docs/TOOLS.md`](docs/TOOLS.md) — tool reference (batch, web, ask_user) • [`docs/CUSTOM-FLOWS.md`](docs/CUSTOM-FLOWS.md) — custom flow creation and front-matter • [`docs/STRUCTURED-OUTPUT.md`](docs/STRUCTURED-OUTPUT.md) — structured JSON output schema • [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md) — terminal and desktop notification config |
 | **Dump Analysis** | [`docs/dump-analysis/VERSION-NOTES.md`](docs/dump-analysis/VERSION-NOTES.md) — version notes for collected artifacts • [`docs/dump-artifacts/ANALYSIS.md`](docs/dump-artifacts/ANALYSIS.md) — cross-reference of dumps against source • [`docs/dump-artifacts/README.md`](docs/dump-artifacts/README.md) — catalog of representative dump files |
 | **Workflows** | [`ci.yml`](.github/workflows/ci.yml) — lint + test on PR/push • [`bump-version.yml`](.github/workflows/bump-version.yml) — version bump → commit → tag → push • [`publish.yml`](.github/workflows/publish.yml) — npm publish with provenance |
-| **Scripts** | [`dev-start.sh`](scripts/dev-start.sh) — start `pi` with `PI_FLOW_DUMP_SNAPSHOT` preset • [`switch.sh`](scripts/switch.sh) — toggle local ↔ remote install • [`sync-dumps.sh`](scripts/sync-dumps.sh) — sync `/tmp` dumps into `dump-artifacts/` • [`example-autonomous-pi.expect`](scripts/example-autonomous-pi.expect) — PTY test harness template |
+| **Scripts** | [`dev-start.sh`](scripts/dev-start.sh) — start `pi` with `PI_FLOW_DUMP_SNAPSHOT` preset • [`switch.sh`](scripts/switch.sh) — toggle local ↔ remote install • [`sync-dumps.sh`](scripts/sync-dumps.sh) — sync `/tmp` dumps into `dump-artifacts/` • [`example-autonomous-pi.expect`](scripts/example-autonomous-pi.expect) — PTY test harness template • [`./tmp/validate-context-pipeline.js`](./tmp/validate-context-pipeline.js) — synthetic context pipeline validator • [`./tmp/analyze-dump.js`](./tmp/analyze-dump.js) — real dump analyzer |
 | **Key Source** | `src/index.ts` — entrypoint • `src/core/flow.ts` — flow fork runner and process management • `src/snapshot/snapshot.ts` — session fork & sanitization pipeline • `src/core/agents.ts` — bundled flow definitions & loading • `src/batch/index.ts` / `src/batch/` — unified file/batch tools • `src/tui/render.ts` — TUI rendering & animations • `src/snapshot/structured-output.ts` — JSON output validation & enrichment • `src/tools/web-tool.ts` — search & fetch • `src/tools/ask-user.ts` — interactive prompts • `src/config/config.ts` — settings resolution • `src/notify/notify.ts` — desktop/terminal notifications • `src/flow/loop.ts` — endless loop state management (enable, disable, reset, terminate, warp tracking) • `src/flow/loop-command.ts` — `/flow:loop` slash command (enable/disable/status/stop/reset) • `src/flow/auto-warp.ts` — auto-warp trigger when loop budget is exceeded • `src/flow/loop-templates.ts` — loop runtime prompt templates • `src/flow/warp.ts` — warp distillation and session creation |
 | **Additional Source** | `src/flow/` — flow goal orchestration, continuation, loop, and settings commands • `src/steering/` — steering hint injection, sliding prompts, and tool utilities • `src/types/` — shared TypeScript types for flow execution, output, and UI • `src/batch/` — batch operation engine, rendering, fuzzy editing, symbol extraction • `src/core/` — flow executor, transition logic, depth config, session modes, transitions • `src/config/` — TUI-safe logging and settings resolution • `src/tui/` — color themes, render utilities, single-select layout, scramble animation • `src/snapshot/` — CLI arg inheritance, reasoning strip, runner event parsing • `src/tools/` — timed bash wrapper with deadline awareness • `src/notify/` — notification state tracking |
 
@@ -152,6 +152,21 @@ export PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump   # or use ./scripts/dev-start.sh
 ```
 
 > ⚠️ The variable **must** be exported in the same shell that starts `pi`. Running `export` inside a subshell (e.g. `bash -c 'export …'`) will **not** work because child-process environment variables do not propagate upward to the parent.
+
+### Validation Instruments
+
+After capturing dumps, validate them with the standalone instruments in `./tmp/` before manual reading:
+
+```bash
+# Synthetic validation (requires dist/ to be built)
+npm run build
+node ./tmp/validate-context-pipeline.js
+
+# Real dump analysis (run after a live `pi` session)
+node ./tmp/analyze-dump.js
+```
+
+These scripts catch forbidden placeholders, incomplete flow tool params, pass-count regressions, and orphan errors automatically.
 
 ### Syncing dump artifacts to the repo
 

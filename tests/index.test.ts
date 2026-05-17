@@ -592,7 +592,7 @@ describe("flow tool execute", () => {
 			expect((modified[1] as any).content[0].text).toBe("ok");
 			expect((modified[2] as any).role).toBe("system");
 			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
-			expect((modified[2] as any).content).toContain("You are the root state");
+			expect((modified[2] as any).content).toContain("You are in the primary flow");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
@@ -612,7 +612,7 @@ describe("flow tool execute", () => {
 
 			expect((modified[2] as any).role).toBe("system");
 			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
-			expect((modified[2] as any).content).toContain("You are the root state");
+			expect((modified[2] as any).content).toContain("You are in the primary flow");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
