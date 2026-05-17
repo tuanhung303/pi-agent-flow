@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults } from "../src/snapshot/snapshot.js";
+import { compressToolResults, depthToPolicy } from "../src/snapshot/snapshot.js";
 
 function makeSnapshot(lines: any[]): string {
 	return lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
@@ -53,9 +53,9 @@ describe("compressToolResults — reads without line count", () => {
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- data.csv (content truncated) ---");
-		expect(result).not.toContain("header1,header2");
-		expect(result).not.toContain("value1,value2");
+		expect(result).toContain("--- data.csv (preview) ---");
+		expect(result).toContain("header1,header2");
+		expect(result).toContain("value1,value2");
 	});
 
 	it("still truncates reads with line count (existing behavior)", () => {
@@ -78,8 +78,9 @@ describe("compressToolResults — reads without line count", () => {
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- src/file.ts (42 lines, content truncated) ---");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("--- src/file.ts (42 lines, preview) ---");
+		expect(result).toContain("line 1");
+		expect(result).toContain("line 2");
 	});
 });
 

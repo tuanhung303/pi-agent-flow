@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
 	compressToolResults,
 	stripBatchReadToolCalls,
+	depthToPolicy,
 	sanitizeForkSnapshot,
 } from "../src/snapshot/snapshot.js";
 import { STEERING_HINT } from "../src/steering/sliding-prompt.js";
@@ -120,8 +121,8 @@ describe("compressToolResults with production JSONL `id` field", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 
-		expect(result).toContain("content truncated");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("preview");
+		expect(result).toContain("line 1");
 	});
 
 	it("compresses web tool results when toolCall uses `id` field", () => {
@@ -572,8 +573,8 @@ describe("role field: 'toolResult' is required for matching", () => {
 		const result = compressToolResults(snapshot, new Map());
 
 		// role: "tool" is also matched (backward compat with both "tool" and "toolResult")
-		expect(result).toContain("content truncated");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("preview");
+		expect(result).toContain("line 1");
 	});
 
 	it("compressToolResults processes tool results with role 'toolResult'", () => {
@@ -602,8 +603,8 @@ describe("role field: 'toolResult' is required for matching", () => {
 		const result = compressToolResults(snapshot, new Map());
 
 		// With role: "toolResult", compressToolResults processes and truncates
-		expect(result).toContain("content truncated");
-		expect(result).not.toContain("line 1");
+		expect(result).toContain("preview");
+		expect(result).toContain("line 1");
 	});
 
 	it("stripBatchReadToolCalls drops orphans with role 'tool' (backward compat)", () => {

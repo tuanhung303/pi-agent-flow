@@ -21,7 +21,7 @@
  * Extracted from index.ts for single-responsibility and testability.
  */
 
-import type { CompressedFlowResult } from "../types/output.js";
+import type { CompressedFlowResult, DepthPolicy } from "../types/output.js";
 import { stripReasoningFromAssistantMessage } from "./reasoning-strip.js";
 import {
 	stripSteeringHintFromContent,
@@ -313,6 +313,12 @@ function isKnownSectionHeader(line: string): boolean {
 }
 
 /** Compress a single bash block into the X1 compact format. */
+/** Convert legacy depth number to DepthPolicy. */
+export function depthToPolicy(depth: number): DepthPolicy {
+	const isDepth1 = depth < 2;
+	return { showPreviews: isDepth1, showBytes: isDepth1, showSupersededBreadcrumbs: isDepth1, showEditBlocks: isDepth1 };
+}
+
 function compressBashSection(
 	bashId: string,
 	status: "ok" | "pending" | "error",
@@ -320,9 +326,9 @@ function compressBashSection(
 	timingTier: string | undefined,
 	stdoutLines: string[],
 	stderrLines: string[],
-	depth: number,
+	policy: DepthPolicy,
 ): string {
-	const isDepth1 = depth < 2;
+	const isDepth1 = policy.showPreviews;
 	const tier = timingTier ? ` · ${timingTier}` : "";
 	// Trim trailing empty lines inserted by multi-bash formatting
 	while (stdoutLines.length > 0 && stdoutLines[stdoutLines.length - 1] === "") stdoutLines.pop();
@@ -554,7 +560,7 @@ function checkWebDedup(
 function compressBatchResult(
 	text: string,
 	options: {
-		depth?: number;
+		depthPolicy?: DepthPolicy;
 		toolCallId?: string;
 		latestWrite?: Map<string, string>;
 		latestEdit?: Map<string, string>;
@@ -562,8 +568,7 @@ function compressBatchResult(
 		cwd?: string;
 	} = {},
 ): string {
-	const depth = options.depth ?? 1;
-	const isDepth1 = depth < 2;
+	const policy = options.depthPolicy ?? depthToPolicy(1);
 	const { toolCallId, latestWrite, latestEdit, latestDelete } = options;
 	const cwd = options.cwd ?? process.cwd();
 
@@ -658,7 +663,7 @@ function compressBatchResult(
 			if (status === "error" && stderrLines.length === 0 && stdoutLines.length > 0) {
 				stderrLines = stdoutLines;
 			}
-			out.push(compressBashSection(bashId, status, exitCode, timingTier, stdoutLines, stderrLines, depth));
+			out.push(compressBashSection(bashId, status, exitCode, timingTier, stdoutLines, stderrLines, policy));
 			continue;
 		}
 
@@ -695,7 +700,7 @@ function compressBatchResult(
 						.filter(Boolean),
 				);
 				const fileCount = fileSet.size;
-				if (isDepth1) {
+				if (policy.showPreviews) {
 					const head = rgLines.slice(0, 3).join("\n");
 					out.push(`[rg:ok] ${rgPath} · ${matchCount} matches · ${fileCount} files\n> head:\n${head}`);
 				} else {
@@ -706,13 +711,31 @@ function compressBatchResult(
 			continue;
 		}
 
-		// File read section with content — truncate
+		// File read section with content — preview or truncate
 		const readMatch = line.match(/^--- (.+) \((\d+) lines\) ---$/);
 		if (readMatch) {
-			out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, content truncated) ---`);
-			i++;
-			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+			if (policy.showPreviews) {
 				i++;
+				const contentLines: string[] = [];
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					contentLines.push(lines[i]);
+					i++;
+				}
+				const head = contentLines.slice(0, 2).join("\n");
+				const tail = contentLines.slice(-2).join("\n");
+				let previewText: string;
+				if (contentLines.length > 4) {
+					previewText = `${head}\n[...${contentLines.length - 4} lines truncated...]\n${tail}`;
+				} else {
+					previewText = contentLines.join("\n");
+				}
+				out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, preview) ---\n${previewText}`);
+			} else {
+				out.push(`--- ${readMatch[1]} (${readMatch[2]} lines, content truncated) ---`);
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
 			}
 			continue;
 		}
@@ -728,14 +751,32 @@ function compressBatchResult(
 			continue;
 		}
 
-		// File read without line count — truncate
+		// File read without line count — preview or truncate
 		// Negative lookahead excludes bash/edit/write/delete/read-error sections that should be kept verbatim
 		const fallbackReadMatch = line.match(/^--- (?!bash \[|edit:|write:|delete:|read:)(.+) ---$/);
 		if (fallbackReadMatch) {
-			out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
-			i++;
-			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+			if (policy.showPreviews) {
 				i++;
+				const contentLines: string[] = [];
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					contentLines.push(lines[i]);
+					i++;
+				}
+				const head = contentLines.slice(0, 2).join("\n");
+				const tail = contentLines.slice(-2).join("\n");
+				let previewText: string;
+				if (contentLines.length > 4) {
+					previewText = `${head}\n[...${contentLines.length - 4} lines truncated...]\n${tail}`;
+				} else {
+					previewText = contentLines.join("\n");
+				}
+				out.push(`--- ${fallbackReadMatch[1]} (preview) ---\n${previewText}`);
+			} else {
+				out.push(`--- ${fallbackReadMatch[1]} (content truncated) ---`);
+				i++;
+				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
+					i++;
+				}
 			}
 			continue;
 		}
@@ -747,7 +788,7 @@ function compressBatchResult(
 			const normPath = normalizeDedupPath(rawPath, cwd);
 			const bytes = writeMatch[2];
 			if (isSupersededWrite(normPath, i)) {
-				if (isDepth1) {
+				if (policy.showSupersededBreadcrumbs) {
 					out.push(`[batch:write] ${rawPath} (superseded)`);
 				}
 				i++;
@@ -756,7 +797,7 @@ function compressBatchResult(
 				}
 				continue;
 			}
-			if (isDepth1) {
+			if (policy.showBytes) {
 				out.push(`[batch:write] ${rawPath} (${bytes} bytes)`);
 			} else {
 				out.push(`[batch:write] ${rawPath}`);
@@ -787,7 +828,7 @@ function compressBatchResult(
 			const normPath = normalizeDedupPath(rawPath, cwd);
 			const blockInfo = editMatch[2];
 			if (isSupersededEdit(normPath, i)) {
-				if (isDepth1) {
+				if (policy.showSupersededBreadcrumbs) {
 					out.push(`[batch:edit] ${rawPath} (superseded)`);
 				}
 				i++;
@@ -796,7 +837,7 @@ function compressBatchResult(
 				}
 				continue;
 			}
-			if (isDepth1) {
+			if (policy.showEditBlocks) {
 				const blocksLabel = blockInfo ? ` (${blockInfo})` : "";
 				out.push(`[batch:edit] ${rawPath}${blocksLabel}`);
 			} else {
@@ -827,7 +868,7 @@ function compressBatchResult(
 			const rawPath = deleteMatch[1].trim();
 			const normPath = normalizeDedupPath(rawPath, cwd);
 			if (isSupersededDelete(normPath, i)) {
-				if (isDepth1) {
+				if (policy.showSupersededBreadcrumbs) {
 					out.push(`[batch:delete] ${rawPath} (superseded)`);
 				}
 				i++;
@@ -852,13 +893,10 @@ function compressBatchResult(
 
 	// B1: If every line in out is superseded or truncated noise, collapse to single summary
 	const meaningfulOut = out.filter((l) => l.trim() !== "");
-	const isAllSupersededOrTruncated = meaningfulOut.length > 0 && meaningfulOut.every((l) =>
-		l.includes("(superseded)") ||
-		l.includes("content truncated") ||
-		l.includes("context map, truncated") ||
-		/^\[bash:(ok|pending|err)\] .+/.test(l) ||
-		/^\[rg:(ok|err)\] .+/.test(l),
-	);
+	// Single-pass rollup check: matches superseded breadcrumbs, truncated reads,
+	// and compact bash/rg lines. Equivalent to the previous multi-check logic.
+	const SUPERSEDED_OR_TRUNCATED_RE = /\(superseded\)|\(content truncated\)|\(context map, truncated\)|^\[bash:(ok|pending|err)\] |^\[rg:(ok|err)\] /;
+	const isAllSupersededOrTruncated = meaningfulOut.length > 0 && meaningfulOut.every((l) => SUPERSEDED_OR_TRUNCATED_RE.test(l));
 	// At depth 2+, superseded writes/edits are dropped entirely (no breadcrumbs),
 	// leaving out empty. If the original text had only section headers and no
 	// summary or other kept content, rollup to a single line.
@@ -866,7 +904,7 @@ function compressBatchResult(
 	const allLinesWereSectionHeaders = meaningfulLines.length > 0 && meaningfulLines.every((l) => isKnownSectionHeader(l));
 	if (isAllSupersededOrTruncated || (allLinesWereSectionHeaders && meaningfulOut.length === 0)) {
 		const opCount = meaningfulLines.length > 0 ? String(meaningfulLines.length) : "0";
-		return depth < 2
+		return policy.showSupersededBreadcrumbs
 			? `[batch] ${opCount} ops (all superseded or truncated by later operations)`
 			: `[batch] ${opCount} ops (superseded)`;
 	}
@@ -937,11 +975,11 @@ function compressAskUserResult(text: string, args?: unknown): string {
 }
 
 /** Compress batch_bash_poll tool result into compact metadata (S4). */
-function compressBatchBashPollResult(text: string, depth: number): string {
+function compressBatchBashPollResult(text: string, policy: DepthPolicy): string {
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
 	const out: string[] = [];
 	let i = 0;
-	const isDepth1 = depth < 2;
+	const isDepth1 = policy.showPreviews;
 	const isPollSectionEnd = (l: string) => /^--- \[.+\]/.test(l);
 
 	while (i < lines.length) {
@@ -1064,7 +1102,8 @@ function buildToolCallIdToNameMap(lines: string[]): Map<string, string> {
  * - `batch_read` results: replaced with compact metadata (paths + op count)
  *   since children have `batch` and can re-read files themselves.
  */
-export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>, depth: number = 1): string {
+export function compressToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>, depthPolicy?: DepthPolicy): string {
+	const policy = depthPolicy ?? depthToPolicy(1);
 	const lines = snapshot.trimEnd().split("\n");
 
 	// Quick check: if there are no flow cache entries and no compressible tool calls,
@@ -1217,7 +1256,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		else if (toolName === "batch") {
 			originalText = extractToolResultText(entry as MessageEntry) ?? "";
 			rendered = compressBatchResult(originalText, {
-				depth,
+				depthPolicy: policy,
 				toolCallId,
 				latestWrite: dedupIndex.latestWrite,
 				latestEdit: dedupIndex.latestEdit,
@@ -1229,7 +1268,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		// --- Compress batch_bash_poll tool results (S4) ---
 		else if (toolName === "batch_bash_poll") {
 			originalText = extractToolResultText(entry as MessageEntry) ?? "";
-			rendered = compressBatchBashPollResult(originalText, depth);
+			rendered = compressBatchBashPollResult(originalText, policy);
 		}
 
 		// --- Compress web tool results (Q1 dedup) ---
@@ -1238,7 +1277,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			const args = toolCallIdToArgs.get(toolCallId);
 			const { isSuperseded, marker } = checkWebDedup(args, toolCallId, dedupIndex);
 			if (isSuperseded) {
-				if (depth < 2) {
+				if (policy.showSupersededBreadcrumbs) {
 					rendered = marker;
 				} else {
 					// At depth 2+, drop superseded web results entirely
@@ -1246,7 +1285,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				}
 			} else {
 				rendered = compressWebResult(originalText, args);
-				if (depth >= 2 && !webSummaryEmitted) {
+				if (!policy.showSupersededBreadcrumbs && !webSummaryEmitted) {
 					const searchCount = dedupIndex.latestWebSearch.size;
 					const fetchCount = dedupIndex.latestWebFetch.size;
 					const total = searchCount + fetchCount;
@@ -1273,7 +1312,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 			const normQuestion = question.trim().toLowerCase().slice(0, 120);
 			const latestTc = normQuestion ? dedupIndex.latestAskUser.get(normQuestion) : undefined;
 			if (latestTc && latestTc !== toolCallId) {
-				if (depth < 2) {
+				if (policy.showSupersededBreadcrumbs) {
 					rendered = `[ask_user] "${question}" (superseded by later ask_user)`;
 				} else {
 					// At depth 2+, drop superseded ask_user results entirely
@@ -1339,13 +1378,7 @@ function extractToolResultText(entry: MessageEntry): string | undefined {
 	return undefined;
 }
 
-/**
- * Backward-compatible alias for compressToolResults.
- * @deprecated Use compressToolResults instead.
- */
-export function compressFlowToolResults(snapshot: string, cache: Map<string, CompressedFlowResult[]>): string {
-	return compressToolResults(snapshot, cache);
-}
+
 
 // ---------------------------------------------------------------------------
 // batch_read tool call stripping
@@ -1922,7 +1955,7 @@ export function sanitizeForkSnapshot(
 	passDeltas["compressFlowToolCallArgs"] = measureBytes(sanitized);
 
 	// Compress tool results (flow, batch, web, ask_user).
-	sanitized = compressToolResults(sanitized, cache, options?.depth ?? 1);
+	sanitized = compressToolResults(sanitized, cache, depthToPolicy(options?.depth ?? 1));
 	passesApplied.push("compressToolResults");
 	passDeltas["compressToolResults"] = measureBytes(sanitized);
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults, compressFlowToolCallArgs, sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
+import { compressToolResults, compressFlowToolCallArgs, depthToPolicy, sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
 import { evictCacheOverflow } from "../src/core/executor.js";
 import { stripStrategicHints } from "../src/steering/tool-utils.js";
 
@@ -65,8 +65,9 @@ describe("compressToolResults — batch", () => {
 
 		const result = compressToolResults(snapshot, new Map());
 		expect(result).toContain("2 operations: 1 read, 1 bash");
-		expect(result).toContain("--- src/file.ts (42 lines, content truncated) ---");
-		expect(result).not.toContain("line 1\nline 2");
+		expect(result).toContain("--- src/file.ts (42 lines, preview) ---");
+		expect(result).toContain("line 1");
+		expect(result).toContain("line 2");
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -190,7 +191,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -220,7 +221,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"tool"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -250,8 +251,8 @@ describe("compressToolResults — batch", () => {
 		]);
 
 		const result = compressToolResults(snapshot, new Map());
-		expect(result).toContain("--- README.md (10 lines, content truncated) ---");
-		expect(result).not.toContain("Some content after horizontal rule");
+		expect(result).toContain("--- README.md (10 lines, preview) ---");
+		expect(result).toContain("Some content after horizontal rule");
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -279,7 +280,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -312,7 +313,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -341,7 +342,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -369,7 +370,7 @@ describe("compressToolResults — batch", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const lines = result.trimEnd().split("\n");
 		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
 		const parsed = JSON.parse(toolLine);
@@ -801,7 +802,7 @@ describe("compressToolResults — W1 write dedup + E1 edit dedup", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		// Latest write kept at depth 2+ (compact, no bytes)
 		expect(result).toContain("[batch:write] src/config.ts");
 		expect(result).not.toContain("(200 bytes)");
@@ -848,7 +849,7 @@ describe("compressToolResults — W1 write dedup + E1 edit dedup", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getBatchText(result, "tc1");
 		const tc2Text = getBatchText(result, "tc2");
 		// tc1 should be superseded because tc2 writes the same normalized path
@@ -884,7 +885,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] npm-test-abc · exit 0 · 2.3s (avg) · 3 lines\n> head:\nPASS src/utils/parse.test.ts\nPASS src/core/flow.test.ts\nTests: 15 passed, 15 total");
 	});
@@ -909,7 +910,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] build-def · exit 0 · 8.1s (long) · 100 lines\n> head:\nline 1\nline 2\nline 3");
 		expect(text).not.toContain("line 100");
@@ -934,7 +935,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:pending] long-grep-ghi · still running · 3 lines partial\n> head:\nsrc/core/flow.ts:234\nsrc/core/agents.ts:89\nsrc/snapshot/snapshot.ts:176");
 	});
@@ -958,7 +959,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:err] lint-jkl · 1.2s (avg) · 2 lines stderr\n> stderr:\nsrc/core/flow.ts:45:3: Error: Unexpected token. (eslint)\nsrc/index.ts:12:1: Warning: Missing return type.");
 	});
@@ -982,7 +983,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] git-status-mno · exit 0 · 0.1s (normal) · 0 lines");
 	});
@@ -1006,7 +1007,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] check-node-pqr · exit 0 · 0.1s (normal) · 1 line\n> head:\nv20.12.2");
 		expect(text).toContain("[bash:ok] check-git-stu · exit 0 · 0.2s (normal) · 2 lines\n> head:\nOn branch main\nYour branch is up to date with 'origin/main'.");
@@ -1031,7 +1032,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:err] err-stdout · 0.3s (avg) · 1 line stderr\n> stderr:\nfail stdout");
 	});
@@ -1055,7 +1056,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:pending] pending-empty · still running · 0 lines partial");
 	});
@@ -1079,7 +1080,7 @@ describe("compressToolResults — X1 bash compression (depth 1)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getBatchText(result);
 		expect(text).toContain("[bash:ok] echo-test · exit 0 · 0.1s (normal) · 2 lines\n> head:\n--- hello ---\ntrailing line");
 		expect(text).not.toContain("(content truncated)");
@@ -1106,7 +1107,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] npm-test-abc · exit 0");
 		expect(result).not.toContain("PASS src/utils/parse.test.ts");
 		expect(result).not.toContain("> head:");
@@ -1132,7 +1133,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] build-def · exit 0");
 		expect(result).not.toContain("line 1");
 		expect(result).not.toContain("> head:");
@@ -1157,7 +1158,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:pending] long-grep-ghi · still running");
 		expect(result).not.toContain("src/core/flow.ts:234");
 		expect(result).not.toContain("> head:");
@@ -1182,7 +1183,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:err] lint-jkl");
 		expect(result).not.toContain("src/core/flow.ts:45:3");
 		expect(result).not.toContain("> stderr:");
@@ -1207,7 +1208,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] git-status-mno · exit 0");
 		expect(result).not.toContain("0 lines");
 	});
@@ -1231,7 +1232,7 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:ok] check-node-pqr · exit 0");
 		expect(result).toContain("[bash:ok] check-git-stu · exit 0");
 		expect(result).not.toContain("v20.12.2");
@@ -1271,7 +1272,7 @@ describe("compressToolResults — S4 batch_bash_poll compression", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getPollText(result);
 		expect(text).toContain("[bash:poll] poll1 · exit 0 · 1.5s (avg) · 1000 lines\n> head:\npoll line 1\npoll line 2\npoll line 3");
 		expect(text).not.toContain("poll line 1000");
@@ -1298,7 +1299,7 @@ describe("compressToolResults — S4 batch_bash_poll compression", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getPollText(result);
 		expect(text).toContain("[bash:poll] poll2 · still running · 500 lines partial\n> head:\npending 1\npending 2\npending 3");
 		expect(text).not.toContain("pending 500");
@@ -1323,7 +1324,7 @@ describe("compressToolResults — S4 batch_bash_poll compression", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getPollText(result);
 		expect(text).toContain("[bash:poll] poll3 · exit 1 · 0.3s (avg) · 1 line stderr\n> stderr:\nError: command failed");
 	});
@@ -1347,7 +1348,7 @@ describe("compressToolResults — S4 batch_bash_poll compression", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		expect(result).toContain("[bash:poll] poll4 · exit 0 · 2.0s (long)");
 		expect(result).not.toContain("output line 1");
 		expect(result).not.toContain("> head:");
@@ -1372,7 +1373,7 @@ describe("compressToolResults — S4 batch_bash_poll compression", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const text = getPollText(result);
 		expect(text).toContain("[bash:poll] a · exit 0 · 0.5s (avg) · 1 line\n> head:\nline a1");
 		expect(text).toContain("[bash:poll] b · still running · 2 lines partial\n> head:\nline b1\nline b2");
@@ -1458,7 +1459,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc3", content: "1. Node.js Streams\n   https://nodejs.org/api/stream.html\n   Everything" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		// Latest preserved (check parsed text to avoid JSON escaping)
 		const tc3Text = getWebText(result, "tc3");
 		expect(tc3Text).toContain('[web:search] "node.js streams" · 1 results · first: Node.js Streams');
@@ -1478,7 +1479,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "File: /tmp/abc.md\nTitle: Example\nContent length: 200 chars\n\nPreview: new" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc2Text = getWebText(result, "tc2");
 		expect(tc2Text).toContain("[web:fetch] https://example.com · \"Example\" · 200 chars");
 		const tc1Text = getWebText(result, "tc1");
@@ -1494,7 +1495,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "File: /tmp/abc.md\nTitle: Example Domain\nContent length: 500 chars\n\nPreview:\nMore text" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		const tc2Text = getWebText(result, "tc2");
 		expect(tc1Text).toContain('[web:search] "example.com homepage" · 1 results · first: Example Domain');
@@ -1514,7 +1515,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc4", content: "1. Result A updated\n   https://a.com\n   Info" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		// Rollup summary (no quotes, safe to check in raw JSON)
 		expect(result).toContain("[web] 3 unique queries (2 searches, 1 fetch) · latest per query below");
 		// Latest results — check parsed text to avoid JSON escaping
@@ -1538,7 +1539,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		expect(tc1Text).toContain("[web]");
 		expect(tc1Text).not.toContain("(superseded");
@@ -1552,7 +1553,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		const tc2Text = getWebText(result, "tc2");
 		// Neither should be superseded because empty normalized queries are not indexed
@@ -1566,7 +1567,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		expect(tc1Text).toBeTruthy();
 		expect(tc1Text).not.toContain("(superseded");
@@ -1578,7 +1579,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "No results" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getWebText(result, "tc1");
 		expect(tc1Text).toBeTruthy();
 		expect(tc1Text).not.toContain("(superseded");
@@ -1592,7 +1593,7 @@ describe("compressToolResults — Q1 web dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "1. Node.js Streams\n   https://nodejs.org\n   Info" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		// tc2 is latest
 		const tc2Text = getWebText(result, "tc2");
 		expect(tc2Text).toContain('[web:search] "  node.js streams  " · 1 results · first: Node.js Streams');
@@ -1708,7 +1709,7 @@ describe("compressToolResults — A1 ask_user dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getAskUserText(result, "tc1");
 		const tc2Text = getAskUserText(result, "tc2");
 		expect(tc1Text).toContain('[ask_user] "Should we use Docker?" (superseded by later ask_user)');
@@ -1724,7 +1725,7 @@ describe("compressToolResults — A1 ask_user dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		// tc2 survives
 		const tc2Text = getAskUserText(result, "tc2");
 		expect(tc2Text).toContain('[ask_user] "Should we use Docker?" → "No"');
@@ -1744,7 +1745,7 @@ describe("compressToolResults — A1 ask_user dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getAskUserText(result, "tc1");
 		const tc2Text = getAskUserText(result, "tc2");
 		expect(tc1Text).toContain('[ask_user] "Use Docker?" → "Yes"');
@@ -1760,7 +1761,7 @@ describe("compressToolResults — A1 ask_user dedup", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "tc2", content: "User answered: No" } },
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getAskUserText(result, "tc1");
 		const tc2Text = getAskUserText(result, "tc2");
 		expect(tc1Text).toContain('[ask_user] "  SHOULD we USE Docker?  " (superseded by later ask_user)');
@@ -1813,7 +1814,7 @@ describe("compressToolResults — B1 batch rollup", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getBatchText(result, "tc1");
 		expect(tc1Text).toBe("[batch] 2 ops (all superseded or truncated by later operations)");
 		const tc2Text = getBatchText(result, "tc2");
@@ -1855,7 +1856,7 @@ describe("compressToolResults — B1 batch rollup", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 2);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
 		const tc1Text = getBatchText(result, "tc1");
 		expect(tc1Text).toBe("[batch] 2 ops (superseded)");
 		const tc2Text = getBatchText(result, "tc2");
@@ -1897,7 +1898,7 @@ describe("compressToolResults — B1 batch rollup", () => {
 			},
 		]);
 
-		const result = compressToolResults(snapshot, new Map(), 1);
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
 		const tc1Text = getBatchText(result, "tc1");
 		// a is superseded, b is kept
 		expect(tc1Text).toContain("[batch:write] src/a.ts (superseded)");

@@ -137,7 +137,7 @@ function makeFlowDetailsFactory(projectFlowsDir: string | null) {
 }
 
 // Re-export compressToolResults and stripBatchReadToolCalls for tests
-export { compressToolResults, compressFlowToolResults, stripBatchReadToolCalls } from "./snapshot/snapshot.js";
+export { compressToolResults, stripBatchReadToolCalls } from "./snapshot/snapshot.js";
 export { type FlowColorConfig } from "./tui/flow-colors.js";
 
 // ---------------------------------------------------------------------------

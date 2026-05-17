@@ -305,8 +305,8 @@ describe("SNAPSHOT INTEGRATION TEST — depth-aware compression & dump artifacts
 		expect(toolTexts).not.toContain("--- edit: src/routes/login.ts (1 block) ---");
 
 		// Read truncation
-		expect(toolTexts).toContain("--- src/middleware.ts (42 lines, content truncated) ---");
-		expect(toolTexts).not.toContain("export function middleware(req, res, next)");
+		expect(toolTexts).toContain("--- src/middleware.ts (42 lines, preview) ---");
+		expect(toolTexts).toContain("export function middleware(req, res, next)");
 
 		// Q1 web compression
 		expect(toolTexts).toContain("[web:search] \"jwt best practices node.js\" · 2 results · first: JWT Security Best Practices");
