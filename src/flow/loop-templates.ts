@@ -1,3 +1,5 @@
+import { loopOverallClause, sharedWakeupGuidance } from "./template-shared.js";
+
 /**
  * Runtime template strings for endless loop prompts.
  */
@@ -18,7 +20,7 @@ Continue execution toward the active goal. This is an endless loop session.
 Objective: {{objective}}
 {{acceptanceClause}}
 Progress: {{flowCount}}{{maxFlowsClause}} flows in this session, {{tokenInfo}} tokens.
-Loop overall: {{sessionCount}} sessions, {{totalTokensAcrossSessions}} tokens total.
+${loopOverallClause}
 
 Latest user message: {{userMessage}}
 
@@ -31,13 +33,9 @@ The user has been idle. Review the active goal and find safe, conservative impro
 Objective: {{objective}}
 {{acceptanceClause}}
 Progress: {{flowCount}}/{{maxFlows}} flows in this session, {{totalTokens}} tokens.
-Loop overall: {{sessionCount}} sessions, {{totalTokensAcrossSessions}} tokens total.
+${loopOverallClause}
 
-Guidance:
-- Focus on safe, incremental improvements — do not refactor large areas or make risky changes.
-- Prefer verification, testing, and documentation over new features.
-- If you find potential issues, investigate with scout or audit before making changes.
-- You cannot end this goal. Only the user can end a goal.
+${sharedWakeupGuidance}
 
 Call the flow tool with the appropriate flow type to continue, or call the warp tool to hand off to a fresh session if budget is exceeded.
 </flow-wakeup>`;

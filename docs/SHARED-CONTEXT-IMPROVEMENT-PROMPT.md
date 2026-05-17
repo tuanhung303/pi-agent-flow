@@ -49,13 +49,13 @@ When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it fork
 | **R1** | rg output compression | ✅ Complete | `[rg:ok] path · N matches · M files\n> head:\n...` | `[rg:ok] path · N matches · M files` |
 | **F1** | Flow tool call argument compression | ✅ Complete | `{type, aim, steps}` compact object | Same (pass-agnostic) |
 | **C1** | Low-signal assistant message collapsing | ✅ Complete | `[assistant: N tokens, no action]` | `[assistant:continuation]` (no tokens known) |
+| **Read Preview** | File read first/last 2 lines at depth 1 | ✅ Complete | `--- path (N lines, preview) ---` with first/last 2 lines | `--- path (N lines, content truncated) ---` |
 
 ### Pending / Future Work
 
 | Item | Why It Matters | File Hint |
 |------|--------------|-----------|
 | **Cross-turn bash dedup** | If parent runs `npm test` every turn, child sees N bash results. Low ROI because bash IDs are unique per batch call. | `compressBatchResult` already handles intra-batch dedup; cross-turn would require new `DedupIndex` category. |
-| **Read content truncation tuning** | Currently truncates to header only. Could preserve first/last N lines for context. | `compressBatchResult` read section handling (~line 480). |
 | **Structured output validation** | `renderCompressedFlowResult` returns `undefined` if >50% file entries lack `path`. This safety net could be tightened. | `src/snapshot/snapshot.ts:~93-170`. |
 | **Cache miss placeholder** | `[flow] prior result · N chars — full context unavailable` is conservative. Could include a one-line summary if structured output failed but raw text is short. | `compressToolResults` cache-miss branch (~line 780). |
 

@@ -1,5 +1,28 @@
 import { describe, it, expect } from "vitest";
 import { compressToolResults, compressFlowToolCallArgs, depthToPolicy, sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
+
+describe("depthToPolicy", () => {
+	it("maps depth 0 and 1 to full previews", () => {
+		const d0 = depthToPolicy(0);
+		const d1 = depthToPolicy(1);
+		for (const p of [d0, d1]) {
+			expect(p.showPreviews).toBe(true);
+			expect(p.showBytes).toBe(true);
+			expect(p.showSupersededBreadcrumbs).toBe(true);
+			expect(p.showEditBlocks).toBe(true);
+		}
+	});
+
+	it("maps depth 2+ to maximum compression", () => {
+		for (const depth of [2, 3, 5, 10]) {
+			const p = depthToPolicy(depth);
+			expect(p.showPreviews).toBe(false);
+			expect(p.showBytes).toBe(false);
+			expect(p.showSupersededBreadcrumbs).toBe(false);
+			expect(p.showEditBlocks).toBe(false);
+		}
+	});
+});
 import { evictCacheOverflow } from "../src/core/executor.js";
 import { stripStrategicHints } from "../src/steering/tool-utils.js";
 
@@ -1377,6 +1400,305 @@ describe("compressToolResults — S4 batch_bash_poll compression", () => {
 		const text = getPollText(result);
 		expect(text).toContain("[bash:poll] a · exit 0 · 0.5s (avg) · 1 line\n> head:\nline a1");
 		expect(text).toContain("[bash:poll] b · still running · 2 lines partial\n> head:\nline b1\nline b2");
+	});
+});
+
+describe("compressToolResults — B1 cross-turn bash dedup", () => {
+	function getBatchText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`),
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+	function getPollText(result: string, tcId: string = "tc1"): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes(`"toolCallId":"${tcId}"`),
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("deduplicates 3 identical bash commands across turns → only latest kept", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "ghi" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 bash\n\n--- bash [ghi] exit 0 ---\n[Execution time: 1.1s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		expect(result).toContain("[bash:ok] ghi · exit 0 · 1.1s · 1 line");
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[bash:ok] abc (superseded)");
+		expect(tc2Text).toContain("[bash:ok] def (superseded)");
+	});
+
+	it("drops superseded bash commands entirely at depth 2+", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(2));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).not.toContain("[bash:ok] abc");
+		expect(tc1Text).not.toContain("--- bash [abc]");
+		expect(result).toContain("[bash:ok] def · exit 0");
+	});
+
+	it("supersedes batch bash poll results when original bash is superseded", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: '1 operation: 1 bash\n\n--- bash [abc] pending ---\n[partial output]\nstill running\n[Use batch_bash_poll with i: ["abc"] to check results]',
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch_bash_poll", arguments: { i: ["abc"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "--- [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc3", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc3",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toContain("[bash:pending] abc (superseded)");
+		const tc2Text = getPollText(result, "tc2");
+		expect(tc2Text).toContain("[bash:poll] abc (superseded)");
+		expect(result).toContain("[bash:ok] def · exit 0 · 1.2s · 1 line");
+	});
+
+	it("keeps different bash commands across turns", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm build", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 2.0s]\nBuilt",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[bash:ok] abc · exit 0 · 1.0s · 1 line");
+		expect(tc2Text).toContain("[bash:ok] def · exit 0 · 2.0s · 1 line");
+	});
+
+	it("keeps bash results when bashIdToCommand mapping is missing", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "read", p: "src/file.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 bash\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		expect(tc1Text).toContain("[bash:ok] abc · exit 0 · 1.0s · 1 line");
+		expect(tc2Text).toContain("[bash:ok] def · exit 0 · 1.2s · 1 line");
+	});
+
+	it("handles mixed batch with superseded bash and kept read", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "abc" }, { o: "read", p: "src/config.ts" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "2 operations: 1 bash, 1 read\n\n--- bash [abc] exit 0 ---\n[Execution time: 1.0s]\nPASS\n\n--- src/config.ts (10 lines) ---\nline1\nline2",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "bash", p: ".", c: "npm test", i: "def" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 bash\n\n--- bash [def] exit 0 ---\n[Execution time: 1.2s]\nPASS",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), depthToPolicy(1));
+		const tc1Text = getBatchText(result, "tc1");
+		expect(tc1Text).toContain("[bash:ok] abc (superseded)");
+		expect(tc1Text).toContain("--- src/config.ts (10 lines, preview) ---");
+		expect(tc1Text).not.toContain("[batch] 2 ops");
 	});
 });
 

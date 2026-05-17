@@ -389,11 +389,21 @@ interface DedupIndex {
 	latestWebSearch: Map<string, string>;
 	latestWebFetch: Map<string, string>;
 	latestAskUser: Map<string, string>;
+	bashIdToCommand: Map<string, string>;
+	latestBash: Map<string, string>;
 }
 
 
 /**
-/** Normalize a file path for use as a dedup key. */
+ * Normalize a bash command string for use as a dedup key.
+ */
+function normalizeBashCommand(cmd: string): string {
+	return cmd.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Normalize a file path for use as a dedup key.
+ */
 function normalizeDedupPath(rawPath: string, cwd: string): string {
 	let p = rawPath.replace(/\\/g, "/");
 	if (p.startsWith("./")) {
@@ -421,6 +431,8 @@ function buildDedupIndex(
 	const latestWebSearch = new Map<string, string>();
 	const latestWebFetch = new Map<string, string>();
 	const latestAskUser = new Map<string, string>();
+	const bashIdToCommand = new Map<string, string>();
+	const latestBash = new Map<string, string>();
 
 	for (const line of lines) {
 		let entry: SnapshotEntry;
@@ -476,6 +488,29 @@ function buildDedupIndex(
 				latestEdit.delete(normPath);   // delete supersedes earlier edits
 			}
 		}
+
+		// B1: Extract bash commands from batch args for cross-turn dedup
+		const args = toolCallIdToArgs.get(toolCallId);
+		if (args && typeof args === "object") {
+			const a = args as Record<string, unknown>;
+			const ops = Array.isArray(a.o) ? a.o : Array.isArray(a.op) ? a.op : undefined;
+			if (ops) {
+				for (const op of ops) {
+					if (op && typeof op === "object") {
+						const opObj = op as Record<string, unknown>;
+						if (opObj.o === "bash" || opObj.op === "bash") {
+							const cmd = typeof opObj.c === "string" ? opObj.c : "";
+							const id = typeof opObj.i === "string" ? opObj.i : "";
+							if (cmd && id) {
+								const normCmd = normalizeBashCommand(cmd);
+								bashIdToCommand.set(id, normCmd);
+								latestBash.set(normCmd, id);
+							}
+						}
+					}
+				}
+			}
+		}
 		}
 
 		// Ask_user tool results — build A1 dedup index
@@ -511,7 +546,7 @@ function buildDedupIndex(
 		}
 	}
 
-	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch, latestAskUser };
+	return { latestWrite, latestEdit, latestDelete, latestWebSearch, latestWebFetch, latestAskUser, bashIdToCommand, latestBash };
 }
 
 /** Check if a web tool result is superseded by a later result with the same query or URL. */
@@ -565,11 +600,13 @@ function compressBatchResult(
 		latestWrite?: Map<string, string>;
 		latestEdit?: Map<string, string>;
 		latestDelete?: Map<string, string>;
+		bashIdToCommand?: Map<string, string>;
+		latestBash?: Map<string, string>;
 		cwd?: string;
 	} = {},
 ): string {
 	const policy = options.depthPolicy ?? depthToPolicy(1);
-	const { toolCallId, latestWrite, latestEdit, latestDelete } = options;
+	const { toolCallId, latestWrite, latestEdit, latestDelete, bashIdToCommand, latestBash } = options;
 	const cwd = options.cwd ?? process.cwd();
 
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -621,11 +658,6 @@ function compressBatchResult(
 			const rawStatus = bashMatch[2];
 			const status: "ok" | "pending" | "error" = rawStatus.startsWith("exit") ? "ok" : rawStatus as "pending" | "error";
 			const exitCode = bashMatch[3] !== undefined ? Number(bashMatch[3]) : undefined;
-			i++;
-			let timingTier: string | undefined;
-			const stdoutLines: string[] = [];
-			let stderrLines: string[] = [];
-			let inStderr = false;
 			// Stricter section-end check for bash content: don't treat generic
 			// `--- text ---` lines as section headers (they could be bash output).
 			const isBashSectionEnd = (l: string) =>
@@ -637,6 +669,27 @@ function compressBatchResult(
 				/^--- delete: .+ ---$/.test(l) ||
 				/^--- read: .+ ---$/.test(l) ||
 				/^--- rg: .+ ---$/.test(l);
+
+			// B1 cross-turn bash dedup
+			const normCmd = bashIdToCommand?.get(bashId);
+			const isSupersededBash = normCmd ? latestBash?.get(normCmd) !== bashId : false;
+			if (isSupersededBash) {
+				if (policy.showSupersededBreadcrumbs) {
+					const statusTag = status === "ok" ? "ok" : status === "pending" ? "pending" : "err";
+					out.push(`[bash:${statusTag}] ${bashId} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isBashSectionEnd(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+
+			i++;
+			let timingTier: string | undefined;
+			const stdoutLines: string[] = [];
+			let stderrLines: string[] = [];
+			let inStderr = false;
 			while (i < lines.length && !isBashSectionEnd(lines[i])) {
 				const contentLine = lines[i];
 				const timingMatch = contentLine.match(/^\[Execution time: (.+)\]$/);
@@ -895,7 +948,7 @@ function compressBatchResult(
 	const meaningfulOut = out.filter((l) => l.trim() !== "");
 	// Single-pass rollup check: matches superseded breadcrumbs, truncated reads,
 	// and compact bash/rg lines. Equivalent to the previous multi-check logic.
-	const SUPERSEDED_OR_TRUNCATED_RE = /\(superseded\)|\(content truncated\)|\(context map, truncated\)|^\[bash:(ok|pending|err)\] |^\[rg:(ok|err)\] /;
+	const SUPERSEDED_OR_TRUNCATED_RE = /\(superseded\)|\(content truncated\)|\(context map, truncated\)|^\[bash:(ok|pending|err)\] |^\[bash:poll\] |^\[rg:(ok|err)\] /;
 	const isAllSupersededOrTruncated = meaningfulOut.length > 0 && meaningfulOut.every((l) => SUPERSEDED_OR_TRUNCATED_RE.test(l));
 	// At depth 2+, superseded writes/edits are dropped entirely (no breadcrumbs),
 	// leaving out empty. If the original text had only section headers and no
@@ -974,8 +1027,15 @@ function compressAskUserResult(text: string, args?: unknown): string {
 	return `[ask_user] · ${text.length} chars`;
 }
 
-/** Compress batch_bash_poll tool result into compact metadata (S4). */
-function compressBatchBashPollResult(text: string, policy: DepthPolicy): string {
+/** Compress batch_bash_poll tool result into compact metadata (S4 + B1). */
+function compressBatchBashPollResult(
+	text: string,
+	policy: DepthPolicy,
+	options?: {
+		bashIdToCommand?: Map<string, string>;
+		latestBash?: Map<string, string>;
+	},
+): string {
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
 	const out: string[] = [];
 	let i = 0;
@@ -991,6 +1051,21 @@ function compressBatchBashPollResult(text: string, policy: DepthPolicy): string 
 			const id = (completedMatch ?? pendingMatch)![1];
 			const isCompleted = !!completedMatch;
 			const exitCode = completedMatch?.[3] !== undefined ? Number(completedMatch[3]) : undefined;
+
+			// B1 cross-turn bash dedup for poll results
+			const normCmd = options?.bashIdToCommand?.get(id);
+			const isSuperseded = normCmd ? options?.latestBash?.get(normCmd) !== id : false;
+			if (isSuperseded) {
+				if (policy.showSupersededBreadcrumbs) {
+					out.push(`[bash:poll] ${id} (superseded)`);
+				}
+				i++;
+				while (i < lines.length && !isPollSectionEnd(lines[i])) {
+					i++;
+				}
+				continue;
+			}
+
 			i++;
 			let timingTier: string | undefined;
 			const stdoutLines: string[] = [];
@@ -1261,14 +1336,19 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				latestWrite: dedupIndex.latestWrite,
 				latestEdit: dedupIndex.latestEdit,
 				latestDelete: dedupIndex.latestDelete,
+				bashIdToCommand: dedupIndex.bashIdToCommand,
+				latestBash: dedupIndex.latestBash,
 				cwd: sessionCwd,
 			});
 		}
 
-		// --- Compress batch_bash_poll tool results (S4) ---
+		// --- Compress batch_bash_poll tool results (S4 + B1) ---
 		else if (toolName === "batch_bash_poll") {
 			originalText = extractToolResultText(entry as MessageEntry) ?? "";
-			rendered = compressBatchBashPollResult(originalText, policy);
+			rendered = compressBatchBashPollResult(originalText, policy, {
+				bashIdToCommand: dedupIndex.bashIdToCommand,
+				latestBash: dedupIndex.latestBash,
+			});
 		}
 
 		// --- Compress web tool results (Q1 dedup) ---
