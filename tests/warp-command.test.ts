@@ -34,7 +34,7 @@ describe("setupWarpCommand", () => {
     expect(registerCommand).toHaveBeenCalledWith(
       "flow:warp",
       expect.objectContaining({
-        description: expect.stringContaining("Warp to a new focused session"),
+        description: expect.stringContaining("Transfer context to a new focused session"),
       }),
     );
   });
@@ -64,7 +64,7 @@ describe("setupWarpCommand", () => {
       ui: { notify },
     } as any;
     await handler("", ctx);
-    expect(notify).toHaveBeenCalledWith("Usage: /flow:warp <goal for new thread>", "error");
+    expect(notify).toHaveBeenCalledWith("Usage: /warp <goal for new thread>", "error");
   });
 
   it("requires non-empty conversation", async () => {
@@ -77,7 +77,7 @@ describe("setupWarpCommand", () => {
       ui: { notify },
     } as any;
     await handler("my goal", ctx);
-    expect(notify).toHaveBeenCalledWith("No conversation to warp", "error");
+    expect(notify).toHaveBeenCalledWith("No conversation to hand off", "error");
   });
 
   it("generates warp prompt and creates new session", async () => {

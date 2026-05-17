@@ -1,13 +1,13 @@
 /**
- * Warp extension - transfer context to a new focused session
+ * Handoff extension - transfer context to a new focused session
  *
- * Instead of compacting (which is lossy), warp extracts what matters
+ * Instead of compacting (which is lossy), handoff extracts what matters
  * for your next task and creates a new session with a generated prompt.
  *
  * Usage:
- *   /flow:warp now implement this for teams as well
- *   /flow:warp execute phase one of the plan
- *   /flow:warp check other places that need this fix
+ *   /handoff now implement this for teams as well
+ *   /handoff execute phase one of the plan
+ *   /handoff check other places that need this fix
  *
  * The generated prompt appears as a draft in the editor for review/editing.
  */
@@ -40,7 +40,7 @@ Files involved:
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("flow:warp", {
-		description: "Warp to a new focused session",
+		description: "Transfer context to a new focused session",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("warp requires interactive mode", "error");
@@ -54,7 +54,7 @@ export default function (pi: ExtensionAPI) {
 
 			const goal = args.trim();
 			if (!goal) {
-				ctx.ui.notify("Usage: /flow:warp <goal for new thread>", "error");
+				ctx.ui.notify("Usage: /warp <goal for new thread>", "error");
 				return;
 			}
 
@@ -65,7 +65,7 @@ export default function (pi: ExtensionAPI) {
 				.map((entry) => entry.message);
 
 			if (messages.length === 0) {
-				ctx.ui.notify("No conversation to warp", "error");
+				ctx.ui.notify("No conversation to hand off", "error");
 				return;
 			}
 
@@ -74,7 +74,7 @@ export default function (pi: ExtensionAPI) {
 			const conversationText = serializeConversation(llmMessages);
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 
-			// Generate the warp prompt with loader UI
+			// Generate the handoff prompt with loader UI
 			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
 				const loader = new BorderedLoader(tui, theme, `Generating warp prompt...`);
 				loader.onAbort = () => done(null);
