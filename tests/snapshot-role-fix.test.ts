@@ -1259,3 +1259,88 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		expect(compressIndex).toBeLessThan(reparentIndex2);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// 7. STRATEGIC HINTS STRIPPED FROM ALL ROLES
+// ---------------------------------------------------------------------------
+describe("STRATEGIC HINTS STRIPPED FROM ALL ROLES", () => {
+	it("strips [Directive: ...] and [Hint: ...] from assistant, user, and toolResult messages", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "session-1", systemPrompt: "You are helpful" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: "Some analysis here.\n\n[Directive: Close what you start. Dispatch a [build] or [scout] flow to verify before advancing.]",
+					id: "msg-assistant-directive",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: "Please continue.\n\n[Directive: Unfinished work detected. Dispatch a [build] or [debug] flow to close the notDone items. Do not start new work until these are resolved.]",
+					id: "msg-user-directive",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "Tool output here.\n\n[Directive: Dispatch the same [build] or [scout] flow to verify uncertainty.]",
+					id: "msg-tool-directive",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: "Legacy hint test.\n\n[Hint: Plan next step.]",
+					id: "msg-assistant-hint",
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map());
+		expect(result).toBeDefined();
+		expect(passesApplied).toContain("stripStrategicHints");
+
+		const entries = parseSnapshot(result!);
+
+		const assistantDirective = entries.find((e: any) => e?.message?.id === "msg-assistant-directive");
+		const userDirective = entries.find((e: any) => e?.message?.id === "msg-user-directive");
+		const toolDirective = entries.find((e: any) => e?.message?.id === "msg-tool-directive");
+		const assistantHint = entries.find((e: any) => e?.message?.id === "msg-assistant-hint");
+
+		expect(assistantDirective).toBeDefined();
+		expect(userDirective).toBeDefined();
+		expect(toolDirective).toBeDefined();
+		expect(assistantHint).toBeDefined();
+
+		const assistantDirectiveText = typeof assistantDirective.message.content === "string"
+			? assistantDirective.message.content
+			: assistantDirective.message.content?.find((p: any) => p.type === "text")?.text ?? "";
+		const userDirectiveText = typeof userDirective.message.content === "string"
+			? userDirective.message.content
+			: userDirective.message.content?.find((p: any) => p.type === "text")?.text ?? "";
+		const toolDirectiveText = typeof toolDirective.message.content === "string"
+			? toolDirective.message.content
+			: toolDirective.message.content?.find((p: any) => p.type === "text")?.text ?? "";
+		const assistantHintText = typeof assistantHint.message.content === "string"
+			? assistantHint.message.content
+			: assistantHint.message.content?.find((p: any) => p.type === "text")?.text ?? "";
+
+		// Assert directives/hints are stripped
+		expect(assistantDirectiveText).not.toContain("[Directive: Close what you start.");
+		expect(userDirectiveText).not.toContain("[Directive: Unfinished work detected.");
+		expect(toolDirectiveText).not.toContain("[Directive: Dispatch the same [build] or [scout] flow");
+		expect(assistantHintText).not.toContain("[Hint: Plan next step.]");
+
+		// Assert non-directive parts remain
+		expect(assistantDirectiveText).toContain("Some analysis here.");
+		expect(userDirectiveText).toContain("Please continue.");
+		expect(toolDirectiveText).toContain("Tool output here.");
+		expect(assistantHintText).toContain("Legacy hint test.");
+	});
+});

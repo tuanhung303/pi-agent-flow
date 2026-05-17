@@ -1953,14 +1953,12 @@ export function sanitizeForkSnapshot(
 					subPasses.add("stripSteeringHints");
 				}
 
-				// Strip strategic hints from tool results
-				if (message.role === "tool" || message.role === "toolResult") {
-					const afterHints = stripStrategicHintsFromContent(modifiedContent as string | Array<{ type: string; text?: string }>);
-					if (!isJsonEqual(afterHints, modifiedContent)) {
-						modifiedContent = afterHints as SnapshotMessage["content"];
-						changed = true;
-						subPasses.add("stripStrategicHints");
-					}
+				// Strip strategic hints from all messages
+				const afterHints = stripStrategicHintsFromContent(modifiedContent as string | Array<{ type: string; text?: string }>);
+				if (!isJsonEqual(afterHints, modifiedContent)) {
+					modifiedContent = afterHints as SnapshotMessage["content"];
+					changed = true;
+					subPasses.add("stripStrategicHints");
 				}
 
 				// Compress parent activation prompts in nested snapshot JSONL

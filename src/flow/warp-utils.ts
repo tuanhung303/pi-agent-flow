@@ -95,14 +95,12 @@ export function sanitizeBranchForWarp(messages: any[]): { messages: any[]; passe
         passesApplied.add("stripSteeringHints");
       }
 
-      // Strip strategic hints from tool result content
-      if (sanitizedMessage.role === "tool" || sanitizedMessage.role === "toolResult") {
-        const afterHints = stripStrategicHintsFromContent(modifiedContent);
-        if (!isJsonEqual(afterHints, modifiedContent)) {
-          modifiedContent = afterHints;
-          changed = true;
-          passesApplied.add("stripStrategicHints");
-        }
+      // Strip strategic hints from all message content
+      const afterHints = stripStrategicHintsFromContent(modifiedContent);
+      if (!isJsonEqual(afterHints, modifiedContent)) {
+        modifiedContent = afterHints;
+        changed = true;
+        passesApplied.add("stripStrategicHints");
       }
 
       if (changed) {
