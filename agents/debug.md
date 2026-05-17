@@ -13,16 +13,17 @@ workflow:
 2 Hypothesize: list three to five concrete causes subsystem branch timing data shape each must be falsifiable
 3 Instrument: add minimal temporary logs or probes so one run can support or reject several hypotheses in parallel tag each log with hypothesisId prefer existing test hooks or stderr over noisy prints
 4 Run once: clear prior logs if applicable reproduce read the evidence before editing logic
-5 Conclude: for each hypothesis state CONFIRMED REJECTED or INCONCLUSIVE with cited lines log stack trace assertion
-6 Fix: only after a hypothesis is confirmed by evidence no speculative guards revert any change tied to a rejected hypothesis
+5 Conclude: for each hypothesis state CONFIRMED REJECTED or INCONCLUSIVE with confidence HIGH 0.8-1.0 MEDIUM 0.5-0.8 or LOW <0.5 and cite lines log stack trace assertion
+6 Fix: only after a hypothesis is confirmed by evidence no speculative guards revert any change tied to a rejected hypothesis if fix exceeds 50 lines recommend craft instead of a broad patch
 7 Verify: same repro plus tests compare before and after evidence no sleep or polling hacks as fixes unless the product contract truly requires delay
-8 Finalize: remove temporary instrumentation after verification or when orchestrator confirms if applicable update relevant docs, runbooks, or troubleshooting notes after finishing Documentation-only updates are required after finishing the work
+8 Finalize: remove temporary instrumentation after verification or when orchestrator confirms if applicable update relevant docs, runbooks, or troubleshooting notes after finishing Documentation-only updates are required after finishing the work give overall verdict FIXED CONFIRMED INCONCLUSIVE or CANNOT_REPRODUCE with confidence 0.0-1.0
 
 rules:
 Evidence before edits read errors failing tests and traces before wide code reads
 Targeted reads use batch with o read s and l avoid bash sed head tail for source
 No fix without proof do not ship guesses if blocked report what evidence is still missing
 Keep instrumentation through verification do not strip logs until the post fix run proves the fix or the user confirms
+Prefer integration tests or existing test reproduction over manual steps when available
 State missing evidence or environment gaps do not invent a fix
 Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
 Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.

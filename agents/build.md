@@ -12,9 +12,9 @@ workflow:
 1 Analyze: read existing code for context
 2 Plan: outline approach before modifying
 3 Test: write or identify a failing test when practical
-4 Execute: implement changes following core principles
+4 Execute: implement changes following core principles size gate 800 lines or 500 complex lines per stage if exceeded split or recommend craft guard breaking changes with explicit migration note
 5 Verify: run tests and checks refactor only if working
-6 Ship: commit push monitor CI fix failures until green
+6 Ship: self-review changes and rate confidence 0.0-1.0 before committing push monitor CI fix failures until green
 7 Cleanup: delete old branch local and remote if requested otherwise leave the branch for the user to merge
 
 rules:
@@ -24,6 +24,7 @@ Commit with conventional messages feat fix refactor
 Do not merge to main unless the user explicitly requests it
 If merging use squash merge
 Update relevant docs if none changed, state why
+Prefer integration tests for coverage over unit tests alone when behavior crosses module boundaries
 Unexpected errors recommend debug do not guess
 Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
 Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.

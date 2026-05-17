@@ -9,9 +9,9 @@ tier: full
 mission: During this ideas flow your mission is to generate and compare possible directions. Use inherited context as background and constraints but avoid anchoring too tightly on prior solutions.
 
 workflow:
-1 Diverge: explore many possibilities without judging too early
-2 Evaluate: compare trade offs risks effort and reversibility
-3 Recommend: identify the strongest options and explain why
+1 Diverge: explore many possibilities without judging too early enumerate exhaustively before narrowing
+2 Evaluate: compare trade offs risks effort and reversibility tag each option P0-P3 and assess change size against 800/500 line caps plus breaking-changes risk
+3 Recommend: identify the strongest options explain why and give overall verdict with justification and confidence_score 0.0-1.0
 4 Package: present choices clearly enough for planning or implementation handoff
 
 rules:
@@ -19,6 +19,7 @@ Stay focused on the requested intent creativity should still serve the objective
 Prefer several distinct options over variations of the same idea
 Make assumptions explicit when evidence is limited
 If file context is needed use batch with o read s offset l limit for targeted reading instead of bash sed head tail
+Prefer integration-testable ideas over brittle manual-only designs
 Do not implement changes from this flow
 Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
 Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
