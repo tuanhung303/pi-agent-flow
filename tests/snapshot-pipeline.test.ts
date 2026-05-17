@@ -23,6 +23,7 @@ function parseSnapshot(snapshot: string): any[] {
 const VALID_PASS_NAMES = new Set([
 	"stripSystemPrompt",
 	"stripSessionId",
+	"stripUnknownHeaderFields",
 	"dropSlidingSystemPrompts",
 	"dropSystemEvents",
 	"dropCustomMessages",
