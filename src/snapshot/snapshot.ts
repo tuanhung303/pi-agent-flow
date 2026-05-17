@@ -29,7 +29,7 @@ import {
 	isJsonEqual,
 } from "../steering/sliding-prompt.js";
 import { stripStrategicHintsFromContent } from "../steering/tool-utils.js";
-import { logError } from "../config/log.js";
+import { logWarn, logError } from "../config/log.js";
 import * as path from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -1683,7 +1683,9 @@ function reparentOrphans(snapshot: string): string {
 			if (typeof id === "string" && id) survivingIds.add(id);
 			// Only ids of actual entries should be in survivingIds; parentId refs
 			// are checked in the second pass, not added here.
-		} catch { /* ignore */ }
+		} catch (err) {
+			logWarn(`[pi-agent-flow] reparentOrphans id scan failed: ${err}`);
+		}
 	}
 	for (let i = 0; i < lines.length; i++) {
 		try {
@@ -1723,7 +1725,9 @@ function reparentOrphans(snapshot: string): string {
 			if (modified) {
 				lines[i] = JSON.stringify(entry);
 			}
-		} catch { /* ignore */ }
+		} catch (err) {
+			logWarn(`[pi-agent-flow] reparentOrphans breadcrumb fix failed: ${err}`);
+		}
 	}
 	return `${lines.join("\n")}\n`;
 }
@@ -1768,7 +1772,8 @@ export function sanitizeForkSnapshot(
 		let entry: SnapshotEntry;
 		try {
 			entry = JSON.parse(line) as SnapshotEntry;
-		} catch {
+		} catch (err) {
+			logWarn(`[pi-agent-flow] sanitizeForkSnapshot parse failed: ${err}`);
 			sanitizedLines.push(line);
 			continue;
 		}

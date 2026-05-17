@@ -97,9 +97,9 @@ export function createWebTool() {
 		promptSnippet: "Search the web or fetch a webpage when local files are insufficient",
 		promptGuidelines: [
 			"Pass ops as an array: [{ o: 'search', q: '<query>' }] to find pages.",
-			"Pass ops as an array: [{ o: 'fetch', u: '<url>', f: 'markdown' }] to download a URL. Content is saved to a temp file — use the read tool to access it in chunks.",
-			"The tool returns the file path, title, content length, and a short preview of the content when fetching.",
-			"Do NOT ask the web tool a question directly. Search or fetch first, then read the results or file to find what you need.",
+			"Pass ops as an array: [{ o: 'fetch', u: '<url>', f: 'markdown' }] to download a URL. Content is saved to a temp file — use the `read` tool to access it in chunks.",
+			"The `web` tool returns the file path, title, content length, and a short preview of the content when fetching.",
+			"Do NOT ask the `web` tool a question directly. Search or fetch first, then read the results or file to find what you need.",
 		],
 		parameters: webSchema,
 
@@ -120,11 +120,15 @@ export function createWebTool() {
 
 		renderResult(
 			result: { content?: Array<{ type: string; text?: string }> },
-			{ expanded }: { expanded: boolean },
+			{ expanded, isPartial }: { expanded: boolean; isPartial?: boolean },
 			_theme: any,
 			args?: Record<string, unknown>,
 		): Text | TruncatedText {
 			const fullText = result.content?.find((c) => c.type === "text")?.text ?? "";
+			if (isPartial) {
+				const summary = fullText.split("\n")[0] ?? "";
+				return new TruncatedText(scrambleManager.renderStatic(`⏳ ${summary}`), 0, 0);
+			}
 			const canAnimate = !!(args as any)?.invalidate && !!(args as any)?.state;
 			if (!canAnimate) {
 				if (!expanded) {

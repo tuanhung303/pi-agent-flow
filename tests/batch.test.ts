@@ -1298,20 +1298,20 @@ describe("batch tool", () => {
 			expect(result.details.results[1].error).toBe("Operation aborted.");
 		});
 
-		it("returns error when signal is already aborted", async () => {
+		it("throws when signal is already aborted", async () => {
 			const tool = createTool();
 			const controller = new AbortController();
 			controller.abort();
 
-			const result = await tool.execute(
-				"call-1",
-				{ o: [{ op: "read", path: "any.txt" }] },
-				controller.signal,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
+			await expect(
+				tool.execute(
+					"call-1",
+					{ o: [{ op: "read", path: "any.txt" }] },
+					controller.signal,
+					undefined,
+					makeCtx(tmpDir),
+				),
+			).rejects.toThrow("Operation aborted.");
 		});
 	});
 
@@ -1513,18 +1513,11 @@ describe("batch tool", () => {
 		});
 	});
 	describe("empty operations", () => {
-		it("returns error for empty operations array", async () => {
+		it("throws for empty operations array", async () => {
 			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{ o: [] },
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("o array is required");
+			await expect(
+				tool.execute("call-1", { o: [] }, undefined, undefined, makeCtx(tmpDir)),
+			).rejects.toThrow("o array is required");
 		});
 	});
 
@@ -2226,18 +2219,11 @@ describe("edge cases", () => {
 			});
 		});
 
-		it("returns error for non-object input", async () => {
+		it("throws for non-object input", async () => {
 			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				null as any,
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("o array is required");
+			await expect(
+				tool.execute("call-1", null as any, undefined, undefined, makeCtx(tmpDir)),
+			).rejects.toThrow("o array is required");
 		});
 	});
 
@@ -2885,67 +2871,63 @@ describe("batch_read tool", () => {
 	describe("defensive rejection", () => {
 		it("rejects write operations", async () => {
 			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{ o: [{ o: "write", p: "new.txt", c: "content" }] },
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("batch_read only supports read operations");
+			await expect(
+				tool.execute(
+					"call-1",
+					{ o: [{ o: "write", p: "new.txt", c: "content" }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				),
+			).rejects.toThrow("batch_read only supports read operations");
 		});
 
 		it("rejects edit operations", async () => {
 			fs.writeFileSync(path.join(tmpDir, "edit.txt"), "hello\n", "utf-8");
 
 			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{ o: [{ o: "edit", p: "edit.txt", e: [{ f: "hello", r: "world" }] }] },
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("batch_read only supports read operations");
+			await expect(
+				tool.execute(
+					"call-1",
+					{ o: [{ o: "edit", p: "edit.txt", e: [{ f: "hello", r: "world" }] }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				),
+			).rejects.toThrow("batch_read only supports read operations");
 		});
 
 		it("rejects delete operations", async () => {
 			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{ o: [{ o: "delete", p: "file.txt" }] },
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("batch_read only supports read operations");
+			await expect(
+				tool.execute(
+					"call-1",
+					{ o: [{ o: "delete", p: "file.txt" }] },
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				),
+			).rejects.toThrow("batch_read only supports read operations");
 		});
 
 		it("rejects mixed read and write operations", async () => {
 			fs.writeFileSync(path.join(tmpDir, "ok.txt"), "ok\n", "utf-8");
 
 			const tool = createTool();
-			const result = await tool.execute(
-				"call-1",
-				{
-					o: [
-						{ o: "read", p: "ok.txt" },
-						{ o: "write", p: "bad.txt", c: "bad" },
-					],
-				},
-				undefined,
-				undefined,
-				makeCtx(tmpDir),
-			);
-
-			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain("batch_read only supports read operations");
+			await expect(
+				tool.execute(
+					"call-1",
+					{
+						o: [
+							{ o: "read", p: "ok.txt" },
+							{ o: "write", p: "bad.txt", c: "bad" },
+						],
+					},
+					undefined,
+					undefined,
+					makeCtx(tmpDir),
+				),
+			).rejects.toThrow("batch_read only supports read operations");
 		});
 
 		it("allows rg operations", async () => {

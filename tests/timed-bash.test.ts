@@ -91,16 +91,15 @@ describe("createTimedBashToolDefinition deadline handling", () => {
 		});
 
 		const tool = createTimedBashToolDefinition("/tmp");
-		const promise = tool.execute("tc1", { command: "sleep 60" }, new AbortController().signal, undefined, {});
+		const promise = tool.execute("tc1", { command: "sleep 60" }, new AbortController().signal, undefined, {}).catch((err) => err);
 
 		await vi.advanceTimersByTimeAsync(501);
-		const result = await promise;
-
-		expect(result.isError).toBe(true);
-		expect(result.content[0].text).toContain("aborted by signal");
-		expect(result.content[0].text).toContain("[Flow timeout]");
-		expect(result.content[0].text).toContain("return structured findings now");
-		expect(result.content[0].text).toContain("[Execution time:");
+		const err = await promise;
+		expect(err).toBeInstanceOf(Error);
+		expect(err.message).toContain("aborted by signal");
+		expect(err.message).toContain("[Flow timeout]");
+		expect(err.message).toContain("return structured findings now");
+		expect(err.message).toContain("[Execution time:");
 		expect(bashToolExecuteCalls[0][2]).toBeInstanceOf(AbortSignal);
 	});
 
@@ -116,14 +115,13 @@ describe("createTimedBashToolDefinition deadline handling", () => {
 		});
 
 		const tool = createTimedBashToolDefinition("/tmp");
-		const promise = tool.execute("tc1", { command: "sleep 60" }, new AbortController().signal, undefined, {});
+		const promise = tool.execute("tc1", { command: "sleep 60" }, new AbortController().signal, undefined, {}).catch((err) => err);
 
 		await vi.advanceTimersByTimeAsync(501);
-		const result = await promise;
-
-		expect(result.isError).toBe(true);
-		expect(result.content[0].text).toContain("command aborted");
-		expect(result.content[0].text).toContain("[Flow timeout]");
-		expect(result.content[0].text).toContain("Stop running tools");
+		const err = await promise;
+		expect(err).toBeInstanceOf(Error);
+		expect(err.message).toContain("command aborted");
+		expect(err.message).toContain("[Flow timeout]");
+		expect(err.message).toContain("Stop running tools");
 	});
 });

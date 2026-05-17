@@ -400,11 +400,7 @@ export default function (pi: ExtensionAPI) {
 
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
 				if (!resolved) {
-					return {
-						content: [{ type: "text", text: "Error: session not initialized" }],
-						details: makeFlowDetailsFactory(null)([]),
-						isError: true,
-					};
+					throw new Error("Error: session not initialized");
 				}
 
 				const discovery = discoverFlows(ctx.cwd, "all");
@@ -497,10 +493,14 @@ export default function (pi: ExtensionAPI) {
 					toolCallId,
 				);
 
+				if (result.isError) {
+					const text = result.content?.[0]?.text ?? "Flow execution failed";
+					throw new Error(text);
+				}
+
 				const flowToolResult = {
 					content: result.content,
 					details: result.details,
-					isError: result.isError,
 					_toolCallId: toolCallId,
 				} as any;
 				appendStrategicHintOnce(flowToolResult);

@@ -245,7 +245,9 @@ export function createTimedBashToolDefinition(
 				appendTextToToolResult(result, appendix);
 				if (deadlineSignal.wasDeadlineAbort()) {
 					appendTextToToolResult(result, formatDeadlineAppendix());
-					result.isError = true;
+					const textItem = result?.content?.find?.((c: any) => c.type === "text");
+					const message = textItem?.text ?? "Deadline abort";
+					throw new Error(message);
 				} else {
 					appendStrategicHintOnce(result);
 				}
@@ -256,13 +258,13 @@ export function createTimedBashToolDefinition(
 				const appendix = formatTimingAppendix(report);
 
 				if (deadlineSignal.wasDeadlineAbort()) {
+					if (typeof err?.message === "string" && err.message.includes("[Flow timeout]")) {
+						throw err;
+					}
 					const message = typeof err?.message === "string" && err.message.trim()
 						? `${err.message}${appendix}${formatDeadlineAppendix()}`
 						: `${appendix.trim()}${formatDeadlineAppendix()}`;
-					return {
-						content: [{ type: "text", text: message }],
-						isError: true,
-					};
+					throw new Error(message);
 				}
 
 				if (err?.message && typeof err.message === "string") {

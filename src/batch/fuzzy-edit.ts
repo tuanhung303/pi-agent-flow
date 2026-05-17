@@ -297,7 +297,10 @@ export function isWithinDirectory(child: string, parent: string): boolean {
 }
 
 export async function validatePath(inputPath: string, cwd: string): Promise<string> {
-	const expandedPath = expandTilde(inputPath);
+	let expandedPath = expandTilde(inputPath);
+	if (expandedPath.startsWith("@")) {
+		expandedPath = expandedPath.slice(1);
+	}
 	return path.resolve(cwd, expandedPath);
 }
 

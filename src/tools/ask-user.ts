@@ -719,9 +719,9 @@ export function createAskUserTool() {
 		promptSnippet:
 			"Ask the user one focused question with optional multiple-choice answers to gather information interactively",
 		promptGuidelines: [
-			"Use ask_user when the user's intent is ambiguous, when a decision requires explicit user input, or when multiple valid options exist.",
-			"Ask exactly one focused question per ask_user call.",
-			"Do not combine multiple numbered, multipart, or unrelated questions into one ask_user prompt.",
+			"Use `ask_user` when the user's intent is ambiguous, when a decision requires explicit user input, or when multiple valid options exist.",
+			"Ask exactly one focused question per `ask_user` call.",
+			"Do not combine multiple numbered, multipart, or unrelated questions into one `ask_user` prompt.",
 		],
 		parameters: Type.Object({
 			question: Type.String({ description: "The question to ask the user" }),
@@ -751,16 +751,7 @@ export function createAskUserTool() {
 
 			if (!ctx.hasUI || !ctx.ui) {
 				const optionText = options.length > 0 ? `\n\nOptions:\n${formatOptionsForMessage(options)}` : "";
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Ask requires interactive mode. Please answer:\n\n${question}${optionText}`,
-						},
-					],
-					isError: true,
-					details: { question, options, response: null, cancelled: true } as AskToolDetails,
-				};
+				throw new Error(`Ask requires interactive mode. Please answer:\n\n${question}${optionText}`);
 			}
 
 			if (options.length === 0) {
@@ -848,11 +839,7 @@ export function createAskUserTool() {
 			} catch (error) {
 				const message =
 					error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error);
-				return {
-					content: [{ type: "text", text: `Ask tool failed: ${message}` }],
-					isError: true,
-					details: { error: message },
-				};
+				throw new Error(`Ask tool failed: ${message}`);
 			}
 
 			if (result === null) {

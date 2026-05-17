@@ -11,6 +11,8 @@ declare module "@mariozechner/pi-coding-agent" {
 			name: string;
 			label: string;
 			description: string;
+			promptSnippet?: string;
+			promptGuidelines?: string[];
 			parameters: any;
 			execute: (...args: any[]) => Promise<any>;
 			renderCall?: (...args: any[]) => any;

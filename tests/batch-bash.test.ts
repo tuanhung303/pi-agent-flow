@@ -608,16 +608,10 @@ describe("batch_bash_poll tool", () => {
 		tracker.abortAll();
 	});
 
-	it("returns error for empty ids", async () => {
-		const result = await pollTool.execute(
-			"call-1",
-			{ i: [] },
-			undefined,
-			undefined,
-			{},
-		);
-
-		expect(result.isError).toBe(true);
+	it("throws for empty ids", async () => {
+		await expect(
+			pollTool.execute("call-1", { i: [] }, undefined, undefined, {}),
+		).rejects.toThrow("Error: i (ids) array is required and must not be empty.");
 	});
 
 	it("handles multiple poll ids", async () => {

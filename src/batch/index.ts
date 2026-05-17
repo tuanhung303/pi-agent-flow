@@ -7,7 +7,7 @@
 
 import { Type } from "@sinclair/typebox";
 import type { BatchTheme, FileOpInput } from "./constants.js";
-import { SAFE_FULL_READ_LIMIT, TARGETED_READ_LINE_LIMIT, BASH_SOFT_TIMEOUT_MS } from "./constants.js";
+import { SAFE_FULL_READ_LIMIT, TARGETED_READ_LINE_LIMIT, BASH_SOFT_TIMEOUT_MS, MAX_LINES, MAX_BYTES, MAX_BASH_OUTPUT_LINES, MAX_BASH_OUTPUT_BYTES } from "./constants.js";
 import { executeOperations, suggestSimilarFiles } from "./execute.js";
 import { expandTilde, isWithinDirectory } from "./fuzzy-edit.js";
 import {
@@ -333,8 +333,8 @@ export function createBatchReadTool() {
 		].join("\n"),
 		promptSnippet: "Batch read-only file operations — run multiple read ops in one call",
 		promptGuidelines: [
-			"Use batch_read to perform multiple file reads in a single call rather than separate tool calls.",
-			"Prefer batch_read when reading 2+ files or multiple sections of the same file.",
+			"Use `batch_read` to perform multiple file reads in a single call rather than separate tool calls.",
+			"Prefer `batch_read` when reading 2+ files or multiple sections of the same file.",
 			`Small full-file reads (<=${SAFE_FULL_READ_LIMIT} lines) return raw content; larger full-file reads return navigable context maps or line counts.`,
 			`Use targeted reads with s/l around context-map entries; targeted reads are capped at ${TARGETED_READ_LINE_LIMIT} lines.`,
 			"Do not retry the same full-file read when a context map is returned.",
@@ -349,51 +349,26 @@ export function createBatchReadTool() {
 			_onUpdate: unknown,
 			ctx: { cwd: string },
 		) {
-			let prepared: unknown;
-			try {
-				prepared = prepareBatchReadArguments(input);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				return {
-					content: [{ type: "text", text: `Error: ${message}` }],
-					isError: true,
-				};
-			}
+			const prepared = prepareBatchReadArguments(input);
 
 			const ops = Array.isArray(prepared)
 				? (prepared as FileOpInput[])
 				: (prepared as { o: FileOpInput[] }).o;
 
 			if (!Array.isArray(ops) || ops.length === 0) {
-				return {
-					content: [
-						{ type: "text", text: "Error: o array is required and must not be empty." },
-					],
-					isError: true,
-				};
+				throw new Error("Error: o array is required and must not be empty.");
 			}
 
 			// Defensive validation: reject any non-read/rg operations
 			const allowedBatchReadOps = new Set(["read", "rg"]);
 			for (const op of ops) {
 				if (!allowedBatchReadOps.has(op.o)) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: batch_read only supports read operations. Received ${op.o} for ${op.p}.`,
-							},
-						],
-						isError: true,
-					};
+					throw new Error(`Error: batch_read only supports read operations. Received ${op.o} for ${op.p}.`);
 				}
 			}
 
 			if (signal?.aborted) {
-				return {
-					content: [{ type: "text", text: "Operation aborted." }],
-					isError: true,
-				};
+				throw new Error("Operation aborted.");
 			}
 
 			const { contentText, results } = await executeOperations(ops, ctx.cwd, signal, {
@@ -410,8 +385,8 @@ export function createBatchReadTool() {
 		},
 
 		renderCall: (args: Record<string, unknown>, theme: BatchTheme) => renderBatchReadCall(args, theme),
-		renderResult: (result: any, { expanded }: { expanded: boolean }, theme: BatchTheme, args?: Record<string, unknown>) =>
-			renderBatchResult(result, expanded, theme, args),
+		renderResult: (result: any, { expanded, isPartial }: { expanded: boolean; isPartial?: boolean }, theme: BatchTheme, args?: Record<string, unknown>) =>
+			renderBatchResult(result, expanded, theme, args, isPartial),
 	};
 }
 
@@ -424,11 +399,11 @@ export function createBatchReadTool() {
  */
 export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?: boolean) {
 	const guidelines = [
-		"ALWAYS combine all pending file operations and shell commands into a single batch call. Never issue sequential batch calls when you can batch them.",
+		"ALWAYS combine all pending file operations and shell commands into a single `batch` call. Never issue sequential `batch` calls when you can batch them.",
 		"Multiple edits to the same file go in one `e` array: e:[{f:'old1',r:'new1'},{f:'old2',r:'new2'}]. Multiple files go in separate ops in the same call.",
 		"Each edit matches the on-disk file, not prior ops in the same call — so order within a file's `e` array doesn't matter.",
-		"Bash ops run in parallel. Use i (id) to track them. Use batch_bash_poll to check on pending commands.",
-		"Before calling batch, plan: list every file you need to read, edit, or create, and every command you need to run — then put them ALL in one call.",
+		"Bash ops run in parallel. Use i (id) to track them. Use `batch_bash_poll` to check on pending commands.",
+		"Before calling `batch`, plan: list every file you need to read, edit, or create, and every command you need to run — then put them ALL in one call.",
 		"For non-trivial scripts (Python, Node, shell), write the script to ./tmp/ first with o:'write', then execute it with o:'bash'. File ops always run before bash ops, so the write is guaranteed to complete before execution. This avoids escaping issues, produces better error traces, and leaves the script inspectable for debugging.",
 	];
 	if (toolOptimize) {
@@ -443,6 +418,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			"File operations execute sequentially in array order; on failure, remaining file operations are skipped.",
 			"Bash operations (o: 'bash') run in parallel after all file ops complete. Bash ops do NOT skip each other on failure.",
 			`Bash ops use c (command), i (id), t (timeout, default ${BASH_SOFT_TIMEOUT_MS}ms), h (cwd). Commands exceeding the soft timeout return "pending" status with last 50 lines of output; poll with batch_bash_poll.`,
+			`Bash output is truncated to ${MAX_BASH_OUTPUT_LINES} lines / ${(MAX_BASH_OUTPUT_BYTES / 1024).toFixed(0)} KB. File reads are truncated to ${MAX_LINES} lines / ${(MAX_BYTES / 1024).toFixed(0)} KB.`,
 			"Use `o: \"read\"` with `s` (offset) and `l` (limit) for targeted reading. Prefer this over bash sed/head/tail.",
 			"The primary tool for all file operations and shell commands. Always combine multiple ops into one call: reads, edits, creates, deletes, and bash can all coexist. Avoid: 3 separate batch calls for 3 edits. Do: 1 batch call with 3 ops in the o array.",
 			"Prefer write-then-execute for scripts: write code to ./tmp/ via o:'write', then run it via o:'bash'. File ops complete before bash ops, so this is guaranteed safe. Avoid bash python -c '...' or node -e '...' for anything beyond a simple one-liner.",
@@ -467,19 +443,11 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 				: (prepared as { o: FileOpInput[] }).o;
 
 			if (!Array.isArray(ops) || ops.length === 0) {
-				return {
-					content: [
-						{ type: "text", text: "Error: o array is required and must not be empty." },
-					],
-					isError: true,
-				};
+				throw new Error("Error: o array is required and must not be empty.");
 			}
 
 			if (signal?.aborted) {
-				return {
-					content: [{ type: "text", text: "Operation aborted." }],
-					isError: true,
-				};
+				throw new Error("Operation aborted.");
 			}
 
 			// Split ops into file ops and bash ops
@@ -583,7 +551,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 		},
 
 		renderCall: (args: Record<string, unknown>, theme: BatchTheme) => renderBatchCall(args, theme),
-		renderResult: (result: any, { expanded }: { expanded: boolean }, theme: BatchTheme, args?: Record<string, unknown>) =>
-			renderBatchResult(result, expanded, theme, args),
+		renderResult: (result: any, { expanded, isPartial }: { expanded: boolean; isPartial?: boolean }, theme: BatchTheme, args?: Record<string, unknown>) =>
+			renderBatchResult(result, expanded, theme, args, isPartial),
 	};
 }

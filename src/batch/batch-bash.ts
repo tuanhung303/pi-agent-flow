@@ -485,10 +485,7 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 			const ids = Array.isArray(args.i) ? (args.i as string[]) : Array.isArray(args.ids) ? (args.ids as string[]) : [];
 
 			if (ids.length === 0) {
-				return {
-					content: [{ type: "text", text: "Error: i (ids) array is required and must not be empty." }],
-					isError: true,
-				};
+				throw new Error("Error: i (ids) array is required and must not be empty.");
 			}
 
 			const results = pollBatchBashResults(ids, tracker);

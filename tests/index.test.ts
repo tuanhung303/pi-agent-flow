@@ -527,16 +527,15 @@ describe("flow tool execute", () => {
 		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
 		const tool = pi.getTool("flow");
-		const result = await tool.execute(
-			"call-1",
-			{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
-			new AbortController().signal,
-			undefined,
-			makeMockCtx(tmpDir),
-		);
-
-		expect(result.isError).toBe(true);
-		expect(result.content[0].text).toContain("Blocked: cycle detected");
+		await expect(
+			tool.execute(
+				"call-1",
+				{ flow: [{ type: "scout", intent: "Discover things", aim: "Discover codebase" }], confirmProjectFlows: false },
+				new AbortController().signal,
+				undefined,
+				makeMockCtx(tmpDir),
+			),
+		).rejects.toThrow("Blocked: cycle detected");
 	});
 
 	it("does not emit a heartbeat interval", async () => {
