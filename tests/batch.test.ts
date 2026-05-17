@@ -268,8 +268,8 @@ describe("batch tool", () => {
 				);
 
 				expect(result.details.results[0].truncated).toBe(true);
-				expect(result.details.results[0].content).toContain("[Showing lines 1-3000 of 4000");
-				expect(result.details.results[0].content).toContain("s=3001");
+				expect(result.details.results[0].content).toContain("[Showing lines 1-2000 of 4000");
+				expect(result.details.results[0].content).toContain("s=2001");
 				expect(result.details.results[0].totalLines).toBe(4000);
 			});
 
@@ -287,7 +287,7 @@ describe("batch tool", () => {
 				);
 
 				expect(result.content[0].text).toContain("⚠ large.txt truncated");
-				expect(result.content[0].text).toContain("s=3001");
+				expect(result.content[0].text).toContain("s=2001");
 			});
 		});
 	});
