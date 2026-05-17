@@ -13,6 +13,9 @@ export {
 	clearLiveText,
 	FastRNG,
 	THIN_BRAILLE_SPARK,
+	DEEP_GLITCH,
+	MID_GLITCH,
+	SHALLOW_GLITCH,
 } from './constants.js';
 
 export type {

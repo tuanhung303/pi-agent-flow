@@ -17,6 +17,9 @@ import {
 	makeAnimationSeed,
 	hashNoise,
 	DynamicScrambleText,
+	DEEP_GLITCH,
+	MID_GLITCH,
+	SHALLOW_GLITCH,
 } from '../src/tui/scramble/index.js';
 
 // ---------------------------------------------------------------------------
@@ -423,7 +426,7 @@ describe('ScrambleStateManager', () => {
 
 describe('selectScrambleChar', () => {
 	it('returns deep glitch chars for depth 1–2', () => {
-		const deepChars = '△⃝△⃝○⃝○⃝☐⃝☐⃝⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
+		const deepChars = DEEP_GLITCH;
 		for (let d = 1; d <= 2; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(deepChars).toContain(c);
@@ -431,13 +434,13 @@ describe('selectScrambleChar', () => {
 	});
 
 	it('returns mid glitch chars for depth 3', () => {
-		const midChars = '△⃝△⃝○⃝x○⃝☐⃝☐⃝+✕✦△⃝⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+		const midChars = MID_GLITCH;
 		const c = selectScrambleChar(3, 0, 0);
 		expect(midChars).toContain(c);
 	});
 
 	it('returns shallow glitch chars for depth 4+', () => {
-		const shallowChars = '△⃝△⃝○⃝x✕△⃝+⠌⠡⠜';
+		const shallowChars = SHALLOW_GLITCH;
 		for (let d = 4; d <= 6; d++) {
 			const c = selectScrambleChar(d, 0, 0);
 			expect(shallowChars).toContain(c);
