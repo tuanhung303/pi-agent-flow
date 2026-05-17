@@ -237,7 +237,7 @@ export async function executeOperations(
 	onUpdate?: BatchOnUpdate,
 ): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
-	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, patch: 0, error: 0, skipped: 0 };
+	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, patch: 0, bash: 0, error: 0, skipped: 0 };
 	const errors: { path: string; op: string; message: string; hint?: string }[] = [];
 	const truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[] = [];
 	const aggregateLimitSkipped: { path: string }[] = [];
@@ -257,7 +257,6 @@ export async function executeOperations(
 		finalUpdateEmitted = isFinal;
 		lastUpdateTime = now;
 		const partialSummary = buildSummary(
-			results,
 			counts,
 			errors,
 			truncatedFiles,
@@ -582,7 +581,7 @@ export async function executeOperations(
 	}
 	emitPartialUpdate();
 	// Build the enhanced summary and content text
-	const summary = buildSummary(results, counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
+	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
 	const contentText = buildContentText(summary, results);
 
 	return { summary, contentText, results };
@@ -593,96 +592,64 @@ export async function executeOperations(
 // ---------------------------------------------------------------------------
 
 function buildSummary(
-	results: OpResult[],
-	counts: { read: number; write: number; edit: number; delete: number; rg: number; patch: number; error: number; skipped: number },
+	counts: { read: number; write: number; edit: number; delete: number; rg: number; patch: number; bash: number; error: number; skipped: number },
 	errors: { path: string; op: string; message: string; hint?: string }[],
 	truncatedFiles: { path: string; shown: number; total: number; nextOffset?: number }[],
 	aggregateLimitSkipped: { path: string }[] = [],
 	aggregateByteLimitSkipped: { path: string }[] = [],
 ): string {
-	const totalSuccess =
-		counts.read + counts.write + counts.edit + counts.delete + counts.rg + counts.patch;
-	const totalOps = totalSuccess + counts.error + counts.skipped;
-
 	const parts: string[] = [];
 
-	// Group successful results by op type
-	const byType: Record<string, OpResult[]> = {};
-	for (const r of results) {
-		if (r.status === 'ok') {
-			if (!byType[r.op]) byType[r.op] = [];
-			byType[r.op].push(r);
-		}
+	// Build success parts from counts
+	const successParts: string[] = [];
+	if (counts.read > 0) successParts.push(`${counts.read} read`);
+	if (counts.write > 0) successParts.push(`${counts.write} write`);
+	if (counts.edit > 0) successParts.push(`${counts.edit} edit`);
+	if (counts.delete > 0) successParts.push(`${counts.delete} delete`);
+	if (counts.rg > 0) successParts.push(`${counts.rg} rg`);
+	if (counts.patch > 0) successParts.push(`${counts.patch} patch`);
+	if (counts.bash > 0) successParts.push(`${counts.bash} bash`);
+
+	// Build failure parts from errors
+	const failedCounts: Record<string, number> = {};
+	for (const err of errors) {
+		failedCounts[err.op] = (failedCounts[err.op] || 0) + 1;
 	}
+	const failedParts: string[] = [];
+	if (failedCounts.read > 0) failedParts.push(`${failedCounts.read} read`);
+	if (failedCounts.write > 0) failedParts.push(`${failedCounts.write} write`);
+	if (failedCounts.edit > 0) failedParts.push(`${failedCounts.edit} edit`);
+	if (failedCounts.delete > 0) failedParts.push(`${failedCounts.delete} delete`);
+	if (failedCounts.rg > 0) failedParts.push(`${failedCounts.rg} rg`);
+	if (failedCounts.patch > 0) failedParts.push(`${failedCounts.patch} patch`);
+	if (failedCounts.bash > 0) failedParts.push(`${failedCounts.bash} bash`);
 
-	const typeSummaries: string[] = [];
+	const hasSuccess = successParts.length > 0;
+	const hasFailure = failedParts.length > 0;
+	const hasSkipped = counts.skipped > 0;
 
-	if (byType.read?.length) {
-		const files = byType.read.map(r => {
-			const base = path.basename(r.path);
-			if (r.s || r.l) {
-				const start = r.s ?? 1;
-				const end = r.l ? start + r.l - 1 : '';
-				return `${base}:${start}-${end}`;
-			}
-			return base;
-		});
-		typeSummaries.push(`read: [${files.join(', ')}]`);
-	}
-
-	if (byType.write?.length) {
-		typeSummaries.push(`write: [${byType.write.map(r => path.basename(r.path)).join(', ')}]`);
-	}
-
-	if (byType.edit?.length) {
-		typeSummaries.push(`edit: [${byType.edit.map(r => path.basename(r.path)).join(', ')}]`);
-	}
-
-	if (byType.delete?.length) {
-		typeSummaries.push(`delete: [${byType.delete.map(r => path.basename(r.path)).join(', ')}]`);
-	}
-
-	if (byType.rg?.length) {
-		const patterns = byType.rg.map(r => {
-			const q = r.q ?? '?';
-			return q.length > 15 ? `"${q.slice(0, 15)}…"` : `"${q}"`;
-		});
-		typeSummaries.push(`rg: [${patterns.join(', ')}]`);
-	}
-
-	if (byType.bash?.length) {
-		typeSummaries.push(`bash: [${byType.bash.length} cmd${byType.bash.length > 1 ? 's' : ''}]`);
-	}
-
-	if (byType.patch?.length) {
-		const affected = byType.patch.flatMap(r => {
-			const parts: string[] = [];
-			if (r.affected?.added.length) parts.push(`A ${r.affected.added.map(p => path.basename(p)).join(', ')}`);
-			if (r.affected?.modified.length) parts.push(`M ${r.affected.modified.map(p => path.basename(p)).join(', ')}`);
-			if (r.affected?.deleted.length) parts.push(`D ${r.affected.deleted.map(p => path.basename(p)).join(', ')}`);
-			return parts;
-		});
-		typeSummaries.push(`patch: [${affected.join(', ')}]`);
-	}
-
-	if (counts.error === 0) {
+	if (!hasFailure) {
 		// All success (or skipped)
-		const summaryParts = [...typeSummaries];
-		if (counts.skipped > 0) summaryParts.push(`${counts.skipped} skipped`);
-		parts.push(`operations: ${summaryParts.join(", ")}`);
+		const summaryParts = [...successParts];
+		if (hasSkipped) summaryParts.push(`${counts.skipped} skipped`);
+		parts.push(`✔ ${summaryParts.join(", ")}`);
 	} else {
-		// Mixed success/failure
-		parts.push(
-			`${counts.error} failed${counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}`,
-		);
-		if (totalSuccess > 0) {
-			parts.push(`  ${typeSummaries.join(", ")}`);
+		// Mixed or all failed
+		if (hasSuccess) {
+			parts.push(`✔ ${successParts.join(", ")} | ✗ ${failedParts.join(", ")}`);
+		} else {
+			parts.push(`✗ ${failedParts.join(", ")}`);
 		}
-		for (const err of errors) {
-			const hint = err.hint ?? "";
-			const hintSuffix = hint ? ` — ${hint}` : "";
-			parts.push(`  ${err.op} ${err.path}: ${err.message}${hintSuffix}`);
+		if (hasSkipped) {
+			parts.push(`${counts.skipped} skipped`);
 		}
+	}
+
+	// Error details
+	for (const err of errors) {
+		const hint = err.hint ?? "";
+		const hintSuffix = hint ? ` — ${hint}` : "";
+		parts.push(`  ${err.op} ${err.path}: ${err.message}${hintSuffix}`);
 	}
 
 	// Truncation warnings

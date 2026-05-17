@@ -77,23 +77,14 @@ function formatWebOpsSummary(args: Record<string, unknown>): string {
 		if (op.o === "search") return `search: "${op.q ?? ""}"`;
 		if (op.o === "fetch") return `fetch: ${op.u ?? ""}`;
 	}
-	const byType: Record<string, Array<{ q?: string; u?: string }>> = {};
+	const counts: Record<string, number> = {};
 	for (const op of ops) {
-		if (!byType[op.o]) byType[op.o] = [];
-		byType[op.o].push(op);
+		counts[op.o] = (counts[op.o] || 0) + 1;
 	}
 	const parts: string[] = [];
-	if (byType.search?.length) {
-		const queries = byType.search.map(op => `"${op.q ?? ""}"`);
-		const display = queries.length > 2 ? `${queries.slice(0, 2).join(", ")}, +${queries.length - 2} more` : queries.join(", ");
-		parts.push(`search: [${display}]`);
-	}
-	if (byType.fetch?.length) {
-		const urls = byType.fetch.map(op => op.u ?? "");
-		const display = urls.length > 2 ? `${urls.slice(0, 2).join(", ")}, +${urls.length - 2} more` : urls.join(", ");
-		parts.push(`fetch: [${display}]`);
-	}
-	return parts.join(", ");
+	if (counts.search > 0) parts.push(`${counts.search} search`);
+	if (counts.fetch > 0) parts.push(`${counts.fetch} fetch`);
+	return `✔ ${parts.join(", ")}`;
 }
 
 export function createWebTool() {
