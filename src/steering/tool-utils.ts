@@ -82,4 +82,3 @@ export function appendStrategicHintOnce(result: any): void {
 	hintAppendedThisTurn = true;
 	appendTextToToolResult(result, STRATEGIC_HINT);
 }
-

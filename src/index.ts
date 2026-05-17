@@ -267,6 +267,16 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// Clean up global mutable state on session shutdown
+	pi.on("session_shutdown", () => {
+		flowResultCache.clear();
+		_sessionCtx = undefined;
+		if (bashTracker) {
+			try { bashTracker.abortAll(); } catch { /* best-effort */ }
+			bashTracker = undefined;
+		}
+	});
+
 	// Re-apply active tools every turn to survive registry refreshes.
 	// Skip for child flows — they get tools from --tools CLI arg.
 	pi.on("turn_start", () => {
@@ -370,6 +380,12 @@ export default function (pi: ExtensionAPI) {
 		pi.registerTool({
 			name: "flow",
 			label: "Flow",
+			promptSnippet: "Delegate to specialized agent flows running in isolated forked processes",
+			promptGuidelines: [
+				"Use `flow` when the task requires skills beyond your current context (scout, debug, build, craft, audit, ideas).",
+				"Combine multiple related tasks into a single `flow` call with an array of flow items.",
+				"Always provide a concrete intent, aim, and optional acceptance criteria.",
+			],
 			description: [
 				"If you cannot answer from your current context, you are forbidden from guessing.",
 				"You MUST enter to the following flow states, with tool call method.",
@@ -492,8 +508,8 @@ export default function (pi: ExtensionAPI) {
 			},
 
 			renderCall: (args, theme) => renderFlowCall(args, theme),
-			renderResult: (result, { expanded }, theme, args) =>
-				renderFlowResult(result, expanded, theme, args),
+			renderResult: (result, { expanded, isPartial }, theme, args) =>
+				renderFlowResult(result, expanded, theme, args, undefined, isPartial),
 		});
 	}
 
