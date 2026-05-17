@@ -8,7 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
-import { appendStrategicHintOnce } from "../steering/tool-utils.js";
+import { appendDirectiveOnce } from "../steering/tool-utils.js";
 import { scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { stripAnsi } from "../tui/render-utils.js";
 import { logWarn } from "../config/log.js";
@@ -182,7 +182,7 @@ async function runWebOps(params: WebParams, ctx: ExtensionContext, signal?: Abor
 		content: [{ type: "text" as const, text: truncated }],
 		details: { ops: details },
 	};
-	appendStrategicHintOnce(webResult);
+	appendDirectiveOnce(webResult);
 	return webResult;
 }
 

@@ -18,9 +18,9 @@ When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it fork
 | `src/snapshot/snapshot.ts` | Pipeline core | `sanitizeForkSnapshot` (~900), `compressToolResults` (~350), `compressBatchResult` (~420), `compressWebResult` (~267), `compressAskUserResult` (~305), `buildDedupIndex` (~380), `compressBashSection` (~200), `renderCompressedFlowResult` (~93), `stripBatchReadToolCalls` (~600) |
 | `src/snapshot/reasoning-strip.ts` | Thinking block removal | `stripReasoningFromAssistantMessage` |
 | `src/steering/sliding-prompt.ts` | Steering hint removal | `stripSteeringHintFromContent`, `contentContainsSteeringHintTag` |
-| `src/steering/tool-utils.ts` | Strategic hint removal | `stripStrategicHintsFromContent` |
+| `src/steering/tool-utils.ts` | Directive hint removal | `stripDirectivesFromContent` (legacy alias `stripStrategicHintsFromContent`) |
 | `src/core/executor.ts` | Flow result cache | `evictCacheOverflow`, `flowResultCache` (Map keyed by `toolCallId`) |
-| `tests/snapshot-compress.test.ts` | Unit tests for compression | 1435 lines — covers `compressToolResults`, `stripStrategicHints`, `compressBashSection`, `compressBatchResult` |
+| `tests/snapshot-compress.test.ts` | Unit tests for compression | 1435 lines — covers `compressToolResults`, `stripDirectives` (legacy `stripStrategicHints`), `compressBashSection`, `compressBatchResult` |
 | `tests/snapshot-integration.test.ts` | Integration tests for full pipeline | 530 lines — covers `sanitizeForkSnapshot` end-to-end, dump artifacts, orphan freedom, `batch_read` stripping |
 | `docs/telemetry-compression-protocols.md` | Spec for W1/E1/X1/Q1 protocols | 575 lines |
 | `docs/CONTEXT-DIAGNOSTICS.md` | Diagnostic runbook for bloat | 116 lines |
@@ -79,7 +79,7 @@ From `sanitizeForkSnapshot` (`snapshot.ts:~900-1345`):
 14. `collapseEmptyAssistantMessages` — collapse empty/low-signal assistant messages to `[assistant: N tokens, no action]`.
 15. `stripDetails` — remove `details` from tool/toolResult messages.
 16. `stripSteeringHints` — remove `<pi-flow-steering-hint>` blocks.
-17. `stripStrategicHints` — remove `[Hint: Plan next step...]` blocks.
+17. `stripDirectives` — remove `[Directive: ...]` blocks (legacy alias `stripStrategicHints`).
 18. `compressParentActivation` — at depth ≥ 2, collapse parent `<context-seal>...<mission>` to one-line preview.
 19. `reparentOrphans` — fix `parentId` references to dropped messages.
 20. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).

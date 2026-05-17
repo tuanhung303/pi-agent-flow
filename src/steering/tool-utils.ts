@@ -2,8 +2,10 @@
  * Shared tool-result utilities.
  *
  * Provides helpers for appending text to tool results and injecting
- * strategic planning hints after each tool call.
+ * adaptive directive hints after each tool call.
  */
+
+import { isJsonEqual } from "./sliding-prompt.js";
 
 /**
  * Append text to the first text content item in a tool result,
@@ -18,67 +20,115 @@ export function appendTextToToolResult(result: any, text: string): void {
 	}
 }
 
-let strategicHintEnabled = true;
+let directiveEnabled = true;
 
-export function configureStrategicHint(enabled: boolean): void {
-	strategicHintEnabled = enabled;
+export function configureDirective(enabled: boolean): void {
+	directiveEnabled = enabled;
 }
 
-// Initialize from legacy env var (overrides default true)
+// Initialize from env vars (legacy + new) — overrides default true
 if (
 	typeof process !== "undefined" &&
 	typeof process.env !== "undefined" &&
-	process.env.PI_FLOW_NO_STRATEGIC_HINT === "1"
+	(process.env.PI_FLOW_NO_STRATEGIC_HINT === "1" || process.env.PI_FLOW_NO_DIRECTIVE === "1")
 ) {
-	strategicHintEnabled = false;
+	directiveEnabled = false;
 }
 
-const STRATEGIC_HINT =
-	"\n\n[Hint: Plan next step. Batch ALL pending edits/reads/commands into ONE batch call. Execute decisively.]";
+export const DEFAULT_DIRECTIVE =
+	"\n\n[Directive: Close what you start. Dispatch a [build] or [scout] flow to verify before advancing.]";
 
-const STRATEGIC_HINT_RE = /\n\n\[Hint: [\s\S]*?\]/g;
+export const NOTDONE_DIRECTIVE =
+	"\n\n[Directive: Unfinished work detected. Dispatch a [build] or [debug] flow to close the notDone items. Do not start new work until these are resolved.]";
 
-/**
- * Strip strategic hints from text.
- */
-export function stripStrategicHints(text: string): string {
-	return text.replace(STRATEGIC_HINT_RE, "");
+export const VAGUE_DIRECTIVE =
+	"\n\n[Directive: Dispatch the same [build] or [scout] flow to verify uncertainty.]";
+
+const DIRECTIVE_RE = /\n\n\[Directive: [^\n]*\]/g;
+const LEGACY_HINT_RE = /\n\n\[Hint: [\s\S]*?\]/g;
+
+export interface FlowHintContext {
+	hasNotDone: boolean;
+	statusVague: boolean;
 }
 
 /**
- * Strip strategic hints from tool result content (string or text-part array).
+ * Strip directive hints from text (including legacy [Hint:] format).
  */
-export function stripStrategicHintsFromContent(
+export function stripDirectives(text: string): string {
+	return text.replace(DIRECTIVE_RE, "").replace(LEGACY_HINT_RE, "");
+}
+
+/**
+ * Strip directive hints from tool result content (string or text-part array).
+ */
+export function stripDirectivesFromContent(
 	content: string | Array<{ type: string; text?: string }>,
 ): string | Array<{ type: string; text?: string }> {
 	if (typeof content === "string") {
-		return stripStrategicHints(content);
+		return stripDirectives(content);
 	}
 	return content.map((part) => {
 		if (part.type === "text" && typeof part.text === "string") {
-			return { ...part, text: stripStrategicHints(part.text) };
+			return { ...part, text: stripDirectives(part.text) };
 		}
 		return part;
 	});
 }
 
 /**
- * Append a concise strategic planning hint to the tool result.
- *
- * Skipped when PI_FLOW_NO_STRATEGIC_HINT=1 is set or when the result
- * is an error (no hint on failed calls — the model should focus on
- * fixing the error, not planning ahead).
+ * Remove directive hints from an array of messages.
+ * Returns the sanitized messages and a flag indicating whether anything changed.
  */
-let hintAppendedThisTurn = false;
-
-export function resetStrategicHintTracker(): void {
-	hintAppendedThisTurn = false;
+export function stripDirectivesFromMessages(messages: any[]): { messages: any[]; changed: boolean } {
+	let changed = false;
+	const result = messages.map((msg) => {
+		if (!("content" in msg)) return msg;
+		const stripped = stripDirectivesFromContent(msg.content);
+		if (isJsonEqual(stripped, msg.content)) return msg;
+		changed = true;
+		return { ...msg, content: stripped };
+	});
+	return { messages: result, changed };
 }
 
-export function appendStrategicHintOnce(result: any): void {
-	if (!strategicHintEnabled) return;
+let directiveAppendedThisTurn = false;
+
+export function resetDirectiveTracker(): void {
+	directiveAppendedThisTurn = false;
+}
+
+/**
+ * Append an adaptive directive hint to the tool result.
+ *
+ * Skipped when PI_FLOW_NO_DIRECTIVE=1 (or legacy PI_FLOW_NO_STRATEGIC_HINT=1)
+ * is set, when the result is an error, or when a directive was already
+ * appended this turn.
+ */
+export function appendDirectiveOnce(result: any, hintContext?: FlowHintContext): void {
+	if (!directiveEnabled) return;
 	if (result?.isError) return;
-	if (hintAppendedThisTurn) return;
-	hintAppendedThisTurn = true;
-	appendTextToToolResult(result, STRATEGIC_HINT);
+	if (directiveAppendedThisTurn) return;
+	directiveAppendedThisTurn = true;
+
+	let directive = DEFAULT_DIRECTIVE;
+	if (hintContext?.hasNotDone) {
+		directive = NOTDONE_DIRECTIVE;
+	} else if (hintContext?.statusVague) {
+		directive = VAGUE_DIRECTIVE;
+	}
+
+	appendTextToToolResult(result, directive);
 }
+
+// ---------------------------------------------------------------------------
+// Backward-compat deprecated aliases
+// ---------------------------------------------------------------------------
+
+export {
+	appendDirectiveOnce as appendStrategicHintOnce,
+	resetDirectiveTracker as resetStrategicHintTracker,
+	configureDirective as configureStrategicHint,
+	stripDirectives as stripStrategicHints,
+	stripDirectivesFromContent as stripStrategicHintsFromContent,
+};

@@ -84,7 +84,7 @@ pi-agent-flow/
 **Pipeline:**
 1. `pi.registerFlag(...)` — registers 9 CLI flags (flow-max-depth, flow-prevent-cycles, flow-model-config, flow-mode, flow-lite-model, flow-flash-model, flow-full-model, flow-max-concurrency, flow-session-mode, tool-optimize).
 2. `pi.on("session_start")` → `resolveSettings()` → discovers flows, resolves model configs, sets active tools, registers tools based on depth.
-3. `pi.on("turn_start")` → re-applies active tools (survives registry refreshes), resets strategic hint tracker.
+3. `pi.on("turn_start")` → re-applies active tools (survives registry refreshes), resets directive tracker (legacy name: strategic hint tracker).
 4. `pi.on("before_agent_start")` → injects flow list + delegation guide into system prompt (orchestrator only).
 5. `pi.on("context")` → injects steering hint as separate system message before latest user message (orchestrator only).
 6. `pi.registerTool(flow)` → the core delegation tool. On execute:

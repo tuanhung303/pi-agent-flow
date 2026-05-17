@@ -582,7 +582,7 @@ The protocols are implemented as **enhancements to `compressToolResults`** (`sna
 7. `normalizeToolResultRole`
 8. `stripDetails`
 9. `stripSteeringHints`
-10. `stripStrategicHints`
+10. `stripDirectives` (legacy alias `stripStrategicHints`)
 11. `compressParentActivation` (depth ≥ 2)
 12. `reparentOrphans`
 13. `stripBatchRead`

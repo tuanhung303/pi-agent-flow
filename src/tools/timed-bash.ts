@@ -15,7 +15,7 @@
 
 import * as fs from "node:fs";
 import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
-import { appendStrategicHintOnce, appendTextToToolResult } from "../steering/tool-utils.js";
+import { appendDirectiveOnce, appendTextToToolResult } from "../steering/tool-utils.js";
 import { compressOutput } from "../batch/shell-compress.js";
 
 type TimingTier =
@@ -249,7 +249,7 @@ export function createTimedBashToolDefinition(
 					const message = textItem?.text ?? "Deadline abort";
 					throw new Error(message);
 				} else {
-					appendStrategicHintOnce(result);
+					appendDirectiveOnce(result);
 				}
 				return result;
 			} catch (err: any) {
