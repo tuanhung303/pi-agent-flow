@@ -589,7 +589,11 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		const ctxEst = drainCtxEstimate(result);
 		updateSmoothedTps(result, estimatedTokens);
 		const smoothedTps = drainSmoothedTps(result);
-		const mergedUsage = mergeStreamingUsage(result.usage, liveEstimatedOutputTokens, ctxEst, smoothedTps);
+		// Fallback TPS for providers that don't emit streaming deltas (e.g., Fireworks k2p6).
+		const elapsedSec = (Date.now() - startedAtMs) / 1000;
+		const fallbackTps = elapsedSec > 0.5 && smoothedTps <= 0 ? result.usage.output / elapsedSec : 0;
+		const displayTps = smoothedTps > 0 ? smoothedTps : fallbackTps;
+		const mergedUsage = mergeStreamingUsage(result.usage, liveEstimatedOutputTokens, ctxEst, displayTps);
 		onUpdate?.({
 			content: [
 				{
@@ -1006,8 +1010,11 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		// During streaming, emitUpdate() only merges smoothedTps into a temporary display object;
 		// without this, result.usage.smoothedTps stays at 0 and the UI shows a dash.
 		const finalSmoothedTps = drainSmoothedTps(result);
-		if (finalSmoothedTps > 0) {
-			result.usage.smoothedTps = finalSmoothedTps;
+		const finalElapsedSec = (Date.now() - startedAtMs) / 1000;
+		const finalTps = finalSmoothedTps > 0 ? finalSmoothedTps
+			: (finalElapsedSec > 0 ? result.usage.output / finalElapsedSec : 0);
+		if (finalTps > 0) {
+			result.usage.smoothedTps = finalTps;
 		}
 
 		const normalized = normalizeFlowResult(result, wasAborted);
