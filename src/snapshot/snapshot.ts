@@ -2,7 +2,7 @@
  * Two JSONL protocols are used in this codebase:
  *
  * 1. Fork Snapshot Protocol (snapshot.ts):
- *    Types: session, model_change, thinking_level_change, system, message
+ *    Types: session, model_change, thinking_level_change, message
  *    Purpose: Serialized session state passed to child flows via --session.
  *              Emitted by buildForkSessionSnapshotJsonl() and consumed by
  *              sanitizeForkSnapshot() before forking.
@@ -30,6 +30,7 @@ import {
 } from "../steering/sliding-prompt.js";
 import { stripStrategicHintsFromContent } from "../steering/tool-utils.js";
 import { logError } from "../config/log.js";
+import * as path from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -123,13 +124,6 @@ interface MessageEntry {
 	parentId?: string;
 	parentMessageId?: string;
 	id?: string;
-	[key: string]: unknown;
-}
-
-/** A system prompt event entry. */
-interface SystemEntry {
-	type: "system";
-	content: string;
 	[key: string]: unknown;
 }
 
@@ -393,6 +387,18 @@ interface DedupIndex {
 
 
 /**
+/** Normalize a file path for use as a dedup key. */
+function normalizeDedupPath(rawPath: string, cwd: string): string {
+	let p = rawPath.replace(/\\/g, "/");
+	if (p.startsWith("./")) {
+		p = p.slice(2);
+	}
+	p = path.resolve(cwd, p);
+	p = path.normalize(p);
+	return p;
+}
+
+/**
  * Scan all batch tool results in the snapshot and build a DedupIndex.
  * Only successful writes/edits/deletes are tracked; error operations are exempt.
  */
@@ -400,7 +406,9 @@ function buildDedupIndex(
 	lines: string[],
 	toolCallIdToName: Map<string, string>,
 	toolCallIdToArgs: Map<string, unknown>,
+	sessionCwd?: string,
 ): DedupIndex {
+	const cwd = sessionCwd ?? process.cwd();
 	const latestWrite = new Map<string, string>();
 	const latestEdit = new Map<string, string>();
 	const latestDelete = new Map<string, string>();
@@ -427,9 +435,9 @@ function buildDedupIndex(
 			// Successful write
 			const writeMatch = l.match(/^--- write: (.+) \((\d+) bytes\) ---$/);
 			if (writeMatch) {
-				const path = writeMatch[1].trim();
-				latestWrite.set(path, toolCallId);
-				latestEdit.delete(path); // write supersedes earlier edits
+				const normPath = normalizeDedupPath(writeMatch[1].trim(), cwd);
+				latestWrite.set(normPath, toolCallId);
+				latestEdit.delete(normPath); // write supersedes earlier edits
 				continue;
 			}
 
@@ -442,8 +450,8 @@ function buildDedupIndex(
 			// Successful edit
 			const editMatch = l.match(/^--- edit: (.+) \(([^)]*)\) ---$/);
 			if (editMatch) {
-				const path = editMatch[1].trim();
-				latestEdit.set(path, toolCallId);
+				const normPath = normalizeDedupPath(editMatch[1].trim(), cwd);
+				latestEdit.set(normPath, toolCallId);
 				continue;
 			}
 
@@ -456,10 +464,10 @@ function buildDedupIndex(
 			// Delete
 			const deleteMatch = l.match(/^--- delete: (.+) ---$/);
 			if (deleteMatch) {
-				const path = deleteMatch[1].trim();
-				latestDelete.set(path, toolCallId);
-				latestWrite.delete(path); // delete supersedes earlier writes
-				latestEdit.delete(path);   // delete supersedes earlier edits
+				const normPath = normalizeDedupPath(deleteMatch[1].trim(), cwd);
+				latestDelete.set(normPath, toolCallId);
+				latestWrite.delete(normPath); // delete supersedes earlier writes
+				latestEdit.delete(normPath);   // delete supersedes earlier edits
 			}
 		}
 		}
@@ -551,11 +559,13 @@ function compressBatchResult(
 		latestWrite?: Map<string, string>;
 		latestEdit?: Map<string, string>;
 		latestDelete?: Map<string, string>;
+		cwd?: string;
 	} = {},
 ): string {
 	const depth = options.depth ?? 1;
 	const isDepth1 = depth < 2;
 	const { toolCallId, latestWrite, latestEdit, latestDelete } = options;
+	const cwd = options.cwd ?? process.cwd();
 
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
 
@@ -567,33 +577,33 @@ function compressBatchResult(
 	const lastDeleteIndex = new Map<string, number>();
 	for (let j = 0; j < lines.length; j++) {
 		const w = lines[j].match(/^--- write: (.+) \((\d+) bytes\) ---$/);
-		if (w) lastWriteIndex.set(w[1].trim(), j);
+		if (w) lastWriteIndex.set(normalizeDedupPath(w[1].trim(), cwd), j);
 		const e = lines[j].match(/^--- edit: (.+) \(([^)]*)\) ---$/);
-		if (e) lastEditIndex.set(e[1].trim(), j);
+		if (e) lastEditIndex.set(normalizeDedupPath(e[1].trim(), cwd), j);
 		const d = lines[j].match(/^--- delete: (.+) ---$/);
-		if (d) lastDeleteIndex.set(d[1].trim(), j);
+		if (d) lastDeleteIndex.set(normalizeDedupPath(d[1].trim(), cwd), j);
 	}
 
 	const out: string[] = [];
 	let i = 0;
 
-	const isSupersededWrite = (path: string, index: number) => {
+	const isSupersededWrite = (normPath: string, index: number) => {
 		if (!toolCallId) return false;
-		const latestTc = latestWrite?.get(path);
+		const latestTc = latestWrite?.get(normPath);
 		if (latestTc !== toolCallId) return true;
-		return lastWriteIndex.get(path) !== index;
+		return lastWriteIndex.get(normPath) !== index;
 	};
-	const isSupersededEdit = (path: string, index: number) => {
+	const isSupersededEdit = (normPath: string, index: number) => {
 		if (!toolCallId) return false;
-		const latestTc = latestEdit?.get(path);
+		const latestTc = latestEdit?.get(normPath);
 		if (latestTc !== toolCallId) return true;
-		return lastEditIndex.get(path) !== index;
+		return lastEditIndex.get(normPath) !== index;
 	};
-	const isSupersededDelete = (path: string, index: number) => {
+	const isSupersededDelete = (normPath: string, index: number) => {
 		if (!toolCallId) return false;
-		const latestTc = latestDelete?.get(path);
+		const latestTc = latestDelete?.get(normPath);
 		if (latestTc !== toolCallId) return true;
-		return lastDeleteIndex.get(path) !== index;
+		return lastDeleteIndex.get(normPath) !== index;
 	};
 
 	while (i < lines.length) {
@@ -733,11 +743,12 @@ function compressBatchResult(
 		// Write section — W1 dedup and compression
 		const writeMatch = line.match(/^--- write: (.+) \((\d+) bytes\) ---$/);
 		if (writeMatch) {
-			const path = writeMatch[1].trim();
+			const rawPath = writeMatch[1].trim();
+			const normPath = normalizeDedupPath(rawPath, cwd);
 			const bytes = writeMatch[2];
-			if (isSupersededWrite(path, i)) {
+			if (isSupersededWrite(normPath, i)) {
 				if (isDepth1) {
-					out.push(`[batch:write] ${path} (superseded)`);
+					out.push(`[batch:write] ${rawPath} (superseded)`);
 				}
 				i++;
 				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -746,9 +757,9 @@ function compressBatchResult(
 				continue;
 			}
 			if (isDepth1) {
-				out.push(`[batch:write] ${path} (${bytes} bytes)`);
+				out.push(`[batch:write] ${rawPath} (${bytes} bytes)`);
 			} else {
-				out.push(`[batch:write] ${path}`);
+				out.push(`[batch:write] ${rawPath}`);
 			}
 			i++;
 			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -772,11 +783,12 @@ function compressBatchResult(
 		// Edit section — E1 dedup and compression
 		const editMatch = line.match(/^--- edit: (.+) \(([^)]*)\) ---$/);
 		if (editMatch) {
-			const path = editMatch[1].trim();
+			const rawPath = editMatch[1].trim();
+			const normPath = normalizeDedupPath(rawPath, cwd);
 			const blockInfo = editMatch[2];
-			if (isSupersededEdit(path, i)) {
+			if (isSupersededEdit(normPath, i)) {
 				if (isDepth1) {
-					out.push(`[batch:edit] ${path} (superseded)`);
+					out.push(`[batch:edit] ${rawPath} (superseded)`);
 				}
 				i++;
 				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -786,9 +798,9 @@ function compressBatchResult(
 			}
 			if (isDepth1) {
 				const blocksLabel = blockInfo ? ` (${blockInfo})` : "";
-				out.push(`[batch:edit] ${path}${blocksLabel}`);
+				out.push(`[batch:edit] ${rawPath}${blocksLabel}`);
 			} else {
-				out.push(`[batch:edit] ${path}`);
+				out.push(`[batch:edit] ${rawPath}`);
 			}
 			i++;
 			while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -812,10 +824,11 @@ function compressBatchResult(
 		// Delete section — keep existing format for non-superseded, skip superseded
 		const deleteMatch = line.match(/^--- delete: (.+) ---$/);
 		if (deleteMatch) {
-			const path = deleteMatch[1].trim();
-			if (isSupersededDelete(path, i)) {
+			const rawPath = deleteMatch[1].trim();
+			const normPath = normalizeDedupPath(rawPath, cwd);
+			if (isSupersededDelete(normPath, i)) {
 				if (isDepth1) {
-					out.push(`[batch:delete] ${path} (superseded)`);
+					out.push(`[batch:delete] ${rawPath} (superseded)`);
 				}
 				i++;
 				while (i < lines.length && !isKnownSectionHeader(lines[i])) {
@@ -923,6 +936,94 @@ function compressAskUserResult(text: string, args?: unknown): string {
 	return `[ask_user] · ${text.length} chars`;
 }
 
+/** Compress batch_bash_poll tool result into compact metadata (S4). */
+function compressBatchBashPollResult(text: string, depth: number): string {
+	const lines = text.replace(/\r\n/g, "\n").split("\n");
+	const out: string[] = [];
+	let i = 0;
+	const isDepth1 = depth < 2;
+	const isPollSectionEnd = (l: string) => /^--- \[.+\]/.test(l);
+
+	while (i < lines.length) {
+		const line = lines[i];
+		const completedMatch = line.match(/^--- \[([^\]]+)\] (exit (\d+)|interrupted) ---$/);
+		const pendingMatch = line.match(/^--- \[([^\]]+)\] still running ---$/);
+
+		if (completedMatch || pendingMatch) {
+			const id = (completedMatch ?? pendingMatch)![1];
+			const isCompleted = !!completedMatch;
+			const exitCode = completedMatch?.[3] !== undefined ? Number(completedMatch[3]) : undefined;
+			i++;
+			let timingTier: string | undefined;
+			const stdoutLines: string[] = [];
+			let stderrLines: string[] = [];
+			let inStderr = false;
+			while (i < lines.length && !isPollSectionEnd(lines[i])) {
+				const contentLine = lines[i];
+				const timingMatch = contentLine.match(/^\[Execution time: (.+)\]$/);
+				if (timingMatch) {
+					timingTier = timingMatch[1];
+				} else if (contentLine === "[stderr]") {
+					inStderr = true;
+				} else if (contentLine === "[output so far]") {
+					inStderr = false;
+				} else if (contentLine.trim() === "") {
+					// skip empty lines between sections
+				} else {
+					if (inStderr) {
+						stderrLines.push(contentLine);
+					} else {
+						stdoutLines.push(contentLine);
+					}
+				}
+				i++;
+			}
+			const tier = timingTier ? ` · ${timingTier}` : "";
+			if (isCompleted) {
+				const statusLabel = exitCode === 0 ? "ok" : "error";
+				if (statusLabel === "error" && stderrLines.length === 0 && stdoutLines.length > 0) {
+					stderrLines = stdoutLines;
+				}
+				const targetLines = statusLabel === "error" ? stderrLines : stdoutLines;
+				const lineCount = targetLines.length;
+				if (isDepth1) {
+					if (lineCount === 0) {
+						out.push(`[bash:poll] ${id} · exit ${exitCode}${tier} · 0 lines`);
+					} else {
+						const linesLabel = statusLabel === "error"
+							? (lineCount === 1 ? "1 line stderr" : `${lineCount} lines stderr`)
+							: (lineCount === 1 ? "1 line" : `${lineCount} lines`);
+						const headPrefix = statusLabel === "error" ? "> stderr:" : "> head:";
+						const head = targetLines.slice(0, 3).join("\n");
+						out.push(`[bash:poll] ${id} · exit ${exitCode}${tier} · ${linesLabel}\n${headPrefix}\n${head}`);
+					}
+				} else {
+					out.push(`[bash:poll] ${id} · exit ${exitCode}${tier}`);
+				}
+			} else {
+				const lineCount = stdoutLines.length;
+				const linesLabel = lineCount === 1 ? "1 line partial" : `${lineCount} lines partial`;
+				if (isDepth1) {
+					if (lineCount === 0) {
+						out.push(`[bash:poll] ${id} · still running · 0 lines partial`);
+					} else {
+						const head = stdoutLines.slice(0, 3).join("\n");
+						out.push(`[bash:poll] ${id} · still running · ${linesLabel}\n> head:\n${head}`);
+					}
+				} else {
+					out.push(`[bash:poll] ${id} · still running`);
+				}
+			}
+			continue;
+		}
+
+		out.push(line);
+		i++;
+	}
+
+	return out.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Shared: toolCallId → toolName mapping
 // ---------------------------------------------------------------------------
@@ -975,7 +1076,7 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 					Array.isArray(entry.message.content) &&
 					entry.message.content.some((p: ContentPart) =>
 						p.type === "toolCall" &&
-						["batch_read", "batch", "web", "ask_user"].includes(p.name as string),
+						["batch_read", "batch", "web", "ask_user", "batch_bash_poll"].includes(p.name as string),
 					);
 			} catch { return false; }
 		});
@@ -1009,8 +1110,21 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 		}
 	}
 
+	// Extract session cwd from header for path normalization
+	let sessionCwd = process.cwd();
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { continue; }
+		if (entry?.type === "session" || entry?.type === "header") {
+			if (typeof entry.cwd === "string") {
+				sessionCwd = entry.cwd;
+				break;
+			}
+		}
+	}
+
 	// === PASS 1 (pre-scan): Build DedupIndex for batch and web tool results (W1 + E1 + Q1) ===
-	const dedupIndex = buildDedupIndex(lines, toolCallIdToName, toolCallIdToArgs);
+	const dedupIndex = buildDedupIndex(lines, toolCallIdToName, toolCallIdToArgs, sessionCwd);
 
 	const result: string[] = [];
 	let webSummaryEmitted = false;
@@ -1081,19 +1195,20 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				const statusLabel = entry.message.isError ? 'failed' : 'completed';
 				rendered = `[flow${flowTypeSuffix}] ${statusLabel} · see prior session`;
 			} else {
-				const renderResults = compressed.map(renderCompressedFlowResult);
-				const hasAnyUndefined = renderResults.some(r => r === undefined);
-				
-				if (hasAnyUndefined) {
-					// Safety net: compression produced garbage, fall back to truncated raw.
-					originalText = extractToolResultText(entry as MessageEntry) ?? "";
-					const size = originalText.length;
-					rendered = size > 2000
-						? originalText.slice(0, 2000) + "\n[truncated]"
-						: originalText;
-				} else {
-					rendered = renderResults.filter((r): r is string => r !== undefined).join("\n\n");
+				const renderedParts: string[] = [];
+				for (const r of compressed) {
+					const renderedResult = renderCompressedFlowResult(r);
+					if (renderedResult === undefined) {
+						// Granular fallback: only this element is malformed, don't waste
+						// valid siblings by falling back the entire array to raw text.
+						const flowType = r.type ?? "unknown";
+						const status = r.status ?? "unknown";
+						renderedParts.push(`[flow:${flowType}] ${status} (cache miss)`);
+					} else {
+						renderedParts.push(renderedResult);
+					}
 				}
+				rendered = renderedParts.join("\n\n");
 			}
 		}
 
@@ -1106,7 +1221,14 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 				latestWrite: dedupIndex.latestWrite,
 				latestEdit: dedupIndex.latestEdit,
 				latestDelete: dedupIndex.latestDelete,
+				cwd: sessionCwd,
 			});
+		}
+
+		// --- Compress batch_bash_poll tool results (S4) ---
+		else if (toolName === "batch_bash_poll") {
+			originalText = extractToolResultText(entry as MessageEntry) ?? "";
+			rendered = compressBatchBashPollResult(originalText, depth);
 		}
 
 		// --- Compress web tool results (Q1 dedup) ---

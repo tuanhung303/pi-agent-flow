@@ -809,6 +809,53 @@ describe("compressToolResults — W1 write dedup + E1 edit dedup", () => {
 		expect(result).not.toContain("(superseded)");
 		expect(result).not.toContain("(100 bytes)");
 	});
+
+	it("S11: normalizes paths so ./src/index.ts and src/index.ts are treated as the same key", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc1", name: "batch", arguments: { o: [{ o: "write", p: "./src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "1 operation: 1 write\n\n--- write: ./src/index.ts (100 bytes) ---",
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc2", name: "batch", arguments: { o: [{ o: "write", p: "src/index.ts" }] } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc2",
+					content: "1 operation: 1 write\n\n--- write: src/index.ts (200 bytes) ---",
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const tc1Text = getBatchText(result, "tc1");
+		const tc2Text = getBatchText(result, "tc2");
+		// tc1 should be superseded because tc2 writes the same normalized path
+		expect(tc1Text).toContain("[batch:write] ./src/index.ts (superseded)");
+		expect(tc2Text).toContain("[batch:write] src/index.ts (200 bytes)");
+		expect(tc2Text).not.toContain("(superseded)");
+	});
 });
 describe("compressToolResults — X1 bash compression (depth 1)", () => {
 	function getBatchText(result: string): string {
@@ -1190,6 +1237,145 @@ describe("compressToolResults — X1 bash compression (depth 2+)", () => {
 		expect(result).not.toContain("v20.12.2");
 		expect(result).not.toContain("On branch main");
 		expect(result).not.toContain("> head:");
+	});
+});
+
+describe("compressToolResults — S4 batch_bash_poll compression", () => {
+	function getPollText(result: string): string {
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) =>
+			(l.includes('"role":"tool"') || l.includes('"role":"toolResult"')) &&
+			l.includes('"toolCallId":"tc1"')
+		)!;
+		const parsed = JSON.parse(toolLine);
+		return parsed.message.content[0].text;
+	}
+
+	it("compresses completed poll results at depth 1 with head preview", () => {
+		const longOutput = Array.from({ length: 1000 }, (_, i) => `poll line ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll1"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `--- [poll1] exit 0 ---\n[Execution time: 1.5s (avg)]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] poll1 · exit 0 · 1.5s (avg) · 1000 lines\n> head:\npoll line 1\npoll line 2\npoll line 3");
+		expect(text).not.toContain("poll line 1000");
+		expect(result).not.toContain("--- [poll1] exit 0 ---");
+	});
+
+	it("compresses still-running poll results at depth 1", () => {
+		const longOutput = Array.from({ length: 500 }, (_, i) => `pending ${i + 1}`).join("\n");
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll2"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: `--- [poll2] still running ---\n[output so far]\n${longOutput}`,
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] poll2 · still running · 500 lines partial\n> head:\npending 1\npending 2\npending 3");
+		expect(text).not.toContain("pending 500");
+	});
+
+	it("compresses error poll results at depth 1", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll3"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '--- [poll3] exit 1 ---\n[Execution time: 0.3s (avg)]\n[stderr]\nError: command failed',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] poll3 · exit 1 · 0.3s (avg) · 1 line stderr\n> stderr:\nError: command failed");
+	});
+
+	it("compresses poll results at depth 2+ to status only", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["poll4"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '--- [poll4] exit 0 ---\n[Execution time: 2.0s (long)]\noutput line 1\noutput line 2',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 2);
+		expect(result).toContain("[bash:poll] poll4 · exit 0 · 2.0s (long)");
+		expect(result).not.toContain("output line 1");
+		expect(result).not.toContain("> head:");
+	});
+
+	it("compresses multi-poll results", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "batch_bash_poll", arguments: { i: ["a", "b"] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "tc1",
+					content: '--- [a] exit 0 ---\n[Execution time: 0.5s (avg)]\nline a1\n\n--- [b] still running ---\n[output so far]\nline b1\nline b2',
+				},
+			},
+		]);
+
+		const result = compressToolResults(snapshot, new Map(), 1);
+		const text = getPollText(result);
+		expect(text).toContain("[bash:poll] a · exit 0 · 0.5s (avg) · 1 line\n> head:\nline a1");
+		expect(text).toContain("[bash:poll] b · still running · 2 lines partial\n> head:\nline b1\nline b2");
 	});
 });
 
@@ -1939,6 +2125,52 @@ describe("compressToolResults — flow cache miss", () => {
 		expect(text).toContain("[Flow: scout accomplished]");
 		expect(text).toContain("src/auth.ts");
 		expect(text).toContain("grep: JWT");
+	});
+
+	it("S6: granular flow cache fallback — only malformed entries fall back, valid siblings survive", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", toolCallId: "tc1", name: "flow", arguments: { flow: [{ type: "scout" }, { type: "build" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc1",
+					content: "Flow: 2/2 completed\n\nscout accomplished\n\nbuild accomplished",
+				},
+			},
+		]);
+
+		// Cache with one valid and one malformed result
+		const cache = new Map([[
+			"tc1",
+			[
+				{ type: "scout", status: "accomplished", files: [{ path: "src/auth.ts" }] },
+				{ type: "build", status: "accomplished", actions: [{ type: "", description: "" }] }, // malformed: empty type/action
+			],
+		]]);
+
+		const result = compressToolResults(snapshot, cache);
+		const lines = result.trimEnd().split("\n");
+		const toolLine = lines.find((l) => l.includes('"role":"toolResult"'))!;
+		const parsed = JSON.parse(toolLine);
+		const text = parsed.message.content[0].text;
+
+		// Valid sibling should render normally
+		expect(text).toContain("[Flow: scout accomplished]");
+		expect(text).toContain("src/auth.ts");
+
+		// Malformed entry should get granular fallback, not trash the whole array
+		expect(text).toContain("[flow:build] accomplished (cache miss)");
+
+		// Should NOT fall back to the bulky raw text
+		expect(text).not.toContain("Flow: 2/2 completed");
+		expect(text.length).toBeLessThan(500);
 	});
 });
 
