@@ -82,6 +82,25 @@ describe("aggregateFlowUsage", () => {
 		expect(total.input).toBe(0);
 		expect(total.turns).toBe(0);
 	});
+
+	it("computes weighted average smoothedTps by output tokens", () => {
+		const results = [
+			makeResult({ usage: { input: 100, output: 100, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1, toolCalls: 0, smoothedTps: 100 } }),
+			makeResult({ usage: { input: 100, output: 200, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1, toolCalls: 0, smoothedTps: 200 } }),
+		];
+		const total = aggregateFlowUsage(results);
+		// Weighted average: (100*100 + 200*200) / (100+200) = 50000/300 = 166.67
+		expect(total.smoothedTps).toBeCloseTo(166.67, 1);
+	});
+
+	it("falls back to max smoothedTps when total output is 0", () => {
+		const results = [
+			makeResult({ usage: { input: 10, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1, toolCalls: 0, smoothedTps: 150 } }),
+			makeResult({ usage: { input: 10, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1, toolCalls: 0, smoothedTps: 80 } }),
+		];
+		const total = aggregateFlowUsage(results);
+		expect(total.smoothedTps).toBe(150);
+	});
 });
 
 // ---------------------------------------------------------------------------

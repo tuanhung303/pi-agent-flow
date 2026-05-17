@@ -102,6 +102,8 @@ export function emptyFlowUsage(): UsageStats {
 /** Sum usage across multiple results. */
 export function aggregateFlowUsage(results: SingleResult[]): UsageStats {
 	const total = emptyFlowUsage();
+	let weightedTps = 0;
+	let totalOutput = 0;
 	for (const r of results) {
 		total.input += r.usage.input;
 		total.output += r.usage.output;
@@ -110,9 +112,15 @@ export function aggregateFlowUsage(results: SingleResult[]): UsageStats {
 		total.cost += r.usage.cost;
 		total.turns += r.usage.turns;
 		total.toolCalls += r.usage.toolCalls;
-		if ((r.usage.smoothedTps ?? 0) > (total.smoothedTps ?? 0)) {
-			total.smoothedTps = r.usage.smoothedTps;
+		if ((r.usage.smoothedTps ?? 0) > 0) {
+			weightedTps += (r.usage.smoothedTps ?? 0) * r.usage.output;
+			totalOutput += r.usage.output;
 		}
+	}
+	if (totalOutput > 0) {
+		total.smoothedTps = weightedTps / totalOutput;
+	} else if (results.length > 0) {
+		total.smoothedTps = Math.max(...results.map((r) => r.usage.smoothedTps ?? 0));
 	}
 	return total;
 }

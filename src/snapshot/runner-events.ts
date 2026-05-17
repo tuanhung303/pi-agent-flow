@@ -28,6 +28,7 @@ const pendingTokensMap = new WeakMap<object, number>();
 const pauseAfterNextEmitMap = new WeakMap<object, boolean>();
 const ctxBaselineMap = new WeakMap<object, number>();
 const ctxStreamingCharsMap = new WeakMap<object, number>();
+const toolCallTokenEstimateMap = new WeakMap<object, number>();
 
 function getSeenFlowMessageSignatures(result: object): Set<string> {
 	if (!seenSignaturesMap.has(result)) {
@@ -90,6 +91,44 @@ function getStreamingEstimate(result: object): { chars: number } {
 		streamingEstimateMap.set(result, { chars: 0 });
 	}
 	return streamingEstimateMap.get(result)!;
+}
+
+function getToolCallTokenEstimate(result: object): number {
+	if (!toolCallTokenEstimateMap.has(result)) {
+		toolCallTokenEstimateMap.set(result, 0);
+	}
+	return toolCallTokenEstimateMap.get(result)!;
+}
+
+function addToolCallTokens(result: object, tokens: number): void {
+	if (tokens <= 0) return;
+	toolCallTokenEstimateMap.set(result, getToolCallTokenEstimate(result) + tokens);
+}
+
+/** Better estimator for JSON content that treats structural chars as ~1 token each. */
+function estimateToolCallTokens(text: string): number {
+	let tokens = 0;
+	let alphaRun = 0;
+	for (const char of text) {
+		if ('{}[]":,'.includes(char)) {
+			if (alphaRun > 0) {
+				tokens += Math.ceil(alphaRun / 4);
+				alphaRun = 0;
+			}
+			tokens += 1;
+		} else if (/[a-zA-Z0-9]/.test(char)) {
+			alphaRun++;
+		} else {
+			if (alphaRun > 0) {
+				tokens += Math.ceil(alphaRun / 4);
+				alphaRun = 0;
+			}
+		}
+	}
+	if (alphaRun > 0) {
+		tokens += Math.ceil(alphaRun / 4);
+	}
+	return tokens;
 }
 
 interface TpsState {
@@ -168,7 +207,11 @@ export function updateSmoothedTps(result: object, estimatedTokens: number): void
 	if (tracker.smoothedTps === 0) {
 		tracker.smoothedTps = instantRate;
 	} else {
-		tracker.smoothedTps = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * tracker.smoothedTps;
+		// Outlier rejection: dampen burst spikes that would dominate the EMA
+		const alpha = (tracker.smoothedTps > 0 && instantRate > 2 * tracker.smoothedTps)
+			? EMA_ALPHA * 0.3
+			: EMA_ALPHA;
+		tracker.smoothedTps = alpha * instantRate + (1 - alpha) * tracker.smoothedTps;
 	}
 	tracker.lastEmitTime = now;
 	tracker.pendingTokens = 0;
@@ -221,6 +264,16 @@ function updateStreamingEstimate(result: object, deltaLength: number): void {
 	// Also accumulate chars for ctx estimation (not drained on emit)
 	const ctxState = getCtxState(result);
 	ctxState.streamingChars += deltaLength;
+}
+
+/**
+ * Drain the accumulated tool call token estimate and return it.
+ * Returns 0 when no tool calls have been estimated.
+ */
+export function drainToolCallEstimate(result: object): number {
+	const tokens = getToolCallTokenEstimate(result);
+	toolCallTokenEstimateMap.set(result, 0);
+	return tokens;
 }
 
 /**
@@ -378,16 +431,16 @@ function addFlowAssistantMessage(result: FlowResult, message: AssistantMessage):
 
 	// Count tool call parts in the message content and estimate their tokens
 	if (Array.isArray(message.content)) {
-		let toolCallChars = 0;
+		let toolCallTokens = 0;
 		for (const part of message.content as Array<{ type: string; name?: string; toolName?: string; arguments?: unknown; input?: unknown }>) {
 			if (part.type === "toolCall") {
 				result.usage!.toolCalls++;
 				const tcText = JSON.stringify({ name: part.name, args: part.arguments || part.input || {} });
-				toolCallChars += tcText.length;
+				toolCallTokens += estimateToolCallTokens(tcText);
 			}
 		}
-		if (toolCallChars > 0) {
-			updateStreamingEstimate(result, toolCallChars);
+		if (toolCallTokens > 0) {
+			addToolCallTokens(result, toolCallTokens);
 			const tracker = getTpsState(result);
 			tracker.pauseAfterNextEmit = true;
 		}

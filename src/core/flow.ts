@@ -12,7 +12,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { type FlowConfig, getFlowTier } from "./agents.js";
 import { getInheritedCliArgs } from "../snapshot/cli-args.js";
-import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "../snapshot/runner-events.js";
+import { processFlowJsonLine, drainStreamingText, drainStreamingEstimate, drainToolCallEstimate, drainCtxEstimate, updateSmoothedTps, drainSmoothedTps } from "../snapshot/runner-events.js";
 import {
 	type SingleResult,
 	type FlowDetails,
@@ -580,11 +580,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		if (streamingDelta) liveStreamingText += streamingDelta;
 		// Live text is stored per-toolCallId by the executor's emitProgress, not here.
 		const estimatedTokens = drainStreamingEstimate(result);
+		const toolCallTokens = drainToolCallEstimate(result);
 		if (result.usage.output !== lastActualOutputTokens) {
 			lastActualOutputTokens = result.usage.output;
 			liveEstimatedOutputTokens = result.usage.output;
 		}
-		liveEstimatedOutputTokens += estimatedTokens;
+		liveEstimatedOutputTokens += estimatedTokens + toolCallTokens;
 		const ctxEst = drainCtxEstimate(result);
 		updateSmoothedTps(result, estimatedTokens);
 		const smoothedTps = drainSmoothedTps(result);
