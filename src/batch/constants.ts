@@ -203,6 +203,14 @@ export type BatchTheme = {
 	bg: (color: string, text: string) => string;
 };
 
+export type BatchToolResult = {
+	content: Array<{ type: "text"; text: string }>;
+	details?: { results: OpResult[] };
+	_toolCallId?: string;
+};
+
+export type BatchOnUpdate = (partial: BatchToolResult) => void;
+
 export interface PendingBashResult {
 	id: string;
 	command: string;

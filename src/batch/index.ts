@@ -6,7 +6,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import type { BatchTheme, FileOpInput } from "./constants.js";
+import type { BatchTheme, FileOpInput, BatchOnUpdate } from "./constants.js";
 import { SAFE_FULL_READ_LIMIT, TARGETED_READ_LINE_LIMIT, BASH_SOFT_TIMEOUT_MS, MAX_LINES, MAX_BYTES, MAX_BASH_OUTPUT_LINES, MAX_BASH_OUTPUT_BYTES } from "./constants.js";
 import { executeOperations, suggestSimilarFiles } from "./execute.js";
 import { expandTilde, isWithinDirectory } from "./fuzzy-edit.js";
@@ -346,7 +346,7 @@ export function createBatchReadTool() {
 			_toolCallId: string,
 			input: unknown,
 			signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			onUpdate: BatchOnUpdate | undefined,
 			ctx: { cwd: string },
 		) {
 			const prepared = prepareBatchReadArguments(input);
@@ -374,7 +374,7 @@ export function createBatchReadTool() {
 			const { contentText, results } = await executeOperations(ops, ctx.cwd, signal, {
 				readOptions: { truncate: false, toolName: "batch_read" },
 				includeLimitWarnings: false,
-			});
+			}, onUpdate);
 
 			const readResult = {
 				content: [{ type: "text", text: contentText }],
@@ -432,7 +432,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			_toolCallId: string,
 			input: unknown,
 			signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			onUpdate: BatchOnUpdate | undefined,
 			ctx: { cwd: string },
 		) {
 			const prepared = prepareArguments(input);
@@ -466,9 +466,17 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			let fileResults: import("./constants.js").OpResult[] = [];
 
 			if (fileOps.length > 0) {
-				const fileOutput = await executeOperations(fileOps, ctx.cwd, signal);
+				const fileOutput = await executeOperations(fileOps, ctx.cwd, signal, {}, onUpdate);
 				fileContentText = fileOutput.contentText;
 				fileResults = fileOutput.results;
+			}
+
+			// Emit update after file ops before bash ops begin
+			if (onUpdate && fileOps.length > 0) {
+				onUpdate({
+					content: [{ type: "text", text: fileContentText }],
+					details: { results: fileResults },
+				});
 			}
 
 			// Execute bash ops in parallel after file ops complete.
@@ -527,6 +535,14 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			// Combine results
 			const allResults = [...fileResults, ...bashResults];
 			const contentText = [fileContentText, bashContentText].filter(Boolean).join("\n");
+
+			// Emit final update after bash ops complete
+			if (onUpdate && bashOps.length > 0) {
+				onUpdate({
+					content: [{ type: "text", text: contentText }],
+					details: { results: allResults },
+				});
+			}
 
 			const batchResult = {
 				content: [{ type: "text", text: contentText }],

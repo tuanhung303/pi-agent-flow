@@ -2974,6 +2974,66 @@ describe("batch_read tool", () => {
 		});
 	});
 
+	describe("incremental streaming", () => {
+		it("calls onUpdate with partial results during file ops", async () => {
+			fs.writeFileSync(path.join(tmpDir, "a.txt"), "content a\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "b.txt"), "content b\n", "utf-8");
+
+			const updates: any[] = [];
+			const onUpdate = (partial: any) => updates.push(partial);
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ op: "read", path: "a.txt" },
+						{ op: "read", path: "b.txt" },
+					],
+				},
+				undefined,
+				onUpdate,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.content[0].text).toContain("2 operations: 2 reads");
+			expect(updates.length).toBeGreaterThanOrEqual(1);
+			const lastUpdate = updates[updates.length - 1];
+			expect(lastUpdate.content[0].text).toContain("operations:");
+			expect(lastUpdate.details.results.length).toBeLessThanOrEqual(2);
+		});
+
+		it("marks remaining ops skipped when aborted", async () => {
+			fs.writeFileSync(path.join(tmpDir, "a.txt"), "content a\n", "utf-8");
+			fs.writeFileSync(path.join(tmpDir, "b.txt"), "content b\n", "utf-8");
+
+			const updates: any[] = [];
+			const onUpdate = (partial: any) => updates.push(partial);
+			const controller = new AbortController();
+
+			const tool = createTool();
+			const promise = tool.execute(
+				"call-1",
+				{
+					o: [
+						{ op: "read", path: "a.txt" },
+						{ op: "read", path: "b.txt" },
+						{ op: "read", path: "c.txt" },
+					],
+				},
+				controller.signal,
+				onUpdate,
+				makeCtx(tmpDir),
+			);
+
+			controller.abort();
+			const result = await promise;
+
+			const allSkipped = result.details.results.filter((r: any) => r.status === "skipped");
+			expect(allSkipped.length).toBeGreaterThanOrEqual(1);
+		});
+	});
+
 	describe("renderCall", () => {
 		function makeTheme() {
 			return {

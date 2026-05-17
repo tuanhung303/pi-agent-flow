@@ -15,6 +15,7 @@ import {
 	type ExecuteOptions,
 	type ReadOptions,
 	type OpResult,
+	type BatchOnUpdate,
 	MAX_LINES,
 	MAX_BYTES,
 	SAFE_FULL_READ_LIMIT,
@@ -213,6 +214,7 @@ export async function executeOperations(
 	cwd: string,
 	signal?: AbortSignal,
 	options: ExecuteOptions = {},
+	onUpdate?: BatchOnUpdate,
 ): Promise<{ summary: string; contentText: string; results: OpResult[] }> {
 	const results: OpResult[] = [];
 	const counts = { read: 0, write: 0, edit: 0, delete: 0, rg: 0, error: 0, skipped: 0 };
@@ -224,11 +226,36 @@ export async function executeOperations(
 	let aggregateBytesRead = 0;
 	const includeLimitWarnings = options.includeLimitWarnings ?? true;
 
-	for (const op of operations) {
+	let lastUpdateTime = 0;
+	function emitPartialUpdate() {
+		if (!onUpdate) return;
+		const now = Date.now();
+		if (now - lastUpdateTime < 100) return;
+		lastUpdateTime = now;
+		const partialSummary = buildSummary(
+			counts,
+			errors,
+			truncatedFiles,
+			aggregateLimitSkipped,
+			aggregateByteLimitSkipped,
+		);
+		const partialContentText = buildContentText(partialSummary, results);
+		onUpdate({
+			content: [{ type: "text", text: partialContentText }],
+			details: { results: [...results] },
+		});
+	}
+
+	for (let i = 0; i < operations.length; i++) {
+		const op = operations[i];
 		if (signal?.aborted) {
-			results.push({ op: op.o, path: op.p, status: "skipped", error: "Operation aborted." });
-			counts.skipped++;
-			continue;
+			for (let j = i; j < operations.length; j++) {
+				const r = operations[j];
+				results.push({ op: r.o, path: r.p, status: "skipped", error: "Operation aborted." });
+				counts.skipped++;
+			}
+			emitPartialUpdate();
+			break;
 		}
 
 		try {
@@ -472,6 +499,7 @@ export async function executeOperations(
 				hint,
 			});
 		}
+		emitPartialUpdate();
 	}
 	// Build the enhanced summary and content text
 	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
