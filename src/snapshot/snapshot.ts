@@ -1733,6 +1733,285 @@ function reparentOrphans(snapshot: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Narrative stripping passes
+// ---------------------------------------------------------------------------
+
+/** Extract plain text from a message content (string or array of parts). */
+function extractMessageText(content: string | ContentPart[] | undefined): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((p): p is TextPart => p.type === "text" && typeof p.text === "string")
+		.map((p) => p.text)
+		.join("");
+}
+
+/**
+ * Pass: stripOrchestratorNarrative
+ * Strip assistant messages that are:
+ *  (a) under 500 chars of total text content,
+ *  (b) contain no file paths (no '/' slashes in paths or backtick-wrapped paths),
+ *  (c) contain no code blocks (no ``` markers),
+ *  (d) are not tool_calls/tool_result paired messages.
+ * Replace with `[orchestrator:thinking]` placeholder.
+ */
+export function stripOrchestratorNarrative(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+	let changed = false;
+
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try {
+			entry = JSON.parse(line) as SnapshotEntry;
+		} catch {
+			result.push(line);
+			continue;
+		}
+
+		// Never touch session header
+		if (entry?.type === "session" || entry?.type === "header") {
+			result.push(line);
+			continue;
+		}
+
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+			result.push(line);
+			continue;
+		}
+
+		const fullText = extractMessageText(entry.message.content);
+
+		// Skip already-collapsed placeholders from earlier passes.
+		if (fullText.startsWith("[assistant:") || fullText.startsWith("[orchestrator:")) {
+			result.push(line);
+			continue;
+		}
+
+		// (a) under 500 chars
+		if (fullText.length >= 500) {
+			result.push(line);
+			continue;
+		}
+
+		// (b) contain no file paths: skip if any '/' or backtick-wrapped path present
+		if (fullText.includes("/")) {
+			result.push(line);
+			continue;
+		}
+		if (/`[^`]*\/[^`]*`/.test(fullText)) {
+			result.push(line);
+			continue;
+		}
+
+		// (c) contain no code blocks
+		if (fullText.includes("```")) {
+			result.push(line);
+			continue;
+		}
+
+		// (d) are not tool_calls/tool_result paired messages, and contain no tool references
+		const content = entry.message.content;
+		if (Array.isArray(content) && content.some((p) => (p as ContentPart).type === "toolCall")) {
+			result.push(line);
+			continue;
+		}
+		if (/\[[a-z_]+[^\]]*\]/.test(fullText)) {
+			result.push(line);
+			continue;
+		}
+
+		// Replace stripped message with placeholder
+		changed = true;
+		const totalTokens = entry.message.usage?.totalTokens;
+		const compactContent =
+			totalTokens !== undefined
+				? `[orchestrator:thinking — ${totalTokens} tokens]`
+				: "[orchestrator:thinking]";
+
+		result.push(
+			JSON.stringify({
+				...entry,
+				message: {
+					...entry.message,
+					content: compactContent,
+				},
+			}),
+		);
+	}
+
+	return changed ? `${result.join("\n")}\n` : snapshot;
+}
+
+/**
+ * Pass: stripUserMissionManifestos
+ * Strip user messages where:
+ *  (a) content exceeds 800 chars,
+ *  (b) contains JSON structured data (detect opening `{` with structured keys),
+ *  (c) contains zero file paths of the repo (no '/src/', '/tmp/', './', or similar).
+ * Replace with `[user:mission — see activation prompt]` placeholder.
+ */
+export function stripUserMissionManifestos(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+	let changed = false;
+
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try {
+			entry = JSON.parse(line) as SnapshotEntry;
+		} catch {
+			result.push(line);
+			continue;
+		}
+
+		// Never touch session header
+		if (entry?.type === "session" || entry?.type === "header") {
+			result.push(line);
+			continue;
+		}
+
+		if (entry?.type !== "message" || entry.message?.role !== "user") {
+			result.push(line);
+			continue;
+		}
+
+		const fullText = extractMessageText(entry.message.content);
+
+		// Skip already-collapsed placeholders from earlier passes.
+		if (fullText.startsWith("[user:") || fullText.startsWith("[orchestrator:")) {
+			result.push(line);
+			continue;
+		}
+
+		// (a) exceeds 800 chars
+		if (fullText.length <= 800) {
+			result.push(line);
+			continue;
+		}
+
+		// (b) contains JSON structured data
+		if (!fullText.includes("{")) {
+			result.push(line);
+			continue;
+		}
+		const hasStructuredKeys =
+			/"mission"|"stages"|"execution_directive"/.test(fullText);
+		if (!hasStructuredKeys) {
+			result.push(line);
+			continue;
+		}
+
+		// (c) contains zero file paths of the repo
+		const hasRepoPath =
+			/\/[^\/\s]+\/|\.{1,2}\/|\/\w+\.\w+/.test(fullText);
+		if (hasRepoPath) {
+			result.push(line);
+			continue;
+		}
+
+		// Replace stripped message with placeholder
+		changed = true;
+		result.push(
+			JSON.stringify({
+				...entry,
+				message: {
+					...entry.message,
+					content: "[user:mission — see activation prompt]",
+				},
+			}),
+		);
+	}
+
+	return changed ? `${result.join("\n")}\n` : snapshot;
+}
+
+/**
+ * Pass: stripConversationalAcks
+ * Strip user messages under 100 chars that contain:
+ *  no file paths (no '/'),
+ *  no commands (no backtick or $ prefix),
+ *  no code indicators.
+ * Replace with `[user:ack]`.
+ */
+export function stripConversationalAcks(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+	let changed = false;
+
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try {
+			entry = JSON.parse(line) as SnapshotEntry;
+		} catch {
+			result.push(line);
+			continue;
+		}
+
+		// Never touch session header
+		if (entry?.type === "session" || entry?.type === "header") {
+			result.push(line);
+			continue;
+		}
+
+		if (entry?.type !== "message" || entry.message?.role !== "user") {
+			result.push(line);
+			continue;
+		}
+
+		const fullText = extractMessageText(entry.message.content);
+
+		// Skip already-collapsed placeholders from earlier passes.
+		if (fullText.startsWith("[user:") || fullText.startsWith("[orchestrator:")) {
+			result.push(line);
+			continue;
+		}
+
+		// (a) under 100 chars
+		if (fullText.length >= 100) {
+			result.push(line);
+			continue;
+		}
+
+		// (b) no file paths (no '/')
+		if (fullText.includes("/")) {
+			result.push(line);
+			continue;
+		}
+
+		// (c) no commands (no ` or $ prefix)
+		if (fullText.includes("`")) {
+			result.push(line);
+			continue;
+		}
+		if (/^\s*\$/.test(fullText)) {
+			result.push(line);
+			continue;
+		}
+
+		// (d) no code indicators
+		if (fullText.includes("```")) {
+			result.push(line);
+			continue;
+		}
+
+		// Replace stripped message with placeholder
+		changed = true;
+		result.push(
+			JSON.stringify({
+				...entry,
+				message: {
+					...entry.message,
+					content: "[user:ack]",
+				},
+			}),
+		);
+	}
+
+	return changed ? `${result.join("\n")}\n` : snapshot;
+}
+
+// ---------------------------------------------------------------------------
 // Snapshot sanitization
 // ---------------------------------------------------------------------------
 
@@ -2068,6 +2347,21 @@ export function sanitizeForkSnapshot(
 	sanitized = compressFlowToolCallArgs(sanitized);
 	passesApplied.push("compressFlowToolCallArgs");
 	passDeltas["compressFlowToolCallArgs"] = measureBytes(sanitized);
+
+	// Strip orchestrator chain-of-thought narration.
+	sanitized = stripOrchestratorNarrative(sanitized);
+	passesApplied.push("stripOrchestratorNarrative");
+	passDeltas["stripOrchestratorNarrative"] = measureBytes(sanitized);
+
+	// Strip large user mission manifestos with JSON but no file paths.
+	sanitized = stripUserMissionManifestos(sanitized);
+	passesApplied.push("stripUserMissionManifestos");
+	passDeltas["stripUserMissionManifestos"] = measureBytes(sanitized);
+
+	// Strip short conversational acknowledgments.
+	sanitized = stripConversationalAcks(sanitized);
+	passesApplied.push("stripConversationalAcks");
+	passDeltas["stripConversationalAcks"] = measureBytes(sanitized);
 
 	// Compress tool results (flow, batch, web, ask_user).
 	sanitized = compressToolResults(sanitized, cache, depthToPolicy(options?.depth ?? 1));
