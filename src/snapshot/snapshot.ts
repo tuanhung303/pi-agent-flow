@@ -1780,6 +1780,15 @@ export function sanitizeForkSnapshot(
 
 		let changed = false;
 
+		// Strip outer entry timestamp from all entries — child replay doesn't need it
+		// (JSONL line ordering is sufficient).
+		if ("timestamp" in entry) {
+			const { timestamp, ...restEntry } = entry;
+			entry = restEntry;
+			changed = true;
+			subPasses.add("stripTimestamps");
+		}
+
 		// Header (first line): replace parent system prompt.
 		if (i === 0 && entry && typeof entry === "object") {
 			// Replace the parent orchestrator system prompt with a brief note.
@@ -1798,6 +1807,29 @@ export function sanitizeForkSnapshot(
 				delete entry.id;
 				changed = true;
 				subPasses.add('stripSessionId');
+			}
+		}
+
+		// Whitelist session entry fields to prevent unknown metadata leaks.
+		const isSessionHeader = i === 0 || entry?.type === "session";
+		if (isSessionHeader && entry && typeof entry === "object") {
+			const allowedHeaderKeys = new Set<string>([
+				"type", "systemPrompt", "version", "cwd",
+				"forkedFrom", "forkedAt", "parentFlow", "depth", "parentId",
+				"meta",
+			]);
+			const entryKeys = Object.keys(entry);
+			const hasUnknownHeaderField = entryKeys.some((k) => !allowedHeaderKeys.has(k));
+			if (hasUnknownHeaderField) {
+				const whitelisted: Record<string, unknown> = {};
+				for (const key of entryKeys) {
+					if (allowedHeaderKeys.has(key)) {
+						whitelisted[key] = (entry as Record<string, unknown>)[key];
+					}
+				}
+				entry = whitelisted as SnapshotEntry;
+				changed = true;
+				subPasses.add("stripUnknownHeaderFields");
 			}
 		}
 

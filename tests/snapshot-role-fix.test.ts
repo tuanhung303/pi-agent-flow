@@ -1344,3 +1344,221 @@ describe("STRATEGIC HINTS STRIPPED FROM ALL ROLES", () => {
 		expect(assistantHintText).toContain("Legacy hint test.");
 	});
 });
+
+// ===========================================================================
+// 8. Defense-in-depth: child context whitelist & blacklist guard rail
+// ===========================================================================
+// This test is a guard rail. If you add a new injection point, it MUST be
+// stripped before reaching child flows. If this test fails, either strip the
+// new artifact or explicitly add it to the whitelist with a justification
+// comment.
+// ===========================================================================
+
+describe("DEFENSE IN DEPTH — child context whitelist & blacklist", () => {
+	it("only whitelisted fields survive sanitization; blacklisted content is fully stripped", () => {
+		const flowCache = new Map<string, CompressedFlowResult[]>();
+		flowCache.set("flow-id-guard", [{ type: "build", status: "accomplished" }]);
+
+		const snapshot = makeSnapshot([
+			// Session entry with every possible field + extra unknowns
+			{
+				type: "session",
+				id: "sess-parent",
+				systemPrompt: "You are the orchestrator.",
+				version: "1.2.3",
+				timestamp: "2026-05-17T00:00:00.000Z",
+				cwd: "/Users/__blitzzz/Documents/GitHub/pi-agent-flow",
+				forkedFrom: "sess-grandparent",
+				forkedAt: "2026-05-17T00:00:00.000Z",
+				parentFlow: "scout",
+				depth: 1,
+				unknownField1: "should-be-stripped",
+				extraMetadata: { foo: "bar" },
+			},
+			// Steering hint system message — should be dropped entirely
+			{
+				type: "message",
+				message: {
+					role: "system",
+					content: STEERING_HINT,
+					id: "steering-msg",
+				},
+			},
+			// Assistant message with every possible field
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					id: "assistant-1",
+					parentId: "user-1",
+					content: [
+						{ type: "text", text: "Planning next step." },
+						{ type: "toolCall", id: "batch_read-guard", name: "batch_read", arguments: { o: [{ o: "read", p: "src/a.ts" }] } },
+						{ type: "toolCall", id: "flow-id-guard", name: "flow", arguments: { flow: [{ type: "build" }] } },
+					],
+					timestamp: 1715923200000,
+					api: "openai",
+					provider: "wafer",
+					model: "glm-5.1",
+					stopReason: "stop",
+					responseId: "resp_guard",
+					responseModel: "glm-5.1",
+					thinking: "I should plan",
+					thinkingSignature: "sig1",
+					reasoning: "Plan is good",
+					reasoningContent: "Detailed reasoning",
+					reasoningSignature: "sig2",
+					usage: { input: 100, output: 50, totalTokens: 150, cacheRead: 0, cacheWrite: 0, cost: { total: 0.01 } },
+				},
+			},
+			// User message with directives and steering hint tags
+			{
+				type: "message",
+				message: {
+					role: "user",
+					id: "user-1",
+					parentId: "assistant-1",
+					content: "Implement auth.\n\n[Directive: Close what you start.]\n\n<pi-flow-steering-hint id=\"test\">hint text</pi-flow-steering-hint>",
+					timestamp: 1715923201000,
+				},
+			},
+			// ToolResult message with directives, hints, details
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					id: "toolresult-1",
+					parentId: "assistant-1",
+					toolCallId: "flow-id-guard",
+					content: "Flow completed.\n\n[Directive: Verify results.]\n\n[Hint: Plan next step.]",
+					timestamp: 1715923202000,
+					details: { flowStyle: "build", mode: "fast", results: ["foo"] },
+				},
+			},
+			// batch_read toolResult (orphan, should be dropped)
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					id: "toolresult-br",
+					parentId: "assistant-1",
+					toolCallId: "batch_read-guard",
+					content: [{ type: "text", text: "Full file content here that should be stripped." }],
+					timestamp: 1715923203000,
+				},
+			},
+			// Standalone system event — should be dropped
+			{ type: "system", content: "Hidden system prompt", id: "sys-1" },
+			// model_change — should be dropped
+			{ type: "model_change", model: "glm-5.1", id: "mc-1" },
+			// thinking_level_change — should be dropped
+			{ type: "thinking_level_change", level: 2, id: "tlc-1" },
+			// custom_message — should be dropped
+			{ type: "custom_message", content: "Hidden continuation hook", id: "cm-1" },
+			// Unknown type — should be dropped
+			{ type: "unknown_type", content: "Should not leak", id: "unk-1" },
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, flowCache, { depth: 1 });
+
+		// ---- 1. CONTENT BLACKLIST: assert NONE of these patterns appear anywhere ----
+		const blacklistPatterns = [
+			"[Directive:",
+			"[Hint:",
+			"<pi-flow-steering-hint",
+			'"api":',
+			'"provider":',
+			'"model":',
+			'"stopReason":',
+			'"responseId":',
+			'"responseModel":',
+			'"thinking":',
+			'"thinkingSignature":',
+			'"reasoning":',
+			'"reasoningContent":',
+			'"reasoningSignature":',
+			'"timestamp":',
+			'"details":',
+			'"cacheRead":',
+			'"cacheWrite":',
+			'"cost":',
+			"batch_read",
+		];
+
+		for (const pattern of blacklistPatterns) {
+			expect(result).not.toContain(pattern);
+		}
+
+		// ---- 2. FIELD WHITELIST: assert each surviving entry only has allowed keys ----
+		const entries = parseSnapshot(result!);
+
+		// Allowed outer keys for session/header entries
+		const sessionWhitelist = new Set([
+			"type", "systemPrompt", "version", "cwd",
+			"forkedFrom", "forkedAt", "parentFlow", "depth", "parentId",
+		]);
+
+		// Allowed keys for ALL message roles
+		const messageBaseWhitelist = new Set([
+			"role", "id", "parentId", "content",
+		]);
+
+		// Extra allowed keys for assistant
+		const assistantExtraWhitelist = new Set([
+			"usage", "toolCallId", "toolName", "errorMessage",
+			"parentMessageId", "messageId",
+		]);
+
+		// Extra allowed keys for tool/toolResult
+		const toolExtraWhitelist = new Set([
+			"toolCallId", "toolName",
+		]);
+
+		for (const entry of entries) {
+			// Session/header entry
+			if (entry.type === "session" || (!entry.type && !entry.message)) {
+				for (const key of Object.keys(entry)) {
+					if (!sessionWhitelist.has(key)) {
+						throw new Error(
+							`Unexpected field '${key}' in session entry of child context — ` +
+							`add to whitelist or strip in sanitization`
+						);
+					}
+				}
+				continue;
+			}
+
+			// Message entry — check message object keys
+			if (entry.message) {
+				const role = entry.message.role;
+				const allowed = new Set(messageBaseWhitelist);
+				if (role === "assistant") {
+					for (const k of assistantExtraWhitelist) allowed.add(k);
+				} else if (role === "tool" || role === "toolResult") {
+					for (const k of toolExtraWhitelist) allowed.add(k);
+				}
+
+				for (const key of Object.keys(entry.message)) {
+					if (!allowed.has(key)) {
+						throw new Error(
+							`Unexpected field '${key}' in ${role} message of child context — ` +
+							`add to whitelist or strip in sanitization`
+						);
+					}
+				}
+
+				// Special check: usage must ONLY contain totalTokens
+				if (entry.message.usage && typeof entry.message.usage === "object") {
+					for (const uKey of Object.keys(entry.message.usage)) {
+						if (uKey !== "totalTokens") {
+							throw new Error(
+								`Unexpected usage sub-field '${uKey}' in assistant message — ` +
+								`strip in sanitization`
+							);
+						}
+					}
+				}
+			}
+		}
+	});
+});
