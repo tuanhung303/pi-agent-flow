@@ -179,6 +179,26 @@ export function buildForkSessionSnapshotJsonl(
 	const header = sessionManager.getHeader();
 	if (!header || typeof header !== "object") return null;
 
+	// Compress cwd in session header: relative to repo root if under it,
+	// otherwise basename only. Saves ~50-100 bytes per snapshot.
+	const repoRoot = process.cwd();
+	let compressedHeader = header as SessionEntry;
+	if (typeof compressedHeader.cwd === "string") {
+		const cwd = compressedHeader.cwd;
+		let compressedCwd: string;
+		if (cwd === repoRoot) {
+			compressedCwd = ".";
+		} else if (cwd.startsWith(repoRoot + "/") || cwd.startsWith(repoRoot + "\\")) {
+			compressedCwd = cwd.slice(repoRoot.length + 1);
+		} else {
+			const lastSep = Math.max(cwd.lastIndexOf("/"), cwd.lastIndexOf("\\"));
+			compressedCwd = lastSep >= 0 ? cwd.slice(lastSep + 1) : cwd;
+		}
+		if (compressedCwd !== cwd) {
+			compressedHeader = { ...compressedHeader, cwd: compressedCwd };
+		}
+	}
+
 	const branchEntries = sessionManager.getBranch();
 	const lines: string[] = [];
 
@@ -194,12 +214,12 @@ export function buildForkSessionSnapshotJsonl(
 		(firstType !== "session" && firstType !== "header") ||
 		firstId !== headerId
 	) {
-		lines.push(JSON.stringify(header));
+		lines.push(JSON.stringify(compressedHeader));
 	}
 
 	// Emit system event so the JSONL is self-contained — parsers can reconstruct
 	// full context without needing the markdown section.
-	const systemPrompt = (header as SessionEntry).systemPrompt;
+	const systemPrompt = compressedHeader.systemPrompt;
 	if (typeof systemPrompt === "string" && systemPrompt) {
 		lines.push(JSON.stringify({ type: "system", content: systemPrompt }));
 	}
@@ -1061,6 +1081,8 @@ export function compressToolResults(snapshot: string, cache: Map<string, Compres
 						: undefined;
 					if (flowArr && flowArr.length > 0 && typeof flowArr[0].type === 'string') {
 						flowTypeSuffix = `:${flowArr[0].type}`;
+					} else if (typeof (flowArgs as Record<string, unknown>).type === 'string') {
+						flowTypeSuffix = `:${(flowArgs as Record<string, unknown>).type}`;
 					}
 				}
 				const statusLabel = entry.message.isError ? 'failed' : 'completed';
@@ -1250,7 +1272,17 @@ function isEmptyAssistantMessage(message: SnapshotMessage): boolean {
 		if (textParts.length === 0) return true;
 
 		const allWhitespace = textParts.every((p) => p.text.trim() === "");
-		return allWhitespace;
+		if (allWhitespace) return true;
+
+		// Low-signal detection: short text with no actionable markers
+		const fullText = textParts.map((p) => p.text).join("");
+		if (fullText.length < 300) {
+			const hasFilePath = /\w+\.\w+/.test(fullText);
+			const hasToolReference = /\[[a-z_]+[^\]]*\]/.test(fullText);
+			const hasCodeBlock = fullText.includes("```");
+			const hasActionableMarkers = hasFilePath || hasToolReference || hasCodeBlock;
+			if (!hasActionableMarkers) return true;
+		}
 	}
 
 	return false;
@@ -1321,6 +1353,80 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 			message: {
 				...entry.message,
 				content: filteredContent,
+			},
+		}));
+	}
+
+	return `${result.join("\n")}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Flow tool call argument compression
+// ---------------------------------------------------------------------------
+
+/**
+ * Compress verbose `flow` tool call arguments in assistant messages.
+ *
+ * The child flow already receives its own `-p` activation prompt, so the full
+ * mission text inside the JSONL assistant message is pure duplication.
+ * Replaces the arguments with a compact summary `{type, aim, steps}`.
+ */
+export function compressFlowToolCallArgs(snapshot: string): string {
+	const lines = snapshot.trimEnd().split("\n");
+	const result: string[] = [];
+
+	for (const line of lines) {
+		let entry: SnapshotEntry;
+		try { entry = JSON.parse(line) as SnapshotEntry; } catch { result.push(line); continue; }
+
+		if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+			result.push(line);
+			continue;
+		}
+
+		const content = entry.message.content;
+		if (!Array.isArray(content)) {
+			result.push(line);
+			continue;
+		}
+
+		let modified = false;
+		const newContent = content.map((part: ContentPart) => {
+			if (part.type !== "toolCall" || part.name !== "flow") return part;
+
+			const args = part.arguments;
+			if (!args || typeof args !== "object") return part;
+
+			const flowArr = Array.isArray((args as Record<string, unknown>).flow)
+				? (args as Record<string, unknown>).flow as Array<Record<string, unknown>>
+				: undefined;
+
+			if (!flowArr || flowArr.length === 0) return part;
+
+			const firstFlow = flowArr[0];
+			const type = typeof firstFlow?.type === "string" ? firstFlow.type : undefined;
+			const aim = typeof firstFlow?.aim === "string" ? firstFlow.aim : undefined;
+			const steps = Array.isArray(firstFlow?.steps) ? firstFlow.steps.length : undefined;
+
+			if (!type && !aim && steps === undefined) return part;
+
+			modified = true;
+			return {
+				...part,
+				arguments: { type, aim, steps },
+			};
+		});
+
+		if (!modified) {
+			result.push(line);
+			continue;
+		}
+
+		result.push(JSON.stringify({
+			...entry,
+			message: {
+				...entry.message,
+				content: newContent,
 			},
 		}));
 	}
@@ -1411,7 +1517,7 @@ export interface SanitizeForkSnapshotOptions {
 export interface SanitizeForkSnapshotResult {
 	result: string | null;
 	passesApplied: string[];
-	stats: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[] } | null;
+	stats: { preBytes: number; postBytes: number; reductionPercent: number; passesApplied: string[]; passDeltas?: Record<string, number> } | null;
 }
 
 export function sanitizeForkSnapshot(
@@ -1574,10 +1680,17 @@ export function sanitizeForkSnapshot(
 				}
 			}
 
-			// Collapse empty assistant messages to a minimal continuation marker.
+			// Collapse empty/low-signal assistant messages to a minimal continuation marker.
 			if (message.role === "assistant" && isEmptyAssistantMessage(message)) {
+				const totalTokens = message.usage?.totalTokens;
 				const { usage: _usage, ...rest } = message;
-				message = { ...rest, content: "[assistant:continuation]" };
+				message = {
+					...rest,
+					...(totalTokens !== undefined ? { usage: { totalTokens } } : {}),
+					content: totalTokens !== undefined
+						? `[assistant: ${totalTokens} tokens, no action]`
+						: "[assistant:continuation]",
+				};
 				changed = true;
 				subPasses.add("collapseEmptyAssistantMessages");
 			}
@@ -1667,27 +1780,39 @@ export function sanitizeForkSnapshot(
 	}
 
 	const passesApplied: string[] = [];
+	const passDeltas: Record<string, number> = {};
+	const measureBytes = (s: string) => new TextEncoder().encode(s).length;
 
 	let sanitized = `${sanitizedLines.join("\n")}\n`;
 	passesApplied.push(...subPasses);
+	passDeltas["mainLoop"] = measureBytes(sanitized);
 
 	// Reparent orphaned parentIds after steering-hint messages were dropped.
 	sanitized = reparentOrphans(sanitized);
 	passesApplied.push("reparentOrphans");
+	passDeltas["reparentOrphans1"] = measureBytes(sanitized);
 
 	// Strip batch_read tool calls from assistant messages.
 	// Children don't have batch_read in their active tools.
 	sanitized = stripBatchReadToolCalls(sanitized);
 	passesApplied.push("stripBatchRead");
+	passDeltas["stripBatchRead"] = measureBytes(sanitized);
+
+	// Compress verbose flow tool call arguments in assistant messages.
+	sanitized = compressFlowToolCallArgs(sanitized);
+	passesApplied.push("compressFlowToolCallArgs");
+	passDeltas["compressFlowToolCallArgs"] = measureBytes(sanitized);
 
 	// Compress tool results (flow, batch, web, ask_user).
 	sanitized = compressToolResults(sanitized, cache, options?.depth ?? 1);
 	passesApplied.push("compressToolResults");
+	passDeltas["compressToolResults"] = measureBytes(sanitized);
 
 	// Reparent again after stripBatchRead and compressToolResults may have
 	// dropped additional messages, leaving new orphaned parentIds.
 	sanitized = reparentOrphans(sanitized);
 	passesApplied.push("reparentOrphans");
+	passDeltas["reparentOrphans2"] = measureBytes(sanitized);
 
 	// Telemetry: measure total delta across sanitization, stripping, and compression.
 	const postBytes = sanitized.length;
@@ -1702,6 +1827,7 @@ export function sanitizeForkSnapshot(
 		postBytes,
 		reductionPercent: Number(reduction),
 		passesApplied,
+		passDeltas,
 	};
 
 	return { result: sanitized, passesApplied, stats };

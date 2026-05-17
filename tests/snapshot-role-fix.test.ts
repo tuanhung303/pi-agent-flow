@@ -738,7 +738,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 				type: "message",
 				message: {
 					role: "assistant",
-					content: [{ type: "text", text: "Here is the summary of the codebase." }],
+					content: [{ type: "text", text: "Here is the summary of the codebase — see [scout] results." }],
 					timestamp: 6,
 				},
 			},
@@ -767,7 +767,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 
 		// Other messages preserved
 		expect(result).toContain("Read the codebase");
-		expect(result).toContain("Here is the summary of the codebase.");
+		expect(result).toContain("Here is the summary of the codebase — see [scout] results.");
 		expect(result).toContain("Now implement the feature");
 		expect(result).toContain("Let me read the files.");
 	});
@@ -1088,7 +1088,7 @@ describe("sanitizeForkSnapshot reparentOrphans regression", () => {
 		const entries = parseSnapshot(result!);
 
 		// batch_read tool call and result should be stripped
-		expect(entries.some((e: any) => e?.message?.content?.some((c: any) => c?.name === "batch_read"))).toBe(false);
+		expect(entries.some((e: any) => Array.isArray(e?.message?.content) && e?.message?.content?.some((c: any) => c?.name === "batch_read"))).toBe(false);
 		expect(entries.some((e: any) => e?.message?.toolCallId === "br-1")).toBe(false);
 
 		// Collect surviving IDs

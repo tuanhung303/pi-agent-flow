@@ -46,6 +46,9 @@ When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it fork
 | **W1** | Write deduplication (cross-turn) | ✅ Complete | `[batch:write] src/config.ts (1234 bytes)` | `[batch:write] src/config.ts` |
 | **E1** | Edit deduplication (cross-turn) | ✅ Complete | `[batch:edit] src/index.ts (2 blocks)` | `[batch:edit] src/index.ts` |
 | **Q1** | Web query deduplication | ✅ Complete | `[web:search] "query" · 2 results · first: Title` | `[web] N unique queries (S searches, F fetches) · latest per query below` |
+| **R1** | rg output compression | ✅ Complete | `[rg:ok] path · N matches · M files\n> head:\n...` | `[rg:ok] path · N matches · M files` |
+| **F1** | Flow tool call argument compression | ✅ Complete | `{type, aim, steps}` compact object | Same (pass-agnostic) |
+| **C1** | Low-signal assistant message collapsing | ✅ Complete | `[assistant: N tokens, no action]` | `[assistant:continuation]` (no tokens known) |
 
 ### Pending / Future Work
 
@@ -53,7 +56,6 @@ When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it fork
 |------|--------------|-----------|
 | **Cross-turn bash dedup** | If parent runs `npm test` every turn, child sees N bash results. Low ROI because bash IDs are unique per batch call. | `compressBatchResult` already handles intra-batch dedup; cross-turn would require new `DedupIndex` category. |
 | **Read content truncation tuning** | Currently truncates to header only. Could preserve first/last N lines for context. | `compressBatchResult` read section handling (~line 480). |
-| **rg output compression** | `rg` results currently pass through verbatim. Could compress to `[rg] N matches in M files`. | `KNOWN_SECTION_HEADERS` in `snapshot.ts:~181`. |
 | **Structured output validation** | `renderCompressedFlowResult` returns `undefined` if >50% file entries lack `path`. This safety net could be tightened. | `src/snapshot/snapshot.ts:~93-170`. |
 | **Cache miss placeholder** | `[flow] prior result · N chars — full context unavailable` is conservative. Could include a one-line summary if structured output failed but raw text is short. | `compressToolResults` cache-miss branch (~line 780). |
 
@@ -74,14 +76,16 @@ From `sanitizeForkSnapshot` (`snapshot.ts:~900-1345`):
 11. `stripReasoning` — remove `<thinking>` blocks.
 12. `stripTimestamps` — remove inner `message.timestamp`.
 13. `stripApiMetadata` — remove `api`, `provider`, `model`, `stopReason`, `responseId`, `responseModel`, `cost` (preserve `usage.totalTokens`).
-14. `stripDetails` — remove `details` from tool/toolResult messages.
-15. `stripSteeringHints` — remove `<pi-flow-steering-hint>` blocks.
-16. `stripStrategicHints` — remove `[Hint: Plan next step...]` blocks.
-17. `compressParentActivation` — at depth ≥ 2, collapse parent `<context-seal>...<mission>` to one-line preview.
-18. `reparentOrphans` — fix `parentId` references to dropped messages.
-19. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).
-20. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1).
-21. `reparentOrphans` — second pass after message drops.
+14. `collapseEmptyAssistantMessages` — collapse empty/low-signal assistant messages to `[assistant: N tokens, no action]`.
+15. `stripDetails` — remove `details` from tool/toolResult messages.
+16. `stripSteeringHints` — remove `<pi-flow-steering-hint>` blocks.
+17. `stripStrategicHints` — remove `[Hint: Plan next step...]` blocks.
+18. `compressParentActivation` — at depth ≥ 2, collapse parent `<context-seal>...<mission>` to one-line preview.
+19. `reparentOrphans` — fix `parentId` references to dropped messages.
+20. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).
+21. `compressFlowToolCallArgs` — compress verbose `flow` tool call arguments in assistant messages to `{type, aim, steps}`.
+22. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1/R1).
+23. `reparentOrphans` — second pass after message drops.
 
 ---
 

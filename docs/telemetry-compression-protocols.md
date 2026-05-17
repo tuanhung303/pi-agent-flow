@@ -535,6 +535,110 @@ These tokens are:
 
 ---
 
+## F1 — Flow Tool Call Argument Compression
+
+### Purpose
+Replace verbose `flow` tool call arguments in assistant messages with a compact summary. The child flow already receives its own `-p` activation prompt, so the full mission text inside the JSONL assistant message is pure duplication.
+
+### Current Format (before)
+```json
+{
+  "type": "toolCall",
+  "name": "flow",
+  "arguments": {
+    "flow": [
+      {
+        "type": "build",
+        "aim": "Clean workspace and generate fresh dumps",
+        "steps": ["step1", "step2", "step3", "step4", "step5", "step6"]
+      }
+    ]
+  }
+}
+```
+
+### Proposed Format (after)
+```json
+{
+  "type": "toolCall",
+  "name": "flow",
+  "arguments": {
+    "type": "build",
+    "aim": "Clean workspace and generate fresh dumps",
+    "steps": 6
+  }
+}
+```
+
+### Compression Rules
+- Extract `type`, `aim`, and `steps` (count) from the first element of `arguments.flow` array.
+- If `arguments.flow` is missing, empty, or the first element lacks all three fields, pass through unchanged.
+- `toolCallId`, `id`, and `name` are preserved exactly.
+- Multiple `flow` tool calls in a single assistant message are compressed independently.
+
+### Fallback Behavior
+- Non-flow tool calls pass through unchanged.
+- Malformed arguments (non-object, null) pass through unchanged.
+
+### Estimated Token Savings
+| Scenario | Current | F1 | Savings |
+|---|---|---|---|
+| Typical flow mission (200 chars) | ~50 tokens | ~8 tokens | ~84% |
+| Large flow with 10 steps | ~80 tokens | ~10 tokens | ~87% |
+
+---
+
+## C1 — Low-Signal Assistant Message Collapsing
+
+### Purpose
+Remove empty or low-signal assistant continuation messages that carry no actionable information. These messages bloat the context with noise like "Okay, I will proceed with that."
+
+### Criteria for Collapse
+An assistant message is collapsed when **all** of the following are true:
+- No tool calls present (`type: "toolCall"` parts).
+- Total text length < 300 characters.
+- No actionable markers: `[` (tool references), `` ` `` (code blocks), or `/` (file paths).
+
+### Current Format (before)
+```json
+{
+  "role": "assistant",
+  "content": [{ "type": "text", "text": "Okay, I will proceed with that." }],
+  "usage": { "totalTokens": 42, "input": 10, "output": 32 }
+}
+```
+
+### Proposed Format (after)
+```json
+{
+  "role": "assistant",
+  "content": "[assistant: 42 tokens, no action]",
+  "usage": { "totalTokens": 42 }
+}
+```
+
+If `totalTokens` is unknown:
+```json
+{
+  "role": "assistant",
+  "content": "[assistant:continuation]"
+}
+```
+
+### Conservation Rules
+- `usage.totalTokens` is preserved if present; all other `usage` fields are stripped.
+- `parentId` (both entry-level and message-level) is never modified.
+- Messages with tool calls are never collapsed, even if the text is short.
+- Messages at exactly 300 characters are **not** collapsed (strict `< 300` boundary).
+
+### Estimated Token Savings
+| Scenario | Current | C1 | Savings |
+|---|---|---|---|
+| Empty continuation message | ~12 tokens | ~4 tokens | ~67% |
+| Low-signal "I agree" message with usage | ~20 tokens | ~6 tokens | ~70% |
+
+---
+
 # Depth Behavior Matrix
 
 | Protocol | Depth 1 | Depth 2+ |
@@ -542,7 +646,9 @@ These tokens are:
 | **W1 (Write)** | `[batch:write] path (bytes)` | `[batch:write] path` |
 | **E1 (Edit)** | `[batch:edit] path (blocks)` | `[batch:edit] path` |
 | **X1 (Bash)** | `[bash:ok] id · exit N · tier · lines`<br>+ 3-line preview | `[bash:ok] id · exit N` |
-| **Q1 (Web)** | Individual compressed lines | Rolled-up `[web] N unique queries` list *(future work)* |
+| **F1 (Flow args)** | `{type, aim, steps}` compact object | Same (pass-agnostic) |
+| **C1 (Assistant collapse)** | `[assistant: N tokens, no action]` | `[assistant:continuation]` (no tokens known) |
+| **Q1 (Web)** | Individual compressed lines with superseded breadcrumbs | Rolled-up `[web] N unique queries` list at depth 2+ |
 
 ---
 
@@ -550,7 +656,7 @@ These tokens are:
 
 1. **Phase 1 (complete):** X1 bash compression — implemented and tested in `tests/snapshot-compress.test.ts`.
 2. **Phase 2 (complete):** W1 write dedup and E1 edit dedup — implemented and tested.
-3. **Phase 3 (future):** Q1 web query deduplication — lower-impact than bash compression but adds polish. Not yet implemented.
+3. **Phase 3 (complete):** Q1 web query deduplication — implemented and tested via `checkWebDedup` in `compressToolResults`.
 4. **Rollback:** Each phase is a discrete function. If a phase causes regressions in child flows, it can be disabled by removing the relevant option pass or reverting to the previous `compressBatchResult` signature (the old function is a one-line fallback).
 
 ---

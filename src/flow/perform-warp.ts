@@ -11,7 +11,7 @@ import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-age
 import { getGoalForSession, getGoal } from "./store.js";
 import { getLoop, recordSessionWarp, terminateLoop, setPendingWarpSessionId, clearPendingWarpSessionId } from "./loop.js";
 import { sanitizeBranchForWarp, SYSTEM_PROMPT, extractGoalFromPrompt, MAX_CONVERSATION_CHARS } from "./warp-utils.js";
-import { logError } from "../config/log.js";
+import { logWarn, logError } from "../config/log.js";
 import type { GoalEntry, LoopState } from "./types.js";
 
 export interface WarpFlow {
@@ -46,7 +46,7 @@ export async function distillForWarp(
     .filter((m: any) => m != null);
   const { messages: sanitizedMessages, passesApplied } = sanitizeBranchForWarp(agentMessages);
   if (process.env.PI_FLOW_DUMP_SNAPSHOT) {
-    logError(`[warp-sanitize] passes applied: ${passesApplied.join(", ")}`);
+    logWarn(`[warp-sanitize] passes applied: ${passesApplied.join(", ")}`);
   }
   const messages = convertToLlm(sanitizedMessages);
   let conversation = serializeConversation(messages);

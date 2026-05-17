@@ -1,7 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { compressToolResults } from "../src/snapshot/snapshot.js";
+import { compressToolResults, compressFlowToolCallArgs, sanitizeForkSnapshot } from "../src/snapshot/snapshot.js";
 import { evictCacheOverflow } from "../src/core/executor.js";
 import { stripStrategicHints } from "../src/steering/tool-utils.js";
+
+function parseSnapshot(snapshot: string): any[] {
+	return snapshot
+		.trimEnd()
+		.split("\n")
+		.filter((l) => l.length > 0)
+		.map((l) => JSON.parse(l));
+}
 
 // ---------------------------------------------------------------------------
 // stripStrategicHints
@@ -1931,5 +1939,420 @@ describe("compressToolResults — flow cache miss", () => {
 		expect(text).toContain("[Flow: scout accomplished]");
 		expect(text).toContain("src/auth.ts");
 		expect(text).toContain("grep: JWT");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// compressFlowToolCallArgs
+// ---------------------------------------------------------------------------
+
+describe("compressFlowToolCallArgs", () => {
+	it("compresses flow tool call arguments to compact summary", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: {
+								flow: [
+									{
+										type: "build",
+										aim: "Clean workspace and generate fresh dumps",
+										steps: ["step1", "step2", "step3", "step4", "step5", "step6"],
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		const lines = result.trimEnd().split("\n");
+		const assistantLine = lines.find((l) => l.includes('"role":"assistant"'))!;
+		const parsed = JSON.parse(assistantLine);
+		const toolCall = parsed.message.content[0];
+		expect(toolCall.name).toBe("flow");
+		expect(toolCall.arguments).toEqual({
+			type: "build",
+			aim: "Clean workspace and generate fresh dumps",
+			steps: 6,
+		});
+	});
+
+	it("leaves non-flow tool calls untouched", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "batch",
+							arguments: { o: [{ o: "read", p: "src/index.ts" }] },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"name":"batch"');
+		expect(result).toContain('"arguments":{"o":');
+	});
+
+	it("handles missing flow array gracefully", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: { intent: "do something" },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"arguments":{"intent":"do something"}');
+	});
+
+	it("handles empty flow array gracefully", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: { flow: [] },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"arguments":{"flow":[]}');
+	});
+
+	it("preserves toolCallId and id on compressed flow tool calls", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc-flow-1",
+							id: "tc-flow-1",
+							name: "flow",
+							arguments: {
+								flow: [{ type: "build", aim: "Fix bug" }],
+							},
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		const lines = result.trimEnd().split("\n");
+		const assistantLine = lines.find((l) => l.includes('"role":"assistant"'))!;
+		const parsed = JSON.parse(assistantLine);
+		const toolCall = parsed.message.content[0];
+		expect(toolCall.toolCallId).toBe("tc-flow-1");
+		expect(toolCall.id).toBe("tc-flow-1");
+		expect(toolCall.name).toBe("flow");
+	});
+
+	it("handles multiple flow tool calls in one message", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc-flow-a",
+							name: "flow",
+							arguments: {
+								flow: [{ type: "scout", aim: "Map files" }],
+							},
+						},
+						{
+							type: "toolCall",
+							toolCallId: "tc-flow-b",
+							name: "flow",
+							arguments: {
+								flow: [{ type: "build", aim: "Fix bug", steps: ["a", "b"] }],
+							},
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		const lines = result.trimEnd().split("\n");
+		const assistantLine = lines.find((l) => l.includes('"role":"assistant"'))!;
+		const parsed = JSON.parse(assistantLine);
+		const calls = parsed.message.content;
+		expect(calls).toHaveLength(2);
+		expect(calls[0].arguments).toEqual({ type: "scout", aim: "Map files", steps: undefined });
+		expect(calls[1].arguments).toEqual({ type: "build", aim: "Fix bug", steps: 2 });
+		expect(calls[0].toolCallId).toBe("tc-flow-a");
+		expect(calls[1].toolCallId).toBe("tc-flow-b");
+	});
+
+	it("returns part unchanged when flow element lacks type, aim, and steps", () => {
+		const snapshot = makeSnapshot([
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "toolCall",
+							toolCallId: "tc1",
+							name: "flow",
+							arguments: { flow: [{ other: "field" }] },
+						},
+					],
+				},
+			},
+		]);
+
+		const result = compressFlowToolCallArgs(snapshot);
+		expect(result).toContain('"arguments":{"flow":[{"other":"field"}]}');
+	});
+
+	it("preserves malformed arguments (null, string, number)", () => {
+		for (const malformed of [null, "string", 42]) {
+			const snapshot = makeSnapshot([
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								toolCallId: "tc1",
+								name: "flow",
+								arguments: malformed,
+							},
+						],
+					},
+				},
+			]);
+			const result = compressFlowToolCallArgs(snapshot);
+			expect(result).toContain(`"arguments":${JSON.stringify(malformed)}`);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// collapseEmptyAssistantMessages — low-signal extension
+// ---------------------------------------------------------------------------
+
+describe("sanitizeForkSnapshot — low-signal assistant collapse", () => {
+	it("collapses low-signal assistant messages (< 300 chars, no markers) and preserves totalTokens", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Okay, I will proceed with that." }],
+					usage: { totalTokens: 42, input: 10, output: 32 },
+				},
+			},
+		]);
+
+		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content).toBe("[assistant: 42 tokens, no action]");
+		expect(assistant.message.usage).toEqual({ totalTokens: 42 });
+		expect(passesApplied).toContain("collapseEmptyAssistantMessages");
+	});
+
+	it("does not collapse assistant messages with actionable markers", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Check src/index.ts for the bug." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Check src/index.ts for the bug.");
+	});
+
+	it("does not collapse assistant messages with code blocks", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Use ```npm test``` to verify." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Use ```npm test``` to verify.");
+	});
+
+	it("does not collapse assistant messages with tool references", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Run [bash:ok] to check." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Run [bash:ok] to check.");
+	});
+
+	it("does not collapse assistant messages over 300 chars", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "A".repeat(301) }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("A".repeat(301));
+	});
+
+	it("does not collapse assistant messages at exactly 300 chars", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "A".repeat(300) }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("A".repeat(300));
+	});
+
+	it("preserves parentId on collapsed assistant messages", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{ type: "message", id: "msg-prev", message: { role: "user", content: "Do it" } },
+			{
+				type: "message",
+				id: "msg-parent",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Okay, I will proceed with that." }],
+					usage: { totalTokens: 42 },
+					parentId: "msg-prev",
+				},
+				parentId: "msg-prev",
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content).toBe("[assistant: 42 tokens, no action]");
+		expect(assistant.message.parentId).toBe("msg-prev");
+		expect(assistant.parentId).toBe("msg-prev");
+	});
+
+	it("collapses backtick-only prose without actual tool calls", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Right — `batch_read` is read-only and safe to ignore." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content).toBe("[assistant:continuation]");
+	});
+
+	it("does not collapse assistant messages with real file paths", () => {
+		const snapshot = makeSnapshot([
+			{ type: "session", id: "sess-1" },
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Check src/foo.ts for the bug." }],
+				},
+			},
+		]);
+
+		const { result } = sanitizeForkSnapshot(snapshot, new Map(), { depth: 1 });
+		expect(result).toBeDefined();
+		const entries = parseSnapshot(result!);
+		const assistant = entries.find((e) => e?.message?.role === "assistant");
+		expect(assistant.message.content[0].text).toBe("Check src/foo.ts for the bug.");
 	});
 });

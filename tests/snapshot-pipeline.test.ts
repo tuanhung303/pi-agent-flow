@@ -41,6 +41,7 @@ const VALID_PASS_NAMES = new Set([
 	"compressToolResults",
 	"compressParentActivation",
 	"collapseEmptyAssistantMessages",
+	"compressFlowToolCallArgs",
 ]);
 
 const KNOWN_DEAD_PASS_NAMES = new Set(["sanitizeMessages"]);
@@ -556,7 +557,7 @@ describe("COLLAPSE EMPTY ASSISTANT MESSAGES", () => {
 				message: {
 					role: "assistant",
 					id: "msg-with-text",
-					content: [{ type: "text", text: "Hello" }],
+					content: [{ type: "text", text: "Hello — see [batch] results." }],
 					usage: { totalTokens: 10 },
 				},
 			},
@@ -567,20 +568,20 @@ describe("COLLAPSE EMPTY ASSISTANT MESSAGES", () => {
 		const entries = parseSnapshot(result!);
 
 		const emptyString = entries.find((e: any) => e?.message?.id === "msg-empty-string");
-		expect(emptyString?.message?.content).toBe("[assistant:continuation]");
-		expect(emptyString?.message?.usage).toBeUndefined();
+		expect(emptyString?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(emptyString?.message?.usage).toEqual({ totalTokens: 10 });
 
 		const whitespace = entries.find((e: any) => e?.message?.id === "msg-whitespace");
-		expect(whitespace?.message?.content).toBe("[assistant:continuation]");
-		expect(whitespace?.message?.usage).toBeUndefined();
+		expect(whitespace?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(whitespace?.message?.usage).toEqual({ totalTokens: 10 });
 
 		const emptyArray = entries.find((e: any) => e?.message?.id === "msg-empty-array");
-		expect(emptyArray?.message?.content).toBe("[assistant:continuation]");
-		expect(emptyArray?.message?.usage).toBeUndefined();
+		expect(emptyArray?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(emptyArray?.message?.usage).toEqual({ totalTokens: 10 });
 
 		const whitespaceArray = entries.find((e: any) => e?.message?.id === "msg-whitespace-array");
-		expect(whitespaceArray?.message?.content).toBe("[assistant:continuation]");
-		expect(whitespaceArray?.message?.usage).toBeUndefined();
+		expect(whitespaceArray?.message?.content).toBe("[assistant: 10 tokens, no action]");
+		expect(whitespaceArray?.message?.usage).toEqual({ totalTokens: 10 });
 
 		const withTool = entries.find((e: any) => e?.message?.id === "msg-with-tool");
 		expect(withTool?.message?.content).not.toBe("[assistant:continuation]");
@@ -591,7 +592,7 @@ describe("COLLAPSE EMPTY ASSISTANT MESSAGES", () => {
 		expect(withTool?.message?.usage).toBeDefined();
 
 		const withText = entries.find((e: any) => e?.message?.id === "msg-with-text");
-		expect(withText?.message?.content).toEqual([{ type: "text", text: "Hello" }]);
+		expect(withText?.message?.content).toEqual([{ type: "text", text: "Hello — see [batch] results." }]);
 		expect(withText?.message?.usage).toBeDefined();
 
 		expect(passesApplied).toContain("collapseEmptyAssistantMessages");
