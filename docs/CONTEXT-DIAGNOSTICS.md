@@ -26,12 +26,12 @@ pi
 
 ---
 
-## 2. Read the `compression-stats` JSONL Entry
+## 2. Read the `compression-stats` from `sanitizeForkSnapshot`
 
-Every sanitized snapshot ends with a trailing metadata line:
+Stats are returned **out-of-band** in the `stats` property of `sanitizeForkSnapshot`'s return value. They are **not** appended to the child-visible JSONL (that would be telemetry noise for the model). Dump consumers can access them via:
 
-```jsonl
-{"type":"compression-stats","preBytes":184320,"postBytes":2450,"reductionPercent":99}
+```json
+{"preBytes":184320,"postBytes":2450,"reductionPercent":99}
 ```
 
 | Field | Meaning | Threshold |
@@ -108,7 +108,7 @@ Every sanitized snapshot ends with a trailing metadata line:
 
 - [ ] `PI_FLOW_DEBUG_CONTEXT=1` shows per-tool compression ratios
 - [ ] `PI_FLOW_DUMP_SNAPSHOT` produces `.md` and `.txt` files for the affected flow
-- [ ] `compression-stats` JSONL entry is present at the end of the dump
+- [ ] `compression-stats` are present in the dump artifact header (out-of-band, not a JSONL line)
 - [ ] No `[flow] prior result · N chars (not cached or evicted)` placeholders for recent flows
 - [ ] `batch_read` tool calls are absent from child snapshot (should be stripped entirely)
 - [ ] Reasoning blocks are absent from assistant messages in dump

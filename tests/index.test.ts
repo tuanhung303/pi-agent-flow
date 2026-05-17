@@ -1283,7 +1283,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user"]);
+		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
 	});
 
 	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
@@ -1303,6 +1303,7 @@ describe("main agent tool restriction", () => {
 		expect(calledWith).toContain("bash");
 		expect(calledWith).toContain("flow");
 		expect(calledWith).toContain("web");
+		expect(calledWith).toContain("warp");
 	});
 
 	it("defers setActiveTools to session_start, not extension loading", async () => {
@@ -1334,7 +1335,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user"]);
+		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
 	});
 
 	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
@@ -1357,6 +1358,7 @@ describe("main agent tool restriction", () => {
 		expect(lastCall).toContain("bash");
 		expect(lastCall).toContain("flow");
 		expect(lastCall).toContain("web");
+		expect(lastCall).toContain("warp");
 	});
 
 	it("parses env PI_FLOW_TOOL_OPTIMIZE via parseBoolean (yes/on/no/off)", async () => {
@@ -1369,7 +1371,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user"]);
+		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
 	});
 
 	it("registers batch_read for main agent; batch/batch_bash_poll reserved for children", async () => {
@@ -1386,9 +1388,9 @@ describe("main agent tool restriction", () => {
 		expect(pi.getTool("batch_bash_poll")).toBeUndefined();
 		expect(pi.getTool("bash")).toBeUndefined();
 
-		// Main agent active tools: batch_read + flow + web + ask_user (batch and batch_bash_poll registered but not active)
+		// Main agent active tools: batch_read + flow + web + ask_user + warp (batch and batch_bash_poll registered but not active)
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user"]);
+		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
 	});
 
 	it("does NOT override active tools for child flows (depth > 0)", async () => {
@@ -1952,7 +1954,7 @@ describe("stripBatchReadToolCalls", () => {
 		expect(result).toEqual(snapshot);
 	});
 
-	it("handles assistant message with only batch_read calls (adds empty text part)", () => {
+	it("handles assistant message with only batch_read calls (drops the message)", () => {
 		const snapshot = [
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
 				{ type: "toolCall", name: "batch_read", toolCallId: "br-1", arguments: {} },
@@ -1961,10 +1963,10 @@ describe("stripBatchReadToolCalls", () => {
 
 		const result = stripBatchReadToolCalls(snapshot);
 
-		// Should add an empty text part to avoid empty content array
-		const parsed = result.trim().split("\n").map((l: string) => JSON.parse(l));
+		// Assistant message with no remaining content is dropped entirely
+		const parsed = result.trim().split("\n").filter((l: string) => l.length > 0).map((l: string) => JSON.parse(l));
 		const assistantMsg = parsed.find((e: any) => e.message?.role === "assistant");
-		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
+		expect(assistantMsg).toBeUndefined();
 	});
 
 	it("drops orphaned tool result messages for batch_read tool calls", () => {

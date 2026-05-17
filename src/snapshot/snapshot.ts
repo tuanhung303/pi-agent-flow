@@ -217,13 +217,6 @@ export function buildForkSessionSnapshotJsonl(
 		lines.push(JSON.stringify(compressedHeader));
 	}
 
-	// Emit system event so the JSONL is self-contained — parsers can reconstruct
-	// full context without needing the markdown section.
-	const systemPrompt = compressedHeader.systemPrompt;
-	if (typeof systemPrompt === "string" && systemPrompt) {
-		lines.push(JSON.stringify({ type: "system", content: systemPrompt }));
-	}
-
 	for (const entry of branchEntries) lines.push(JSON.stringify(entry));
 	return `${lines.join("\n")}\n`;
 }
@@ -1345,7 +1338,9 @@ export function stripBatchReadToolCalls(snapshot: string): string {
 		);
 
 		if (filteredContent.length === 0) {
-			filteredContent.push({ type: "text", text: "" });
+			// Skip assistant messages that have no content after stripping batch_read
+			// — an empty text placeholder wastes tokens and conveys nothing.
+			continue;
 		}
 
 		result.push(JSON.stringify({

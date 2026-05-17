@@ -424,7 +424,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 		expect(result).not.toContain("some result");
 	});
 
-	it("handles assistant with only batch_read `id`-field calls (adds empty text part)", () => {
+	it("handles assistant with only batch_read `id`-field calls (drops the message)", () => {
 		const snapshot = makeSnapshot([
 			{
 				type: "message",
@@ -442,7 +442,7 @@ describe("stripBatchReadToolCalls with production JSONL `id` field", () => {
 
 		const parsed = parseSnapshot(result);
 		const assistantMsg = parsed.find((e: any) => e.message?.role === "assistant");
-		expect(assistantMsg.message.content).toEqual([{ type: "text", text: "" }]);
+		expect(assistantMsg).toBeUndefined();
 	});
 
 	it("drops tool results when role is 'tool' (backward compat)", () => {

@@ -152,7 +152,7 @@ cat $(ls -t /tmp/pi-dump.scout.*.md | head -1)
 - [ ] No `<context-seal>` blocks inside JSONL `user` messages at depth 1 (they should only appear in the `-p` prompt, not the JSONL).
 - [ ] At depth ≥ 2, any `<context-seal>` inside JSONL is compressed to `[Parent flow activation stripped]`.
 - [ ] No raw flow tool results > 2000 chars (must be `[Flow: X accomplished]` or cache-miss placeholder).
-- [ ] `compression-stats` JSONL entry is present as the last line.
+- [ ] `compression-stats` are present in the return value (out-of-band, not a JSONL line).
 - [ ] `passesApplied` array includes `compressToolResults`, `stripBatchRead`, `reparentOrphans`.
 
 ### Step 6 — Zero Tech Debt Checklist
@@ -220,11 +220,11 @@ cat $(ls -t /tmp/pi-dump.scout.*.md | head -1)
 
 2. **Depth behavior is contractual.** Depth 1 = moderate compression with previews. Depth 2+ = maximum compression, no previews. Child flows at depth 2+ expect terse context.
 
-3. **The `compression-stats` trailing JSONL entry must remain parseable.** Its schema is:
+3. **The `compression-stats` object must remain parseable.** Its schema is:
    ```json
-   { "type": "compression-stats", "preBytes": N, "postBytes": N, "reductionPercent": N, "passesApplied": ["..."] }
+   { "preBytes": N, "postBytes": N, "reductionPercent": N, "passesApplied": ["..."] }
    ```
-   Adding new fields is safe. Removing fields breaks `buildDumpArtifact` in `tests/snapshot-integration.test.ts` and any external parsers.
+   It is returned out-of-band from `sanitizeForkSnapshot`, not appended to the JSONL. Adding new fields is safe. Removing fields breaks `buildDumpArtifact` in `tests/snapshot-integration.test.ts` and any external parsers.
 
 4. **Dump artifact format is contractual.** The `.md` / `.txt` twin file format is consumed by developers for debugging. Changes to the markdown header must be backward-compatible.
 
@@ -307,12 +307,11 @@ const entries = lines.map(l => JSON.parse(l));
 
 const toolResults = entries.filter(e => e?.message?.role === 'tool');
 const totalToolBytes = toolResults.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
-const stats = entries.find(e => e?.type === 'compression-stats');
-
 console.log('Entries:', entries.length);
 console.log('Tool results:', toolResults.length);
 console.log('Tool result bytes:', totalToolBytes);
-console.log('Compression stats:', stats);
+// Note: compression-stats are returned out-of-band from sanitizeForkSnapshot,
+// not as a JSONL entry. Access them via the dump artifact's markdown header.
 
 // Find the largest tool result
 const largest = toolResults.reduce((max, e) => {
