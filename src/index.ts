@@ -377,6 +377,7 @@ export default function (pi: ExtensionAPI) {
 				'Invoke: { "flow": [{ "type": "scout", "intent": "...", "aim": "...", "sessionMode": "default" }, ...] }',
 				"Session modes: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
 				"States: scout, debug, build, craft, audit, ideas.",
+				"Additionally, the `warp` tool (separate from this tool) distills context and spawns a fresh session — use it when the conversation is too large or you want to hand off to a clean session.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,

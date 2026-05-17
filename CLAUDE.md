@@ -210,6 +210,8 @@ Agent work is organized into two tiers. **Access is not the boundary — intent 
 >
 > The tier is also injected into the flow's `<activation>` tag as `tier="..."` so the model knows which candidate is running.
 
+> **Available tools for the orchestrator:** `flow` (spawn worker flows), `web` (search/fetch), `ask_user` (interactive prompts), and **`warp`** (distill context and hand off to a fresh session). The `warp` tool is separate from the `flow` tool — it is not a flow type.
+
 ### Warp Tool
 
 `warp` is **not** a flow type — it is an LLM-callable tool registered via `pi.registerTool`.
