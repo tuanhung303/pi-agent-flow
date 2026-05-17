@@ -297,7 +297,7 @@ describe('ScrambleStateManager', () => {
 	it('hasAnyActiveAnimations detects glitch', () => {
 		const base = 7_000_000;
 		manager.updateMsg(TEST_ID, 'init', base);
-		expect(manager.hasAnyActiveAnimations(base)).toBe(false);
+		expect(manager.hasAnyActiveAnimations(base)).toBe(true);
 		manager.updateAct(TEST_ID, 'read file.ts', base + 10);
 		expect(manager.hasAnyActiveAnimations(base + 10)).toBe(true);
 		manager.updateAct(TEST_ID, 'write file.ts', base + 1300);
@@ -385,6 +385,32 @@ describe('ScrambleStateManager', () => {
 		const stripped = stripAnsi(during.content);
 		expect(stripped).not.toContain('This is brand new streaming content');
 		expect(stripped.length).toBeLessThanOrEqual(midText.length + 10);
+	});
+
+	it('msg init builds glitch queue like aim/act', () => {
+		const base = 10_000_000;
+		const result = manager.updateMsg(TEST_ID, 'spawn scout', base, false, undefined, true);
+		expect(result.isAnimating).toBe(true);
+	});
+
+	it('msg prefix-similar change still animates with relaxed threshold', () => {
+		const base = 11_000_000;
+		manager.updateMsg(TEST_ID, 'Running scout', base, false, undefined, true);
+		const result = manager.updateMsg(TEST_ID, 'Running build', base + 400, false, undefined, true);
+		expect(result.isAnimating).toBe(true);
+	});
+
+	it('msg cooldown suppresses rapid re-flash but updates text', () => {
+		const base = 12_000_000;
+		manager.updateMsg(TEST_ID, 'first', base, false, undefined, true);
+		// Wait for init glitch to finish (~1000ms), then trigger a new glitch
+		manager.updateMsg(TEST_ID, 'second', base + 2000, false, undefined, true);
+		expect(manager.hasAnyActiveAnimations(TEST_ID, base + 2000)).toBe(true);
+		// Rapid update within 300ms should be suppressed by cooldown, but text still updates
+		const result = manager.updateMsg(TEST_ID, 'third', base + 2100, false, undefined, true);
+		expect(stripAnsi(result.content)).toBe('third');
+		// Line may still be animating from the previous glitch queue
+		expect(result.isAnimating).toBe(true);
 	});
 
 	it('shrink transition builds proportional fade-out queue', () => {

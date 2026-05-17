@@ -851,6 +851,22 @@ describe("updateSmoothedTps / drainSmoothedTps", () => {
     expect(tpsAfter).toBeGreaterThan(tpsBefore);
     expect(tpsAfter).toBeLessThan(300);
   });
+
+  it("computes TPS on a zero-token emit when enough time and pendingTokens have accumulated", async () => {
+    const r = makeResult();
+    updateSmoothedTps(r, 100); // seed lastEmitTime
+
+    // Immediate follow-up: accumulates but does not compute (deltaMs ≈ 0)
+    updateSmoothedTps(r, 50);
+    expect(drainSmoothedTps(r)).toBe(0);
+
+    // Wait past the sample gate, then pass 0 new tokens (simulating a render-timer
+    // tick that drains zero streaming chars because they were already consumed).
+    // pendingTokens is still 50 and deltaMs ≥ 50ms, so TPS should compute.
+    await new Promise((res) => setTimeout(res, 60));
+    updateSmoothedTps(r, 0);
+    expect(drainSmoothedTps(r)).toBeGreaterThan(0);
+  });
 });
 
 describe("getFlowSummaryText — batch", () => {

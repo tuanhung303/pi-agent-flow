@@ -109,7 +109,7 @@ export function isMinorStaticMutation(oldStr: string, newStr: string): boolean {
 	for (let i = 0; i < minLen; i++) {
 		if (oldStr[i] === newStr[i]) same++;
 	}
-	return same / maxLen >= 0.5;
+	return same / maxLen >= 0.75;
 }
 
 export function selectScrambleChar(depth: number, dist: number, elapsed: number, seed?: number, textLen?: number): string {

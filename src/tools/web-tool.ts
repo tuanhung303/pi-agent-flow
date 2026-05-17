@@ -83,8 +83,8 @@ function formatWebOpsSummary(args: Record<string, unknown>): string {
 		else if (op.o === "fetch") counts.fetch++;
 	}
 	const parts: string[] = [];
-	if (counts.search) parts.push(`${counts.search} search`);
-	if (counts.fetch) parts.push(`${counts.fetch} fetch`);
+	if (counts.search) parts.push(`${counts.search} × search`);
+	if (counts.fetch) parts.push(`${counts.fetch} × fetch`);
 	return parts.join(", ");
 }
 

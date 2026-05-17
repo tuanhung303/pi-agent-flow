@@ -171,12 +171,8 @@ function getTpsState(result: object): TpsState {
 export function updateSmoothedTps(result: object, estimatedTokens: number): void {
 	const tracker = getTpsState(result);
 
-	if (estimatedTokens <= 0) {
-		if (tracker.pauseAfterNextEmit) {
-			tracker.lastEmitTime = 0;
-			tracker.pauseAfterNextEmit = false;
-		}
-		return;
+	if (estimatedTokens > 0) {
+		tracker.pendingTokens += estimatedTokens;
 	}
 
 	if (tracker.lastEmitTime === 0) {
@@ -186,7 +182,6 @@ export function updateSmoothedTps(result: object, estimatedTokens: number): void
 		return;
 	}
 
-	tracker.pendingTokens += estimatedTokens;
 	const now = Date.now();
 	const deltaMs = now - tracker.lastEmitTime;
 	if (deltaMs < MIN_TPS_SAMPLE_MS) {
@@ -199,6 +194,19 @@ export function updateSmoothedTps(result: object, estimatedTokens: number): void
 		}
 		return;
 	}
+
+	// Enough time has passed — compute TPS if we have tokens, otherwise just
+	// reset the clock so the next batch is measured cleanly.
+	if (tracker.pendingTokens <= 0) {
+		if (tracker.pauseAfterNextEmit) {
+			tracker.lastEmitTime = 0;
+			tracker.pauseAfterNextEmit = false;
+		} else {
+			tracker.lastEmitTime = now;
+		}
+		return;
+	}
+
 	const deltaSec = deltaMs / 1000;
 	let instantRate = (tracker.pendingTokens * TPS_CALIBRATION) / deltaSec;
 	if (instantRate > MAX_INSTANT_TPS) {

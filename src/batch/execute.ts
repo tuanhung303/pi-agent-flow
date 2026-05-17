@@ -227,10 +227,14 @@ export async function executeOperations(
 	const includeLimitWarnings = options.includeLimitWarnings ?? true;
 
 	let lastUpdateTime = 0;
+	let finalUpdateEmitted = false;
 	function emitPartialUpdate() {
 		if (!onUpdate) return;
 		const now = Date.now();
-		if (now - lastUpdateTime < 100) return;
+		const isFinal = results.length === operations.length;
+		if (!isFinal && now - lastUpdateTime < 100) return;
+		if (isFinal && finalUpdateEmitted) return;
+		finalUpdateEmitted = isFinal;
 		lastUpdateTime = now;
 		const partialSummary = buildSummary(
 			counts,
@@ -473,9 +477,21 @@ export async function executeOperations(
 					throw new Error(`Unknown operation type: ${op.o}`);
 			}
 		} catch (err) {
-			counts.error++;
 			const message = err instanceof Error ? err.message : String(err);
 
+			// Treat mid-flight rg abort as skipped rather than error
+			if (message === "Aborted" && signal?.aborted) {
+				counts.skipped++;
+				results.push({
+					op: op.o,
+					path: op.p,
+					status: "skipped",
+					error: "Operation aborted.",
+				});
+				continue;
+			}
+
+			counts.error++;
 			// Enrich file-not-found errors with fuzzy filename suggestions
 			let hint = getErrorHint(message);
 			if (
@@ -501,6 +517,7 @@ export async function executeOperations(
 		}
 		emitPartialUpdate();
 	}
+	emitPartialUpdate();
 	// Build the enhanced summary and content text
 	const summary = buildSummary(counts, errors, truncatedFiles, aggregateLimitSkipped, aggregateByteLimitSkipped);
 	const contentText = buildContentText(summary, results);
@@ -529,35 +546,37 @@ function buildSummary(
 	const successParts: string[] = [];
 	if (counts.read > 0)
 		successParts.push(
-			`${counts.read} read${counts.read > 1 ? "s" : ""}`,
+			`${counts.read} × read`,
 		);
 	if (counts.write > 0)
 		successParts.push(
-			`${counts.write} write${counts.write > 1 ? "s" : ""}`,
+			`${counts.write} × write`,
 		);
 	if (counts.edit > 0)
 		successParts.push(
-			`${counts.edit} edit${counts.edit > 1 ? "s" : ""}`,
+			`${counts.edit} × edit`,
 		);
 	if (counts.delete > 0)
 		successParts.push(
-			`${counts.delete} delete${counts.delete > 1 ? "s" : ""}`,
+			`${counts.delete} × delete`,
 		);
 	if (counts.rg > 0)
 		successParts.push(
-			`${counts.rg} rg${counts.rg > 1 ? "s" : ""}`,
+			`${counts.rg} × rg`,
 		);
 
 	if (counts.error === 0) {
-		// All success
-		parts.push(`${totalOps} operations: ${successParts.join(", ")}`);
+		// All success (or skipped)
+		const summaryParts = [...successParts];
+		if (counts.skipped > 0) summaryParts.push(`${counts.skipped} skipped`);
+		parts.push(`operations: ${summaryParts.join(", ")}`);
 	} else {
 		// Mixed success/failure
 		parts.push(
 			`${counts.error} failed${counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""}`,
 		);
 		if (totalSuccess > 0) {
-			parts.push(`  ${successParts.join(", ")} ok`);
+			parts.push(`  operations: ${successParts.join(", ")}`);
 		}
 		for (const err of errors) {
 			const hint = err.hint ?? "";
@@ -644,6 +663,8 @@ function buildContentText(summary: string, results: OpResult[]): string {
 			}
 		} else if (r.status === "error") {
 			sections.push(`\n--- ${r.op}: ${r.path} ---\nError: ${r.error}`);
+		} else if (r.status === "skipped") {
+			sections.push(`\n--- ${r.op}: ${r.path} ---\n${r.error ?? "Skipped"}`);
 		}
 	}
 

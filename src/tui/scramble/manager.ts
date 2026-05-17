@@ -539,12 +539,19 @@ export class ScrambleStateManager {
 			state.initialized = true;
 			state.displayedText = visibleText;
 			state.lastAnimTime = now;
+			if (this.animationConfig.glitch) {
+				state.glitchQueue = buildMsgGlitchQueue('', visibleText);
+				state.targetText = visibleText;
+				state.startTime = now;
+				state.lastGlitchTime = now;
+				state.glitchFrame = 0;
+			}
 		} else if (staticLine && state.initialized) {
 			const oldText = state.lastText;
 			const textChanged = oldText !== visibleText;
 			state.lastText = visibleText;
 			const oldDisplayed = state.displayedText || '';
-			state.displayedText = visibleText;
+			let willAnimate = false;
 			if (textChanged) {
 				if (isMinorStaticMutation(oldText, visibleText)) {
 					// minor mutation — don't restart animation
@@ -559,11 +566,13 @@ export class ScrambleStateManager {
 							state.startTime = now;
 							state.lastGlitchTime = now;
 							state.glitchFrame = 0;
+							willAnimate = true;
 						} else if (state.glitchQueue.length > 0) {
 							state.pendingGlitch = buildMsgGlitchQueue(oldDisplayed, visibleText);
 							state.pendingOldDisplayed = oldDisplayed;
 							state.pendingNewDisplayed = visibleText;
 							state.pendingStartTime = now;
+							willAnimate = true;
 						}
 					}
 				}
@@ -574,6 +583,9 @@ export class ScrambleStateManager {
 				state.pendingOldDisplayed = '';
 				state.pendingNewDisplayed = '';
 				state.pendingStartTime = 0;
+			}
+			if (!willAnimate) {
+				state.displayedText = visibleText;
 			}
 		} else {
 			processLine(state, visibleText, now, 'msg', this.animationConfig.glitch);
