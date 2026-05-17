@@ -2,12 +2,21 @@
  * batch — constants and shared types.
  */
 
+import { logWarn } from "../config/log.js";
+
+function getEnvInt(name: string, fallback: number): number {
+	const raw = process.env[name];
+	if (!raw) return fallback;
+	const parsed = parseInt(raw, 10);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Limits
 // ---------------------------------------------------------------------------
 
-export const MAX_LINES = 3000;
-export const MAX_BYTES = 100 * 1024; // 100KB
+export const MAX_LINES = getEnvInt("PI_BATCH_MAX_LINES", 3000);
+export const MAX_BYTES = getEnvInt("PI_BATCH_MAX_BYTES", 100 * 1024); // 100KB (Pi spec: 50KB)
 export const SAFE_FULL_READ_LIMIT = 400;
 export const TARGETED_READ_LINE_LIMIT = 500;
 export const MAX_CONTEXT_MAP_ENTRIES = 100;
@@ -15,8 +24,24 @@ export const MAX_TOTAL_RESULT_LINES = 1500;
 export const BATCH_READ_MAX_TOTAL_BYTES = 150 * 1024; // 150KB
 export const BASH_SOFT_TIMEOUT_MS = 20_000;
 export const BASH_POLL_TAIL_LINES = 50;
-export const MAX_BASH_OUTPUT_BYTES = 100 * 1024; // 100KB
-export const MAX_BASH_OUTPUT_LINES = 4000;
+export const MAX_BASH_OUTPUT_BYTES = getEnvInt("PI_BASH_MAX_BYTES", 100 * 1024); // 100KB (Pi spec: 50KB)
+export const MAX_BASH_OUTPUT_LINES = getEnvInt("PI_BASH_MAX_LINES", 4000);
+
+// Pi spec limits for warnings
+const PI_SPEC_MAX_LINES = 2000;
+const PI_SPEC_MAX_BYTES = 50 * 1024;
+
+if (
+	MAX_LINES > PI_SPEC_MAX_LINES ||
+	MAX_BYTES > PI_SPEC_MAX_BYTES ||
+	MAX_BASH_OUTPUT_LINES > PI_SPEC_MAX_LINES ||
+	MAX_BASH_OUTPUT_BYTES > PI_SPEC_MAX_BYTES
+) {
+	logWarn(
+		`[pi-agent-flow] Batch limits exceed Pi spec (lines>${PI_SPEC_MAX_LINES}, bytes>${PI_SPEC_MAX_BYTES}). ` +
+		`Current: MAX_LINES=${MAX_LINES}, MAX_BYTES=${MAX_BYTES}, MAX_BASH_OUTPUT_LINES=${MAX_BASH_OUTPUT_LINES}, MAX_BASH_OUTPUT_BYTES=${MAX_BASH_OUTPUT_BYTES}`,
+	);
+}
 
 // ---------------------------------------------------------------------------
 // Shell output compression

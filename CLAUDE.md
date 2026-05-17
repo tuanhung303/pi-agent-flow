@@ -292,6 +292,17 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render). |
 | `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect. |
 | `PI_ASK_USER_TIMEOUT` | Override the ask_user default timeout in seconds (e.g., `60` for 1 minute). |
+| `PI_BATCH_MAX_LINES` | Override the default batch max lines limit (default 3000, Pi spec: 2000). |
+| `PI_BATCH_MAX_BYTES` | Override the default batch max bytes limit (default 102400, Pi spec: 51200). |
+| `PI_BASH_MAX_LINES` | Override the default bash max output lines limit (default 4000, Pi spec: 2000). |
+| `PI_BASH_MAX_BYTES` | Override the default bash max output bytes limit (default 102400, Pi spec: 51200). |
+| `PI_FLOW_SIGKILL_TIMEOUT_MS` | Override the default SIGKILL timeout in milliseconds (default 5000). |
+| `PI_FLOW_FINISH_KILL_GRACE_MS` | Override the default finish kill grace period in milliseconds (default 5000). |
+| `PI_FLOW_AGENT_END_GRACE_MS` | Override the default agent end grace period in milliseconds (default 2000). |
+| `PI_FLOW_TIME_BUDGET_WARNING_MS` | Override the default flow time budget warning threshold in milliseconds (default 120000). |
+| `PI_FLOW_FINAL_URGE_MS` | Override the default final urge threshold in milliseconds (default 135000). |
+| `PI_FLOW_REPORTING_GRACE_MS` | Override the default reporting grace period in milliseconds (default 90000). |
+| `PI_FLOW_SNAP_THRESHOLD_MS` | Override the default snap threshold in milliseconds (default 120000). |
 
 ## Flow Settings
 

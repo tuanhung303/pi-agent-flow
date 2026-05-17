@@ -26,14 +26,21 @@ import { logWarn, logError } from '../config/log.js';
 import { DEFAULT_AGENT_SESSION_MODE, getAgentSessionTimeoutMs, type AgentSessionMode } from "./session-mode.js";
 import type { GoalContext } from "../flow/types.js";
 
+function getEnvInt(name: string, fallback: number): number {
+	const raw = process.env[name];
+	if (!raw) return fallback;
+	const parsed = parseInt(raw, 10);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const isWindows = process.platform === "win32";
-const SIGKILL_TIMEOUT_MS = 5000;
-const FINISH_KILL_GRACE_MS = 5_000; // wait 5s after finish() before force-killing the child process
-const AGENT_END_GRACE_MS = 2000;
-const FLOW_TIME_BUDGET_WARNING_MS = 2 * 60 * 1000; // warn 2 min before kill
-const FLOW_FINAL_URGE_MS = 135 * 1000; // final urge 135 s (2m15s) before kill (increased from 30s for wider summary window)
-const REPORTING_GRACE_MS = 90_000; // grace period after timeout for agent to report findings (increased from 10s to 90s)
-const SNAP_THRESHOLD_MS = 120_000; // threshold for proportional short-budget timer logic
+const SIGKILL_TIMEOUT_MS = getEnvInt("PI_FLOW_SIGKILL_TIMEOUT_MS", 5000);
+const FINISH_KILL_GRACE_MS = getEnvInt("PI_FLOW_FINISH_KILL_GRACE_MS", 5_000); // wait 5s after finish() before force-killing the child process
+const AGENT_END_GRACE_MS = getEnvInt("PI_FLOW_AGENT_END_GRACE_MS", 2000);
+const FLOW_TIME_BUDGET_WARNING_MS = getEnvInt("PI_FLOW_TIME_BUDGET_WARNING_MS", 2 * 60 * 1000); // warn 2 min before kill
+const FLOW_FINAL_URGE_MS = getEnvInt("PI_FLOW_FINAL_URGE_MS", 135 * 1000); // final urge 135 s (2m15s) before kill (increased from 30s for wider summary window)
+const REPORTING_GRACE_MS = getEnvInt("PI_FLOW_REPORTING_GRACE_MS", 90_000); // grace period after timeout for agent to report findings (increased from 10s to 90s)
+const SNAP_THRESHOLD_MS = getEnvInt("PI_FLOW_SNAP_THRESHOLD_MS", 120_000); // threshold for proportional short-budget timer logic
 const FLOW_TOOL_SUMMARY_GRACE_MS = FLOW_FINAL_URGE_MS; // bash/tool abort lead time so the agent can summarize
 import {
 	FLOW_DEPTH_ENV,
@@ -58,7 +65,13 @@ const FLOW_REMINDER_FILE_ENV = "PI_FLOW_REMINDER_FILE";
 const FLOW_DUMP_SNAPSHOT_ENV = "PI_FLOW_DUMP_SNAPSHOT";
 
 const packageJsonPath = path.join(path.dirname(new URL(import.meta.url).pathname), "../..", "package.json");
-const { version: pipelineVersion } = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+let pipelineVersion = "0.0.0";
+try {
+	const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+	pipelineVersion = pkg.version ?? "0.0.0";
+} catch {
+	/* best-effort: fallback to 0.0.0 if package.json is missing or malformed */
+}
 
 // ---------------------------------------------------------------------------
 // Global child process group tracking for signal propagation
@@ -172,8 +185,8 @@ function cleanupFlowTempDir(dir: string | null): void {
 	if (!dir) return;
 	try {
 		fs.rmSync(dir, { recursive: true, force: true });
-	} catch {
-		/* ignore */
+	} catch (err) {
+		logWarn(`[pi-agent-flow] cleanupFlowTempDir failed: ${err}`);
 	}
 }
 
@@ -235,7 +248,9 @@ function cleanupStaleDumps(dumpPath: string, maxAgeHours = 168): void {
 		if (deleted > 0) {
 			logError(`[pi-agent-flow] Cleaned ${deleted} stale dump file(s) from ${dir}`);
 		}
-	} catch { /* ignore all errors silently */ }
+	} catch (err) {
+		logWarn(`[pi-agent-flow] cleanupStaleDumps failed: ${err}`);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +724,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				stdio: ["pipe", "pipe", "pipe"],
 				// Process group on Unix so we can kill all descendants on timeout/abort.
 				detached: !isWindows,
+				...(signal ? { signal } : {}),
 				env: {
 					...process.env,
 					[FLOW_DEPTH_ENV]: String(nextDepth),
