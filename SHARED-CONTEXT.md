@@ -11,12 +11,12 @@
 
 ### 1.1 The Four-Part Activation Prompt (`-p`)
 
-When the orchestrator spawns a child flow, it constructs a single prompt string passed via `pi -p`. This prompt has **four sequential phases**, hard-coded in `src/core/flow.ts` (`buildFlowArgs`, lines ~321–495):
+When the root state spawns a child flow, it constructs a single prompt string passed via `pi -p`. This prompt has **four sequential phases**, hard-coded in `src/core/flow.ts` (`buildFlowArgs`, lines ~321–495):
 
 | Phase | XML Tag | Purpose | Source |
 |-------|---------|---------|--------|
 | **1. Context Seal** | `<context-seal>` | Declares that all conversation history above this line is sealed and for situational awareness only. Child must not respond to it. | Hard-coded string in `buildFlowArgs` |
-| **2. Activation** | `<activation flow="…" depth="…" tools="…" tier="…">` | Injects role, available tools, delegation guards, flow list, time budget, and tier. | Dynamically generated from `flow` config + `depth.ts` |
+| **2. Activation** | `<activation flow="…" depth="…" tools="…" tier="…">` | Injects role, available tools, transition guards, flow list, time budget, and tier. | Dynamically generated from `flow` config + `depth.ts` |
 | **3. Directive** | `<directive>` | Contains the flow's own `systemPrompt` (from front-matter) plus structured-output instructions when enabled. | `flow.systemPrompt` |
 | **4. Mission** | `<mission>` | The user-provided `intent` plus optional `acceptance` criteria and execution instructions. | Caller-provided `intent` / `acceptance` |
 
@@ -34,8 +34,8 @@ The child process receives a `--session <tmpfile>.jsonl` argument containing a *
 - A trailing `compression-stats` entry with `preBytes`, `postBytes`, `reductionPercent`, `passesApplied`.
 
 **What the snapshot explicitly drops:**
-- `system` events (parent orchestrator prompt stripped)
-- `custom_message` events (orchestrator hidden instructions, e.g. flow-continuation hooks)
+- `system` events (parent root state prompt stripped)
+- `custom_message` events (root state hidden instructions, e.g. flow-continuation hooks)
 - `model_change` / `thinking_level_change` events (parent config leaked)
 - Messages containing steering-hint tags
 - `batch_read` tool calls (children don't have this tool)
@@ -62,7 +62,7 @@ Before the snapshot reaches the child, three global passes mutate the JSONL **af
 
 ### 1.4 Depth / Tier / Guard Propagation
 
-Delegation state travels via **two channels**:
+Transition state travels via **two channels**:
 
 | Channel | Mechanism | What It Carries |
 |---------|-----------|-----------------|
@@ -70,14 +70,14 @@ Delegation state travels via **two channels**:
 | **Activation prompt** | Inline in `-p` | `depth="current/max"`, `cycles: blocked/off`, `stack: (root)` or `a -> b -> c` |
 
 **Key constants** (`src/core/depth.ts`):
-- `DEFAULT_MAX_DELEGATION_DEPTH = 3`
-- `DEFAULT_PREVENT_CYCLE_DELEGATION = true`
+- `DEFAULT_MAX_TRANSITION_DEPTH = 3`
+- `DEFAULT_PREVENT_CYCLE_TRANSITION = true`
 
 **Evidence from dumps:** The `<activation>` block shows `depth="1/3"`, `cycles: blocked`, `stack: (root)`. The child process reads these env vars to reconstruct `FlowDepthConfig` locally.
 
 ### 1.5 Env-Var Propagation as Control Plane
 
-The orchestrator spawns the child with a **fresh environment** that inherits the parent process env but overrides specific flow-control variables (`src/core/flow.ts`, lines ~700–720):
+The root state spawns the child with a **fresh environment** that inherits the parent process env but overrides specific flow-control variables (`src/core/flow.ts`, lines ~700–720):
 
 ```
 PI_FLOW_DEPTH       = nextDepth          (parentDepth + 1)
@@ -213,7 +213,7 @@ The current architecture (JSONL snapshot + reconstructed `-p` prompt) has served
 
 ---
 
-## 4. CONTRACT — Orchestrator ↔ Child Flow
+## 4. CONTRACT — Root state ↔ Child Flow
 
 ### 4.1 Guaranteed
 

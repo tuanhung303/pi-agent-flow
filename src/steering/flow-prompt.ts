@@ -37,7 +37,7 @@ export function computeActiveTools(optimize: boolean): string[] {
 /**
  * Build the before_agent_start system prompt augmentation.
  *
- * Adds web steering (when tool optimize is off) and the flow delegation
+ * Adds web steering (when tool optimize is off) and the flow transition
  * guide with guard info. The steering hint is NOT included here — it
  * is injected dynamically by the context hook in index.ts.
  *
@@ -47,7 +47,7 @@ export function computeActiveTools(optimize: boolean): string[] {
 export function buildBeforeAgentStartPrompt(
 	event: BeforeAgentStartEvent,
 	toolOptimize: boolean,
-	canDelegate: boolean,
+	canTransition: boolean,
 	discoveredFlows: FlowConfig[],
 	depthConfig: FlowDepthConfig,
 ): string | undefined {
@@ -76,7 +76,7 @@ export function buildBeforeAgentStartPrompt(
 			webInstructions.map((line) => `- ${line}`).join("\n");
 	}
 
-	if (!canDelegate || discoveredFlows.length === 0) {
+	if (!canTransition || discoveredFlows.length === 0) {
 		return systemPrompt;
 	}
 
@@ -87,7 +87,7 @@ export function buildBeforeAgentStartPrompt(
 		})
 		.join("\n");
 
-	// Orchestrator gets the full guide; child flows get a minimal version
+	// Root state gets the full guide; child flows get a minimal version
 	if (currentDepth > 0) {
 		return (
 			systemPrompt +

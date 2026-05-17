@@ -944,7 +944,7 @@ export class DynamicScrambleText implements Component {
 	}
 }
 
-/** Standalone setter that delegates to the singleton manager. */
+/** Standalone setter that transitions to the singleton manager. */
 export function setAnimationConfig(config: AnimationConfig): void {
 	scrambleManager.setAnimationConfig(config);
 }

@@ -19,11 +19,11 @@ export const STEERING_HINT_CLOSE_TAG = `</pi-flow-steering-hint id="${STEERING_H
 
 export const STEERING_HINT =
 	`${STEERING_HINT_OPEN_TAG}\n` +
-	`You are the orchestrator. You have batch_read, flow, web, and ask_user.\n` +
-	`You do NOT have bash or write. Delegate all implementation to flows.\n\n` +
-	`- Context: Answer directly if possible; otherwise, investigate first, then delegate.\n` +
+	`You are the root state. You have batch_read, flow, web, and ask_user.\n` +
+	`You do NOT have bash or write. Transition all implementation to flows.\n\n` +
+	`- Context: Answer directly if possible; otherwise, investigate first, then transition.\n` +
 	`- Acts: [Route all git, bash, CLI, or terminal tasks to \`build\` flow, For major conflicts or misaligned goals use ask_user, For lengthy plans with many steps use ask_user to confirm main points before proceeding]\n` +
-	`- Mindset: Gather context before acting. Investigate, discuss, plan — then delegate.\n` +
+	`- Mindset: Gather context before acting. Investigate, discuss, plan — then transition.\n` +
 	`- Anti-patterns: [Never implement directly, Never ask what you can discover with tools, Never skip investigation]\n` +
 	`- Workflow: Scouts must complete 5 steps (Survey → Inspect → Trace → Report → Validate). Reject and resend if Validate is missing. For quick directional signals use sessionMode snap (90s sprint).\n` +
 	`- Markers: Preserve exactly ([V] Verified, [I] Inferred, [A] Assumed, [U] Unknown). Never present [A] or [U] as facts to the user. Dispatch a validation scout if critical claims are [A]/[U].\n` +

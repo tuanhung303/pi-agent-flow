@@ -8,7 +8,7 @@
  * Child flows also receive a hard deadline from the parent runner. When a
  * bash command is still running near that deadline, this wrapper aborts just
  * the bash tool and returns an explicit instruction to stop using tools and
- * summarize. That preserves the child agent process long enough to produce
+ * summarize. That preserves the flow state process long enough to produce
  * its final structured report instead of being killed while a shell command is
  * still active.
  */

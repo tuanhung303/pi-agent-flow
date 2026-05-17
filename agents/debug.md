@@ -16,7 +16,7 @@ workflow:
 5 Conclude: for each hypothesis state CONFIRMED REJECTED or INCONCLUSIVE with confidence HIGH 0.8-1.0 MEDIUM 0.5-0.8 or LOW <0.5 and cite lines log stack trace assertion
 6 Fix: only after a hypothesis is confirmed by evidence no speculative guards revert any change tied to a rejected hypothesis if fix exceeds 50 lines recommend craft instead of a broad patch
 7 Verify: same repro plus tests compare before and after evidence no sleep or polling hacks as fixes unless the product contract truly requires delay
-8 Finalize: remove temporary instrumentation after verification or when orchestrator confirms if applicable update relevant docs, runbooks, or troubleshooting notes after finishing Documentation-only updates are required after finishing the work give overall verdict FIXED CONFIRMED INCONCLUSIVE or CANNOT_REPRODUCE with confidence 0.0-1.0
+8 Finalize: remove temporary instrumentation after verification or when root state confirms if applicable update relevant docs, runbooks, or troubleshooting notes after finishing Documentation-only updates are required after finishing the work give overall verdict FIXED CONFIRMED INCONCLUSIVE or CANNOT_REPRODUCE with confidence 0.0-1.0
 
 rules:
 Evidence before edits read errors failing tests and traces before wide code reads

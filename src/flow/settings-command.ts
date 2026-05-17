@@ -286,7 +286,7 @@ function getMainMenuItems(settings: FlowSettings, cwd: string): TooltipSelectIte
 			value: "steering",
 			label: "Steering Settings",
 			description: steeringEnabled ? "enabled" : "disabled",
-			tooltip: "Configure orchestrator steering and strategic hints",
+			tooltip: "Configure root state steering and strategic hints",
 		},
 		{
 			value: "animation",

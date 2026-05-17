@@ -197,7 +197,7 @@ const FlowParams = Type.Object({
 	flow: Type.Array(FlowItem, {
 		description:
 			"Array of flow tasks to execute. Each runs in its own forked process. " +
-			"Optional sessionMode selects the child-agent budget: fast=300s, default=600s, long=900s, extreme_long=1200s.",
+			"Optional sessionMode selects the flow state budget: fast=300s, default=600s, long=900s, extreme_long=1200s.",
 		examples: [
 			{ type: "scout", intent: "Map auth module files and trace JWT validation path", aim: "Map auth and trace JWT" },
 			{ type: "audit", intent: "Audit input validation and SQL injection risks in user routes", aim: "Audit user route security" },
@@ -278,7 +278,7 @@ export default function (pi: ExtensionAPI) {
 		type: "boolean",
 	});
 	pi.registerFlag("no-steering", {
-		description: "Disable orchestrator steering hint injection.",
+		description: "Disable root state steering hint injection.",
 		type: "boolean",
 	});
 	pi.registerFlag("steering-prompt", {
@@ -306,7 +306,7 @@ export default function (pi: ExtensionAPI) {
 	registerFlow(pi);
 
 	const depthConfig = resolveFlowDepthConfig(pi);
-	const { currentDepth, maxDepth, canDelegate, ancestorFlowStack, preventCycles } =
+	const { currentDepth, maxDepth, canTransition, ancestorFlowStack, preventCycles } =
 		depthConfig;
 
 	let resolved: ResolvedSettings | undefined;
@@ -330,7 +330,7 @@ export default function (pi: ExtensionAPI) {
 		configureDirective(resolved.steeringStrategicHint);
 		scrambleManager.setAnimationConfig({ enabled: resolved.animationEnabled, glitch: resolved.animationGlitch });
 
-		// Only restrict tools for the main orchestrator (depth 0).
+		// Only restrict tools for the main root state (depth 0).
 		// Child flows (depth > 0) receive their tools via --tools CLI arg;
 		// overriding them here would strip bash/batch from children.
 		if (currentDepth === 0) {
@@ -338,7 +338,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Register tools based on depth.
-		// Depth 0 (main orchestrator): only batch_read — no bash ops, only reads + flow tool.
+		// Depth 0 (main root state): only batch_read — no bash ops, only reads + flow tool.
 		// Depth > 0 (child flows): batch (with bash), batch_bash_poll — they need bash ops.
 		// Children use batch for reads (which includes read ops), so batch_read is NOT
 		// registered for depth > 0 to avoid confusion and keep the tool set minimal.
@@ -393,7 +393,7 @@ export default function (pi: ExtensionAPI) {
 		const augmented = buildBeforeAgentStartPrompt(
 			event,
 			resolved.toolOptimize,
-			canDelegate,
+			canTransition,
 			resolved.discoveredFlows,
 			depthConfig,
 		);
@@ -478,11 +478,11 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool(createAskUserTool());
 
 	// Register the flow tool
-	if (canDelegate) {
+	if (canTransition) {
 		pi.registerTool({
 			name: "flow",
 			label: "Flow",
-			promptSnippet: "Delegate to specialized agent flows running in isolated forked processes",
+			promptSnippet: "Transition to specialized agent flows running in isolated forked processes",
 			promptGuidelines: [
 				"Use `flow` when the task requires skills beyond your current context (scout, debug, build, craft, audit, ideas).",
 				"Combine multiple related tasks into a single `flow` call with an array of flow items.",
@@ -666,12 +666,12 @@ export default function (pi: ExtensionAPI) {
 
 	// Register cleanup on process exit (once).
 	// We use prependListener on SIGINT/SIGTERM to propagate to child processes
-	// before the host's own signal handler runs. This avoids orphaned sub-agents.
+	// before the host's own signal handler runs. This avoids orphaned flow states.
 	// The host handler still runs afterward and handles terminal cleanup.
 	if (!(globalThis as any).__pi_agent_flow_shutdown_registered) {
 		(globalThis as any).__pi_agent_flow_shutdown_registered = true;
 
-		// Propagate signals to child process groups so sub-agents don't become orphans.
+		// Propagate signals to child process groups so flow states don't become orphans.
 		// We use prependListener so our handler runs first, before the host's cleanup.
 		const shutdown = () => {
 			// First, abort any pending bash operations tracked by the batch tool.

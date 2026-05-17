@@ -33,9 +33,9 @@ import type { GoalContext } from '../flow/types.js';
 export interface FlowExecutorDeps {
 	/** All discovered flow configs. */
 	flows: FlowConfig[];
-	/** Current delegation depth. */
+	/** Current transition depth. */
 	currentDepth: number;
-	/** Maximum delegation depth. */
+	/** Maximum transition depth. */
 	maxDepth: number;
 	/** Ancestor flow stack (names). */
 	ancestorFlowStack: string[];

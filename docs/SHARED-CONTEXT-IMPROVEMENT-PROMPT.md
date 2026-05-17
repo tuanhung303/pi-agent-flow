@@ -9,7 +9,7 @@
 
 ## Context Foundation: What This System IS
 
-When the orchestrator delegates to a child flow (e.g. `scout`, `build`), it forks the current conversation history into a temp JSONL file (`--session <path>`). Before writing that file, the parent runs `sanitizeForkSnapshot()` which strips ~99% of bloat so the child receives only actionable signal.
+When the root state transitions to a child flow (e.g. `scout`, `build`), it forks the current conversation history into a temp JSONL file (`--session <path>`). Before writing that file, the parent runs `sanitizeForkSnapshot()` which strips ~99% of bloat so the child receives only actionable signal.
 
 ### Key Files
 
@@ -181,7 +181,7 @@ cat $(ls -t /tmp/pi-dump.scout.*.md | head -1)
 
 ### Methodology for Discovering NEW Vectors
 
-1. **Capture a real dump** using `PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump` during a long orchestrator session (≥ 10 turns with multiple flows).
+1. **Capture a real dump** using `PI_FLOW_DUMP_SNAPSHOT=/tmp/pi-dump` during a long root state session (≥ 10 turns with multiple flows).
 2. **Measure per-tool bloat:** Look at `compression-stats` lines in dumps. If `preBytes` is large but `postBytes` is also large, investigate which tool is leaking.
 3. **Inspect the raw vs sanitized diff:** Compare `preBytes` and `postBytes`. If reduction is < 90%, one of the passes is failing or a new tool type is passing through verbatim.
 4. **Use `PI_FLOW_DEBUG_CONTEXT=1`:** Run `PI_FLOW_DEBUG_CONTEXT=1 pi` and watch stderr for `[context-compress] <tool>: N → M bytes`. Any tool showing `0% reduction` is a candidate.

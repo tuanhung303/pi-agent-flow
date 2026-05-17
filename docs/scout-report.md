@@ -33,7 +33,7 @@ pi-agent-flow/
 │   ├── agents.ts              # Flow discovery & frontmatter parsing
 │   ├── config.ts              # Flow model strategy loading
 │   ├── settings-resolver.ts   # Runtime settings resolution
-│   ├── depth.ts               # Delegation depth & cycle prevention
+│   ├── depth.ts               # Transition depth & cycle prevention
 │   ├── cli-args.ts            # CLI arg inheritance for child processes
 │   ├── session-mode.ts        # Session timeout mode definitions
 │   ├── types.ts               # Shared type definitions
@@ -85,9 +85,9 @@ pi-agent-flow/
 1. `pi.registerFlag(...)` — registers 9 CLI flags (flow-max-depth, flow-prevent-cycles, flow-model-config, flow-mode, flow-lite-model, flow-flash-model, flow-full-model, flow-max-concurrency, flow-session-mode, tool-optimize).
 2. `pi.on("session_start")` → `resolveSettings()` → discovers flows, resolves model configs, sets active tools, registers tools based on depth.
 3. `pi.on("turn_start")` → re-applies active tools (survives registry refreshes), resets directive tracker (legacy name: strategic hint tracker).
-4. `pi.on("before_agent_start")` → injects flow list + delegation guide into system prompt (orchestrator only).
-5. `pi.on("context")` → injects steering hint as separate system message before latest user message (orchestrator only).
-6. `pi.registerTool(flow)` → the core delegation tool. On execute:
+4. `pi.on("before_agent_start")` → injects flow list + transition guide into system prompt (root state only).
+5. `pi.on("context")` → injects steering hint as separate system message before latest user message (root state only).
+6. `pi.registerTool(flow)` → the core transition tool. On execute:
    - Builds fork session snapshot via `buildForkSessionSnapshotJsonl()` + `sanitizeForkSnapshot()`
    - Calls `executeFlows()` from `executor.ts`
    - Appends strategic hint once to result
@@ -134,12 +134,12 @@ pi-agent-flow/
 **Role:** Parses `PI_FLOW_DEPTH`, `PI_FLOW_MAX_DEPTH`, `PI_FLOW_STACK`, `PI_FLOW_PREVENT_CYCLES` env vars + CLI flags.
 
 **Defaults:**
-- `DEFAULT_MAX_DELEGATION_DEPTH = 3`
-- `DEFAULT_PREVENT_CYCLE_DELEGATION = true`
+- `DEFAULT_MAX_TRANSITION_DEPTH = 3`
+- `DEFAULT_PREVENT_CYCLE_TRANSITION = true`
 
 **Rules:**
-- `canDelegate = currentDepth < maxDepth`
-- Child flows (depth > 0) receive `--tools` CLI arg; main orchestrator gets `batch_read`, `flow`, `web`, `ask_user`.
+- `canTransition = currentDepth < maxDepth`
+- Child flows (depth > 0) receive `--tools` CLI arg; main root state gets `batch_read`, `flow`, `web`, `ask_user`.
 
 ### 2.6 Session Snapshot Sanitization
 **File:** `src/snapshot/snapshot.ts` (686 lines)  
@@ -156,7 +156,7 @@ pi-agent-flow/
 
 ## 3. Tool Assignments
 
-### 3.1 Main Orchestrator (depth 0)
+### 3.1 Main Root state (depth 0)
 When `toolOptimize = true` (default):
 - **Active tools:** `batch_read`, `flow`, `web`, `ask_user`
 - **Registered tools:** `batch_read`, `web`, `ask_user`, `flow`
@@ -164,7 +164,7 @@ When `toolOptimize = true` (default):
 ### 3.2 Child Flows (depth > 0)
 When `toolOptimize = true`:
 - **Registered tools:** `batch`, `batch_bash_poll`, `web`, `ask_user`, `timed_bash` (replaces built-in bash)
-- Default harness: `batch`, `bash`, `web` (+ `flow` if `canDelegate`)
+- Default harness: `batch`, `bash`, `web` (+ `flow` if `canTransition`)
 
 When `toolOptimize = false` (legacy):
 - Full toolset: `read`, `write`, `edit`, `batch`, `bash`, `flow`, `web`
@@ -215,8 +215,8 @@ The repo is a mature, well-structured Pi extension with clear separation of conc
 
 1. **Discover** flows from `.md` files with frontmatter.
 2. **Resolve** settings, depth, model strategies.
-3. **Augment** the orchestrator's prompt with flow list + guards.
-4. **Delegate** via `flow` tool → `executeFlows()` → `runFlow()`.
+3. **Augment** the root state's prompt with flow list + guards.
+4. **Transition** via `flow` tool → `executeFlows()` → `runFlow()`.
 5. **Fork** child `pi` processes with sanitized, compressed session snapshots.
 6. **Stream** JSONL events back, updating TUI with live metrics.
 7. **Normalize** results, extract structured output, cache compressed results.

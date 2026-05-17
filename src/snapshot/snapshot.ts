@@ -1791,10 +1791,10 @@ export function sanitizeForkSnapshot(
 
 		// Header (first line): replace parent system prompt.
 		if (i === 0 && entry && typeof entry === "object") {
-			// Replace the parent orchestrator system prompt with a brief note.
+			// Replace the parent root state system prompt with a brief note.
 			// Children receive their own directive in the <activation> block.
 			if (entry.systemPrompt && typeof entry.systemPrompt === "string") {
-				entry = { ...entry, systemPrompt: "[parent orchestrator system prompt stripped — child receives its own directive]" };
+				entry = { ...entry, systemPrompt: "[parent root state system prompt stripped — child receives its own directive]" };
 				changed = true;
 				subPasses.add("stripSystemPrompt");
 			}
@@ -1833,7 +1833,7 @@ export function sanitizeForkSnapshot(
 			}
 		}
 
-		// Drop type: "system" entries — the parent orchestrator system prompt was already
+		// Drop type: "system" entries — the parent root state system prompt was already
 		// stripped from the header above. Standalone system events leak the full prompt.
 		// Children receive their own directive in the <activation> block.
 		if (entry?.type === "system") {
@@ -1841,7 +1841,7 @@ export function sanitizeForkSnapshot(
 			continue;
 		}
 
-		// Drop custom_message entries — hidden orchestrator instructions (e.g.
+		// Drop custom_message entries — hidden root state instructions (e.g.
 		// flow continuation hook messages with display:false) that children
 		// should never see.
 		if (entry?.type === "custom_message") {

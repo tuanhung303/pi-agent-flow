@@ -2,27 +2,27 @@
 
 ## Why Flow Style?
 
-Flow-style delegation is designed for **context efficiency**. Instead of launching every sub-agent with the full, ever-growing conversation history, each flow receives only what it needs: your intent and (when appropriate) a sanitized session snapshot.
+Flow-style transition is designed for **context efficiency**. Instead of launching every flow state with the full, ever-growing conversation history, each flow receives only what it needs: your intent and (when appropriate) a sanitized session snapshot.
 
 This approach delivers four concrete benefits:
 
-1. **Avoid duplicate tool calls** — every sub-agent launch no longer re-runs the same `read`, `grep`, or `bash` probes that the parent already performed.
+1. **Avoid duplicate tool calls** — every flow state launch no longer re-runs the same `read`, `grep`, or `bash` probes that the parent already performed.
 2. **Prevent context bloat** — long transcripts with repeated file listings and command outputs are kept out of the main conversation thread.
 3. **Eliminate unnecessary noise** — the parent agent sees only structured results (`summary`, `notDone`, `nextSteps`, etc.) instead of pages of intermediate reasoning.
 4. **Preserve focus** — each flow stays locked on its intent because it isn't distracted by unrelated earlier messages.
 
-The result is faster, cheaper, and cleaner delegation: the main agent remains uncluttered while specialized flows do the heavy lifting in isolated contexts.
+The result is faster, cheaper, and cleaner transition: the main agent remains uncluttered while specialized flows do the heavy lifting in isolated contexts.
 
 ## Shared Context
 
-When you delegate to a flow, the child agent receives an automatic **sanitized fork** of your current session. This lets you write concise intents that focus on **what new work to do** rather than restating the full problem.
+When you transition to a flow, the flow state receives an automatic **sanitized fork** of your current session. This lets you write concise intents that focus on **what new work to do** rather than restating the full problem.
 
 ### How it works
 
 1. **Snapshot serialized** — your conversation (files read, commands run, prior flow results) is serialized into a JSONL snapshot.
 2. **Sanitized** — steering hints, reasoning/thinking artifacts, and other non-inheritable content are stripped.
 3. **Compressed** — prior flow tool results are compacted into short summaries: files touched, commands used, outcome status.
-4. **Forked** — the child agent loads this snapshot via `--session` at startup.
+4. **Forked** — the flow state loads this snapshot via `--session` at startup.
 
 ### Writing good intents
 
@@ -53,7 +53,7 @@ The child's `<context-seal>` prompt tells it: *"The conversation above is sealed
 | `[audit]` | Audit security, quality, correctness; fix safe issues autonomously | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `flash` |
 | `[ideas]` | Generate ideas, explore possibilities, and think creatively using inherited context | `batch`, `bash`, `find`, `grep`, `ls`, `web` | `full` |
 
-> **Note:** All bundled flows have `maxDepth: 0`, meaning they do not delegate further by default. Custom flows can override this via front-matter.
+> **Note:** All bundled flows have `maxDepth: 0`, meaning they do not transition further by default. Custom flows can override this via front-matter.
 
 > **Clean slate:** Set `inheritContext: false` in a custom flow's front-matter so it receives only the intent, ideal for unbiased creative work.
 
@@ -61,7 +61,7 @@ The child's `<context-seal>` prompt tells it: *"The conversation above is sealed
 
 ## Session Modes
 
-Each flow call may set `sessionMode` to choose the child-agent time budget:
+Each flow call may set `sessionMode` to choose the flow state time budget:
 
 | Mode | Budget | Recommended use |
 |------|-------:|-----------------|
@@ -102,7 +102,7 @@ Flows are aware of their deadline from the moment they start:
 - **Parent UI countdown** — a live `MM:SS` countdown is shown next to the flow's aim while it runs.
 - **Two-stage warnings** — at 2 minutes before hard timeout a warning is injected into the child's reminder stream; at 2 minutes 15 seconds a final urge demands the agent stop all tool use and output structured findings.
 - **Grace period** — after the hard timeout fires, the agent gets a 90-second reporting grace to finish its summary before the process is force-killed.
-- **Graceful shutdown** — when the parent receives `SIGINT` or `SIGTERM`, the signal propagates to every child process group so sub-agents terminate cleanly instead of becoming orphans.
+- **Graceful shutdown** — when the parent receives `SIGINT` or `SIGTERM`, the signal propagates to every child process group so flow states terminate cleanly instead of becoming orphans.
 
 ## Post-Flow Advisory Messages
 
@@ -127,7 +127,7 @@ Advisories are smart: if the agent already included the suggested flow in the sa
 
 ## Flow Loop & Warp
 
-Set a multi-step objective and the system automatically spawns flows to advance it after each turn. When active, the orchestrator receives a hidden instruction at `turn_end` to call the `flow` tool again until the goal is complete, paused, or a budget is exhausted.
+Set a multi-step objective and the system automatically spawns flows to advance it after each turn. When active, the root state receives a hidden instruction at `turn_end` to call the `flow` tool again until the goal is complete, paused, or a budget is exhausted.
 
 ### Slash commands
 
@@ -189,8 +189,8 @@ Complete the Discover phase by mapping middleware usage, then begin Convert on t
 
 ### How it works
 
-1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, the goal is **auto-paused** and a hidden budget-limit message is sent to the orchestrator.
-2. If under budget, the hook sends a hidden message instructing the orchestrator to call the `flow` tool.
+1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, the goal is **auto-paused** and a hidden budget-limit message is sent to the root state.
+2. If under budget, the hook sends a hidden message instructing the root state to call the `flow` tool.
 3. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
 4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.
 5. A **5-second cooldown** (`SPAWN_COOLDOWN_MS`) prevents rapid-fire spawns.
@@ -199,7 +199,7 @@ Complete the Discover phase by mapping middleware usage, then begin Convert on t
 
 ### Idle wake-up
 
-When a goal is active and the user has been idle for **~600 seconds** (10 minutes), the system sends a hidden `<flow-wakeup>` nudge to the orchestrator. The nudge prompts the agent to review the active goal and find safe, conservative improvements that advance it — such as verification, testing, or documentation — without making risky changes or refactoring large areas.
+When a goal is active and the user has been idle for **~600 seconds** (10 minutes), the system sends a hidden `<flow-wakeup>` nudge to the root state. The nudge prompts the agent to review the active goal and find safe, conservative improvements that advance it — such as verification, testing, or documentation — without making risky changes or refactoring large areas.
 
 The wake-up interval is checked every 60 seconds. It resets after any user turn or flow completion. Override the default idle threshold via the `PI_FLOW_IDLE_WAKEUP_MS` environment variable (value in milliseconds).
 
@@ -217,7 +217,7 @@ Add `.pi/` to `.gitignore` — this is local runtime state.
 
 ```bash
 /flow:goal set "Refactor all tests to vitest" --acceptance "All tests pass" --max-flows 5
-# Work normally — after each turn the orchestrator auto-delegates
+# Work normally — after each turn the root state auto-transitions
 /flow:goal pause    # Stop auto-continuation
 /flow:goal status   # Check progress
 /flow:goal clear    # Done

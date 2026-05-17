@@ -39,7 +39,7 @@ describe("setupNotify depth guard", () => {
 		}
 	});
 
-	it("registers agent_end and turn_start listeners when depth is 0 (root orchestrator)", async () => {
+	it("registers agent_end and turn_start listeners when depth is 0 (root root state)", async () => {
 		process.env[FLOW_DEPTH_ENV] = "0";
 		const { setupNotify } = await import("../src/notify/notify.js");
 		const on = vi.fn();

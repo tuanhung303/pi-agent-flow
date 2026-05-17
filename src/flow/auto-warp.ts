@@ -2,7 +2,7 @@
  * Auto-warp orchestration for endless loops.
  *
  * When a loop is active and the goal budget is exceeded, instead of pausing
- * we send a hidden message that triggers the orchestrator to call /flow:warp.
+ * we send a hidden message that triggers the root state to call /flow:warp.
  * The warp frontmatter receives loop context so the new session can resume
  * seamlessly.
  */

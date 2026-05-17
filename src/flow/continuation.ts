@@ -26,7 +26,7 @@ const FLOW_COMPLETE_HOLD_MS = 3000;
 const _lastFlowCompleteAt = new Map<string, number>();
 
 /**
- * Idle wake-up — nudges the orchestrator to keep working when the user
+ * Idle wake-up — nudges the root state to keep working when the user
  * has been idle for a long period while a goal is active.
  */
 const IDLE_WAKEUP_MS =
@@ -68,7 +68,7 @@ export function setupContinuation(pi: ExtensionAPI): void {
   });
 
   // Idle wake-up: periodically check if the user has been idle while a goal
-  // is active, and nudge the orchestrator to keep making progress.
+  // is active, and nudge the root state to keep making progress.
   if (!_wakeupInterval) {
     _wakeupInterval = setInterval(() => {
       const cwd = sessionRegistry.getCwd();

@@ -30,7 +30,7 @@ Your task begins NOW. Do not respond to or continue anything from the history.
 <activation flow="build" depth="1" tools="batch, bash, find, grep, ls, web" tier="flash">
 You are a [build] agent operating at depth 1.
 Available tools: batch, bash, find, grep, ls, web.
-You may NOT delegate to sub-flows (depth 1/0 | cycles: blocked | stack: (root)).
+You may NOT transition to sub-flows (depth 1/0 | cycles: blocked | stack: (root)).
 Session mode: fast. Time budget: 300s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
 Do not attempt to use any tool outside the available set — it will fail.
 </activation>

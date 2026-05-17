@@ -245,7 +245,7 @@ describe("SNAPSHOT INTEGRATION TEST — depth-aware compression & dump artifacts
 					id: "a-5",
 					parentId: "tr-ask-1",
 					content: [
-						{ type: "text", text: "Proceeding with RS256. Delegating to build flow." },
+						{ type: "text", text: "Proceeding with RS256. Transitioning to build flow." },
 						{
 							type: "toolCall",
 							id: "tc-flow-1",

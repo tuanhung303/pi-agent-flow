@@ -136,7 +136,7 @@ describe("flow tool execute", () => {
 			usage: emptyFlowUsage(),
 		});
 
-		const steeringHint = "<pi-flow-steering-hint>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise delegate to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, delegate to [build].\n</pi-flow-steering-hint>";
+		const steeringHint = "<pi-flow-steering-hint>\nYou are operating with pi-agent-flow routing.\nIf the answer is already in context, answer directly; otherwise transition to the appropriate flow.\nFor git, bash, CLI, or terminal tasks, transition to [build].\n</pi-flow-steering-hint>";
 		const sessionBranch = [
 			{ type: "message", message: { role: "system", content: steeringHint, timestamp: 0 } },
 			{ type: "message", message: { role: "user", content: "Keep this product requirement in mind as you work through /src/product.ts", timestamp: 1 } },
@@ -158,7 +158,7 @@ describe("flow tool execute", () => {
 			{ type: "message", message: { role: "toolResult", toolCallId: "bash-call-1", name: "bash", content: [{ type: "text", text: "normal bash output" }], timestamp: 4 } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Prior flow" }] } }], timestamp: 5 } },
 			{ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [{ type: "text", text: "prior flow result should be inherited" }], timestamp: 6 } },
-			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after delegation — [build] flow completed with files modified" }], timestamp: 7 } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Implementation summary after transition — [build] flow completed with files modified" }], timestamp: 7 } },
 			{ type: "message", message: { role: "user", content: "Current request should be inherited from /src/config.ts and applied consistently", timestamp: 8 } },
 		];
 
@@ -184,7 +184,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Normal assistant context with implementation details and code examples and a file reference to /src/index.ts for context.");
 		expect(snapshot).toContain("bash-call-1");
 		expect(snapshot).toContain("normal bash output");
-		expect(snapshot).toContain("Implementation summary after delegation");
+		expect(snapshot).toContain("Implementation summary after transition");
 		expect(snapshot).toContain("flow-call-1");
 		expect(snapshot).toContain('"name":"flow"');
 		// Flow results without cache entry are compressed to a placeholder instead of
@@ -355,9 +355,9 @@ describe("flow tool execute", () => {
 				message: {
 					role: "assistant",
 					content: [
-						{ type: "text", text: "Text before delegation." },
+						{ type: "text", text: "Text before transition." },
 						{ type: "toolCall", name: "flow", toolCallId: "flow-call-2", arguments: { flow: [{ type: "debug", intent: "Prior debug" }] } },
-						{ type: "text", text: "Text after delegation — [debug] completed." },
+						{ type: "text", text: "Text after transition — [debug] completed." },
 					],
 					timestamp: 2,
 				},
@@ -384,8 +384,8 @@ describe("flow tool execute", () => {
 
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).toContain("Original requirement defined in /src/requirements.md for reference");
-		expect(snapshot).toContain("Text before delegation.");
-		expect(snapshot).toContain("Text after delegation — [debug] completed.");
+		expect(snapshot).toContain("Text before transition.");
+		expect(snapshot).toContain("Text after transition — [debug] completed.");
 		// Flow results without cache entry are compressed to a placeholder.
 		expect(snapshot).toContain("[flow:debug] completed · see prior session");
 		expect(snapshot).not.toContain("full context unavailable");
@@ -592,7 +592,7 @@ describe("flow tool execute", () => {
 			expect((modified[1] as any).content[0].text).toBe("ok");
 			expect((modified[2] as any).role).toBe("system");
 			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
-			expect((modified[2] as any).content).toContain("You are the orchestrator");
+			expect((modified[2] as any).content).toContain("You are the root state");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
@@ -612,7 +612,7 @@ describe("flow tool execute", () => {
 
 			expect((modified[2] as any).role).toBe("system");
 			expect((modified[2] as any).content).toMatch(/<pi-flow-steering-hint\b/);
-			expect((modified[2] as any).content).toContain("You are the orchestrator");
+			expect((modified[2] as any).content).toContain("You are the root state");
 			expect((modified[3] as any).content).toBe("second prompt");
 		});
 
@@ -1579,7 +1579,7 @@ describe("compressToolResults", () => {
 			JSON.stringify({ version: 1 }),
 			JSON.stringify({ type: "message", message: { role: "user", content: "Fix auth", timestamp: 1 } }),
 			JSON.stringify({ type: "message", message: { role: "assistant", content: [
-				{ type: "text", text: "Delegating to scout" },
+				{ type: "text", text: "Transitioning to scout" },
 				{ type: "toolCall", name: "flow", toolCallId: "flow-call-1", arguments: { flow: [{ type: "scout", intent: "Find auth" }] } },
 			], timestamp: 2 } }),
 			JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "flow-call-1", name: "flow", content: [
@@ -1603,7 +1603,7 @@ describe("compressToolResults", () => {
 		// Should preserve non-flow messages
 		expect(result).toContain("Fix auth");
 		expect(result).toContain("Next step");
-		expect(result).toContain("Delegating to scout");
+		expect(result).toContain("Transitioning to scout");
 	});
 
 	it("preserves non-flow tool results unchanged", () => {

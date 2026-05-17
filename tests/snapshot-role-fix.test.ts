@@ -718,7 +718,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 				message: {
 					role: "assistant",
 					content: [
-						{ type: "text", text: "Delegating to scout flow." },
+						{ type: "text", text: "Transitioning to scout flow." },
 						{ type: "toolCall", id: "flow-id-pipeline", name: "flow", arguments: { flow: [{ type: "scout", intent: "Map the codebase" }] } },
 					],
 					timestamp: 4,
@@ -759,7 +759,7 @@ describe("sanitizeForkSnapshot full pipeline with production JSONL format", () =
 		// (c) flow tool calls and results preserved
 		expect(result).toContain("flow-id-pipeline");
 		expect(result).toContain('"name":"flow"');
-		expect(result).toContain("Delegating to scout flow.");
+		expect(result).toContain("Transitioning to scout flow.");
 
 		// (d) flow result compressed
 		expect(result).toContain("[Flow: scout accomplished]");
@@ -1363,7 +1363,7 @@ describe("DEFENSE IN DEPTH — child context whitelist & blacklist", () => {
 			{
 				type: "session",
 				id: "sess-parent",
-				systemPrompt: "You are the orchestrator.",
+				systemPrompt: "You are the root state.",
 				version: "1.2.3",
 				timestamp: "2026-05-17T00:00:00.000Z",
 				cwd: "/Users/__blitzzz/Documents/GitHub/pi-agent-flow",

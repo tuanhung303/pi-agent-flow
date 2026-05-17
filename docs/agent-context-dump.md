@@ -10,8 +10,8 @@ The sanitized JSONL that gets written to the temp file and passed via `--session
 ```jsonl
 {"type":"header","version":3,"id":"parent-session-001","timestamp":"2026-05-15T00:00:00Z","cwd":"/Users/user/Documents/GitHub/pi-agent-flow"}
 {"type":"system","content":"You are a helpful coding assistant with tool access."}
-{"type":"message","message":{"role":"user","content":[{"type":"text","text":"How does context sharing work between parent and child agents?"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Let me explore the codebase to understand context sharing."},{"type":"toolCall","id":"flow_1","name":"flow","arguments":{"flow":"scout","intent":"Explore how context is shared between parent and child agents in pi-agent-flow","aim":"Map the context sharing mechanism"}}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"How does context sharing work between parent and flow states?"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Let me explore the codebase to understand context sharing."},{"type":"toolCall","id":"flow_1","name":"flow","arguments":{"flow":"scout","intent":"Explore how context is shared between parent and flow states in pi-agent-flow","aim":"Map the context sharing mechanism"}}]}}
 {"type":"message","message":{"role":"toolResult","toolCallId":"flow_1","toolName":"flow","content":[{"type":"text","text":"[Flow: scout success]\nFiles:\n  src/snapshot/snapshot.ts (session snapshot building)\n  src/core/flow.ts (flow spawning)\n  src/core/executor.ts (flow execution)\nCommands:\n  cmd: grep -rn \"forkSession\" src/\n\nKey Findings: Parent builds fork session snapshot. Sanitization strips reasoning. Tool results compressed."}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Should I also inspect the actual session files to see what gets passed?"},{"type":"toolCall","id":"ask_1","name":"ask_user","arguments":{"question":"Should I inspect actual session JSONL files to verify the compression?"}}]}}
 {"type":"message","message":{"role":"toolResult","toolCallId":"ask_1","toolName":"ask_user","content":[{"type":"text","text":"[ask_user] \"Should I inspect actual session JSONL files to verify the compression?\" → \"Yes, check src/snapshot/snapshot.ts and src/core/flow.ts — I want the verbatim child payload.\""}]}}
@@ -30,9 +30,9 @@ The conversation above is sealed — it is your session history for situational 
 Your task begins NOW. Do not respond to or continue anything from the history.
 </context-seal>
 
-<activation flow="scout" depth="1" tools="batch, bash, find, grep, ls, web" tier="lite" lineage="orchestrator → scout">
+<activation flow="scout" depth="1" tools="batch, bash, find, grep, ls, web" tier="lite" lineage="root state → scout">
 You are a [scout] agent operating at depth 1.
-Deleg: off (depth 1/0 · stack: root)
+Transition: off (depth 1/0 · stack: root)
 Session mode: long. Time budget: 900s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
 Do not attempt to use any tool outside the available set — it will fail.
 </activation>
@@ -55,7 +55,7 @@ End with a ```json block: { version, status, summary, files[], actions[], notDon
 </directive>
 
 <mission>
-Explore how context is shared between parent and child agents. Look at snapshot.ts, flow.ts, and any session dump files. Report exactly what the child sees in its context window.
+Explore how context is shared between parent and flow states. Look at snapshot.ts, flow.ts, and any session dump files. Report exactly what the child sees in its context window.
 Acceptance: Return a clear summary of what the child sees in its context window.
 
 Execute this mission. Use only your available tools. If blocked, report why — do not guess.
@@ -69,7 +69,7 @@ Follow the output format specified in your directive.
 |-----------|---------|
 | **JSONL** | Sanitized conversation history (reasoning stripped, tool results compressed) |
 | **context-seal** | Sharp boundary telling the child "history is sealed, don't continue it" |
-| **activation** | Role, available tools, depth/budget, delegation rules |
+| **activation** | Role, available tools, depth/budget, transition rules |
 | **directive** | Flow's system prompt + structured output instructions |
 | **mission** | The actual task intent + acceptance criteria |
 

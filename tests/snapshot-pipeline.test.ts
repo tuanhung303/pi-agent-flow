@@ -124,7 +124,7 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 					id: "msg-assistant-2",
 					parentId: "msg-tool-1",
 					content: [
-						{ type: "text", text: "Delegating to scout flow." },
+						{ type: "text", text: "Transitioning to scout flow." },
 						{
 							type: "toolCall",
 							id: "flow-tc-1",
@@ -140,7 +140,7 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 					stopReason: "stop",
 					responseId: "resp_2",
 					responseModel: "glm-5.1",
-					reasoning: "I should delegate to scout",
+					reasoning: "I should transition to scout",
 				},
 			},
 			{
@@ -238,7 +238,7 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 		]);
 
 		const { result, passesApplied } = sanitizeForkSnapshot(snapshot, flowCache, {
-			forkedFrom: "orchestrator",
+			forkedFrom: "root state",
 			forkedAt: new Date().toISOString(),
 			parentFlow: "root",
 			depth: 1,
@@ -310,7 +310,7 @@ describe("ORPHAN-FREE SNAPSHOT TEST", () => {
 
 		// (g) Header systemPrompt stripped and pass recorded.
 		const headerEntry = entries[0];
-		expect(headerEntry?.systemPrompt).toMatch(/parent orchestrator system prompt stripped/);
+		expect(headerEntry?.systemPrompt).toMatch(/parent root state system prompt stripped/);
 		expect(passesApplied).toContain("stripSystemPrompt");
 
 		// (h) Session id renamed to parentId and id removed.

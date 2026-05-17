@@ -82,8 +82,8 @@ Set flow runtime defaults under `flowSettings`:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--flow-max-depth [n]` | Maximum delegation depth | `3` |
-| `--flow-prevent-cycles` | Block cyclic delegation | `true` |
+| `--flow-max-depth [n]` | Maximum transition depth | `3` |
+| `--flow-prevent-cycles` | Block cyclic transition | `true` |
 | `--no-flow-prevent-cycles` | Disable cycle prevention | — |
 | `--flow-model-config [name]` | Select a named model strategy for this invocation | `default` |
 | `--flow-mode [name]` | Persistently switch the global model strategy and apply it immediately | — |
@@ -93,7 +93,7 @@ Set flow runtime defaults under `flowSettings`:
 | `--flow-session-mode [mode]` | Default child-flow session mode | `default` |
 | `--flow-max-concurrency [n]` | Maximum parallel flows | `4` |
 | `--tool-optimize` | Use unified `batch`/`batch_read` | `true` |
-| `--no-steering` | Disable orchestrator steering hint injection | — |
+| `--no-steering` | Disable root state steering hint injection | — |
 | `--steering-prompt <text>` | Provide a custom steering prompt (implies `--no-steering` override) | — |
 | `--no-strategic-hint` | Disable adaptive `[Directive: ...]` hints after tool results | — |
 | `--no-animation` | Disable all flow animation (instant render) | — |
@@ -104,7 +104,7 @@ Set flow runtime defaults under `flowSettings`:
 
 | Variable | Description |
 |----------|-------------|
-| `PI_FLOW_DEPTH` | Current delegation depth |
+| `PI_FLOW_DEPTH` | Current transition depth |
 | `PI_FLOW_MAX_DEPTH` | Max allowed depth |
 | `PI_FLOW_STACK` | JSON array of ancestor flow names |
 | `PI_FLOW_PREVENT_CYCLES` | `"1"` or `"0"` |
@@ -117,7 +117,7 @@ Set flow runtime defaults under `flowSettings`:
 | `PI_FLOW_REMINDER_FILE` | Path to a file the parent writes warning messages into; the timed-bash wrapper reads it before each tool call |
 | `PI_FLOW_DEBUG_CONTEXT` | Set to `1` to emit context-compression telemetry to stderr |
 | `PI_OFFLINE` | Always set to `1` for child flow processes |
-| `PI_FLOW_NO_STEERING` | Set to `1` to disable orchestrator steering hint injection |
+| `PI_FLOW_NO_STEERING` | Set to `1` to disable root state steering hint injection |
 | `PI_FLOW_NO_STRATEGIC_HINT` | Set to `1` to suppress the strategic planning hints appended after tool calls |
 | `PI_FLOW_NO_DIRECTIVE` | Alias for `PI_FLOW_NO_STRATEGIC_HINT` |
 | `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render) |
@@ -146,7 +146,7 @@ Set flow runtime defaults under `flowSettings`:
 | Command | Usage |
 |---------|-------|
 | `show` | `/flow:settings show` — Display current settings and their sources. |
-| `steering` | `/flow:settings steering on\|off` — Enable/disable orchestrator steering hint injection. |
+| `steering` | `/flow:settings steering on\|off` — Enable/disable root state steering hint injection. |
 | `strategic-hint` | `/flow:settings strategic-hint on\|off` — Enable/disable adaptive `[Directive: ...]` hints after tool results. |
 | `directive` | Alias for `strategic-hint` — controls the same setting. |
 | `animation` | `/flow:settings animation on\|off` — Enable/disable all flow animations. |

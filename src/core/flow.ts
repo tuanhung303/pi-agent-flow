@@ -50,13 +50,13 @@ import {
 	FLOW_TOOL_OPTIMIZE_ENV,
 } from "./depth.js";
 import {
-	computeDelegationState,
+	computeTransitionState,
 	buildGuardLine,
-	buildDelegationRule,
+	buildTransitionRule,
 	buildFlowListSection,
 	buildLineage,
 	computeChildPropagation,
-} from "./delegation.js";
+} from "./transition.js";
 
 const FLOW_DEADLINE_ENV = "PI_FLOW_DEADLINE_MS";
 const FLOW_TOOL_SUMMARY_GRACE_ENV = "PI_FLOW_TOOL_SUMMARY_GRACE_MS";
@@ -258,7 +258,7 @@ function cleanupStaleDumps(dumpPath: string, maxAgeHours = 168): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Write a reminder message to the reminder file so the child agent can see it
+ * Write a reminder message to the reminder file so the flow state can see it
  * via the timed-bash wrapper before its next tool call.
  * Creates the file if it doesn't exist; appends the message.
  */
@@ -354,23 +354,23 @@ function buildFlowArgs(
 		rawSkipSo !== undefined && ["1", "true", "yes"].includes(rawSkipSo.trim().toLowerCase());
 
 	// Do not inherit the parent CLI `--thinking` level. Child flows often use a
-	// different tier/model than the orchestrator; inheriting `--thinking high` can
+	// different tier/model than the root state; inheriting `--thinking high` can
 	// be incompatible with the child model.
 	const thinking = flow.thinking;
 	if (thinking) args.push("--thinking", thinking);
 
-	// Compute delegation depth before building tool list — children that can
-	// delegate need the "flow" tool in their available set.
-	const { currentDepth, effectiveMaxDepth, canDelegate } = computeDelegationState(parentDepth, maxDepth);
+	// Compute transition depth before building tool list — children that can
+	// transition need the "flow" tool in their available set.
+	const { currentDepth, effectiveMaxDepth, canTransition } = computeTransitionState(parentDepth, maxDepth);
 
 	// Default tools for child flows. Legacy read/write/edit are NOT registered
 	// for children — only batch (which includes read/write ops) is available.
 	// The flow's frontmatter `tools` field overrides this default when set.
 	const defaultTools = toolOptimize
-		? canDelegate
+		? canTransition
 			? ["batch", "bash", "flow", "web"]
 			: ["batch", "bash", "web"]
-		: canDelegate
+		: canTransition
 			? ["batch", "bash", "flow", "web"]
 			: ["batch", "bash", "web"];
 	// getOptimizedTools replaces legacy read/write/edit with batch when
@@ -401,17 +401,17 @@ function buildFlowArgs(
 		`Your task begins NOW. Do not respond to or continue anything from the history.\n` +
 		`</context-seal>`;
 
-	// Phase 2: Activation — role, tools, depth, delegation rules (dynamically generated)
+	// Phase 2: Activation — role, tools, depth, transition rules (dynamically generated)
 	const guardLine = buildGuardLine(currentDepth, effectiveMaxDepth, preventCycles, parentFlowStack);
-	const delegationRule = buildDelegationRule(canDelegate, guardLine);
-	const flowListSection = buildFlowListSection(canDelegate, discoveredFlows);
+	const transitionRule = buildTransitionRule(canTransition, guardLine);
+	const flowListSection = buildFlowListSection(canTransition, discoveredFlows);
 
 	const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 	const lineage = buildLineage(flow.name, parentFlowStack);
 	const activation =
 		`\n\n<activation flow="${flow.name}" depth="${currentDepth}" tools="${availableTools}" tier="${effectiveTier}" lineage="${lineage}">\n` +
 		`You are a [${flow.name}] agent operating at depth ${currentDepth}.\n` +
-		`${delegationRule}\n` +
+		`${transitionRule}\n` +
 		`${flowListSection}` +
 		`Do not attempt to use any tool outside the available set — it will fail.\n` +
 		`</activation>`;
@@ -469,11 +469,11 @@ export interface RunFlowOptions {
 	taskCwd?: string;
 	/** Serialized parent session snapshot for fork mode. Null when the flow starts with a clean slate. */
 	forkSessionSnapshotJsonl: string | null;
-	/** Current delegation depth of the caller process. */
+	/** Current transition depth of the caller process. */
 	parentDepth: number;
-	/** Delegation stack from the caller process (ancestor flow names). */
+	/** Transition stack from the caller process (ancestor flow names). */
 	parentFlowStack: string[];
-	/** Maximum allowed delegation depth to propagate to child processes. */
+	/** Maximum allowed transition depth to propagate to child processes. */
 	maxDepth: number;
 	/** Whether cycle prevention should be enforced in child processes. */
 	preventCycles: boolean;
@@ -614,7 +614,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		forkSessionTmpPath = forkTmp.filePath;
 	}
 
-	// Create a temp dir for the reminder file so the child agent can read timeout warnings
+	// Create a temp dir for the reminder file so the flow state can read timeout warnings
 	// via the timed-bash wrapper before its next tool call.
 	let reminderTmpDir: string | null = null;
 	let reminderFilePath: string | null = null;
@@ -962,7 +962,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 						const remainingSec = Math.round(FLOW_TIME_BUDGET_WARNING_MS / 1000);
 						const warnMsg = `\n[Flow warning] ${remainingSec}s remaining before hard timeout. The agent should wrap up now.`;
 						result.stderr += warnMsg;
-						// Write to reminder file so the child agent sees it on its next bash call.
+						// Write to reminder file so the flow state sees it on its next bash call.
 						writeReminderFile(reminderFilePath, `[Flow warning] ${remainingSec}s remaining before hard timeout. Wrap up your work and output structured findings.`);
 						// Force an update so the parent UI shows the warning immediately.
 						emitUpdate();
@@ -978,7 +978,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 						const remainingSec = Math.round(FLOW_FINAL_URGE_MS / 1000);
 						const urgeMsg = `\n[Flow warning] ${remainingSec}s remaining before hard timeout. Stop all work and output your structured findings.`;
 						result.stderr += urgeMsg;
-						// Write to reminder file so the child agent sees it on its next bash call.
+						// Write to reminder file so the flow state sees it on its next bash call.
 						writeReminderFile(reminderFilePath, `[Flow urge] ${remainingSec}s remaining before hard timeout. STOP all tool use and output your structured findings NOW.`);
 						emitUpdate();
 					}, urgeMs);

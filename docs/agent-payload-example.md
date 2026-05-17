@@ -1,6 +1,6 @@
 # Agent Payload — What a Child Flow Actually Receives
 
-This document shows the **exact payload** passed to a child flow when the orchestrator delegates. Every byte, every tag, every compression artifact is reproduced from the actual code.
+This document shows the **exact payload** passed to a child flow when the root state transitions. Every byte, every tag, every compression artifact is reproduced from the actual code.
 
 > Generated from: `src/core/flow.ts` (`buildFlowArgs`, `runFlow`), `src/snapshot/snapshot.ts` (`buildForkSessionSnapshotJsonl`, `sanitizeForkSnapshot`), `agents/scout.md`
 
@@ -38,9 +38,9 @@ The conversation above is sealed — it is your session history for situational 
 Your task begins NOW. Do not respond to or continue anything from the history.
 </context-seal>
 
-<activation flow="scout" depth="1" tools="batch, bash, find, grep, ls, web" tier="lite" lineage="orchestrator → scout">
+<activation flow="scout" depth="1" tools="batch, bash, find, grep, ls, web" tier="lite" lineage="root state → scout">
 You are a [scout] agent operating at depth 1.
-Deleg: off (depth 1/0 · stack: root)
+Transition: off (depth 1/0 · stack: root)
 Session mode: long. Time budget: 900s total. Long-running tools may be interrupted near the deadline to preserve final-summary time; if a tool reports [Flow timeout], stop tool use and output structured findings immediately.
 Do not attempt to use any tool outside the available set — it will fail.
 </activation>
@@ -91,9 +91,9 @@ The file is built by `buildForkSessionSnapshotJsonl()` then run through `sanitiz
 This is what `sessionManager.getHeader()` + `sessionManager.getBranch()` produces:
 
 ```jsonl
-{"systemPrompt":"You are pi, an orchestrator...","model":"..."}
+{"systemPrompt":"You are pi, an root state...","model":"..."}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"Review the shared context and tell me how it works"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll delegate this to a scout flow."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_001","arguments":{"flow":[{"type":"scout","intent":"Map the shared context mechanism..."}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll transition this to a scout flow."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_001","arguments":{"flow":[{"type":"scout","intent":"Map the shared context mechanism..."}]}}]}}
 {"type":"message","message":{"role":"tool","toolCallId":"call_001","content":[{"type":"text","text":"[Flow: scout accomplished]\\n  Files: src/snapshot/snapshot.ts\\n  Commands: grep -r 'compress' src/\\n  Summary: Full compression pipeline mapped."}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Now let me build the fix."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_002","arguments":{"flow":[{"type":"build","intent":"Fix the cache miss placeholder..."}]}}]}}
 {"type":"message","message":{"role":"tool","toolCallId":"call_002","content":[{"type":"text","text":"[Flow: build accomplished]\\n  Files: src/snapshot/snapshot.ts (modified)\\n  Commands: npm test\\n  Summary: All 971 tests pass."}]}}
@@ -110,9 +110,9 @@ This is what `sessionManager.getHeader()` + `sessionManager.getBranch()` produce
 This is what actually gets written to the temp file and loaded by the child.
 
 ```jsonl
-{"systemPrompt":"You are pi, an orchestrator..."}
+{"systemPrompt":"You are pi, an root state..."}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"Review the shared context and tell me how it works"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll delegate this to a scout flow."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_001","arguments":{"flow":[{"type":"scout","intent":"Map the shared context mechanism..."}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I'll transition this to a scout flow."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_001","arguments":{"flow":[{"type":"scout","intent":"Map the shared context mechanism..."}]}}]}}
 {"type":"message","message":{"role":"tool","toolCallId":"call_001","content":[{"type":"text","text":"[Flow: scout accomplished]\\nFiles:\\n  src/snapshot/snapshot.ts\\nCommands:\\n  grep: grep -r 'compress' src/\\n\\nSummary: Full compression pipeline mapped."}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Now let me build the fix."},{"type":"toolCall","type":"toolCall","name":"flow","id":"call_002","arguments":{"flow":[{"type":"build","intent":"Fix the cache miss placeholder..."}]}}]}}
 {"type":"message","message":{"role":"tool","toolCallId":"call_002","content":[{"type":"text","text":"[Flow: build accomplished]\\nFiles:\\n  src/snapshot/snapshot.ts (modified)\\nCommands:\\n  cmd: npm test\\n\\nSummary: All 971 tests pass."}]}}
@@ -148,7 +148,7 @@ The child `pi` process assembles its session like this:
 │  SYSTEM PROMPT  (from --session file, line 1: header.systemPrompt)   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  MESSAGE 1  (user)     "Review the shared context..."               │
-│  MESSAGE 2  (assistant) "I'll delegate this..." + flow toolCall   │
+│  MESSAGE 2  (assistant) "I'll transition this..." + flow toolCall   │
 │  MESSAGE 3  (tool)      [Flow: scout accomplished] (compressed)     │
 │  MESSAGE 4  (assistant) "Now let me build..." + flow toolCall       │
 │  MESSAGE 5  (tool)      [Flow: build accomplished] (compressed)   │
@@ -180,7 +180,7 @@ The `-p` content is **not a system prompt** — it's injected as a user-like mes
 | Raw flow tool results (megabytes) | ❌ Compressed | Replaced with compact cache summary |
 | Raw batch file read content | ❌ Truncated | Child can re-read with `batch` |
 | Parent's `--thinking` level | ❌ Not inherited | Child uses flow's own `thinking` frontmatter |
-| Parent's orchestrator identity | ✅ Partially | Child knows parent called `flow` tools, but not that parent is "orchestrator" |
+| Parent's root state identity | ✅ Partially | Child knows parent called `flow` tools, but not that parent is "root state" |
 
 ---
 
@@ -188,7 +188,7 @@ The `-p` content is **not a system prompt** — it's injected as a user-like mes
 
 | Parent Artifact | In Child Snapshot? | Why It Matters |
 |-----------------|-------------------|--------------|
-| `flow` toolCalls + compressed results | ✅ Kept | **Delegation history** — child knows what work was already done |
+| `flow` toolCalls + compressed results | ✅ Kept | **Transition history** — child knows what work was already done |
 | `ask_user` toolCalls + compressed results | ✅ Kept | **User decisions** — child knows what the user already chose |
 | `bash` tool results | ✅ Kept verbatim | **Execution evidence** — child sees exact command output |
 | `web` tool results | ✅ Compressed to metadata | **Research history** — child knows what was searched/fetched |

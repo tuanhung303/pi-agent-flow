@@ -7,7 +7,7 @@
 
 <p align="center"><code>pi install npm:pi-agent-flow</code></p>
 
-<p align="center"><strong>Flow-state delegation</strong> for the <a href="https://pi.dev">Pi coding agent</a>. Isolate context, run specialist agents in parallel, and get structured results back.</p>
+<p align="center"><strong>Flow-state transition</strong> for the <a href="https://pi.dev">Pi coding agent</a>. Isolate context, run specialist agents in parallel, and get structured results back.</p>
 
 ---
 
@@ -17,7 +17,7 @@ Long conversations bloat context, duplicate tool calls, and bury signal in noise
 
 Four concrete benefits:
 
-1. **Avoid duplicate tool calls** — sub-agents no longer re-run the same `read`, `grep`, or `bash` probes the parent already performed.
+1. **Avoid duplicate tool calls** — flow states no longer re-run the same `read`, `grep`, or `bash` probes the parent already performed.
 2. **Prevent context bloat** — long transcripts with repeated file listings stay out of the main conversation thread.
 3. **Eliminate unnecessary noise** — the parent sees only structured results instead of pages of intermediate reasoning.
 4. **Preserve focus** — each flow stays locked on its intent because it isn't distracted by unrelated earlier messages.
@@ -28,7 +28,7 @@ Four concrete benefits:
 # 1) Install the extension
 pi install npm:pi-agent-flow
 
-# 2) Start Pi and delegate two tasks in parallel
+# 2) Start Pi and transition two tasks in parallel
 pi
 { "flow": [
   { "type": "scout", "intent": "Map auth code", "aim": "Find JWT logic" },
@@ -36,7 +36,7 @@ pi
 ] }
 ```
 
-The orchestrator spawns both flows concurrently. Each receives a sanitized fork of your session, runs in isolation, and returns structured JSON with a summary, files touched, and recommended next steps.
+The root state spawns both flows concurrently. Each receives a sanitized fork of your session, runs in isolation, and returns structured JSON with a summary, files touched, and recommended next steps.
 
 ## Quickstart
 
@@ -53,7 +53,7 @@ Or add it to your Pi settings:
 { "packages": ["npm:pi-agent-flow"] }
 ```
 
-Restart Pi and delegate tasks using `{ "flow": [...] }`.
+Restart Pi and transition tasks using `{ "flow": [...] }`.
 
 <details>
 <summary>Install from a local clone</summary>
@@ -70,20 +70,20 @@ pi install .
 
 | Concept | What it means |
 |---|---|
-| **Orchestrator** | The main Pi agent that routes tasks and talks to you |
+| **Root state** | The main Pi agent that routes tasks and talks to you |
 | **Flows** | Isolated specialist workers (`scout`, `build`, `debug`, `audit`, `craft`, `ideas`) |
 | **Forked context** | Child processes receive a sanitized snapshot of your session |
 | **Structured results** | Every flow returns JSON with summary, files, actions, next steps |
 | **Parallel execution** | Batch independent flows with bounded concurrency |
 | **Clean slate** | Optional mode where a flow receives only your intent, no inherited history |
 
-When you delegate, the orchestrator spawns each flow as an isolated `pi` child process, injects your intent, and waits for structured output. The parent conversation stays lean because it only receives the final result, not the full reasoning transcript.
+When you transition, the root state spawns each flow as an isolated `pi` child process, injects your intent, and waits for structured output. The parent conversation stays lean because it only receives the final result, not the full reasoning transcript.
 
 ## Features
 
-### Delegation
+### Transition
 - Six bundled specialist flows with tiered model selection (`lite` / `flash` / `full`)
-- Configurable max delegation depth (default: `3`) and automatic cycle prevention
+- Configurable max transition depth (default: `3`) and automatic cycle prevention
 - Smart post-flow advisories suggesting the optimal next step (e.g. `scout` → `build`, `debug` → `audit`)
 
 ### Isolation
@@ -99,7 +99,7 @@ When you delegate, the orchestrator spawns each flow as an isolated `pi` child p
 ### Tools
 - Unified `batch` / `batch_read` for cross-cutting file work (read, write, edit, delete in one call)
 - Built-in `web` search (Brave + DuckDuckGo) and fetch with HTML→Markdown conversion
-- `ask_user` interactive prompts for orchestrator decision-gathering; flows emit `⚠️ Decision Required` blocks instead
+- `ask_user` interactive prompts for root state decision-gathering; flows emit `⚠️ Decision Required` blocks instead
 
 ### Output
 - Structured JSON results with `summary`, `files`, `actions`, `notDone`, `nextSteps`, `reasoning`, and `notes`
@@ -166,8 +166,8 @@ Set a multi-step objective and the system auto-spawns flows to advance it after 
 /flow:goal clear        # Mark abandoned and move to history
 ```
 
-- **Auto-continuation** — after each turn, the orchestrator spawns the next flow until the goal is complete or budgets are exhausted
-- **Idle wake-up** — after ~10 min of inactivity, the system nudges the orchestrator to make safe, conservative progress
+- **Auto-continuation** — after each turn, the root state spawns the next flow until the goal is complete or budgets are exhausted
+- **Idle wake-up** — after ~10 min of inactivity, the system nudges the root state to make safe, conservative progress
 - **Warp** — `/flow:warp` distills conversation context into a transfer prompt (## Context + ## Task) and spawns a new session with the goal preserved
 
 Goals persist in `.pi/flow.json`. Add `.pi/` to `.gitignore` — this is local runtime state.

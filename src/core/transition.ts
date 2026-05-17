@@ -1,7 +1,7 @@
 /**
- * Delegation logic extracted from flow.ts.
+ * Transition logic extracted from flow.ts.
  *
- * Computes depth/canDelegate state and builds delegation-related
+ * Computes depth/canTransition state and builds transition-related
  * prompt fragments for child flow activation.
  */
 
@@ -11,24 +11,24 @@ import type { FlowConfig } from "./agents.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface DelegationState {
+export interface TransitionState {
 	currentDepth: number;
 	effectiveMaxDepth: number;
-	canDelegate: boolean;
+	canTransition: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Depth / delegation state
+// Depth / transition state
 // ---------------------------------------------------------------------------
 
-export function computeDelegationState(
+export function computeTransitionState(
 	parentDepth: number,
 	maxDepth: number,
-): DelegationState {
+): TransitionState {
 	const currentDepth = Math.max(0, Math.floor(parentDepth)) + 1;
 	const effectiveMaxDepth = Math.max(0, Math.floor(maxDepth));
-	const canDelegate = currentDepth < effectiveMaxDepth;
-	return { currentDepth, effectiveMaxDepth, canDelegate };
+	const canTransition = currentDepth < effectiveMaxDepth;
+	return { currentDepth, effectiveMaxDepth, canTransition };
 }
 
 // ---------------------------------------------------------------------------
@@ -45,15 +45,15 @@ export function buildGuardLine(
 	return `depth ${currentDepth}/${effectiveMaxDepth} · stack: ${stackLabel}`;
 }
 
-export function buildDelegationRule(canDelegate: boolean, guardLine: string): string {
-	return `Deleg: ${canDelegate ? "on" : "off"} (${guardLine})`;
+export function buildTransitionRule(canTransition: boolean, guardLine: string): string {
+	return `Transition: ${canTransition ? "on" : "off"} (${guardLine})`;
 }
 
 export function buildFlowListSection(
-	canDelegate: boolean,
+	canTransition: boolean,
 	discoveredFlows: FlowConfig[],
 ): string {
-	if (!canDelegate || discoveredFlows.length === 0) return "";
+	if (!canTransition || discoveredFlows.length === 0) return "";
 	return (
 		`Available flows:\n${discoveredFlows
 			.map((f) => `- ${f.name}`)
@@ -62,7 +62,7 @@ export function buildFlowListSection(
 }
 
 export function buildLineage(flowName: string, parentFlowStack: string[]): string {
-	return ["orchestrator", ...parentFlowStack, flowName].join(" → ");
+	return ["root state", ...parentFlowStack, flowName].join(" → ");
 }
 
 export function buildParentLineageHint(_parentFlowStack: string[]): string {

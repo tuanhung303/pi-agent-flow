@@ -1472,7 +1472,7 @@ describe("acceptance field propagation", () => {
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
 			parentDepth: 1,
-			parentFlowStack: ["orchestrator"],
+			parentFlowStack: ["root state"],
 			maxDepth: 3,
 			preventCycles: true,
 			makeDetails: (results) => ({
@@ -1492,14 +1492,14 @@ describe("acceptance field propagation", () => {
 		expect(prompt).toContain("- scout");
 		expect(prompt).toContain("- build");
 		expect(prompt).toContain("- audit");
-		expect(prompt).toContain("Deleg: on (depth 2/3 · stack: orchestrator)");
+		expect(prompt).toContain("Transition: on (depth 2/3 · stack: root state)");
 		expect(prompt).toContain("<activation flow=\"scout\"");
 
 		mockProc.emit("close", 0);
 		await promise;
 	});
 
-	it("omits flow list when delegation is disallowed", async () => {
+	it("omits flow list when transition is disallowed", async () => {
 		const mockProc = makeMockProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockProc);
 
@@ -1511,7 +1511,7 @@ describe("acceptance field propagation", () => {
 			aim: "Test aim",
 			forkSessionSnapshotJsonl: null,
 			parentDepth: 2,
-			parentFlowStack: ["orchestrator", "scout"],
+			parentFlowStack: ["root state", "scout"],
 			maxDepth: 3,
 			preventCycles: true,
 			makeDetails: (results) => ({
@@ -1528,7 +1528,7 @@ describe("acceptance field propagation", () => {
 		const prompt = args[args.indexOf("-p") + 1];
 
 		expect(prompt).not.toContain("Available flows:");
-		expect(prompt).toContain("Deleg: off (depth 3/3 · stack: orchestrator -> scout)");
+		expect(prompt).toContain("Transition: off (depth 3/3 · stack: root state -> scout)");
 
 		mockProc.emit("close", 0);
 		await promise;

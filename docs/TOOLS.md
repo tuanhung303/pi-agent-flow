@@ -1,8 +1,8 @@
 # Tools Reference
 
-## `flow` — delegate to flow states
+## `flow` — transition to flow states
 
-The core delegation tool. Accepts an array of flow tasks and runs them in parallel with bounded concurrency (default: 4, capped to CPU count).
+The core transition tool. Accepts an array of flow tasks and runs them in parallel with bounded concurrency (default: 4, capped to CPU count).
 
 Each flow item accepts:
 
@@ -100,4 +100,4 @@ Example:
 }
 ```
 
-> **Note:** The `ask_user` tool only accepts `question` and `options`. Timeout and UI behavior are controlled via flow settings (`/flow:settings ask-user timeout <seconds>` or `PI_ASK_USER_TIMEOUT`). If user input is needed inside a flow, the flow emits a `⚠️ Decision Required` block for the orchestrator to present. Only the orchestrator talks to the user; bundled flows do not have `ask_user`.
+> **Note:** The `ask_user` tool only accepts `question` and `options`. Timeout and UI behavior are controlled via flow settings (`/flow:settings ask-user timeout <seconds>` or `PI_ASK_USER_TIMEOUT`). If user input is needed inside a flow, the flow emits a `⚠️ Decision Required` block for the root state to present. Only the root state talks to the user; bundled flows do not have `ask_user`.

@@ -11,8 +11,8 @@ import { logWarn } from "../config/log.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_MAX_DELEGATION_DEPTH = 3;
-export const DEFAULT_PREVENT_CYCLE_DELEGATION = true;
+export const DEFAULT_MAX_TRANSITION_DEPTH = 3;
+export const DEFAULT_PREVENT_CYCLE_TRANSITION = true;
 export const FLOW_DEPTH_ENV = "PI_FLOW_DEPTH";
 export const FLOW_MAX_DEPTH_ENV = "PI_FLOW_MAX_DEPTH";
 export const FLOW_STACK_ENV = "PI_FLOW_STACK";
@@ -26,7 +26,7 @@ export const FLOW_TOOL_OPTIMIZE_ENV = "PI_FLOW_TOOL_OPTIMIZE";
 export interface FlowDepthConfig {
 	currentDepth: number;
 	maxDepth: number;
-	canDelegate: boolean;
+	canTransition: boolean;
 	ancestorFlowStack: string[];
 	preventCycles: boolean;
 }
@@ -193,17 +193,17 @@ export function resolveFlowDepthConfig(pi: ExtensionAPI): FlowDepthConfig {
 	}
 
 	const flagMaxDepth = argvFlagMaxDepth ?? runtimeFlagMaxDepth;
-	const maxDepth = flagMaxDepth ?? envMaxDepth ?? DEFAULT_MAX_DELEGATION_DEPTH;
+	const maxDepth = flagMaxDepth ?? envMaxDepth ?? DEFAULT_MAX_TRANSITION_DEPTH;
 	const preventCycles =
 		argvPreventCycles ??
 		runtimePreventCycles ??
 		envPreventCycles ??
-		DEFAULT_PREVENT_CYCLE_DELEGATION;
+		DEFAULT_PREVENT_CYCLE_TRANSITION;
 
 	return {
 		currentDepth,
 		maxDepth,
-		canDelegate: currentDepth < maxDepth,
+		canTransition: currentDepth < maxDepth,
 		ancestorFlowStack: ancestorFlowStack ?? [],
 		preventCycles,
 	};

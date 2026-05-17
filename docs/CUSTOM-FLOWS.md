@@ -39,7 +39,7 @@ flow [myflow] accomplished
 | `tools` | `string \| string[]` | Tools available to this flow |
 | `model` | `string` | Override the model for this flow |
 | `thinking` | `string` | Thinking budget (e.g., `"low"`, `"medium"`, `"high"`) |
-| `maxDepth` | `number` | How many more delegation levels this flow may spawn |
+| `maxDepth` | `number` | How many more transition levels this flow may spawn |
 | `inheritContext` | `boolean` | Whether to fork parent session snapshot (`true`) or start clean (`false`) |
 | `tier` | `string` | Explicit tier override: `lite`, `flash`, or `full` |
 
