@@ -1615,6 +1615,116 @@ describe("batch tool", () => {
 		});
 	});
 
+	describe("structured error responses", () => {
+		it("returns retryable=true for missing file (ENOENT)", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: "missing.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				error: expect.stringContaining("missing.txt"),
+				hint: "Verify the path exists.",
+				retryable: true,
+				suggestedFix: "Verify the path exists.",
+			});
+		});
+
+		it("returns retryable=true for duplicate oldText", async () => {
+			fs.writeFileSync(path.join(tmpDir, "dup.txt"), "same same different\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{
+							op: "edit",
+							path: "dup.txt",
+							edits: [{ oldText: "same", newText: "changed" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				retryable: true,
+				suggestedFix: "Add more surrounding context to make oldText unique.",
+			});
+		});
+
+		it("returns retryable=false for no-changes edit", async () => {
+			fs.writeFileSync(path.join(tmpDir, "same.txt"), "same content\n", "utf-8");
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{
+							op: "edit",
+							path: "same.txt",
+							edits: [{ oldText: "same content\n", newText: "same content\n" }],
+						},
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				retryable: false,
+				suggestedFix: "File already has this content. No edit needed.",
+			});
+		});
+
+		it("returns retryable=false for directory delete", async () => {
+			fs.mkdirSync(path.join(tmpDir, "a-dir"));
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [{ op: "delete", path: "a-dir" }],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0]).toMatchObject({
+				status: "error",
+				retryable: false,
+				error: expect.stringContaining("Cannot delete directory"),
+			});
+		});
+
+		it("preserves string error for backward compatibility", async () => {
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{ o: [{ op: "read", path: "missing.txt" }] },
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(typeof result.details.results[0].error).toBe("string");
+			expect(result.details.results[0].error).toContain("missing.txt");
+		});
+	});
+
 	describe("first-line exceeds byte limit", () => {
 		it("throws when a single line exceeds the byte limit", async () => {
 			// Create a file with a single very long line (> 100KB)

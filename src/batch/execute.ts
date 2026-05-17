@@ -183,6 +183,13 @@ export async function suggestSimilarFiles(
 // Error hints
 // ---------------------------------------------------------------------------
 
+export interface BatchError {
+	error: string;
+	hint: string;
+	retryable: boolean;
+	suggestedFix?: string;
+}
+
 function getErrorHint(error: string): string {
 	if (error.includes("File not found") || error.includes("file not found"))
 		return "Verify the path exists.";
@@ -203,6 +210,18 @@ function getErrorHint(error: string): string {
 	if (error.includes("ripgrep failed"))
 		return "Ripgrep crashed or was killed. Try narrowing the search path or adding max-count to limit output.";
 	return "";
+}
+
+function isRetryable(error: string): boolean {
+	const transient = [
+		"File not found",
+		"file not found",
+		"ENOENT",
+		"no such file",
+		"Could not find",
+		"occurrences",
+	];
+	return transient.some((p) => error.includes(p));
 }
 
 // ---------------------------------------------------------------------------
@@ -514,6 +533,9 @@ export async function executeOperations(
 				}
 			}
 
+			const retryable = isRetryable(message);
+			const suggestedFix = hint || undefined;
+
 			errors.push({ path: op.p, op: op.o, message, hint });
 			results.push({
 				op: op.o,
@@ -521,6 +543,8 @@ export async function executeOperations(
 				status: "error",
 				error: message,
 				hint,
+				retryable,
+				suggestedFix,
 				s: op.s,
 				l: op.l,
 				q: op.q,

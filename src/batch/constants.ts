@@ -157,6 +157,8 @@ export interface OpResult {
 	enclosingSignatures?: Record<string, string>;
 	error?: string;
 	hint?: string;
+	retryable?: boolean;
+	suggestedFix?: string;
 	id?: string;
 	command?: string;
 	exitCode?: number;
