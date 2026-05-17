@@ -8,7 +8,7 @@
 The sanitized JSONL that gets written to the temp file and passed via `--session`:
 
 ```jsonl
-{"type":"header","version":3,"id":"parent-session-001","timestamp":"2026-05-15T00:00:00Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow"}
+{"type":"header","version":3,"id":"parent-session-001","timestamp":"2026-05-15T00:00:00Z","cwd":"/Users/user/Documents/GitHub/pi-agent-flow"}
 {"type":"system","content":"You are a helpful coding assistant with tool access."}
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"How does context sharing work between parent and child agents?"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Let me explore the codebase to understand context sharing."},{"type":"toolCall","id":"flow_1","name":"flow","arguments":{"flow":"scout","intent":"Explore how context is shared between parent and child agents in pi-agent-flow","aim":"Map the context sharing mechanism"}}]}}

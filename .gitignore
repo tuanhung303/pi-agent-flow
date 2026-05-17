@@ -15,3 +15,6 @@ docs/dump-analysis/
 dump-artifacts/
 flow-artifacts/
 codex/
+
+# Nested repo (external project)
+pi-autoresearch/

@@ -2,7 +2,7 @@
 
 ## Session Snapshot (JSONL)
 
-{"type":"session","version":3,"timestamp":"2026-05-16T22:32:05.543Z","cwd":"/Users/__blitzzz/Documents/GitHub/pi-agent-flow","parentId":"019e32eb-0ca6-718f-a246-81844145d59f"}
+{"type":"session","version":3,"timestamp":"2026-05-16T22:32:05.543Z","cwd":"/Users/user/Documents/GitHub/pi-agent-flow","parentId":"019e32eb-0ca6-718f-a246-81844145d59f"}
 {"type":"message","id":"93e538f2","timestamp":"2026-05-16T22:32:06.403Z","message":{"role":"user","content":[{"type":"text","text":"spawn a scout flow to read src/index.ts and run rg for 'compress' in src/"}]}}
 {"type":"message","id":"07cbc378","parentId":"93e538f2","timestamp":"2026-05-16T22:32:08.443Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_3b34c72377394ea9b39f7e6b","name":"flow","arguments":{"flow":[{"type":"scout","intent":"Read the full contents of src/index.ts and run a ripgrep search for the pattern 'compress' across all files in src/. Report the file content and all matching lines with file paths and line numbers.","aim":"Read index.ts and grep compress in src/","sessionMode":"fast"}]}}],"usage":{"totalTokens":9908}}}
 

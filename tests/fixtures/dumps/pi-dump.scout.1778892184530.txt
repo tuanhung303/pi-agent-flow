@@ -37,7 +37,7 @@ End with a ```json block: { version, status, summary, files[], actions[], notDon
 </directive>
 
 <mission>
-Read the full source of ToolExecutionComponent.updateDisplay() method in pi-coding-agent. I need to see exactly how call and result renderers are invoked, how their output is added to renderContainer, and critically - whether both renderers share the same args.state object (which would cause them to share the same __rootContainer). Also check if the same Component reference can be added to renderContainer multiple times. The file is at /Users/__blitzzz/.hermes/node/lib/node_modules/pi-provider-kimi-code/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+Read the full source of ToolExecutionComponent.updateDisplay() method in pi-coding-agent. I need to see exactly how call and result renderers are invoked, how their output is added to renderContainer, and critically - whether both renderers share the same args.state object (which would cause them to share the same __rootContainer). Also check if the same Component reference can be added to renderContainer multiple times. The file is at /Users/user/.hermes/node/lib/node_modules/pi-provider-kimi-code/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 
 Execute this mission. Use only your available tools. If blocked, report why — do not guess.
 Follow the output format specified in your directive.
