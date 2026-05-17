@@ -496,14 +496,17 @@ describe("drainStreamingEstimate", () => {
     expect(r.usage.output).toBe(50);
   });
 
-  it("does not estimate tokens for thinking_delta (reasoning stripped)", () => {
+  it("thinking_delta tokens contribute to streaming estimate (for TPS)", () => {
     const r = makeResult();
     processFlowJsonLine(
       JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "c".repeat(800) } }),
       r,
     );
-    // Thinking is stripped, so estimate should be 0
-    expect(drainStreamingEstimate(r)).toBe(0);
+    // Thinking is stripped from the text buffer but tokens ARE counted
+    // in the streaming estimate so TPS reflects real throughput.
+    expect(drainStreamingEstimate(r)).toBe(200); // 800 chars / 4 chars-per-token
+    // Streaming text buffer should NOT contain thinking content
+    expect(drainStreamingText(r)).toBe("");
   });
 });
 

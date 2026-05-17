@@ -190,7 +190,6 @@ export function updateSmoothedTps(result: object, estimatedTokens: number): void
 		if (tracker.pauseAfterNextEmit) {
 			tracker.lastEmitTime = 0;
 			tracker.pauseAfterNextEmit = false;
-			tracker.pendingTokens = 0;
 		}
 		return;
 	}
@@ -519,9 +518,25 @@ function processFlowEvent(event: FlowEvent, result: FlowResult): boolean {
 			if (evt.type === "text_delta") {
 				return accumulateStreamingDelta(result, evt.delta ?? "");
 			}
-			// thinking_delta is intentionally NOT accumulated into the streaming buffer.
-			// Reasoning content is stripped from flow results to keep output clean.
+			// thinking_delta is NOT accumulated into the streaming text buffer
+			// (reasoning is stripped from flow results), but tokens ARE counted
+			// for TPS estimation so the dashboard shows a live rate during
+			// extended thinking phases.
 			if (evt.type === "thinking_delta") {
+				const thinkingDelta = evt.delta ?? "";
+				if (thinkingDelta) {
+					updateStreamingEstimate(result, thinkingDelta.length);
+				}
+				return false;
+			}
+			// toolcall_delta carries streaming tool-call arguments — actual
+			// output tokens that should contribute to TPS even though they
+			// aren't part of the text buffer.
+			if (evt.type === "toolcall_delta") {
+				const toolDelta = evt.delta ?? "";
+				if (toolDelta) {
+					updateStreamingEstimate(result, toolDelta.length);
+				}
 				return false;
 			}
 			return false;
