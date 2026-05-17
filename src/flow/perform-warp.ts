@@ -171,13 +171,9 @@ export async function performWarp(
         if (isLoopActive) {
           recordSessionWarp(cwd);
         }
-        newCtx.ui.setEditorText?.(warpedPrompt);
         newCtx.ui.notify?.("Warp ready. Submit when ready.", "info");
-
-        // New session: set descriptive name
+        newCtx.ui.setEditorText?.(warpedPrompt);
         newCtx.setSessionName(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
-
-        // New session: extension state (CustomEntry)
         newCtx.appendEntry("pi-agent-flow:warp", {
           sourceSessionId: currentSessionId,
           warpCount: isLoopActive ? loop.sessionCount : 1,

@@ -26,7 +26,17 @@ declare module "@mariozechner/pi-coding-agent" {
 		setSessionName(name: string): void;
 		getSessionName(): string | undefined;
 	}
-	export interface ExtensionContext {
+	export interface SessionManager {
+	getSessionDir(): string;
+	getSessionFile(): string;
+	getHeader(): unknown;
+	getBranch(): unknown[];
+	getSessionId(): string;
+	appendMessage(message: any): string;
+	appendSessionInfo(name: string): string;
+	appendCustomEntry(customType: string, data?: unknown): string;
+}
+export interface ExtensionContext {
 		cwd: string;
 		hasUI: boolean;
 		ui: {
@@ -39,7 +49,7 @@ declare module "@mariozechner/pi-coding-agent" {
 			setEditorText?: (text: string) => void;
 			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
-		sessionManager: { getSessionDir(): string; getSessionFile(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		sessionManager: SessionManager;
 	}
 	export interface Theme {
 		fg(key: string, text: string): string;
@@ -96,10 +106,11 @@ declare module "@mariozechner/pi-coding-agent" {
 			setEditorText?: (text: string) => void;
 			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
-		sessionManager: { getSessionDir(): string; getSessionFile(): string; getHeader(): unknown; getBranch(): unknown[]; getSessionId(): string };
+		sessionManager: SessionManager;
 		newSession(opts?: {
 			parentSession?: string;
 			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+			setup?: (sessionManager: SessionManager) => Promise<void>;
 		}): Promise<{ cancelled: boolean }>;
 		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
 		waitForIdle(): Promise<void>;

@@ -80,6 +80,8 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
 
       if (!result.success) {
         ctx.ui.notify?.(`Warp failed: ${result.error}`, "error");
+      } else {
+        ctx.ui.notify?.("Warped to new session.", "info");
       }
     },
   });

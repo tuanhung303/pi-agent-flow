@@ -135,13 +135,14 @@ describe("performWarp", () => {
     }));
   });
 
-  it("sets new session name and appends CustomEntry inside withSession", async () => {
+  it("seeds new session via withSession callback", async () => {
     setGoal(tmpDir, "Test goal");
+    const notify = vi.fn();
+    const setEditorText = vi.fn();
     const setSessionName = vi.fn();
     const appendEntry = vi.fn();
-    const setEditorText = vi.fn();
     const newCtx = {
-      ui: { notify: vi.fn(), setEditorText },
+      ui: { notify, setEditorText },
       setSessionName,
       appendEntry,
     };
@@ -156,9 +157,9 @@ describe("performWarp", () => {
       reviewedPrompt: "---\ncontext: test\n---\nTask: do it",
     });
     expect(result.success).toBe(true);
-    expect(setSessionName).toHaveBeenCalledWith("Warp: Task: do it");
+    expect(notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
     expect(setEditorText).toHaveBeenCalledWith("---\ncontext: test\n---\nTask: do it");
-    expect(newCtx.ui.notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
+    expect(setSessionName).toHaveBeenCalledWith("Warp: Task: do it");
     expect(appendEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
       warpCount: 1,
@@ -166,7 +167,7 @@ describe("performWarp", () => {
     }));
   });
 
-  it("sets correct warpCount and totalTokens when loop is active", async () => {
+  it("sets correct warpCount and totalTokens when loop is active via withSession", async () => {
     setGoal(tmpDir, "Test goal");
     setLoop(tmpDir, {
       objective: "Test goal",
@@ -175,11 +176,12 @@ describe("performWarp", () => {
       totalTokensAcrossSessions: 5000,
       totalFlowsAcrossSessions: 0,
     });
+    const notify = vi.fn();
+    const setEditorText = vi.fn();
     const setSessionName = vi.fn();
     const appendEntry = vi.fn();
-    const setEditorText = vi.fn();
     const newCtx = {
-      ui: { notify: vi.fn(), setEditorText },
+      ui: { notify, setEditorText },
       setSessionName,
       appendEntry,
     };
@@ -194,9 +196,9 @@ describe("performWarp", () => {
       reviewedPrompt: "test prompt",
     });
     expect(result.success).toBe(true);
-    expect(setSessionName).toHaveBeenCalledWith("Warp: Test goal");
+    expect(notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
     expect(setEditorText).toHaveBeenCalledWith("test prompt\n\n[Loop: session 3, total tokens ≈ 5000]");
-    expect(newCtx.ui.notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
+    expect(setSessionName).toHaveBeenCalledWith("Warp: Test goal");
     expect(appendEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
       warpCount: 3,
