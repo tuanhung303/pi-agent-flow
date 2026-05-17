@@ -7,7 +7,7 @@
 
 import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type, type TUnsafe } from "@sinclair/typebox";
-import { appendStrategicHintOnce } from "../steering/tool-utils.js";
+import { appendDirectiveOnce } from "../steering/tool-utils.js";
 import { setPendingDecision } from "../notify/notify-state.js";
 import { scrambleManager, runScrambleTimer } from "../tui/scramble/index.js";
 import { stripAnsi } from "../tui/render-utils.js";
@@ -694,15 +694,18 @@ async function askViaDialogs(
 	ui: { select: Function; input: Function },
 	question: string,
 	options: QuestionOption[],
+	signal?: AbortSignal,
 ): Promise<AskUIResult | null> {
+	if (signal?.aborted) return null;
+
 	if (options.length === 0) {
-		const answer = await ui.input(question, "Type your answer...") as string | undefined;
+		const answer = await ui.input(question, "Type your answer...", { signal }) as string | undefined;
 		if (isCancelledInput(answer)) return null;
 		return createFreeformResponse(answer);
 	}
 
 	const selectOptions = options.map((o) => o.title);
-	const selected = await ui.select(question, selectOptions) as string | undefined;
+	const selected = await ui.select(question, selectOptions, { signal }) as string | undefined;
 	if (isCancelledInput(selected)) return null;
 	return createSelectionResponse([selected]);
 }
@@ -769,7 +772,7 @@ export function createAskUserTool() {
 					content: [{ type: "text", text: `User answered: ${formatResponseSummary(response)}` }],
 					details: { question, options, response, cancelled: false } as AskToolDetails,
 				};
-				appendStrategicHintOnce(_result0);
+				appendDirectiveOnce(_result0);
 				return _result0;
 			}
 
@@ -834,7 +837,7 @@ export function createAskUserTool() {
 				if (customResult !== undefined) {
 					result = customResult;
 				} else {
-					result = await askViaDialogs(ctx.ui, question, options);
+					result = await askViaDialogs(ctx.ui, question, options, signal);
 				}
 			} catch (error) {
 				const message =
