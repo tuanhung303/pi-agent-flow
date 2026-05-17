@@ -288,11 +288,16 @@ export async function executeOperations(
 			switch (op.o) {
 				case "read": {
 					if (aggregateLinesRead >= MAX_TOTAL_RESULT_LINES) {
+						const remainingOps = operations.length - i - 1;
 						results.push({
 							op: "read",
 							path: op.p,
 							status: "skipped",
-							error: `Skipped: aggregate line limit of ${MAX_TOTAL_RESULT_LINES} already reached. Use separate batch/batch_read calls.`,
+							skipped: true,
+							reason: "aggregate_line_limit",
+							consumed: { lines: aggregateLinesRead, bytes: aggregateBytesRead },
+							remainingOps,
+							error: `Skipped: aggregate line limit of ${MAX_TOTAL_RESULT_LINES} reached (${aggregateLinesRead} lines consumed). ${remainingOps} remaining operation(s) will still execute. Use separate batch/batch_read calls.`,
 							s: op.s,
 							l: op.l,
 						});
@@ -302,11 +307,16 @@ export async function executeOperations(
 					}
 
 					if (aggregateBytesRead >= BATCH_READ_MAX_TOTAL_BYTES) {
+						const remainingOps = operations.length - i - 1;
 						results.push({
 							op: "read",
 							path: op.p,
 							status: "skipped",
-							error: `Skipped: aggregate byte limit of ${BATCH_READ_MAX_TOTAL_BYTES} already reached. Use separate batch/batch_read calls.`,
+							skipped: true,
+							reason: "aggregate_byte_limit",
+							consumed: { lines: aggregateLinesRead, bytes: aggregateBytesRead },
+							remainingOps,
+							error: `Skipped: aggregate byte limit of ${BATCH_READ_MAX_TOTAL_BYTES} reached (${aggregateBytesRead} bytes consumed). ${remainingOps} remaining operation(s) will still execute. Use separate batch/batch_read calls.`,
 							s: op.s,
 							l: op.l,
 						});

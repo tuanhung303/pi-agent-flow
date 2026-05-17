@@ -2422,11 +2422,56 @@ describe("edge cases", () => {
 				op: "read",
 				path: "batch-agg-3.txt",
 				status: "skipped",
+				skipped: true,
+				reason: "aggregate_line_limit",
+				consumed: { lines: 1500, bytes: expect.any(Number) },
+				remainingOps: 0,
 				error: expect.stringContaining("aggregate line limit of 1500"),
 			});
 			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 1 read: batch-agg-3.txt");
 			expect(result.content[0].text).toContain("1 skipped");
 			expect(result.content[0].text).toContain("Skipped: aggregate line limit");
+		});
+
+		it("skips remaining reads when aggregate byte limit is exceeded", async () => {
+			// 3 files × 51200 bytes = 153600 bytes = exactly at cap
+			// File 4 is skipped because aggregate is already at cap
+			for (let i = 0; i < 4; i++) {
+				fs.writeFileSync(path.join(tmpDir, `byte-agg-${i}.txt`), "x".repeat(51200) + "\n", "utf-8");
+			}
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ op: "read", path: "byte-agg-0.txt" },
+						{ op: "read", path: "byte-agg-1.txt" },
+						{ op: "read", path: "byte-agg-2.txt" },
+						{ op: "read", path: "byte-agg-3.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[1].status).toBe("ok");
+			expect(result.details.results[2].status).toBe("ok");
+			expect(result.details.results[3]).toMatchObject({
+				op: "read",
+				path: "byte-agg-3.txt",
+				status: "skipped",
+				skipped: true,
+				reason: "aggregate_byte_limit",
+				consumed: { lines: 3, bytes: 153744 },
+				remainingOps: 0,
+				error: expect.stringContaining("aggregate byte limit of 153600"),
+			});
+			expect(result.content[0].text).toContain("⚠ Aggregate byte limit (153600) reached — skipped 1 read: byte-agg-3.txt");
+			expect(result.content[0].text).toContain("1 skipped");
+			expect(result.content[0].text).toContain("Skipped: aggregate byte limit");
 		});
 
 		it("continues non-read operations after aggregate line limit is reached", async () => {
@@ -2945,9 +2990,53 @@ describe("batch_read tool", () => {
 				op: "read",
 				path: "agg-3.txt",
 				status: "skipped",
+				skipped: true,
+				reason: "aggregate_line_limit",
+				consumed: { lines: 1500, bytes: expect.any(Number) },
+				remainingOps: 0,
 				error: expect.stringContaining("aggregate line limit of 1500"),
 			});
 			expect(result.content[0].text).toContain("⚠ Aggregate line limit (1500) reached — skipped 1 read: agg-3.txt");
+		});
+
+		it("skips remaining reads when aggregate byte limit is exceeded", async () => {
+			// 3 files of ~51201 bytes each > 153600 cap, so File 4 is skipped
+			for (let i = 0; i < 4; i++) {
+				fs.writeFileSync(path.join(tmpDir, `byte-agg-${i}.txt`), "x".repeat(51200) + "\n", "utf-8");
+			}
+
+			const tool = createTool();
+			const result = await tool.execute(
+				"call-1",
+				{
+					o: [
+						{ o: "read", p: "byte-agg-0.txt" },
+						{ o: "read", p: "byte-agg-1.txt" },
+						{ o: "read", p: "byte-agg-2.txt" },
+						{ o: "read", p: "byte-agg-3.txt" },
+					],
+				},
+				undefined,
+				undefined,
+				makeCtx(tmpDir),
+			);
+
+			expect(result.details.results[0].status).toBe("ok");
+			expect(result.details.results[1].status).toBe("ok");
+			expect(result.details.results[2].status).toBe("ok");
+			expect(result.details.results[3]).toMatchObject({
+				op: "read",
+				path: "byte-agg-3.txt",
+				status: "skipped",
+				skipped: true,
+				reason: "aggregate_byte_limit",
+				consumed: { lines: 6, bytes: 153603 },
+				remainingOps: 0,
+				error: expect.stringContaining("aggregate byte limit of 153600"),
+			});
+			expect(result.content[0].text).toContain("⚠ Aggregate byte limit (153600) reached — skipped 1 read: byte-agg-3.txt");
+			expect(result.content[0].text).toContain("1 skipped");
+			expect(result.content[0].text).toContain("Skipped: aggregate byte limit");
 		});
 
 		it("does not count context maps toward aggregate line limit", async () => {

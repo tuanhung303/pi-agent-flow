@@ -155,6 +155,10 @@ export interface OpResult {
 	truncated?: boolean;
 	nextOffset?: number;
 	enclosingSignatures?: Record<string, string>;
+	skipped?: boolean;
+	reason?: "aggregate_line_limit" | "aggregate_byte_limit";
+	consumed?: { lines: number; bytes: number };
+	remainingOps?: number;
 	error?: string;
 	hint?: string;
 	retryable?: boolean;
