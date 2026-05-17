@@ -1,4 +1,4 @@
-import { appendStrategicHintOnce } from "../steering/tool-utils.js";
+import { appendDirectiveOnce } from "../steering/tool-utils.js";
 import { compressOutput } from "./shell-compress.js";
 
 /**
@@ -12,6 +12,13 @@ import { compressOutput } from "./shell-compress.js";
  * wait time before the batch tool returns partial results. Commands that
  * haven't finished continue running in the background and can be polled
  * via the `batch_bash_poll` tool.
+ *
+ * Why not `createLocalBashOperations` from `@mariozechner/pi-coding-agent`?
+ * That helper is a simple exec wrapper (returns a promise when the process exits).
+ * Our tracker needs background execution + polling: processes must outlive the
+ * soft timeout and be queried later via `batch_bash_poll`. We therefore use raw
+ * `node:child_process.spawn` directly to retain full control over detached mode,
+ * per-process AbortControllers, and background lifecycle.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -509,7 +516,7 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 				content: [{ type: "text", text: lines.join("\n").trimEnd() }],
 				details: { results },
 			};
-			appendStrategicHintOnce(pollResult);
+			appendDirectiveOnce(pollResult);
 			return pollResult;
 		},
 	};
