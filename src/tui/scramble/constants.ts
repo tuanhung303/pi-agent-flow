@@ -52,11 +52,11 @@ export class FastRNG {
 
 export const DEEP_GLITCH = '·∘∙*˚｡⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓';
 /** Mid glitch: dots, light sparkles, medium braille for depth (3) */
-export const MID_GLITCH = '·∘∙~⋆˚｡+×◇°⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
+export const MID_GLITCH = '·∘∙~⋆˚｡+✕✦∘⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋';
 /** Shallow glitch: heavy sparkles + light braille for outer depths (4+) — the wavefront crest */
-export const SHALLOW_GLITCH = '·∘∙~×°+⠌⠡⠜';
+export const SHALLOW_GLITCH = '·∘∙~✕∘+⠌⠡⠜';
 /** Classic scramble set for fallback — balanced braille + sparkle mix */
-export const SCRAMBLE_CHARS = '·∘∙~⋆˚｡+×◇°⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
+export const SCRAMBLE_CHARS = '·∘∙~⋆˚｡+✕✦∘⠌⠡⠜⠣⠪⠹⠸⠷⠮⠯⠿⠾';
 /** Sparkle and thin braille mix for afterglow "pop" */
 export const SPARK_CHARS = '·∘∙⋆˚｡⠂⠄⠈⠐⠠⡀⢀⠃⠆⠉⠘⠰⡁⢂';
 /** Backward-compat alias */
