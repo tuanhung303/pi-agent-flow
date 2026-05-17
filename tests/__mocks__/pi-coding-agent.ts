@@ -33,6 +33,10 @@ export function registerCommand(name: string, config: { description: string; han
 	registeredCommands.set(name, config);
 }
 
+export async function withFileMutationQueue<T>(_filePath: string, fn: () => Promise<T>): Promise<T> {
+	return fn();
+}
+
 export function parseFrontmatter<T extends Record<string, unknown>>(content: string): { frontmatter: T; body: string } {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
 	if (!match) {

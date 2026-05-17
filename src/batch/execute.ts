@@ -8,6 +8,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
+import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
 import {
 	type FileOpInput,
 	type RgOpInput,
@@ -349,8 +350,10 @@ export async function executeOperations(
 					if (!op.c && op.c !== "") {
 						throw new Error("c (content) is required for write operations.");
 					}
-					await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-					await fs.writeFile(resolvedPath, op.c!, "utf-8");
+					await withFileMutationQueue(resolvedPath, async () => {
+						await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+						await fs.writeFile(resolvedPath, op.c!, "utf-8");
+					});
 					results.push({
 						op: "write",
 						path: op.p,
@@ -365,20 +368,24 @@ export async function executeOperations(
 					if (!op.e || op.e.length === 0) {
 						throw new Error("e (edits) array is required for edit operations.");
 					}
+					const edits = op.e;
 
-					const rawContent = await fs.readFile(resolvedPath, "utf-8");
-					const { bom, text: contentWithoutBom } = stripBom(rawContent);
-					const originalEnding = detectLineEnding(contentWithoutBom);
-					const normalizedContent = normalizeToLF(contentWithoutBom);
+					const blocksChanged = await withFileMutationQueue(resolvedPath, async () => {
+						const rawContent = await fs.readFile(resolvedPath, "utf-8");
+						const { bom, text: contentWithoutBom } = stripBom(rawContent);
+						const originalEnding = detectLineEnding(contentWithoutBom);
+						const normalizedContent = normalizeToLF(contentWithoutBom);
 
-					const { newContent, blocksChanged } = applyEdits(
-						normalizedContent,
-						op.e,
-						op.p,
-					);
+						const { newContent, blocksChanged: changed } = applyEdits(
+							normalizedContent,
+							edits,
+							op.p,
+						);
 
-					const finalContent = bom + restoreLineEndings(newContent, originalEnding);
-					await fs.writeFile(resolvedPath, finalContent, "utf-8");
+						const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+						await fs.writeFile(resolvedPath, finalContent, "utf-8");
+						return changed;
+					});
 
 					results.push({
 						op: "edit",
@@ -391,19 +398,21 @@ export async function executeOperations(
 				}
 
 				case "delete": {
-					let stat;
-					try {
-						stat = await fs.lstat(resolvedPath);
-					} catch (err: any) {
-						if (err.code === "ENOENT") {
-							throw new Error(`File not found: ${op.p}`);
+					await withFileMutationQueue(resolvedPath, async () => {
+						let stat;
+						try {
+							stat = await fs.lstat(resolvedPath);
+						} catch (err: any) {
+							if (err.code === "ENOENT") {
+								throw new Error(`File not found: ${op.p}`);
+							}
+							throw err;
 						}
-						throw err;
-					}
-					if (stat.isDirectory()) {
-						throw new Error(`Cannot delete directory: ${op.p}. Use a recursive removal tool or delete files individually.`);
-					}
-					await fs.unlink(resolvedPath);
+						if (stat.isDirectory()) {
+							throw new Error(`Cannot delete directory: ${op.p}. Use a recursive removal tool or delete files individually.`);
+						}
+						await fs.unlink(resolvedPath);
+					});
 					results.push({ op: "delete", path: op.p, status: "ok" });
 					counts.delete++;
 					break;
