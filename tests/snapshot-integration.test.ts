@@ -39,7 +39,11 @@ function buildDumpArtifact(
 			`- Reduction: ${stats.reductionPercent}%`;
 	}
 
-	const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : "(none — cold start)";
+	const passesList = passesApplied.length > 0
+	  ? passesApplied.join(", ")
+	  : stats || snapshot
+	    ? "sanitizeForkSnapshot (no passes applied)"
+	    : "(none — cold start)";
 	const sanitizationHeader =
 		`<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flowName} | Tier: ${tier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
 

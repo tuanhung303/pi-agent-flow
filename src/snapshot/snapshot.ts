@@ -2082,7 +2082,7 @@ export function sanitizeForkSnapshot(
 
 	// Telemetry: measure total delta across sanitization, stripping, and compression.
 	const postBytes = sanitized.length;
-	const reduction = preBytes > 0 ? ((1 - postBytes / preBytes) * 100).toFixed(0) : "0";
+	const reduction = preBytes > 0 ? Math.round((1 - postBytes / preBytes) * 1000) / 10 : 0;
 	if (DEBUG_CONTEXT) {
 		logError(`[context-snapshot] pre: ${preBytes} → post: ${postBytes} bytes (${reduction}% reduction)`);
 	}
@@ -2091,7 +2091,7 @@ export function sanitizeForkSnapshot(
 	const stats = {
 		preBytes,
 		postBytes,
-		reductionPercent: Number(reduction),
+		reductionPercent: reduction,
 		passesApplied,
 		passDeltas,
 	};

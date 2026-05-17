@@ -244,10 +244,13 @@ flow spawns the agent writes two files **per flow** (the base path gets a unique
 suffix so parallel flows don't overwrite each other):
 
 1. `<base>.<flowName>.<timestamp>.md` — a markdown file containing:
-   - A `<!-- pi-agent-flow dump -->` header with sanitization metadata (flow name, tier, pipeline version, passes applied)
+   - A `<!-- pi-agent-flow dump -->` header with sanitization metadata (flow name, tier, `pipelineVersion`, passes applied)
    - `## Session Snapshot (JSONL)` — the full fork snapshot JSONL (post-sanitization)
    - `## Activation Prompt (-p)` — the reconstructed raw prompt
-   - `## Compression Stats` — sanitization reduction metrics, including `pipelineVersion` (when available)
+   - `## Compression Stats` — Pre-sanitization bytes, Post-sanitization bytes, and Reduction percentage
+
+> **Cold-start dumps:** When there is no session history, the markdown file omits the `## Session Snapshot (JSONL)` and `## Compression Stats` sections — only the header and `## Activation Prompt (-p)` appear.
+
 2. `<base>.<flowName>.<timestamp>.txt` — just the human-readable reconstructed prompt
 
 Example:

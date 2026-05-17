@@ -661,11 +661,15 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			let passesApplied: string[] = [];
 			if (opts.compressionStats) {
 				compressionStats = `\n\n## Compression Stats\n\n- Pre-sanitization: ${opts.compressionStats.preBytes} bytes\n- Post-sanitization: ${opts.compressionStats.postBytes} bytes\n- Reduction: ${opts.compressionStats.reductionPercent}%`;
-				passesApplied = Array.isArray(opts.compressionStats.passesApplied) ? opts.compressionStats.passesApplied : [];
 			}
 
 			const effectiveTier = flow.tier ?? getFlowTier(flow.name);
-			const passesList = passesApplied.length > 0 ? passesApplied.join(", ") : forkSessionSnapshotJsonl ? "sanitizeForkSnapshot (see src/snapshot.ts)" : "(none — cold start)";
+			passesApplied = Array.isArray(opts.compressionStats?.passesApplied) ? opts.compressionStats.passesApplied : [];
+			const passesList = passesApplied.length > 0 
+			  ? passesApplied.join(", ") 
+			  : opts.compressionStats || forkSessionSnapshotJsonl 
+			    ? "sanitizeForkSnapshot (no passes applied)" 
+			    : "(none — cold start)";
 			const sanitizationHeader = `<!-- pi-agent-flow dump | State: post-sanitization | Passes: ${passesList} | Flow: ${flow.name} | Tier: ${effectiveTier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
 
 			const markdownParts: string[] = [
