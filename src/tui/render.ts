@@ -197,12 +197,7 @@ export function renderFlowResult(
 	theme: FlowTheme,
 	args?: Record<string, any>,
 	config?: FlowColorConfig,
-	isPartial?: boolean,
 ): Container | Text {
-	if (isPartial) {
-		const streamingText = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
-		return new Text(scrambleManager.renderStatic(`⏳ ${streamingText?.split("\n")[0] ?? ""}`), 0, 0);
-	}
 	const details = result.details as FlowDetails | undefined;
 	const streamingText = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
 

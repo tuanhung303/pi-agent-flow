@@ -891,19 +891,6 @@ export function createAskUserTool() {
 				return new Text(scrambled, 0, 0);
 			}
 
-			if (options.isPartial) {
-				const waitingText = result.content
-					?.filter((part: { type?: string; text?: string }) => part?.type === "text")
-					.map((part: { text?: string }) => part.text ?? "")
-					.join("\n")
-					.trim() || "Waiting for user input...";
-				const line = theme.fg("muted", waitingText);
-				if (!canAnimate) return new Text(scrambleManager.renderStatic(line), 0, 0);
-				const scrambled = scrambleManager.updateText(id, "result", stripAnsi(line), now, false).content;
-				runScrambleTimer(args as Record<string, any> | undefined, id);
-				return new Text(scrambled, 0, 0);
-			}
-
 			if (!details || details.cancelled || !details.response) {
 				const line = theme.fg("warning", "Cancelled");
 				if (!canAnimate) return new Text(scrambleManager.renderStatic(line), 0, 0);

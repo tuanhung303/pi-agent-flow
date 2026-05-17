@@ -45,14 +45,8 @@ export function renderBatchResult(
 	expanded: boolean,
 	_theme: BatchTheme,
 	args?: Record<string, unknown>,
-	isPartial?: boolean,
 ): Text | TruncatedText {
 	const fullText = result.content?.find((c) => c.type === "text")?.text ?? "";
-	if (isPartial) {
-		const summary = fullText.split("\n")[0] ?? "";
-		const fresh = new TruncatedText(scrambleManager.renderStatic(`⏳ ${summary}`), 0, 0);
-		return reuseRootContainer(args, fresh) as TruncatedText;
-	}
 	const canAnimate = !!(args as any)?.invalidate && !!(args as any)?.state;
 	if (!canAnimate) {
 		if (!expanded) {

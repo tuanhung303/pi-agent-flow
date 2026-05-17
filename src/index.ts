@@ -623,8 +623,8 @@ export default function (pi: ExtensionAPI) {
 			},
 
 			renderCall: (args, theme) => renderFlowCall(args, theme),
-			renderResult: (result, { expanded, isPartial }, theme, args) =>
-				renderFlowResult(result, expanded, theme, args, undefined, isPartial),
+			renderResult: (result, { expanded }, theme, args) =>
+				renderFlowResult(result, expanded, theme, args),
 		});
 	}
 
