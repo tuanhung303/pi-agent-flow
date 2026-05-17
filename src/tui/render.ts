@@ -48,7 +48,7 @@ function getLiveTextWithFallback(id: string): string | undefined {
 	const fallbackId = id.includes("#") ? "collapsed" + id.slice(id.indexOf("#")) : "collapsed";
 	return getLiveText(fallbackId);
 }
-import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatContextLabel } from "./render-utils.js";
+import { formatCompactStats, formatFlowTypeName, lowerFirstWord, truncateChars, tailText, getTruncationBudget, visibleLength, stripAnsi, formatModelLabel, formatContextLabel, formatTps } from "./render-utils.js";
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -560,17 +560,16 @@ function renderFlowCollapsed(
 		const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 		statsParts.push(ctxLabel);
 	}
-	const tpsValue = r.usage.smoothedTps;
-	const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
-	if (tpsDisplay) statsParts.push(`${tpsDisplay} t/s`);
-	else statsParts.push("---- t/s");
+	const tpsFormatted = formatTps(r.usage.smoothedTps);
+	statsParts.push(tpsFormatted);
 	let displayStats = statsParts.join(" · ");
 
 	// Flash TPS value when it changes
-	if (tpsDisplay) {
-		const scrambledTps = scrambleManager.updateTps(id, tpsDisplay, now, isComplete, true);
-		if (scrambledTps !== tpsDisplay) {
-			displayStats = displayStats.replace(`${tpsDisplay} t/s`, `${scrambledTps} t/s`);
+	const tpsNum = tpsFormatted.slice(0, -4); // remove " t/s" suffix
+	if (r.usage.smoothedTps && r.usage.smoothedTps > 0) {
+		const scrambledTps = scrambleManager.updateTps(id, tpsNum, now, isComplete, true);
+		if (scrambledTps !== tpsNum) {
+			displayStats = displayStats.replace(`${tpsNum} t/s`, `${scrambledTps} t/s`);
 		}
 	}
 	let header = `${applyRole("flowName", typeName, theme, config)}${applyRole("modelName", modelLabel ? `    ${modelLabel} · ` : "    ", theme, config)}${applyRole("stats", displayStats, theme, config)}`;
@@ -868,19 +867,18 @@ function renderActivityPanel(
 			const ctxLabel = formatContextLabel(r.usage.contextTokens, r.maxContextTokens);
 			statsParts.push(ctxLabel);
 		}
-		const tpsValue = r.usage.smoothedTps;
-		const tpsDisplay = tpsValue && tpsValue >= 100 ? `${Math.round(tpsValue)}` : (tpsValue && tpsValue > 0 ? tpsValue.toFixed(1) : undefined);
-		if (tpsDisplay) statsParts.push(`${tpsDisplay} t/s`);
-		else statsParts.push("---- t/s");
+		const tpsFormatted = formatTps(r.usage.smoothedTps);
+		statsParts.push(tpsFormatted);
 		let displayStats = statsParts.join(" · ");
 
 		const flowComplete = r.exitCode !== -1;
 
 		// Flash TPS value when it changes
-		if (tpsDisplay) {
-			const scrambledTps = scrambleManager.updateTps(flowId, tpsDisplay, now, flowComplete, true);
-			if (scrambledTps !== tpsDisplay) {
-				displayStats = displayStats.replace(`${tpsDisplay} t/s`, `${scrambledTps} t/s`);
+		const tpsNum = tpsFormatted.slice(0, -4); // remove " t/s" suffix
+		if (r.usage.smoothedTps && r.usage.smoothedTps > 0) {
+			const scrambledTps = scrambleManager.updateTps(flowId, tpsNum, now, flowComplete, true);
+			if (scrambledTps !== tpsNum) {
+				displayStats = displayStats.replace(`${tpsNum} t/s`, `${scrambledTps} t/s`);
 			}
 		}
 
