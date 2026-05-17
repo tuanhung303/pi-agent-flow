@@ -163,7 +163,7 @@ async function waitForWarpTurn(
 	while (Date.now() < deadline) {
 		const branch = ctx.sessionManager.getBranch() as SessionEntry[];
 		const warpUserIndex = findUserMessageIndex(branch, startIndex, warpRequest);
-		if (warpUserIndex !== -1 && hasAssistantAfterIndex(branch, warpUserIndex)) {
+		if (warpUserIndex !== -1 && hasAssistantAfterIndex(branch, warpUserIndex) && ctx.isIdle()) {
 			return { branch, warpUserIndex };
 		}
 		await new Promise<void>((resolve) => setTimeout(resolve, WARP_POLL_INTERVAL_MS));
@@ -211,7 +211,11 @@ export default function (pi: ExtensionAPI) {
 
 			const warpRequest = `${WARP_INSTRUCTIONS}\n\nTask for the next agent:\n${task}`;
 
-			pi.sendUserMessage(warpRequest);
+			if (ctx.isIdle()) {
+				pi.sendUserMessage(warpRequest);
+			} else {
+				pi.sendUserMessage(warpRequest, { deliverAs: "followUp" });
+			}
 
 			notify("Generating warp note...", "info");
 			const warpTurn = await waitForWarpTurn(ctx, startIndex, warpRequest);
@@ -232,14 +236,15 @@ export default function (pi: ExtensionAPI) {
 
 			const newSessionResult = await ctx.newSession({
 				parentSession: currentSessionFile,
-				withSession: async (newSessionCtx) => {
-					await newSessionCtx.sendUserMessage(promptForNewSession);
-					newSessionCtx.ui?.notify?.("Warp sent to the new session.", "info");
+				withSession: async (newCtx) => {
+					await newCtx.sendUserMessage(promptForNewSession);
+					newCtx.ui?.notify?.("Warp ready...", "info");
 				},
 			});
 
 			if (newSessionResult.cancelled) {
 				notify("New session cancelled", "info");
+				return;
 			}
 		},
 	});

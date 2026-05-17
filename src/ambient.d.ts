@@ -57,6 +57,7 @@ export interface ExtensionContext {
 			editor: (title: string, text: string) => Promise<string | undefined>;
 		};
 		sessionManager: SessionManager;
+		isIdle(): boolean;
 	}
 	export interface Theme {
 		fg(key: string, text: string): string;
@@ -100,6 +101,13 @@ export interface ExtensionContext {
 		render(width: number): string[];
 		handleInput?(data: string): void;
 	}
+	export interface WithSessionContext {
+		sendUserMessage(content: string, opts?: { deliverAs?: string }): Promise<void>;
+		ui?: {
+			notify?: (message: string, type: string) => void;
+		};
+	}
+
 	export interface ExtensionCommandContext {
 		cwd: string;
 		hasUI: boolean;
@@ -116,7 +124,8 @@ export interface ExtensionContext {
 		sessionManager: SessionManager;
 		newSession(opts?: {
 			parentSession?: string;
-			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+			setup?: (sessionManager: SessionManager) => Promise<void>;
+			withSession?: (ctx: WithSessionContext) => Promise<void>;
 		}): Promise<{ cancelled: boolean }>;
 		navigateTree(targetId: string, opts?: { label?: string; summarize?: boolean }): Promise<{ cancelled: boolean }>;
 		waitForIdle(): Promise<void>;
@@ -129,12 +138,7 @@ export interface ExtensionContext {
 			getApiKeyAndHeaders(model: any): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
 		};
 		model?: any;
-	}
-
-	export interface ReplacedSessionContext extends ExtensionCommandContext {
-		sendUserMessage(content: string, opts?: { deliverAs?: string }): Promise<void>;
-		setSessionName(name: string): void;
-		appendEntry(customType: string, data?: unknown): void;
+		isIdle(): boolean;
 	}
 
 	/** Event payload for pi.on("turn_end", ...) callbacks. */

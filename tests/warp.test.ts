@@ -41,6 +41,7 @@ describe("setupWarp", () => {
 			sessionManager: { getBranch, getSessionFile, getSessionId: () => "sid" },
 			ui: { notify },
 			newSession,
+			isIdle: () => true,
 		} as any;
 
 		sendUserMessage.mockImplementation((content: string) => {
@@ -67,6 +68,7 @@ describe("setupWarp", () => {
 			sessionManager: { getBranch, getSessionFile, getSessionId: () => "sid" },
 			ui: { notify },
 			newSession,
+			isIdle: () => true,
 		} as any;
 
 		const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(Infinity);
@@ -91,6 +93,7 @@ describe("setupWarp", () => {
 			sessionManager: { getBranch, getSessionFile, getSessionId: () => "sid" },
 			ui: { notify },
 			newSession,
+			isIdle: () => true,
 		} as any;
 
 		sendUserMessage.mockImplementation((content: string) => {
@@ -108,19 +111,18 @@ describe("setupWarp", () => {
 			}),
 		);
 
-		const withSession = newSession.mock.calls[0][0].withSession;
-		const sendUserMessageNew = vi.fn();
-		const notifyNew = vi.fn();
-		const newCtx = {
-			sendUserMessage: sendUserMessageNew,
-			ui: { notify: notifyNew },
-		} as any;
-		await withSession(newCtx);
+		const withSessionCallback = newSession.mock.calls[0][0].withSession;
+		const newCtxSendUserMessage = vi.fn();
+		const newCtxNotify = vi.fn();
+		await withSessionCallback({
+			sendUserMessage: newCtxSendUserMessage,
+			ui: { notify: newCtxNotify },
+		});
 
-		expect(sendUserMessageNew).toHaveBeenCalledWith(
+		expect(newCtxSendUserMessage).toHaveBeenCalledWith(
 			expect.stringContaining("## Task\nmy goal"),
 		);
-		expect(notifyNew).toHaveBeenCalledWith("Warp sent to the new session.", "info");
+		expect(newCtxNotify).toHaveBeenCalledWith("Warp ready...", "info");
 	});
 
 	it("notifies when new session is cancelled", async () => {
@@ -135,6 +137,7 @@ describe("setupWarp", () => {
 			sessionManager: { getBranch, getSessionFile, getSessionId: () => "sid" },
 			ui: { notify },
 			newSession,
+			isIdle: () => true,
 		} as any;
 
 		sendUserMessage.mockImplementation((content: string) => {
@@ -158,6 +161,7 @@ describe("setupWarp", () => {
 			sessionManager: { getBranch, getSessionFile, getSessionId: () => "sid" },
 			ui: { notify },
 			newSession,
+			isIdle: () => true,
 		} as any;
 
 		sendUserMessage.mockImplementation((content: string) => {
