@@ -10,7 +10,7 @@ import { Type } from "@sinclair/typebox";
 import { setupNotify } from "./notify/notify.js";
 import { discoverFlows, getFlowTier } from "./core/agents.js";
 import { getInheritedCliArgs } from "./snapshot/cli-args.js";
-import { renderFlowCall, renderFlowResult, renderWarpCall, renderWarpResult } from "./tui/render.js";
+import { renderFlowCall, renderFlowResult } from "./tui/render.js";
 import { terminateAllChildGroups } from "./core/flow.js";
 import { executeFlows } from "./core/executor.js";
 import { appendStrategicHintOnce, resetStrategicHintTracker, configureStrategicHint } from "./steering/tool-utils.js";
@@ -34,8 +34,9 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoal, getGoalForSession, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
+import { registerFlow, getGoal, getGoalForSession, getLoop, recordFlowCompletion, addTokens, shutdownWakeup } from "./flow/index.js";
 import * as sessionRegistry from "./core/session-registry.js";
+
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 import {
 	resolveFlowDepthConfig,
@@ -377,7 +378,6 @@ export default function (pi: ExtensionAPI) {
 				'Invoke: { "flow": [{ "type": "scout", "intent": "...", "aim": "...", "sessionMode": "default" }, ...] }',
 				"Session modes: fast=300s, default=600s, long=900s, extreme_long=1200s. Use long or extreme_long only when the work genuinely needs the larger budget.",
 				"States: scout, debug, build, craft, audit, ideas.",
-				"Additionally, the `warp` tool (separate from this tool) distills context and spawns a fresh session — use it when the conversation is too large or you want to hand off to a clean session.",
 				"Custom states configs in (create if not exists): .md files in .pi/agents/ or ~/.pi/agent/agents/.",
 			].join("\n"),
 			parameters: FlowParams,
@@ -497,36 +497,6 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	// Register the warp tool — queues /flow:warp as a follow-up command
-	// The actual distillation and session creation happens in the command handler
-	// (ExtensionCommandContext has ctx.newSession; ExtensionContext does not).
-	pi.registerTool({
-		name: "warp",
-		label: "Warp",
-		description: [
-			"Distill conversation context into a structured project brief and spawn a fresh session.",
-			"Use this when the conversation context is too large, when switching topics, or when you want to hand off work to a clean session with a distilled brief.",
-			"The tool queues a /flow:warp command that executes after the current turn completes. In interactive mode the command handler performs the actual warp; in non-interactive (-p) mode the command will not trigger because there is no follow-up turn.",
-			"Parameters: { goal?: string } — optional goal override for the new session.",
-		].join("\n"),
-		parameters: Type.Object({
-			goal: Type.Optional(Type.String({ description: "Optional goal for the new session." })),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const goal = (params as any).goal?.trim?.() ?? "";
-			if (typeof pi.sendUserMessage === "function") {
-				pi.sendUserMessage("/flow:warp " + goal, { deliverAs: "followUp" });
-			}
-			return {
-				content: [{ type: "text", text: "Warp queued — will execute after current turn completes" }],
-				isError: false,
-			};
-		},
-
-		renderCall: (args, theme) => renderWarpCall(args, theme),
-		renderResult: (result, { expanded }, theme, args) =>
-			renderWarpResult(result, expanded, theme, args),
-	});
 
 	// -------------------------------------------------------------------------
 	// Public plugin API — expose for third-party extensions

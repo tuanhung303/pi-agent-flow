@@ -980,6 +980,7 @@ function compressBatchBashPollResult(text: string, depth: number): string {
 			}
 			const tier = timingTier ? ` · ${timingTier}` : "";
 			if (isCompleted) {
+				const statusTag = exitCode !== undefined ? `exit ${exitCode}` : "interrupted";
 				const statusLabel = exitCode === 0 ? "ok" : "error";
 				if (statusLabel === "error" && stderrLines.length === 0 && stdoutLines.length > 0) {
 					stderrLines = stdoutLines;
@@ -988,17 +989,17 @@ function compressBatchBashPollResult(text: string, depth: number): string {
 				const lineCount = targetLines.length;
 				if (isDepth1) {
 					if (lineCount === 0) {
-						out.push(`[bash:poll] ${id} · exit ${exitCode}${tier} · 0 lines`);
+						out.push(`[bash:poll] ${id} · ${statusTag}${tier} · 0 lines`);
 					} else {
 						const linesLabel = statusLabel === "error"
 							? (lineCount === 1 ? "1 line stderr" : `${lineCount} lines stderr`)
 							: (lineCount === 1 ? "1 line" : `${lineCount} lines`);
 						const headPrefix = statusLabel === "error" ? "> stderr:" : "> head:";
 						const head = targetLines.slice(0, 3).join("\n");
-						out.push(`[bash:poll] ${id} · exit ${exitCode}${tier} · ${linesLabel}\n${headPrefix}\n${head}`);
+						out.push(`[bash:poll] ${id} · ${statusTag}${tier} · ${linesLabel}\n${headPrefix}\n${head}`);
 					}
 				} else {
-					out.push(`[bash:poll] ${id} · exit ${exitCode}${tier}`);
+					out.push(`[bash:poll] ${id} · ${statusTag}${tier}`);
 				}
 			} else {
 				const lineCount = stdoutLines.length;

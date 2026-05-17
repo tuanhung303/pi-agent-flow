@@ -15,7 +15,7 @@
 | **Workflows** | [`ci.yml`](.github/workflows/ci.yml) — lint + test on PR/push • [`bump-version.yml`](.github/workflows/bump-version.yml) — version bump → commit → tag → push • [`publish.yml`](.github/workflows/publish.yml) — npm publish with provenance |
 | **Scripts** | [`dev-start.sh`](scripts/dev-start.sh) — start `pi` with `PI_FLOW_DUMP_SNAPSHOT` preset • [`switch.sh`](scripts/switch.sh) — toggle local ↔ remote install • [`sync-dumps.sh`](scripts/sync-dumps.sh) — sync `/tmp` dumps into `dump-artifacts/` • [`example-autonomous-pi.expect`](scripts/example-autonomous-pi.expect) — PTY test harness template |
 | **Key Source** | `src/index.ts` — entrypoint • `src/core/flow.ts` — flow fork runner and process management • `src/snapshot/snapshot.ts` — session fork & sanitization pipeline • `src/core/agents.ts` — bundled flow definitions & loading • `src/batch/index.ts` / `src/batch/` — unified file/batch tools • `src/tui/render.ts` — TUI rendering & animations • `src/snapshot/structured-output.ts` — JSON output validation & enrichment • `src/tools/web-tool.ts` — search & fetch • `src/tools/ask-user.ts` — interactive prompts • `src/config/config.ts` — settings resolution • `src/notify/notify.ts` — desktop/terminal notifications • `src/flow/loop.ts` — endless loop state management (enable, disable, reset, terminate, warp tracking) • `src/flow/loop-command.ts` — `/flow:loop` slash command (enable/disable/status/stop/reset) • `src/flow/auto-warp.ts` — auto-warp trigger when loop budget is exceeded • `src/flow/loop-templates.ts` — loop runtime prompt templates • `src/flow/perform-warp.ts` — warp distillation and session creation • `src/flow/warp-command.ts` — `/flow:warp` slash command handler • `src/flow/warp-utils.ts` — warp sanitization, system prompt, and goal extraction |
-| **Additional Source** | `src/flow/` — flow goal orchestration, continuation, loop, and settings commands (warp is a registered tool, not a flow type) • `src/steering/` — steering hint injection, sliding prompts, and tool utilities • `src/types/` — shared TypeScript types for flow execution, output, and UI • `src/batch/` — batch operation engine, rendering, fuzzy editing, symbol extraction • `src/core/` — flow executor, delegation logic, depth config, session modes, transitions • `src/config/` — TUI-safe logging and settings resolution • `src/tui/` — color themes, render utilities, single-select layout, scramble animation • `src/snapshot/` — CLI arg inheritance, reasoning strip, runner event parsing • `src/tools/` — timed bash wrapper with deadline awareness • `src/notify/` — notification state tracking |
+| **Additional Source** | `src/flow/` — flow goal orchestration, continuation, loop, and settings commands • `src/steering/` — steering hint injection, sliding prompts, and tool utilities • `src/types/` — shared TypeScript types for flow execution, output, and UI • `src/batch/` — batch operation engine, rendering, fuzzy editing, symbol extraction • `src/core/` — flow executor, delegation logic, depth config, session modes, transitions • `src/config/` — TUI-safe logging and settings resolution • `src/tui/` — color themes, render utilities, single-select layout, scramble animation • `src/snapshot/` — CLI arg inheritance, reasoning strip, runner event parsing • `src/tools/` — timed bash wrapper with deadline awareness • `src/notify/` — notification state tracking |
 
 ## CI/CD
 
@@ -209,17 +209,6 @@ Agent work is organized into two tiers. **Access is not the boundary — intent 
 > **Tier** (lite / flash / full) only affects **model selection** — which LLM candidate to use. It does **not** restrict tools or access.
 >
 > The tier is also injected into the flow's `<activation>` tag as `tier="..."` so the model knows which candidate is running.
-
-> **Available tools for the orchestrator:** `flow` (spawn worker flows), `web` (search/fetch), `ask_user` (interactive prompts), and **`warp`** (distill context and hand off to a fresh session). The `warp` tool is separate from the `flow` tool — it is not a flow type.
-
-### Warp Tool
-
-`warp` is **not** a flow type — it is an LLM-callable tool registered via `pi.registerTool`.
-
-- **What it does:** The tool queues `/flow:warp` as a follow-up command via `pi.sendUserMessage("/flow:warp " + goal, { deliverAs: "followUp" })`. The actual distillation and session creation happens in the `/flow:warp` command handler (`ExtensionCommandContext`), not in the tool handler (`ExtensionContext`).
-- **Why:** `ctx.newSession` is only available on `ExtensionCommandContext`, not `ExtensionContext`.
-- **Non-interactive mode:** In non-interactive (`-p`) mode, the follow-up does not trigger because there is no next turn, so the tool safely returns `"Warp queued — will execute after current turn completes"` without crashing.
-- **Registration:** The tool is registered outside the `canDelegate` guard — it does not require or consume delegation depth.
 
 ### Nested flow snapshots
 

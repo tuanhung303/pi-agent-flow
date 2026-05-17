@@ -1013,47 +1013,4 @@ function renderMultiFlowCollapsed(
 	return renderActivityPanel(results, theme, baseId, config);
 }
 
-// ---------------------------------------------------------------------------
-// renderWarpCall / renderWarpResult
-// ---------------------------------------------------------------------------
 
-export function renderWarpCall(args: Record<string, any>, theme: FlowTheme, config?: FlowColorConfig): Container | Text {
-	const goal = args?.goal ?? "";
-	const plain = goal ? `warp ${goal}` : "warp";
-	const label = goal ? `warp ▸ ${goal}` : "warp ▸ distilling context...";
-	const id = (args as any)?.toolCallId || (args as any)?.id || "warp";
-
-	const container = new Container();
-	container.addChild(new DynamicScrambleText(
-		applyRole("flowName", label, theme, config),
-		() => {
-			const result = scrambleManager.updateText(id, "warp-call", plain, Date.now(), false);
-			return applyRole("flowName", result.content, theme, config);
-		},
-	));
-	return container;
-}
-
-export function renderWarpResult(
-	result: { content: Array<{ type: string; text?: string }>; isError?: boolean },
-	_expanded: boolean,
-	theme: FlowTheme,
-	args?: Record<string, any>,
-	config?: FlowColorConfig,
-): Container | Text {
-	const text = result.content?.[0]?.text ?? "";
-	const id = (args as any)?.toolCallId || (args as any)?.id || "warp";
-	const isError = result.isError ?? false;
-	const isComplete = true;
-	const plain = stripAnsi(text);
-
-	const container = new Container();
-	container.addChild(new DynamicScrambleText(
-		isError ? theme.fg("error", text) : applyRole("aimContent", text, theme, config),
-		() => {
-			const r = scrambleManager.updateText(id, "warp-result", plain, Date.now(), isComplete);
-			return isError ? theme.fg("error", r.content) : applyRole("aimContent", r.content, theme, config);
-		},
-	));
-	return container;
-}

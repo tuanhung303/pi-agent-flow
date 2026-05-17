@@ -24,6 +24,8 @@ vi.mock("../src/flow/index.js", async (importOriginal) => {
 	};
 });
 
+
+
 function createMockPi() {
 	const handlers: Record<string, Function[]> = {};
 	const flags: Record<string, unknown> = {};
@@ -68,6 +70,7 @@ function makeMockCtx(cwd: string) {
 		ui: { confirm: vi.fn() },
 	};
 }
+
 
 
 describe("flow tool execute", () => {
@@ -1283,7 +1286,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
+		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user"]);
 	});
 
 	it("restores legacy read+write+edit+batch when toolOptimize is false", async () => {
@@ -1303,7 +1306,6 @@ describe("main agent tool restriction", () => {
 		expect(calledWith).toContain("bash");
 		expect(calledWith).toContain("flow");
 		expect(calledWith).toContain("web");
-		expect(calledWith).toContain("warp");
 	});
 
 	it("defers setActiveTools to session_start, not extension loading", async () => {
@@ -1335,7 +1337,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalledTimes(afterSession + 1);
 		const lastCall = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0];
-		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
+		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user"]);
 	});
 
 	it("restores legacy+batch tools on turn_start when toolOptimize is false", async () => {
@@ -1358,7 +1360,6 @@ describe("main agent tool restriction", () => {
 		expect(lastCall).toContain("bash");
 		expect(lastCall).toContain("flow");
 		expect(lastCall).toContain("web");
-		expect(lastCall).toContain("warp");
 	});
 
 	it("parses env PI_FLOW_TOOL_OPTIMIZE via parseBoolean (yes/on/no/off)", async () => {
@@ -1371,7 +1372,7 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.setActiveTools).toHaveBeenCalled();
 		const calledWith = (pi.setActiveTools as ReturnType<typeof vi.fn>).mock.calls[0][0];
-		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
+		expect(calledWith).toEqual(["batch_read", "flow", "web", "ask_user"]);
 	});
 
 	it("registers batch_read for main agent; batch/batch_bash_poll reserved for children", async () => {
@@ -1388,9 +1389,9 @@ describe("main agent tool restriction", () => {
 		expect(pi.getTool("batch_bash_poll")).toBeUndefined();
 		expect(pi.getTool("bash")).toBeUndefined();
 
-		// Main agent active tools: batch_read + flow + web + ask_user + warp (batch and batch_bash_poll registered but not active)
+		// Main agent active tools: batch_read + flow + web + ask_user (batch and batch_bash_poll registered but not active)
 		const lastCall = pi.setActiveTools.mock.calls[pi.setActiveTools.mock.calls.length - 1][0];
-		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user", "warp"]);
+		expect(lastCall).toEqual(["batch_read", "flow", "web", "ask_user"]);
 	});
 
 	it("does NOT override active tools for child flows (depth > 0)", async () => {
@@ -2091,96 +2092,5 @@ describe("stripBatchReadToolCalls", () => {
 		expect(result).not.toContain("br-mixed-2");
 		expect(result).not.toContain("result 1");
 		expect(result).not.toContain("result 2");
-	});
-});
-
-describe("warp tool", () => {
-	let tmpDir: string;
-	let originalCwd: string;
-
-	beforeAll(() => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-test-"));
-		originalCwd = process.cwd();
-		process.chdir(tmpDir);
-	});
-
-	afterAll(() => {
-		process.chdir(originalCwd);
-		fs.rmSync(tmpDir, { recursive: true, force: true });
-	});
-
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
-
-	it("registers the warp tool", () => {
-		const pi = createMockPi();
-		registerExtension(pi as any);
-		const tool = pi.getTool("warp");
-		expect(tool).toBeDefined();
-		expect(tool.name).toBe("warp");
-		expect(tool.label).toBe("Warp");
-		expect(tool.renderCall).toBeDefined();
-		expect(tool.renderResult).toBeDefined();
-	});
-
-	it("queues /flow:warp via sendUserMessage with goal", async () => {
-		const pi = createMockPi();
-		registerExtension(pi as any);
-		const tool = pi.getTool("warp");
-
-		const result = await tool.execute(
-			"warp-call-1",
-			{ goal: "Refactor auth module" },
-			new AbortController().signal,
-			undefined,
-			makeMockCtx(tmpDir),
-		);
-
-		expect(result.isError).toBe(false);
-		expect(result.content[0].text).toBe("Warp queued — will execute after current turn completes");
-		expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
-		expect(pi.sendUserMessage).toHaveBeenCalledWith("/flow:warp Refactor auth module", { deliverAs: "followUp" });
-	});
-
-	it("queues /flow:warp without goal when parameter omitted", async () => {
-		const pi = createMockPi();
-		registerExtension(pi as any);
-		const tool = pi.getTool("warp");
-
-		const result = await tool.execute(
-			"warp-call-2",
-			{},
-			new AbortController().signal,
-			undefined,
-			makeMockCtx(tmpDir),
-		);
-
-		expect(result.isError).toBe(false);
-		expect(result.content[0].text).toBe("Warp queued — will execute after current turn completes");
-		expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
-		expect(pi.sendUserMessage).toHaveBeenCalledWith("/flow:warp ", { deliverAs: "followUp" });
-	});
-
-	it("returns queued message even when sendUserMessage is unavailable", async () => {
-		const pi = createMockPi();
-		(pi as any).sendUserMessage = undefined;
-		registerExtension(pi as any);
-		const tool = pi.getTool("warp");
-
-		const result = await tool.execute(
-			"warp-call-3",
-			{ goal: "Test" },
-			new AbortController().signal,
-			undefined,
-			makeMockCtx(tmpDir),
-		);
-
-		expect(result.isError).toBe(false);
-		expect(result.content[0].text).toBe("Warp queued — will execute after current turn completes");
 	});
 });
