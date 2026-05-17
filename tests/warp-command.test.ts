@@ -117,7 +117,6 @@ describe("setupWarpCommand", () => {
 
 		expect(performWarp).toHaveBeenCalledWith(
 			ctx,
-			expect.objectContaining({ type: "warp" }),
 			expect.objectContaining({
 				reviewedPrompt: "distilled prompt",
 				goalOverride: "My goal",

@@ -31,7 +31,7 @@ describe("performWarp", () => {
       cwd: tmpDir,
       sessionManager: { getSessionId: () => "session-1" },
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" });
+    const result = await performWarp(ctx);
     expect(result.success).toBe(false);
     expect(result.error).toContain("No active goal");
   });
@@ -43,7 +43,7 @@ describe("performWarp", () => {
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
       newSession: vi.fn().mockResolvedValue({ cancelled: false }),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" }, {
+    const result = await performWarp(ctx, {
       reviewedPrompt: "---\ncontext: test\n---\nTask: do it",
     });
     expect(result.success).toBe(true);
@@ -57,7 +57,7 @@ describe("performWarp", () => {
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
       newSession: vi.fn().mockResolvedValue({ cancelled: true }),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" }, {
+    const result = await performWarp(ctx, {
       reviewedPrompt: "test",
     });
     expect(result.success).toBe(false);
@@ -78,7 +78,7 @@ describe("performWarp", () => {
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
       newSession: vi.fn().mockRejectedValue(new Error("session error")),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" });
+    const result = await performWarp(ctx);
     expect(result.success).toBe(false);
     const { getLoop } = await import("../src/flow/loop.js");
     const loop = getLoop(tmpDir);
@@ -100,7 +100,7 @@ describe("performWarp", () => {
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
       newSession: vi.fn().mockRejectedValue(new Error("session error")),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" }, {
+    const result = await performWarp(ctx, {
       reviewedPrompt: "test",
     });
     expect(result.success).toBe(false);
@@ -120,7 +120,7 @@ describe("performWarp", () => {
       sessionManager: { getSessionId: () => "session-1", getSessionFile: () => "/tmp/session-1" },
       newSession: vi.fn().mockResolvedValue({ cancelled: false }),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" }, {
+    const result = await performWarp(ctx, {
       reviewedPrompt: "---\ncontext: test\n---\nTask: do it",
       pi,
     });
@@ -139,12 +139,11 @@ describe("performWarp", () => {
     setGoal(tmpDir, "Test goal");
     const setSessionName = vi.fn();
     const appendEntry = vi.fn();
-    const sendUserMessage = vi.fn();
+    const setEditorText = vi.fn();
     const newCtx = {
-      ui: { notify: vi.fn() },
+      ui: { notify: vi.fn(), setEditorText },
       setSessionName,
       appendEntry,
-      sendUserMessage,
     };
     const ctx = {
       cwd: tmpDir,
@@ -153,11 +152,13 @@ describe("performWarp", () => {
         return withSession(newCtx).then(() => ({ cancelled: false }));
       }),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" }, {
+    const result = await performWarp(ctx, {
       reviewedPrompt: "---\ncontext: test\n---\nTask: do it",
     });
     expect(result.success).toBe(true);
     expect(setSessionName).toHaveBeenCalledWith("Warp: Task: do it");
+    expect(setEditorText).toHaveBeenCalledWith("---\ncontext: test\n---\nTask: do it");
+    expect(newCtx.ui.notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
     expect(appendEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
       warpCount: 1,
@@ -176,12 +177,11 @@ describe("performWarp", () => {
     });
     const setSessionName = vi.fn();
     const appendEntry = vi.fn();
-    const sendUserMessage = vi.fn();
+    const setEditorText = vi.fn();
     const newCtx = {
-      ui: { notify: vi.fn() },
+      ui: { notify: vi.fn(), setEditorText },
       setSessionName,
       appendEntry,
-      sendUserMessage,
     };
     const ctx = {
       cwd: tmpDir,
@@ -190,11 +190,13 @@ describe("performWarp", () => {
         return withSession(newCtx).then(() => ({ cancelled: false }));
       }),
     } as any;
-    const result = await performWarp(ctx, { type: "warp", intent: "test", aim: "test" }, {
+    const result = await performWarp(ctx, {
       reviewedPrompt: "test prompt",
     });
     expect(result.success).toBe(true);
     expect(setSessionName).toHaveBeenCalledWith("Warp: Test goal");
+    expect(setEditorText).toHaveBeenCalledWith("test prompt\n\n[Loop: session 3, total tokens ≈ 5000]");
+    expect(newCtx.ui.notify).toHaveBeenCalledWith("Warp ready. Submit when ready.", "info");
     expect(appendEntry).toHaveBeenCalledWith("pi-agent-flow:warp", expect.objectContaining({
       sourceSessionId: "session-1",
       warpCount: 3,

@@ -5,16 +5,18 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { DynamicScrambleText, scrambleManager } from "../tui/scramble/index.js";
+import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 import { getGoalForSession } from "./store.js";
 import { getLoop, recordSessionWarp, terminateLoop, setPendingWarpSessionId, clearPendingWarpSessionId } from "./loop.js";
-import { extractGoalFromPrompt } from "./warp-utils.js";
 import { distillForWarp, performWarp } from "./perform-warp.js";
 
 export function setupWarpCommand(pi: ExtensionAPI): void {
   pi.registerCommand("flow:warp", {
     description: "Warp to a new session with distilled context. Usage: /flow:warp [goal]",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
+      if (!ctx.ui) {
+        return;
+      }
       const DEFAULT_WARP_GOAL = "Continue where we left off — summarize what we've done, where we are, and what the natural next step is.";
       const goal = args.trim() || DEFAULT_WARP_GOAL;
 
@@ -39,91 +41,13 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
 
       let warpError: string | undefined;
 
-      const distilledPrompt = await ctx.ui.custom<string | null>((tui, _theme, _kb, done) => {
-        const abortController = new AbortController();
-        const id = `warp-${Date.now()}`;
-        let completed = false;
-        const RESTART_DELAY_MS = 1500;
-
-        class WarpingComponent {
-          private scramble: DynamicScrambleText;
-          private timer: ReturnType<typeof setTimeout> | undefined;
-          onAbort?: () => void;
-
-          constructor() {
-            this.scramble = new DynamicScrambleText("warping...", () => {
-              const now = Date.now();
-              const result = scrambleManager.updateText(id, "warp", "warping...", now, completed);
-              return result.content;
-            });
-            this.onAbort = () => {
-              abortController.abort();
-              this.cleanup();
-              done(null);
-            };
-            this.scheduleNext();
-          }
-
-          private scheduleNext() {
-            if (this.timer) clearTimeout(this.timer);
-            if (completed) return;
-            const now = Date.now();
-            const result = scrambleManager.updateText(id, "warp", "warping...", now, completed);
-            if (result.isAnimating) {
-              this.timer = setTimeout(() => {
-                this.timer = undefined;
-                tui.requestRender();
-                this.scheduleNext();
-              }, 100);
-            } else {
-              this.timer = setTimeout(() => {
-                this.timer = undefined;
-                if (completed) return;
-                // Reset scramble state and restart animation
-                scrambleManager.completeFlow(id);
-                const restartNow = Date.now();
-                scrambleManager.updateText(id, "warp", "warping...", restartNow, false);
-                tui.requestRender();
-                this.scheduleNext();
-              }, RESTART_DELAY_MS);
-            }
-          }
-
-          render(width: number): string[] {
-            const now = Date.now();
-            const result = scrambleManager.updateText(id, "warp", "warping...", now, completed);
-            if (result.isAnimating && !this.timer && !completed) {
-              this.scheduleNext();
-            }
-            return this.scramble.render(width);
-          }
-
-          cleanup() {
-            if (this.timer) {
-              clearTimeout(this.timer);
-              this.timer = undefined;
-            }
-            this.scramble.invalidate();
-            scrambleManager.completeFlow(id);
-          }
-        }
-
-        const component = new WarpingComponent();
-
-        distillForWarp(ctx, activeGoal, loop, { signal: abortController.signal, userGoalOverride: args.trim() || undefined })
-          .then((result) => {
-            completed = true;
-            component.cleanup();
-            done(result);
-          })
-          .catch((err) => {
-            completed = true;
-            warpError = err instanceof Error ? err.message : "Unknown error";
-            component.cleanup();
-            done(null);
-          });
-
-        return component;
+      const distilledPrompt = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+        const loader = new BorderedLoader(tui, theme, "Generating warp prompt...");
+        loader.onAbort = () => done(null);
+        distillForWarp(ctx, activeGoal, loop, { signal: loader.signal, userGoalOverride: args.trim() || undefined })
+          .then((r) => done(r))
+          .catch((err) => { warpError = err instanceof Error ? err.message : "Unknown error"; done(null); });
+        return loader;
       });
 
       if (distilledPrompt === null || distilledPrompt === undefined) {
@@ -148,7 +72,7 @@ export function setupWarpCommand(pi: ExtensionAPI): void {
 
       const warpedPrompt = reviewedPrompt ?? distilledPrompt.trim();
 
-      const result = await performWarp(ctx, { type: "warp", intent: "Manual warp", aim: "Warp to fresh session" }, {
+      const result = await performWarp(ctx, {
         reviewedPrompt: warpedPrompt,
         goalOverride: args.trim() ? goal : undefined,
         pi,

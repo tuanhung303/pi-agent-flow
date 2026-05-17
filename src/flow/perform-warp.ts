@@ -14,12 +14,6 @@ import { sanitizeBranchForWarp, SYSTEM_PROMPT, extractGoalFromPrompt, MAX_CONVER
 import { logWarn, logError } from "../config/log.js";
 import type { GoalEntry, LoopState } from "./types.js";
 
-export interface WarpFlow {
-  type: string;
-  intent: string;
-  aim: string;
-}
-
 export interface DistillOptions {
   signal?: AbortSignal;
   userGoalOverride?: string;
@@ -111,7 +105,6 @@ export interface PerformWarpOptions {
 
 export async function performWarp(
   ctx: ExtensionCommandContext,
-  warpFlow: WarpFlow,
   opts?: PerformWarpOptions,
 ): Promise<{ success: boolean; error?: string }> {
   const cwd = ctx.cwd;
@@ -179,8 +172,8 @@ export async function performWarp(
           recordSessionWarp(cwd);
         }
         newCtx.ui.notify?.("Warped to new session.", "info");
-        await newCtx.sendUserMessage(warpedPrompt);
-        newCtx.sendUserMessage(`/flow:goal set ${effectiveGoal}`);
+        newCtx.ui.setEditorText?.(warpedPrompt);
+        newCtx.ui.notify?.("Warp ready. Submit when ready.", "info");
 
         // New session: set descriptive name
         newCtx.setSessionName(`Warp: ${effectiveGoal.slice(0, 60)}${effectiveGoal.length > 60 ? "..." : ""}`);
