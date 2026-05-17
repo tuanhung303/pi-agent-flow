@@ -84,11 +84,8 @@ From `sanitizeForkSnapshot` (`snapshot.ts:~900-1345`):
 19. `reparentOrphans` — fix `parentId` references to dropped messages.
 20. `stripBatchRead` — remove `batch_read` tool calls + results (children don't have this tool).
 21. `compressFlowToolCallArgs` — compress verbose `flow` tool call arguments in assistant messages to `{type, aim, steps}`.
-22. `stripOrchestratorNarrative` — strip low-signal assistant narration under 500 chars with no file paths or code blocks. Replace with `[orchestrator:thinking]` placeholder.
-23. `stripUserMissionManifestos` — strip large user mission blocks (> 800 chars, JSON structured, no repo paths). Replace with `[user:mission — see activation prompt]` placeholder.
-24. `stripConversationalAcks` — strip short conversational user acknowledgments (< 100 chars, no paths/commands/code). Replace with `[user:ack]` placeholder.
-25. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1/R1).
-26. `reparentOrphans` — second pass after message drops.
+22. `compressToolResults` — compress flow/batch/web/ask_user results (includes W1/E1/X1/Q1/R1).
+23. `reparentOrphans` — second pass after message drops.
 
 ---
 

@@ -1270,7 +1270,7 @@ describe("STRATEGIC HINTS STRIPPED FROM ALL ROLES", () => {
 				type: "message",
 				message: {
 					role: "assistant",
-					content: "Some analysis here covering the full architecture and edge cases across the entire repository with detailed reasoning for every design decision made. This paragraph is intentionally extended beyond the five-hundred-character threshold to ensure the message survives the stripOrchestratorNarrative pass after the strategic hint is removed. Additional padding text follows to guarantee sufficient length: lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n\n[Directive: Close what you start. Dispatch a [build] or [scout] flow to verify before advancing.]",
+					content: "Some analysis here with detailed reasoning.\n\n[Directive: Close what you start. Dispatch a [build] or [scout] flow to verify before advancing.]",
 					id: "msg-assistant-directive",
 				},
 			},
@@ -1295,7 +1295,7 @@ describe("STRATEGIC HINTS STRIPPED FROM ALL ROLES", () => {
 				type: "message",
 				message: {
 					role: "assistant",
-					content: "Legacy hint test with extensive coverage of the system architecture and implementation patterns across the entire repository to ensure comprehensive understanding before any modifications are made. This text is intentionally padded to exceed the five hundred character threshold required to survive the stripOrchestratorNarrative sanitization pass after the strategic hint is removed from the assistant message content. Additional padding follows to guarantee sufficient length: lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n\n[Hint: Plan next step.]",
+					content: "Legacy hint test with coverage of system architecture.\n\n[Hint: Plan next step.]",
 					id: "msg-assistant-hint",
 				},
 			},
@@ -1337,10 +1337,10 @@ describe("STRATEGIC HINTS STRIPPED FROM ALL ROLES", () => {
 		expect(assistantHintText).not.toContain("[Hint: Plan next step.]");
 
 		// Assert non-directive parts remain
-		expect(assistantDirectiveText).toContain("Some analysis here covering the full architecture and edge cases across the entire repository with detailed reasoning for every design decision made. This paragraph is intentionally extended beyond the five-hundred-character threshold to ensure the message survives the stripOrchestratorNarrative pass after the strategic hint is removed. Additional padding text follows to guarantee sufficient length: lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.");
+		expect(assistantDirectiveText).toContain("Some analysis here with detailed reasoning.");
 		expect(userDirectiveText).toContain("Please continue with the implementation and ensure all edge cases are covered before submitting the final result for review.");
 		expect(toolDirectiveText).toContain("Tool output here.");
-		expect(assistantHintText).toContain("Legacy hint test with extensive coverage of the system architecture and implementation patterns across the entire repository to ensure comprehensive understanding before any modifications are made. This text is intentionally padded to exceed the five hundred character threshold required to survive the stripOrchestratorNarrative sanitization pass after the strategic hint is removed from the assistant message content. Additional padding follows to guarantee sufficient length: lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.");
+		expect(assistantHintText).toContain("Legacy hint test with coverage of system architecture.");
 	});
 });
 

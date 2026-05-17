@@ -755,42 +755,6 @@ If `totalTokens` is unknown:
 
 ---
 
-## N1 — Narrative Stripping Placeholders
-
-Three additional passes in `sanitizeForkSnapshot` remove low-signal conversational content and replace it with compact, self-describing tokens. Sub-agents should treat these as opaque markers — they indicate that content was present and stripped, not that action is required.
-
-### `[orchestrator:thinking]`
-
-**Emitted by:** `stripOrchestratorNarrative` (`snapshot.ts:~1758`)
-
-**Meaning:** The parent orchestrator emitted a short assistant message (< 500 chars) that contained no file paths, code blocks, or tool references. It was likely transitional narration ("Let me think...", "I'll check that...").
-
-**When emitted:** When an assistant message is all whitespace or low-signal text under the length threshold with no actionable markers.
-
-**Sub-agent interpretation:** No action required. The orchestrator was thinking or transitioning between steps. If a token count is available, the variant `[orchestrator:thinking — N tokens]` preserves that metadata for budget tracking.
-
-### `[user:mission — see activation prompt]`
-
-**Emitted by:** `stripUserMissionManifestos` (`snapshot.ts:~1854`)
-
-**Meaning:** The user sent a large block of structured mission text (> 800 chars, typically JSON with keys like `"mission"` or `"stages"`) that contained no repository file paths. The full text is redundant because the child already receives its own `<activation>` prompt with the current mission.
-
-**When emitted:** When a user message exceeds 800 characters, contains structured JSON keys, and references no local files.
-
-**Sub-agent interpretation:** The user's intent is already captured in the child's own `-p` activation prompt. Do not attempt to reconstruct the stripped manifest from context. Trust the activation prompt as the authoritative mission.
-
-### `[user:ack]`
-
-**Emitted by:** `stripConversationalAcks` (`snapshot.ts:~1931`)
-
-**Meaning:** The user sent a very short acknowledgment (< 100 chars) with no file paths, commands, or code blocks. Examples: "Okay", "Thanks", "Go ahead", "Sounds good".
-
-**When emitted:** When a user message is under 100 characters and contains purely conversational content.
-
-**Sub-agent interpretation:** The user acknowledged or approved a prior step. No new instructions were given. Continue with the current mission unless the activation prompt says otherwise.
-
----
-
 # Depth Behavior Matrix
 
 | Protocol | Depth 1 | Depth 2+ |

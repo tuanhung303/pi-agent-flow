@@ -99,9 +99,6 @@ Stats are returned **out-of-band** in the `stats` property of `sanitizeForkSnaps
 | Compress batch | `compressBatchResult` | `src/snapshot/snapshot.ts:~216` |
 | Compress web | `compressWebResult` | `src/snapshot/snapshot.ts:~267` |
 | Compress ask_user | `compressAskUserResult` | `src/snapshot/snapshot.ts:~305` |
-| Strip orchestrator narrative → `[orchestrator:thinking]` | `stripOrchestratorNarrative` | `src/snapshot/snapshot.ts:~1758` |
-| Strip user mission manifestos → `[user:mission — see activation prompt]` | `stripUserMissionManifestos` | `src/snapshot/snapshot.ts:~1854` |
-| Strip conversational acks → `[user:ack]` | `stripConversationalAcks` | `src/snapshot/snapshot.ts:~1931` |
 | Snapshot assembly | `sanitizeForkSnapshot` | `src/snapshot/snapshot.ts:~2025` |
 | Dump writer | `makeUniqueDumpPath` + atomic write | `src/core/flow.ts:~671` |
 

@@ -42,9 +42,6 @@ const VALID_PASS_NAMES = new Set([
 	"compressParentActivation",
 	"collapseEmptyAssistantMessages",
 	"compressFlowToolCallArgs",
-	"stripOrchestratorNarrative",
-	"stripUserMissionManifestos",
-	"stripConversationalAcks",
 ]);
 
 const KNOWN_DEAD_PASS_NAMES = new Set(["sanitizeMessages"]);
