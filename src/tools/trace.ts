@@ -1,29 +1,17 @@
 /**
- * Trace tool — standalone quick verbatim reads and checks.
+ * Trace tool — direct executor for quick verbatim reads and checks.
  *
- * Split from the `flow` tool to eliminate the confusion where the agent
- * nested dispatch ops as siblings in the `flow[]` array instead of inside
- * a task object. Trace is self-defining (agents/trace.md already
- * contains the full mission), so it needs zero required fields.
+ * Runs dispatch ops directly without forking a child flow.
+ * Returns concise notes + tool outputs by ID. No structured output,
+ * no LLM synthesis, no process spawn.
  */
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { runFlow } from "../flow/runner.js";
-import { discoverFlows } from "../flow/agents.js";
-import { buildCore2Snapshot } from "../core2/snapshot.js";
-import {
-	resolveFlowModelCandidates,
-	resolveModelContextWindow,
-	selectFlowModelStrategy,
-	type LoadedFlowModelConfigs,
-	type FlowModelStrategy,
-} from "../config/config.js";
 import { renderFlowCall, renderFlowResult } from "../tui/render.js";
 import { DEFAULT_FLOW_COLORS } from "../tui/flow-colors.js";
-import { setLiveText } from "../tui/scramble/index.js";
-import { getFlowOutput, type SingleResult, type FlowDetails } from "../types/flow.js";
+import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types/flow.js";
 import { executeOperations } from "../batch/execute.js";
 import { runBashWithLimits } from "../batch/batch-bash.js";
 import { runWebOps } from "./web-ops.js";
@@ -31,8 +19,7 @@ import type { FileOpInput } from "../batch/constants.js";
 import type { WebOpInput } from "./web-ops.js";
 
 // ---------------------------------------------------------------------------
-// Dispatch schemas — mirror of the flow-tool dispatch (kept here to avoid
-// circular imports with src/index.ts).
+// Dispatch schemas
 // ---------------------------------------------------------------------------
 
 const BatchDispatchOp = Type.Object({
@@ -127,27 +114,20 @@ async function executeDispatchOps(
 }
 
 // ---------------------------------------------------------------------------
-// Override tool params — zero required fields
+// Trace params — zero required fields
 // ---------------------------------------------------------------------------
 
 export const TraceParams = Type.Object({
 	intent: Type.Optional(Type.String({
-		description: "Optional mission override. Defaults to the trace agent's built-in description.",
+		description: "Optional context or question. If omitted, trace simply runs the dispatch ops and returns raw outputs.",
 	})),
 	dispatch: Type.Optional(Type.Array(DispatchOpSchema, {
-		description: "Tools to run before the trace starts (results injected into prompt).",
+		description: "Tools to run directly. Results returned verbatim with tool call IDs.",
 	})),
 	cwd: Type.Optional(Type.String({ description: "Working directory override." })),
-	complexity: Type.Optional(Type.Union([
-		Type.Literal("snap"),
-		Type.Literal("simple"),
-		Type.Literal("moderate"),
-		Type.Literal("complex"),
-		Type.Literal("intricate"),
-	], { description: "Budget level. Default: simple." })),
 }, {
 	title: "TraceToolParams",
-	description: "Activate trace mode — read files verbatim, run checks, explore codebase. All fields optional.",
+	description: "Quick verbatim reads and checks. All fields optional.",
 	examples: [
 		{},
 		{ dispatch: [{ tool: "batch", ops: [{ o: "read", p: "src/main.ts" }] }] },
@@ -155,27 +135,31 @@ export const TraceParams = Type.Object({
 });
 
 export interface TraceToolOptions {
-	getSettings?: () => { toolOptimize: boolean; structuredOutput: boolean; bodyVerbosity: "lite" | "full" } | undefined;
-	getDepthConfig?: () => { currentDepth: number; maxDepth: number; ancestorFlowStack: string[]; preventCycles: boolean } | undefined;
-	getLoadedFlowModelConfigs?: () => LoadedFlowModelConfigs | undefined;
-	tierOverrideResolver?: (tier: "lite" | "flash" | "full") => string | undefined;
-	fallbackModel?: string;
+	getSettings?: () => { bodyVerbosity: "lite" | "full" } | undefined;
+}
+
+function formatTraceResult(dispatchText: string, intent?: string): string {
+	const parts: string[] = [];
+	if (intent) {
+		parts.push(`## Intent\n\n${intent}\n`);
+	}
+	parts.push(`## Results\n\n${dispatchText}`);
+	return parts.join("\n");
 }
 
 export function createTraceTool(opts: TraceToolOptions = {}) {
-	let lastResolvedModel: string | undefined;
-	let lastResolvedMaxCtx: number | undefined;
+	let lastCallArgs: any;
 
 	return {
 		name: "trace",
 		label: "Trace",
-		promptSnippet: "Activate trace mode — read files verbatim, run checks, explore codebase. Optional dispatch for pre-flight reads. No boilerplate required.",
+		promptSnippet: "Activate trace mode — quick verbatim reads and checks. Runs tools directly, returns raw outputs with IDs. No boilerplate required.",
 		promptGuidelines: [
 			"Use `trace` for quick verbatim file reads, bash checks, and codebase exploration.",
-			"No `intent`, `aim`, or `complexity` required — the agent knows its mission.",
-			"Optional `dispatch` runs tools before the trace starts.",
+			"Optional `dispatch` runs tools directly and returns verbatim outputs.",
+			"No `intent`, `aim`, or `complexity` required — but you may add `intent` for context.",
 		],
-		description: "Activates trace mode to read files verbatim, run checks, and explore the codebase. Minimal schema — all fields optional.",
+		description: "Tools in, verbatim out. Runs dispatch ops directly, returns raw outputs by ID.",
 		parameters: TraceParams,
 
 		async execute(
@@ -189,98 +173,49 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 				throw new Error("Error: session not initialized");
 			}
 
-			const depthConfig = opts.getDepthConfig?.();
-			const parentDepth = depthConfig?.currentDepth ?? 0;
-			const parentFlowStack = depthConfig?.ancestorFlowStack ?? [];
-			const maxDepth = 0; // trace is a leaf — never transitions further
-			const preventCycles = depthConfig?.preventCycles ?? true;
+			lastCallArgs = params;
 
-			const discovery = discoverFlows(ctx.cwd, "all");
-			const traceFlow = discovery.flows.find(f => f.name === "trace");
-
-			if (!traceFlow) {
-				throw new Error("Trace agent not found. Expected agents/trace.md to be present.");
-			}
-
-			const makeDetails = (results: SingleResult[]): FlowDetails => ({
-				mode: "flow",
-				flowStyle: "fork",
-				projectAgentsDir: discovery.projectFlowsDir,
-				results,
-			});
-
-			const preDispatchResults = params.dispatch?.length
+			const dispatchText = params.dispatch?.length
 				? await executeDispatchOps(params.dispatch, params.cwd ?? ctx.cwd, ctx, signal)
 				: undefined;
 
-			const forkSessionSnapshotJsonl = buildCore2Snapshot(ctx.sessionManager);
+			const outputText = dispatchText
+				? formatTraceResult(dispatchText, params.intent)
+				: (params.intent ?? "Trace completed — no dispatch ops provided.");
 
-			// Resolve model and context window (mirrors executeSingleFlow in executor.ts)
-			const tier = traceFlow.tier ?? "lite";
-			let selectedStrategy: FlowModelStrategy | undefined;
-			const loadedFlowModelConfigs = opts.getLoadedFlowModelConfigs?.();
-			if (loadedFlowModelConfigs) {
-				const selectedFlowModelConfig = selectFlowModelStrategy(
-					loadedFlowModelConfigs.configs,
-					loadedFlowModelConfigs.selectedName,
-				);
-				selectedStrategy = selectedFlowModelConfig.strategy;
-			}
-			const { candidates } = resolveFlowModelCandidates({
-				tier,
-				flowModel: traceFlow.model,
-				cliTierOverride: opts.tierOverrideResolver?.(tier),
-				strategy: selectedStrategy ?? {},
-				fallbackModel: opts.fallbackModel,
-			});
-			const resolvedModel = candidates[0];
-			const maxContextTokens = resolveModelContextWindow(resolvedModel);
+			const syntheticMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: outputText }],
+			};
 
-			// Persist for renderResult ghost fallback
-			lastResolvedModel = resolvedModel;
-			lastResolvedMaxCtx = maxContextTokens;
-
-			const result = await runFlow({
-				cwd: ctx.cwd,
-				flows: discovery.flows,
-				flowName: "trace",
-				intent: params.intent ?? traceFlow.description,
+			const result: SingleResult = {
+				type: "trace",
+				agentSource: "bundled",
+				intent: params.intent ?? "Trace",
 				aim: "",
-				taskCwd: params.cwd,
-				forkSessionSnapshotJsonl,
-				parentDepth,
-				parentFlowStack,
-				maxDepth,
-				preventCycles,
-				toolOptimize: opts.getSettings?.()?.toolOptimize,
-				structuredOutput: opts.getSettings?.()?.structuredOutput,
-				complexity: params.complexity ?? "simple",
-				model: resolvedModel,
-				maxContextTokens,
-				preDispatchResults,
-				makeDetails,
-				signal,
-				onUpdate: onUpdate
-					? (partial: any) => {
-						const text = partial?.content?.[0]?.text;
-						if (text !== undefined) {
-							setLiveText(toolCallId, text);
-							setLiveText("collapsed", text);
-						}
-						onUpdate({ ...partial, _toolCallId: toolCallId });
-					}
-					: undefined,
-			});
+				exitCode: 0,
+				messages: [syntheticMessage as any],
+				stderr: "",
+				usage: emptyFlowUsage(),
+			};
 
-			const outputText = getFlowOutput(result.messages) || "Trace completed.";
-			const success = result.exitCode === 0;
-
-			return {
+			const agentToolResult: AgentToolResult<FlowDetails> = {
 				content: [{ type: "text" as const, text: outputText }],
-				details: makeDetails([result]),
-				failed: !success,
+				details: {
+					mode: "flow",
+					flowStyle: "fork",
+					projectAgentsDir: null,
+					results: [result],
+				},
+				failed: false,
 				_toolCallId: toolCallId,
 			};
+
+			if (onUpdate) {
+				onUpdate({ ...agentToolResult, _toolCallId: toolCallId });
+			}
+
+			return agentToolResult;
 		},
 
 		renderCall: (args: any, theme: any) =>
@@ -294,10 +229,10 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 						flow: [
 							{
 								type: "trace",
-								intent: args?.intent || "Trace mode",
+								intent: args?.intent || lastCallArgs?.intent || "Trace",
 								aim: "",
-								model: lastResolvedModel,
-								maxContextTokens: lastResolvedMaxCtx,
+								model: undefined,
+								maxContextTokens: undefined,
 							},
 						],
 					};
