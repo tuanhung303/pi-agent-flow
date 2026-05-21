@@ -576,55 +576,25 @@ describe("flow tool execute", () => {
 	});
 
 	describe("trace tool execute", () => {
-		it("resolves model via lazy getter after session_start", async () => {
-			setupFlowsDir([
-				{
-					fileName: "trace.md",
-					content: `---\nname: trace\ndescription: Read files\n---\nPrompt.`,
-				},
-			]);
-
-			const projectDir = path.join(tmpDir, ".pi");
-			fs.mkdirSync(projectDir, { recursive: true });
-			fs.writeFileSync(
-				path.join(projectDir, "settings.json"),
-				JSON.stringify({
-					flowModelConfig: "test-strategy",
-					flowModelConfigs: {
-						"test-strategy": {
-							lite: { primary: "trace-lite-model" },
-						},
-					},
-				}),
-				"utf-8",
-			);
+		it("runs dispatch directly without forking a child flow", async () => {
+			fs.writeFileSync(path.join(tmpDir, "hello.txt"), "world", "utf-8");
 
 			const pi = createMockPi();
 			registerExtension(pi as any);
 			await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
 
 			const tool = pi.getTool("trace");
-			vi.mocked(runFlow).mockResolvedValue({
-				type: "trace",
-				agentSource: "project",
-				intent: "Read package.json",
-				aim: "",
-				exitCode: 0,
-				messages: [{ role: "assistant", content: [{ type: "text", text: "ok" }] }],
-				stderr: "",
-				usage: emptyFlowUsage(),
-			});
-
-			await tool.execute(
+			const result = await tool.execute(
 				"call-1",
-				{ intent: "Read package.json" },
+				{ intent: "Read hello.txt", dispatch: [{ tool: "batch", ops: [{ o: "read", p: "hello.txt" }] }] },
 				new AbortController().signal,
 				vi.fn(),
 				makeMockCtx(tmpDir),
 			);
 
-			expect(runFlow).toHaveBeenCalledTimes(1);
-			expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("trace-lite-model");
+			expect(runFlow).not.toHaveBeenCalled();
+			expect(result.failed).toBe(false);
+			expect(result.content[0].text).toContain("world");
 		});
 	});
 
