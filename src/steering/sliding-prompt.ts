@@ -25,6 +25,7 @@ export const STEERING_HINT =
 	`execution_rules:\n` +
 	`  mindset:\n` +
 	`    - "Answer directly if possible. Otherwise: for short, quick validations use trace tool; for parallel discovery and validation with multiple topics use flow | scout tool; otherwise investigate, plan, then transition."\n` +
+	`    - "trace = single-shot verbatim, zero overhead. flow = multi-step sandbox, intent-driven."\n` +
 	`  completeness:\n` +
 	`    - "Zero omissions. Process every item in any given range or list sequentially (e.g., P2 → P6). No placeholders, no truncation, no half-finished tasks. Complete the execution fully."\n` +
 	`collaboration_ask_user:\n` +
