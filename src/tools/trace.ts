@@ -9,7 +9,9 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { getFlowOutput } from "../types/flow.js";
+import { getFlowOutput, type FlowDetails } from "../types/flow.js";
+import { renderFlowCall, renderFlowResult } from "../tui/render.js";
+import { DEFAULT_FLOW_COLORS } from "../tui/flow-colors.js";
 import { executeOperations } from "../batch/execute.js";
 import { runBashWithLimits } from "../batch/batch-bash.js";
 import { runWebOps } from "./web-ops.js";
@@ -159,6 +161,8 @@ function formatTraceResult(dispatchText: string, intent?: string): string {
 }
 
 export function createTraceTool(opts: TraceToolOptions = {}) {
+	let lastCallArgs: any;
+
 	return {
 		name: "trace",
 		label: "Trace",
@@ -177,11 +181,13 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 			signal: AbortSignal | undefined,
 			onUpdate: any,
 			ctx: ExtensionContext,
-		): Promise<AgentToolResult<void>> {
+		): Promise<AgentToolResult<FlowDetails>> {
 			const settings = opts.getSettings?.();
 			if (!settings) {
 				throw new Error("Error: session not initialized");
 			}
+
+			lastCallArgs = params;
 
 			const dispatchText = params.dispatch?.length
 				? await executeDispatchOps(params.dispatch, params.cwd ?? ctx.cwd, ctx, signal)
@@ -246,7 +252,8 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 
 						onUpdate({
 							content: [{ type: "text", text: liveText }],
-							failed: false,
+							details: partial.details,
+							failed: partial.failed ?? false,
 							_toolCallId: toolCallId,
 						});
 					}
@@ -264,8 +271,16 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 				? `## Results\n\n${dispatchText}\n\n## Exploration\n\n${childFlowOutput}`
 				: childFlowOutput;
 
-			const agentToolResult: AgentToolResult<void> = {
+			const details: FlowDetails = {
+				mode: "flow",
+				flowStyle: "fork",
+				projectAgentsDir: null,
+				results: [result],
+			};
+
+			const agentToolResult: AgentToolResult<FlowDetails> = {
 				content: [{ type: "text" as const, text: outputText }],
+				details,
 				failed: result.exitCode !== 0,
 				_toolCallId: toolCallId,
 			};
@@ -275,6 +290,27 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 			}
 
 			return agentToolResult;
+		},
+
+		renderCall: (args: any, theme: any) =>
+			renderFlowCall(args, theme, { ...DEFAULT_FLOW_COLORS, bodyVerbosity: opts.getSettings?.()?.bodyVerbosity ?? "lite" }),
+
+		renderResult: (result: any, { expanded }: any, theme: any, args: any) => {
+			const enrichedArgs = args?.flow?.[0]
+				? args
+				: {
+						...(args || {}),
+						flow: [
+							{
+								type: "trace",
+								intent: args?.intent || lastCallArgs?.intent || "Trace",
+								aim: "",
+								model: undefined,
+								maxContextTokens: undefined,
+							},
+						],
+					};
+			return renderFlowResult(result, expanded, theme, enrichedArgs, { ...DEFAULT_FLOW_COLORS, bodyVerbosity: opts.getSettings?.()?.bodyVerbosity ?? "lite" });
 		},
 	};
 }
