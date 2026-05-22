@@ -526,7 +526,15 @@ export default function (pi: ExtensionAPI) {
 
 	// Register the trace tool (available at all depths — quick verbatim reads)
 	pi.registerTool(createTraceTool({
-		getSettings: () => resolved ? { bodyVerbosity: resolved.bodyVerbosity } : undefined,
+		getSettings: () => resolved,
+		getDepthConfig: () => ({
+			currentDepth,
+			maxDepth,
+			ancestorFlowStack,
+			preventCycles,
+		}),
+		getTierOverride,
+		fallbackModel: inheritedCliArgs.fallbackModel,
 	}));
 
 	// Register the flow tool

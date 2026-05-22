@@ -576,12 +576,34 @@ describe("flow tool execute", () => {
 	});
 
 	describe("trace tool execute", () => {
-		it("runs dispatch directly without forking a child flow", async () => {
+		it("runs dispatch and forks a child trace flow to explore", async () => {
 			fs.writeFileSync(path.join(tmpDir, "hello.txt"), "world", "utf-8");
 
 			const pi = createMockPi();
 			registerExtension(pi as any);
 			await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+			vi.mocked(runFlow).mockResolvedValue({
+				type: "trace",
+				agentSource: "bundled",
+				intent: "Read hello.txt",
+				aim: "",
+				exitCode: 0,
+				messages: [
+					{
+						role: "assistant" as const,
+						content: [{ type: "text" as const, text: "Explored successfully" }],
+						timestamp: Date.now(),
+						api: "openai",
+						provider: "openai",
+						model: "gpt-4",
+						usage: {} as any,
+						stopReason: "stop" as const,
+					},
+				],
+				stderr: "",
+				usage: emptyFlowUsage(),
+			});
 
 			const tool = pi.getTool("trace");
 			const result = await tool.execute(
@@ -592,9 +614,11 @@ describe("flow tool execute", () => {
 				makeMockCtx(tmpDir),
 			);
 
-			expect(runFlow).not.toHaveBeenCalled();
+			expect(runFlow).toHaveBeenCalledTimes(1);
+			expect(vi.mocked(runFlow).mock.calls[0][0].flowName).toBe("trace");
 			expect(result.failed).toBe(false);
 			expect(result.content[0].text).toContain("world");
+			expect(result.content[0].text).toContain("Explored successfully");
 		});
 	});
 

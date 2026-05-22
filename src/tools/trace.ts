@@ -9,14 +9,17 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { renderFlowCall, renderFlowResult } from "../tui/render.js";
-import { DEFAULT_FLOW_COLORS } from "../tui/flow-colors.js";
-import { emptyFlowUsage, type SingleResult, type FlowDetails } from "../types/flow.js";
+import { getFlowOutput } from "../types/flow.js";
 import { executeOperations } from "../batch/execute.js";
 import { runBashWithLimits } from "../batch/batch-bash.js";
 import { runWebOps } from "./web-ops.js";
 import type { FileOpInput } from "../batch/constants.js";
 import type { WebOpInput } from "./web-ops.js";
+import { runFlow } from "../flow/runner.js";
+import { buildCore2Snapshot } from "../core2/snapshot.js";
+import { discoverFlows } from "../flow/agents.js";
+import { resolveFlowModelCandidates, resolveModelContextWindow } from "../config/config.js";
+import type { ResolvedSettings } from "../config/settings-resolver.js";
 
 // ---------------------------------------------------------------------------
 // Dispatch schemas
@@ -135,7 +138,15 @@ export const TraceParams = Type.Object({
 });
 
 export interface TraceToolOptions {
-	getSettings?: () => { bodyVerbosity: "lite" | "full" } | undefined;
+	getSettings?: () => ResolvedSettings | undefined;
+	getDepthConfig?: () => {
+		currentDepth: number;
+		maxDepth: number;
+		ancestorFlowStack: string[];
+		preventCycles: boolean;
+	};
+	getTierOverride?: (tier: "lite" | "flash" | "full") => string | undefined;
+	fallbackModel?: string;
 }
 
 function formatTraceResult(dispatchText: string, intent?: string): string {
@@ -148,8 +159,6 @@ function formatTraceResult(dispatchText: string, intent?: string): string {
 }
 
 export function createTraceTool(opts: TraceToolOptions = {}) {
-	let lastCallArgs: any;
-
 	return {
 		name: "trace",
 		label: "Trace",
@@ -168,75 +177,104 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 			signal: AbortSignal | undefined,
 			onUpdate: any,
 			ctx: ExtensionContext,
-		): Promise<AgentToolResult<FlowDetails>> {
-			if (!opts.getSettings?.()) {
+		): Promise<AgentToolResult<void>> {
+			const settings = opts.getSettings?.();
+			if (!settings) {
 				throw new Error("Error: session not initialized");
 			}
-
-			lastCallArgs = params;
 
 			const dispatchText = params.dispatch?.length
 				? await executeDispatchOps(params.dispatch, params.cwd ?? ctx.cwd, ctx, signal)
 				: undefined;
 
-			const outputText = dispatchText
-				? formatTraceResult(dispatchText, params.intent)
-				: (params.intent ?? "Trace completed — no dispatch ops provided.");
+			// Discover flows and find the "trace" agent config
+			const discovery = discoverFlows(ctx.cwd, "all");
+			const { flows } = discovery;
+			const traceFlow = flows.find((f) => f.name === "trace");
 
-			const syntheticMessage = {
-				role: "assistant",
-				content: [{ type: "text", text: outputText }],
+			const depthConfig = opts.getDepthConfig?.() ?? {
+				currentDepth: 0,
+				maxDepth: 3,
+				ancestorFlowStack: [],
+				preventCycles: true,
 			};
+			const { currentDepth, maxDepth, ancestorFlowStack, preventCycles } = depthConfig;
 
-			const result: SingleResult = {
-				type: "trace",
-				agentSource: "bundled",
-				intent: params.intent ?? "Trace",
-				aim: "",
-				exitCode: 0,
-				messages: [syntheticMessage as any],
-				stderr: "",
-				usage: emptyFlowUsage(),
-			};
+			const tier = traceFlow?.tier ?? "lite";
+			const cliTierOverride = opts.getTierOverride?.(tier);
+			const strategy = settings.loadedFlowModelConfigs?.strategy;
+			const { candidates } = resolveFlowModelCandidates({
+				tier,
+				flowModel: traceFlow?.model,
+				cliTierOverride,
+				strategy,
+				fallbackModel: opts.fallbackModel,
+			});
+			const attemptModel = candidates[0];
+			const maxContextTokens = resolveModelContextWindow(attemptModel);
 
-			const agentToolResult: AgentToolResult<FlowDetails> = {
-				content: [{ type: "text" as const, text: outputText }],
-				details: {
-					mode: "flow",
-					flowStyle: "fork",
-					projectAgentsDir: null,
-					results: [result],
+			const forkSessionSnapshotJsonl = buildCore2Snapshot(ctx.sessionManager);
+			const shouldInheritContext = traceFlow?.inheritContext !== false;
+
+			const result = await runFlow({
+				cwd: ctx.cwd,
+				flows,
+				flowName: "trace",
+				intent: params.intent ?? "Explore codebase and verify details",
+				aim: params.intent ? (params.intent.length > 40 ? params.intent.slice(0, 37) + "..." : params.intent) : "Trace",
+				taskCwd: params.cwd ?? ctx.cwd,
+				forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+				parentDepth: currentDepth,
+				parentFlowStack: ancestorFlowStack,
+				maxDepth: maxDepth,
+				preventCycles,
+				toolOptimize: settings.toolOptimize,
+				structuredOutput: false, // trace does not use structured JSON outputs
+				complexity: "simple", // simple budget is perfect for trace verbatim reads
+				model: attemptModel,
+				maxContextTokens,
+				goalContext: undefined,
+				tools: undefined, // use trace.md tools
+				preDispatchResults: dispatchText,
+				signal,
+				onUpdate: (partial) => {
+					if (onUpdate) {
+						const childFlowOutput = partial.content?.[0]?.text || "";
+						const liveText = dispatchText
+							? `## Results\n\n${dispatchText}\n\n## Exploration\n\n${childFlowOutput}`
+							: childFlowOutput;
+
+						onUpdate({
+							content: [{ type: "text", text: liveText }],
+							failed: false,
+							_toolCallId: toolCallId,
+						});
+					}
 				},
-				failed: false,
+				makeDetails: (results) => ({
+					mode: "flow" as const,
+					flowStyle: "fork" as const,
+					projectAgentsDir: null,
+					results,
+				}),
+			});
+
+			const childFlowOutput = getFlowOutput(result.messages);
+			const outputText = dispatchText
+				? `## Results\n\n${dispatchText}\n\n## Exploration\n\n${childFlowOutput}`
+				: childFlowOutput;
+
+			const agentToolResult: AgentToolResult<void> = {
+				content: [{ type: "text" as const, text: outputText }],
+				failed: result.exitCode !== 0,
 				_toolCallId: toolCallId,
 			};
 
 			if (onUpdate) {
-				onUpdate({ ...agentToolResult, _toolCallId: toolCallId });
+				onUpdate(agentToolResult);
 			}
 
 			return agentToolResult;
-		},
-
-		renderCall: (args: any, theme: any) =>
-			renderFlowCall(args, theme, { ...DEFAULT_FLOW_COLORS, bodyVerbosity: opts.getSettings?.()?.bodyVerbosity ?? "lite" }),
-
-		renderResult: (result: any, { expanded }: any, theme: any, args: any) => {
-			const enrichedArgs = args?.flow?.[0]
-				? args
-				: {
-						...(args || {}),
-						flow: [
-							{
-								type: "trace",
-								intent: args?.intent || lastCallArgs?.intent || "Trace",
-								aim: "",
-								model: undefined,
-								maxContextTokens: undefined,
-							},
-						],
-					};
-			return renderFlowResult(result, expanded, theme, enrichedArgs, { ...DEFAULT_FLOW_COLORS, bodyVerbosity: opts.getSettings?.()?.bodyVerbosity ?? "lite" });
 		},
 	};
 }
