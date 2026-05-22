@@ -159,7 +159,7 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 			"Optional `dispatch` runs tools directly and returns verbatim outputs.",
 			"No `intent`, `aim`, or `complexity` required — but you may add `intent` for context.",
 		],
-		description: "Tools in, verbatim out. Runs dispatch ops directly, returns raw outputs by ID.",
+		description: "Input a checklist of intents as `aim`, and tool args to `dispatch`; trace releases verbatim output.",
 		parameters: TraceParams,
 
 		async execute(
