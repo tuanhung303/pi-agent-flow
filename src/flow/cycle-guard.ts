@@ -37,7 +37,14 @@ export function shouldFailover(result: SingleResult): boolean {
 		return false;
 	}
 	if (result.exitCode > 0) return true;
-	if (!isFlowComplete(result) && (text.includes("400") && text.includes("param"))) {
+	// Some child runs log HTTP 400 / "Param Incorrect" to stderr while exiting 0
+	// without completing a turn — treat as retryable for model failover.
+	if (!isFlowComplete(result) && text.includes("400") && text.includes("param")) {
+		return true;
+	}
+	// tool_call_id mismatch — strict API providers (kimi, DeepSeek) reject
+	// snapshots with orphaned toolResult messages.
+	if (!isFlowComplete(result) && text.includes("400") && text.includes("tool_call_id")) {
 		return true;
 	}
 	return false;
