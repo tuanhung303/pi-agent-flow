@@ -66,6 +66,7 @@ const FLOW_FINAL_URGE_MS = getEnvInt("PI_FLOW_FINAL_URGE_MS", 135 * 1000);
 const REPORTING_GRACE_MS = getEnvInt("PI_FLOW_REPORTING_GRACE_MS", 90_000);
 const SNAP_THRESHOLD_MS = getEnvInt("PI_FLOW_SNAP_THRESHOLD_MS", 120_000);
 const FLOW_TOOL_SUMMARY_GRACE_MS = FLOW_FINAL_URGE_MS;
+const MAX_STDERR_BYTES = 100 * 1024; // 100KB cap for stderr accumulation
 import {
 	FLOW_DEPTH_ENV,
 	FLOW_MAX_DEPTH_ENV,
@@ -553,7 +554,17 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			};
 
 			const onStderrData = (chunk: Buffer) => {
-				result.stderr += chunk.toString();
+				// Fix P6: Cap stderr accumulation at 100KB to prevent unbounded growth
+				const chunkStr = chunk.toString();
+				if (result.stderr.length >= MAX_STDERR_BYTES) {
+					return; // Already truncated, ignore further chunks
+				}
+				if (result.stderr.length + chunkStr.length > MAX_STDERR_BYTES) {
+					const keepBytes = Math.max(0, MAX_STDERR_BYTES - 1000);
+					result.stderr = result.stderr.slice(0, keepBytes) + "\n... [stderr truncated]";
+				} else {
+					result.stderr += chunkStr;
+				}
 			};
 
 			proc.stdout.on("data", onStdoutData);
@@ -587,6 +598,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 			proc.on("error", (err) => {
 				if (!result.stderr.trim()) result.stderr = err.message;
+				if (proc.pid !== undefined) unregisterChildGroup(proc.pid); // Fix L1: Unregister child group on spawn error (error event suppresses close)
 				finish(1);
 			});
 
