@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { SettingsList } from "../src/flow/settings-command.js";
 import { handleTextCommand, getCategoryHandler } from "../src/flow/settings-handler.js";
 import { loadFlowSettings, writeFlowSetting } from "../src/config/config.js";
-import { clearGoal } from "../src/flow/store.js";
+import { clearGoal, _clearStoreCache } from "../src/flow/store.js";
 import { clearLoop } from "../src/flow/loop.js";
 
 describe("SettingsList", () => {
@@ -160,6 +160,7 @@ describe("handleTextCommand", () => {
   afterEach(() => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -308,6 +309,7 @@ describe("getCategoryHandler", () => {
   });
 
   afterEach(() => {
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

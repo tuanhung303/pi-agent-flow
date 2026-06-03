@@ -37,6 +37,7 @@ describe("continuation loop integration", () => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
     sessionRegistry.unregister(tmpDir);
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

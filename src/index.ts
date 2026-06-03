@@ -56,6 +56,8 @@ import { buildSnapshotWithCompression, parseSharedContext, type SharedContext } 
 import {
 	resolveFlowModelCandidates,
 	resolveModelContextWindow,
+	invalidateSettingsCache,
+	flushAllSettingsCachesSync,
 } from "./config/config.js";
 import {
 	resolveSettings,
@@ -386,6 +388,7 @@ export default function (pi: ExtensionAPI) {
 	// Fix L2: registerFlow() already handles sessionRegistry.register() — removed duplicate here.
 	pi.on("session_start", async (_event, ctx) => {
 		clearClassificationCache();
+		invalidateSettingsCache();
 		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
 
@@ -902,6 +905,7 @@ export default function (pi: ExtensionAPI) {
 			shutdownWakeup();
 			clearAllContinuationState(); // Fix L3: Prevent unbounded Map growth by cleaning up session tracking state
 			flushAllStoreCachesSync();   // Fix P9: Ensure goal state is persisted before process exit
+			flushAllSettingsCachesSync(); // Fix P17: Ensure settings are persisted before process exit
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}

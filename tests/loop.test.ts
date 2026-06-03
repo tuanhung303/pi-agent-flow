@@ -12,7 +12,7 @@ import {
   setPendingWarpSessionId,
   clearPendingWarpSessionId,
 } from "../src/flow/loop.js";
-import { setGoal, readState } from "../src/flow/store.js";
+import { setGoal, readState, _clearStoreCache } from "../src/flow/store.js";
 import type { LoopState, LoopTerminationReason } from "../src/flow/types.js";
 
 describe("loop state management", () => {
@@ -23,6 +23,7 @@ describe("loop state management", () => {
   });
 
   afterEach(() => {
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

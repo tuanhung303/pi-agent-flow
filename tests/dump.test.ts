@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runFlow, type RunFlowOptions } from "../src/flow/runner.js";
+import { cleanupStaleDebugDumps } from "../src/flow/dump-io.js";
 import type { FlowConfig } from "../src/flow/agents.js";
 import type { FlowDetails } from "../src/types/flow.js";
 import * as childProcess from "node:child_process";
@@ -660,6 +661,9 @@ describe("debug mode — end-to-end", () => {
 		}, 10);
 
 		await promise;
+		// runFlow fires cleanupStaleDebugDumps in the background; await it directly
+		// to eliminate the race between the assertion and the async cleanup.
+		await cleanupStaleDebugDumps(opts.cwd, 168);
 
 		expect(fs.existsSync(staleFile)).toBe(false);
 

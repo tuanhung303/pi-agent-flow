@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { shouldAutoWarp, buildAutoWarpPrompt } from "../src/flow/auto-warp.js";
-import { setGoal, clearGoal } from "../src/flow/store.js";
+import { setGoal, clearGoal, _clearStoreCache } from "../src/flow/store.js";
 import { setLoop, clearLoop } from "../src/flow/loop.js";
 import type { LoopState } from "../src/flow/types.js";
 
@@ -17,6 +17,7 @@ describe("auto-warp orchestration", () => {
   afterEach(() => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

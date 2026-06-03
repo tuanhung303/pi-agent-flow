@@ -5,6 +5,7 @@ import * as path from "node:path";
 import registerExtension from "../src/index.js";
 import { runFlow, mapFlowConcurrent } from "../src/flow/runner.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
+import { flushAllSettingsCachesSync } from "../src/config/config.js";
 
 vi.mock("../src/flow/runner.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../src/flow/runner.js")>();
@@ -983,6 +984,7 @@ describe("flow tool execute", () => {
 		pi.setFlag("flow-model-config", "balance");
 		registerExtension(pi as any);
 		await pi.trigger("session_start", {}, makeMockCtx(projectCwd));
+		flushAllSettingsCachesSync();
 
 		expect(JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf-8")).flowModelConfig).toBe("mimo");
 		expect(warnSpy).toHaveBeenCalledWith("mode: mimo | lite: mimo-lite - flash: (default) - full: (default)");

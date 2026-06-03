@@ -13,7 +13,7 @@ import { type FlowTier } from "../flow/agents.js";
 import { logWarn } from "./log.js";
 import { resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
 import { getAgentDir, hasAgentDirOverride } from "./paths.js";
-import { atomicWriteFileSync } from "../io/atomic-write.js";
+import { atomicWriteFileSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 
 
 interface FlowModelTierConfig {
@@ -92,14 +92,69 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Fix P17: Cache settings in memory with async flush
+const _settingsCache = new Map<string, Record<string, unknown>>();
+const _settingsFlushScheduled = new Set<string>();
+
 function readSettingsJson(filePath: string): Record<string, unknown> | null {
+	const cached = _settingsCache.get(filePath);
+	if (cached) return cached;
 	try {
 		const content = fs.readFileSync(filePath, "utf-8");
-		return JSON.parse(content) as Record<string, unknown>;
+		const parsed = JSON.parse(content) as Record<string, unknown>;
+		_settingsCache.set(filePath, parsed);
+		return parsed;
 	} catch (e) {
 		logWarn(`[pi-agent-flow] Failed to read settings JSON from ${filePath}: ${e}`);
 		return null;
 	}
+}
+
+function scheduleSettingsFlush(filePath: string): void {
+	if (!_settingsFlushScheduled.has(filePath)) {
+		_settingsFlushScheduled.add(filePath);
+		setImmediate(() => flushSettings(filePath));
+	}
+}
+
+async function flushSettings(filePath: string): Promise<void> {
+	_settingsFlushScheduled.delete(filePath);
+	const settings = _settingsCache.get(filePath);
+	if (!settings) return;
+	try {
+		await atomicWriteJsonAsync(filePath, settings);
+	} catch (err) {
+		logWarn(`[pi-agent-flow] Async flush failed for settings ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
+
+/** Synchronous flush of all cached settings entries. For tests or graceful shutdown. */
+export function flushAllSettingsCachesSync(): void {
+	for (const filePath of Array.from(_settingsCache.keys())) {
+		const settings = _settingsCache.get(filePath);
+		if (!settings) continue;
+		try {
+			atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
+		} catch (err) {
+			logWarn(`[pi-agent-flow] Sync flush failed for settings ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+}
+
+/** Invalidate settings cache. For session_start or tests. */
+export function invalidateSettingsCache(filePath?: string): void {
+	if (filePath) {
+		_settingsCache.delete(filePath);
+		_settingsFlushScheduled.delete(filePath);
+	} else {
+		_settingsCache.clear();
+		_settingsFlushScheduled.clear();
+	}
+}
+
+/** Clear the in-memory settings cache. For tests. */
+export function _clearSettingsCache(): void {
+	invalidateSettingsCache();
 }
 
 export function getGlobalSettingsPath(): string {
@@ -141,10 +196,8 @@ export function writeGlobalFlowMode(mode: string): { path: string; previous?: st
 	let settings: Record<string, unknown> = {};
 
 	if (fs.existsSync(filePath)) {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-		} catch (error) {
+		const parsed = readSettingsJson(filePath);
+		if (!parsed) {
 			throw new Error(`Cannot update flow mode because ${filePath} contains invalid JSON.`);
 		}
 		if (!isPlainObject(parsed)) {
@@ -156,7 +209,8 @@ export function writeGlobalFlowMode(mode: string): { path: string; previous?: st
 	const previous = extractSelectedFlowModelConfigName(settings);
 	settings.flowModelConfig = normalized;
 
-	atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
+	_settingsCache.set(filePath, settings);
+	scheduleSettingsFlush(filePath);
 
 	return {
 		path: filePath,
@@ -421,10 +475,8 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 	let settings: Record<string, unknown> = {};
 
 	if (fs.existsSync(filePath)) {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-		} catch (error) {
+		const parsed = readSettingsJson(filePath);
+		if (!parsed) {
 			throw new Error(`Cannot update flow setting because ${filePath} contains invalid JSON.`);
 		}
 		if (!isPlainObject(parsed)) {
@@ -442,7 +494,8 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 		// Reset the entire flowSettings object when keyPath is empty
 		const previous = { ...flowSettings };
 		settings.flowSettings = value;
-		atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
+		_settingsCache.set(filePath, settings);
+		scheduleSettingsFlush(filePath);
 		return { path: filePath, previous };
 	}
 
@@ -459,7 +512,8 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 	const previous = target[leafKey];
 	target[leafKey] = value;
 
-	atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
+	_settingsCache.set(filePath, settings);
+	scheduleSettingsFlush(filePath);
 
 	return { path: filePath, previous };
 }
@@ -606,10 +660,8 @@ export function writeFlowModelConfig(
 	let settings: Record<string, unknown> = {};
 
 	if (fs.existsSync(filePath)) {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-		} catch (error) {
+		const parsed = readSettingsJson(filePath);
+		if (!parsed) {
 			throw new Error(`Cannot update flow model config because ${filePath} contains invalid JSON.`);
 		}
 		if (!isPlainObject(parsed)) {
@@ -656,5 +708,6 @@ export function writeFlowModelConfig(
 		delete configs[strategyName];
 	}
 
-	atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
+	_settingsCache.set(filePath, settings);
+	scheduleSettingsFlush(filePath);
 }

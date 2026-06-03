@@ -9,6 +9,8 @@ import {
 	loadFlowSettings,
 	resolveFlowModelCandidates,
 	writeGlobalFlowMode,
+	flushAllSettingsCachesSync,
+	_clearSettingsCache,
 } from "../src/config/config.js";
 import { resolveModelContextWindow } from "../src/config/models.js";
 
@@ -32,6 +34,7 @@ describe("loadFlowModelConfigs", () => {
 		// @ts-ignore
 		process.stdout.isTTY = false;
 		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		_clearSettingsCache();
 	});
 
 	afterEach(() => {
@@ -195,6 +198,7 @@ describe("writeGlobalFlowMode", () => {
 		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 		process.env.HOME = tmpDir;
 		delete process.env.PI_CODING_AGENT_DIR;
+		_clearSettingsCache();
 	});
 
 	afterEach(() => {
@@ -209,6 +213,7 @@ describe("writeGlobalFlowMode", () => {
 
 	it("creates global settings when missing", () => {
 		const result = writeGlobalFlowMode("mimo");
+		flushAllSettingsCachesSync();
 
 		expect(result.path).toBe(path.join(tmpDir, ".pi", "agent", "settings.json"));
 		expect(JSON.parse(fs.readFileSync(result.path, "utf-8"))).toEqual({
@@ -230,6 +235,7 @@ describe("writeGlobalFlowMode", () => {
 		);
 
 		const result = writeGlobalFlowMode("mimo");
+		flushAllSettingsCachesSync();
 
 		expect(result.previous).toBe("balance");
 		expect(JSON.parse(fs.readFileSync(result.path, "utf-8"))).toEqual({
@@ -244,6 +250,7 @@ describe("writeGlobalFlowMode", () => {
 		process.env.PI_CODING_AGENT_DIR = customDir;
 
 		writeGlobalFlowMode("quality");
+		flushAllSettingsCachesSync();
 
 		expect(getGlobalSettingsPath()).toBe(path.join(customDir, "settings.json"));
 		expect(JSON.parse(fs.readFileSync(path.join(customDir, "settings.json"), "utf-8"))).toEqual({
@@ -256,6 +263,7 @@ describe("writeGlobalFlowMode", () => {
 		fs.mkdirSync(dir, { recursive: true });
 		const settingsPath = path.join(dir, "settings.json");
 		fs.writeFileSync(settingsPath, "not json", "utf-8");
+		_clearSettingsCache();
 
 		expect(() => writeGlobalFlowMode("mimo")).toThrow(/invalid JSON/);
 		expect(fs.readFileSync(settingsPath, "utf-8")).toBe("not json");
@@ -325,6 +333,7 @@ describe("loadFlowSettings", () => {
 		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 		process.env.HOME = tmpDir;
 		delete process.env.PI_CODING_AGENT_DIR;
+		_clearSettingsCache();
 	});
 
 	afterEach(() => {

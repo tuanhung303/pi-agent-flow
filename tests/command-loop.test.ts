@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { setupFlowCommand } from "../src/flow/command.js";
 import { setupLoopCommand } from "../src/flow/loop-command.js";
-import { setGoal, clearGoal } from "../src/flow/store.js";
+import { setGoal, clearGoal, _clearStoreCache } from "../src/flow/store.js";
 import { getLoop, clearLoop } from "../src/flow/loop.js";
 
 describe("goal complete hook terminates loop", () => {
@@ -30,6 +30,7 @@ describe("goal complete hook terminates loop", () => {
   afterEach(() => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

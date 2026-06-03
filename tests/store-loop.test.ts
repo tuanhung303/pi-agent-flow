@@ -10,6 +10,7 @@ import {
   recordFlowCompletion,
   readState,
   writeState,
+  _clearStoreCache,
 } from "../src/flow/store.js";
 import type { GoalState, LoopState } from "../src/flow/types.js";
 
@@ -21,6 +22,7 @@ describe("store loop integration", () => {
   });
 
   afterEach(() => {
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
