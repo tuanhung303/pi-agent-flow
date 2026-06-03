@@ -455,7 +455,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			proc.stdin.end();
 
 			let abortHandler: (() => void) | undefined;
-			let buffer = "";
+			let chunks: Buffer[] = []; // Fix P2: Replace O(n^2) string concatenation with Buffer array accumulation
 			let didClose = false;
 			let settled = false;
 			let timeoutFired = false;
@@ -463,6 +463,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			let countdownTimer: NodeJS.Timeout | undefined;
 			let renderTimer: NodeJS.Timeout | undefined;
 			let finishKillTimer: NodeJS.Timeout | undefined;
+			let hasNewData = false; // Fix P3: Dirty flag for render optimization
 
 			const clearSemanticCompletionTimer = () => {
 				if (semanticCompletionTimer) {
@@ -537,9 +538,10 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				semanticCompletionTimerArmed = true;
 				semanticCompletionTimer = setTimeout(() => {
 					if (didClose || settled || !result.sawAgentEnd) return;
-					if (buffer.trim()) {
-						flushBufferedLines(buffer);
-						buffer = "";
+					const text = Buffer.concat(chunks).toString();
+					if (text.trim()) {
+						flushBufferedLines(text);
+						chunks = [];
 					}
 					finish(0);
 				}, AGENT_END_GRACE_MS);
@@ -547,9 +549,12 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			};
 
 			const onStdoutData = (chunk: Buffer) => {
-				buffer += chunk.toString();
-				const lines = buffer.split(/\r?\n/);
-				buffer = lines.pop() || "";
+				hasNewData = true; // Fix P3: Set BEFORE data processing to avoid race condition
+				chunks.push(chunk);
+				const text = Buffer.concat(chunks).toString();
+				const lines = text.split(/\r?\n/);
+				const remainder = lines.pop() || "";
+				chunks = remainder ? [Buffer.from(remainder)] : [];
 				for (const line of lines) flushLine(line);
 			};
 
@@ -573,12 +578,18 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			if (onUpdate) {
 				renderTimer = setInterval(() => {
 					if (didClose || settled) return;
+					// Fix P3: Skip render updates when no new streaming data arrived
+					if (!hasNewData) return;
+					hasNewData = false;
 					emitUpdate();
 				}, 200);
 				renderTimer.unref();
 				if (effectiveTimeout > 0) {
 					countdownTimer = setInterval(() => {
 						if (didClose || settled) return;
+						// Fix P3: Skip render updates when no new streaming data arrived
+						if (!hasNewData) return;
+						hasNewData = false;
 						emitUpdate();
 					}, 1000);
 					countdownTimer.unref();
@@ -592,7 +603,8 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 				if (proc.pid !== undefined) {
 					unregisterChildGroup(proc.pid);
 				}
-				if (buffer.trim()) flushBufferedLines(buffer);
+				const text = Buffer.concat(chunks).toString();
+				if (text.trim()) flushBufferedLines(text);
 				finish(code ?? 0);
 			});
 
