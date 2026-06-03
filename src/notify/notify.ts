@@ -6,7 +6,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -73,10 +73,20 @@ const DEFAULT_CONFIG: NotifyConfig = {
 	},
 };
 
+// Fix P18: Cache notification config with mtime-based invalidation
+const configCache = new Map<string, { config: Partial<NotifyConfig>; mtime: number }>();
+
 function readConfigFile(filePath: string): Partial<NotifyConfig> {
 	if (!existsSync(filePath)) return {};
 	try {
-		return JSON.parse(readFileSync(filePath, "utf-8")) as Partial<NotifyConfig>;
+		const stats = statSync(filePath);
+		const cached = configCache.get(filePath);
+		if (cached && cached.mtime === stats.mtimeMs) {
+			return cached.config;
+		}
+		const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<NotifyConfig>;
+		configCache.set(filePath, { config: parsed, mtime: stats.mtimeMs });
+		return parsed;
 	} catch (error) {
 		logError(`Warning: Could not parse ${filePath}: ${error}`);
 		return {};
@@ -244,6 +254,10 @@ export function setupNotify(pi: ExtensionAPI) {
 
 	// Reset notification context at the start of each turn
 	pi.on("turn_start", () => resetNotifyState());
+
+	// Invalidate cached notification configs at session start so that
+	// changes made between sessions are picked up immediately.
+	pi.on("session_start", () => configCache.clear());
 
 	pi.on("agent_end", async (_event, ctx) => {
 		const config = loadConfig(ctx.cwd);
