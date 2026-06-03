@@ -92,7 +92,6 @@ export function writeState(cwd: string, state: GoalState): void {
   // Capture generation at scheduling time. If a sync flush increments the
   // counter before this async flush runs, the flush will detect the mismatch
   // and abort its rename to avoid overwriting fresher data.
-  const _generationAtSchedule = _syncFlushGeneration.get(cwd) ?? 0;
   _scheduleFlush(cwd);
 }
 
@@ -105,12 +104,6 @@ async function flushState(cwd: string): Promise<void> {
     // Capture generation at entry. If a sync flush increments this counter
     // while our async write is in-flight, our data becomes stale.
     const capturedGeneration = _syncFlushGeneration.get(cwd) ?? 0;
-
-    // If a sync flush already happened since we were scheduled, the sync
-    // flush already persisted the latest state. Skip this cycle.
-    if ((_syncFlushGeneration.get(cwd) ?? 0) !== capturedGeneration) {
-      return;
-    }
 
     try {
       await atomicWriteJsonAsync(getStorePath(cwd), state, {
@@ -125,9 +118,9 @@ async function flushState(cwd: string): Promise<void> {
     }
 
     // If a sync flush happened while we were writing, the sync flush already
-    // persisted the latest state. We can safely return.
+    // persisted the latest state. Continue to process any newly scheduled writes.
     if ((_syncFlushGeneration.get(cwd) ?? 0) !== capturedGeneration) {
-      return;
+      continue;
     }
 
     // Loop if more writes were scheduled during the async write
