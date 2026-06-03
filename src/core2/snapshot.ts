@@ -9,6 +9,7 @@
 import { stripDirectives } from "../steering/tool-utils.js";
 import type { FlowTier, ContextProfile, ToolResultCategory } from "../flow/agents.js";
 import { logWarn } from "../config/log.js";
+import { tokenize } from "../cli/tokenize.js";
 
 export type CompressionLevel = "none" | "light" | "medium" | "aggressive";
 
@@ -665,7 +666,8 @@ function optimizeSharedContext(branchEntries: unknown[]): unknown[] {
 					}
 				} else if ((name === "batch" || name === "batch_read") && tc.arguments) {
 					const ops = tc.arguments.ops || tc.arguments.o || [];
-					if (Array.isArray(ops)) {
+					const cmd = tc.arguments.cmd;
+					if (Array.isArray(ops) && ops.length > 0) {
 						const keys: string[] = [];
 						let opType = "read";
 						for (const op of ops) {
@@ -682,6 +684,14 @@ function optimizeSharedContext(branchEntries: unknown[]): unknown[] {
 						if (keys.length > 0) {
 							toolCallMap.set(id, { toolName: name, keys, isReadWrite: true, op: opType });
 						}
+					} else if (typeof cmd === "string") {
+						const trimmedCmd = cmd.trim();
+						const cmdTokens = tokenize(trimmedCmd);
+						const cmdOp = (cmdTokens[0] === "read" || cmdTokens[0] === "write" || cmdTokens[0] === "edit") ? cmdTokens[0] : "batch";
+						const key = `${name}:${trimmedCmd}`;
+						toolCallMap.set(id, { toolName: name, keys: [key], isReadWrite: true, op: cmdOp });
+						const existing = lastExecution.get(key);
+						lastExecution.set(key, { toolCallId: id, count: (existing?.count ?? 0) + 1 });
 					}
 				} else if (name === "flow" && tc.arguments) {
 					const flowArray = tc.arguments.flow || [];
