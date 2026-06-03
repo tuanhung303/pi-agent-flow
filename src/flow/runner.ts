@@ -468,6 +468,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			let renderTimer: NodeJS.Timeout | undefined;
 			let finishKillTimer: NodeJS.Timeout | undefined;
 			let hasNewData = false; // Fix P3: Dirty flag for render optimization
+			let stderrTruncated = false; // Fix P2: Prevent redundant stderr re-truncation
 
 			const clearSemanticCompletionTimer = () => {
 				if (semanticCompletionTimer) {
@@ -564,11 +565,10 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 			const onStderrData = (chunk: Buffer) => {
 				// Fix P6: Cap stderr accumulation at 100KB to prevent unbounded growth
+				if (stderrTruncated) return;
 				const chunkStr = chunk.toString();
-				if (result.stderr.length >= MAX_STDERR_BYTES) {
-					return; // Already truncated, ignore further chunks
-				}
 				if (result.stderr.length + chunkStr.length > MAX_STDERR_BYTES) {
+					stderrTruncated = true;
 					const keepBytes = Math.max(0, MAX_STDERR_BYTES - 1000);
 					result.stderr = result.stderr.slice(0, keepBytes) + "\n... [stderr truncated]";
 				} else {
