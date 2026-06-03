@@ -35,6 +35,11 @@ import {
 import { classifyDuration } from "../tools/timed-bash.js";
 import { truncateBashOutputText } from "./truncate-output.js";
 
+// Fix L4: Cap in-memory chunk arrays to prevent unbounded growth for long-running processes.
+// The ring buffer preserves the most recent output which is what getRunningTail needs.
+const MAX_CHUNKS = 1000;
+const MAX_CHUNK_BYTES = 5 * 1024 * 1024; // 5 MB
+
 // ---------------------------------------------------------------------------
 // Process tracker -- shared between batch and batch_bash_poll tools
 // ---------------------------------------------------------------------------
@@ -57,6 +62,20 @@ interface TrackedBashResult {
 	stderr: string;
 	duration: number;
 	timingTier: string;
+}
+
+/**
+ * Enforce ring-buffer limits on a chunk array: oldest chunks are dropped first
+ * when count exceeds MAX_CHUNKS or total bytes exceed MAX_CHUNK_BYTES.
+ */
+function capChunks(chunks: string[]): void {
+	let totalBytes = 0;
+	for (const c of chunks) totalBytes += c.length;
+	while (chunks.length > MAX_CHUNKS || totalBytes > MAX_CHUNK_BYTES) {
+		const removed = chunks.shift();
+		if (removed) totalBytes -= removed.length;
+		else break;
+	}
 }
 
 /**
@@ -98,10 +117,12 @@ export class BashProcessTracker {
 
 		child.stdout?.on("data", (chunk: Buffer) => {
 			rp.stdoutChunks.push(chunk.toString());
+			capChunks(rp.stdoutChunks);
 		});
 
 		child.stderr?.on("data", (chunk: Buffer) => {
 			rp.stderrChunks.push(chunk.toString());
+			capChunks(rp.stderrChunks);
 		});
 
 		// Wire parent signal
@@ -189,6 +210,7 @@ export class BashProcessTracker {
 	getRunningTail(id: string): string {
 		const rp = this.running.get(id);
 		if (!rp) return "";
+		// Joining all chunks is fine because capChunks keeps the array bounded.
 		const stdout = rp.stdoutChunks.join("");
 		return tailLines(stdout, BASH_POLL_TAIL_LINES);
 	}
