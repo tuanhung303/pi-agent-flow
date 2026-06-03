@@ -37,7 +37,7 @@ import {
 	makeSteeringHintMessage,
 	configureSteering,
 } from "./steering/sliding-prompt.js";
-import { registerFlow, getGoal, getGoalForSession, getLoop, recordFlowCompletion, addTokens, shutdownWakeup, clearAllContinuationState } from "./flow/index.js";
+import { registerFlow, getGoal, getGoalForSession, getLoop, recordFlowCompletion, addTokens, shutdownWakeup, clearAllContinuationState, flushAllStoreCachesSync } from "./flow/index.js";
 import * as sessionRegistry from "./flow/session-registry.js";
 
 import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
@@ -901,6 +901,7 @@ export default function (pi: ExtensionAPI) {
 			terminateAllChildGroups();
 			shutdownWakeup();
 			clearAllContinuationState(); // Fix L3: Prevent unbounded Map growth by cleaning up session tracking state
+			flushAllStoreCachesSync();   // Fix P9: Ensure goal state is persisted before process exit
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}

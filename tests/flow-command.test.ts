@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setupFlowCommand } from "../src/flow/command.js";
-import { setGoal, clearGoal, flushAllStoreCaches } from "../src/flow/store.js";
+import { setGoal, clearGoal, flushAllStoreCaches, _clearStoreCache } from "../src/flow/store.js";
 import { clearLoop } from "../src/flow/loop.js";
 
 describe("setupFlowCommand", () => {
@@ -32,6 +32,7 @@ describe("setupFlowCommand", () => {
   afterEach(() => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
+    _clearStoreCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

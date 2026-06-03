@@ -39,6 +39,7 @@ describe("continuation", () => {
   afterEach(() => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
+    _clearStoreCache();
     sessionRegistry.unregister(tmpDir);
     shutdownWakeup();
     fs.rmSync(tmpDir, { recursive: true, force: true });

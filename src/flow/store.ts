@@ -10,11 +10,10 @@ import { logWarn } from "../config/log.js";
 import { atomicWriteJsonSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 import type { GoalEntry, GoalState, GoalStatus } from "./types.js";
 
-function ensureDir(dir: string): void {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
+/*
+ * NOTE: No manual ensureDir is needed here. atomicWriteFile{Sync,Async}
+ * already creates the target directory via recursive mkdir.
+ */
 
 function getStorePath(cwd: string): string {
   return path.join(cwd, ".pi", "flow.json");
@@ -92,6 +91,29 @@ export function flushAllStoreCaches(): Promise<void> {
     promises.push(flushState(cwd));
   }
   return Promise.all(promises).then(() => {});
+}
+
+/**
+ * Synchronous flush of all cached store entries.
+ *
+ * This is the **shutdown-path fallback** only. The normal async flush
+ * (`flushAllStoreCaches`) is preferred during normal operation because it
+ * yields to the event loop. `process.on('exit')` handlers cannot await,
+ * so this sync variant guarantees data is persisted before the process
+ * terminates.
+ */
+export function flushAllStoreCachesSync(): void {
+  for (const cwd of Array.from(_cache.keys())) {
+    const state = _cache.get(cwd);
+    if (!state) continue;
+    try {
+      atomicWriteJsonSync(getStorePath(cwd), state);
+    } catch (err) {
+      logWarn(
+        `[pi-agent-flow] Sync flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 }
 
 /** Clear the in-memory cache. For tests. */

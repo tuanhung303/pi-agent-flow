@@ -30,6 +30,8 @@ export {
   updateGoalObjective,
   recordFlowCompletion,
   addTokens,
+  flushAllStoreCachesSync,
+  _clearStoreCache,
 } from "./store.js";
 
 export {
