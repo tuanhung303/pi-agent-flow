@@ -320,7 +320,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 
 		const dumpPath = process.env[FLOW_DUMP_SNAPSHOT_ENV] || inheritedCliArgs.dumpPath;
 		if (dumpPath) {
-			cleanupStaleDumps(dumpPath, resolveDumpMaxAgeHours());
+			cleanupStaleDumps(dumpPath, resolveDumpMaxAgeHours()).catch((err) => {
+				logWarn(`[pi-agent-flow] Background cleanupStaleDumps failed: ${err}`);
+			});
 
 			const effectiveTier = flow.tier ?? getFlowTier(flow.name);
 			const sanitizationHeader = `<!-- pi-agent-flow dump | Flow: ${flow.name} | Tier: ${effectiveTier} | Pipeline: ${pipelineVersion} | Generated: ${new Date().toISOString()} -->`;
@@ -355,7 +357,9 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 		}
 
 		if (opts.debugMode) {
-			cleanupStaleDebugDumps(cwd, resolveDumpMaxAgeHours());
+			cleanupStaleDebugDumps(cwd, resolveDumpMaxAgeHours()).catch((err) => {
+				logWarn(`[pi-agent-flow] Background cleanupStaleDebugDumps failed: ${err}`);
+			});
 
 			const safeFlowName = flow.name.replace(/[^\w.-]+/g, "_");
 			const uniqueSuffix = `${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;

@@ -6,6 +6,7 @@
  */
 
 import * as fs from "node:fs";
+import * as fsp from "node:fs/promises";
 import * as path from "node:path";
 import { logWarn, logError } from "../config/log.js";
 import { atomicWriteFileSync } from "../io/atomic-write.js";
@@ -86,13 +87,14 @@ export function getDebugDir(cwd: string, jsonl: string | null): string {
 	return path.join(cwd, "tmp", `session-${safeText}-${idShort}`);
 }
 
-export function cleanupStaleDumps(dumpPath: string, maxAgeHours = DEFAULT_DUMP_MAX_AGE_HOURS): void {
+export async function cleanupStaleDumps(dumpPath: string, maxAgeHours = DEFAULT_DUMP_MAX_AGE_HOURS): Promise<void> {
+	// Fix P5: Convert sync fs operations to async to avoid blocking the event loop
 	try {
 		const dir = path.dirname(dumpPath);
 		const baseName = path.basename(dumpPath);
 		const ext = path.extname(baseName);
 		const base = ext ? baseName.slice(0, -ext.length) : baseName;
-		const entries = fs.readdirSync(dir);
+		const entries = await fsp.readdir(dir);
 		const nowMs = Date.now();
 		const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
 		let deleted = 0;
@@ -101,9 +103,9 @@ export function cleanupStaleDumps(dumpPath: string, maxAgeHours = DEFAULT_DUMP_M
 			if (!entry.startsWith(base) && !isLegacyDump) continue;
 			const entryPath = path.join(dir, entry);
 			try {
-				const stats = fs.statSync(entryPath);
+				const stats = await fsp.stat(entryPath);
 				if (nowMs - stats.mtimeMs > maxAgeMs) {
-					fs.unlinkSync(entryPath);
+					await fsp.unlink(entryPath);
 					deleted++;
 				}
 			} catch (e) { logWarn(`[pi-agent-flow] Failed to delete stale dump ${entryPath}: ${e}`); }
@@ -116,11 +118,12 @@ export function cleanupStaleDumps(dumpPath: string, maxAgeHours = DEFAULT_DUMP_M
 	}
 }
 
-export function cleanupStaleDebugDumps(cwd: string, maxAgeHours = DEFAULT_DUMP_MAX_AGE_HOURS): void {
+export async function cleanupStaleDebugDumps(cwd: string, maxAgeHours = DEFAULT_DUMP_MAX_AGE_HOURS): Promise<void> {
+	// Fix P5: Convert sync fs operations to async to avoid blocking the event loop
 	try {
 		const baseDir = path.join(cwd, "tmp");
 		if (!fs.existsSync(baseDir)) return;
-		const entries = fs.readdirSync(baseDir);
+		const entries = await fsp.readdir(baseDir);
 		const nowMs = Date.now();
 		const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
 		let deleted = 0;
@@ -128,21 +131,22 @@ export function cleanupStaleDebugDumps(cwd: string, maxAgeHours = DEFAULT_DUMP_M
 			if (!entry.startsWith("session-")) continue;
 			const sessionDir = path.join(baseDir, entry);
 			try {
-				const stat = fs.statSync(sessionDir);
+				const stat = await fsp.stat(sessionDir);
 				if (!stat.isDirectory()) continue;
-				const files = fs.readdirSync(sessionDir);
+				const files = await fsp.readdir(sessionDir);
 				for (const file of files) {
 					const filePath = path.join(sessionDir, file);
 					try {
-						const stats = fs.statSync(filePath);
+						const stats = await fsp.stat(filePath);
 						if (nowMs - stats.mtimeMs > maxAgeMs) {
-							fs.unlinkSync(filePath);
+							await fsp.unlink(filePath);
 							deleted++;
 						}
 					} catch (e) { logWarn(`[pi-agent-flow] Failed to delete stale debug file ${filePath}: ${e}`); }
 				}
-				if (fs.readdirSync(sessionDir).length === 0) {
-					fs.rmdirSync(sessionDir);
+				const remaining = await fsp.readdir(sessionDir);
+				if (remaining.length === 0) {
+					await fsp.rmdir(sessionDir);
 				}
 			} catch (e) { logWarn(`[pi-agent-flow] Failed to clean stale debug dir ${sessionDir}: ${e}`); }
 		}
