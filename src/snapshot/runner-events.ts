@@ -339,6 +339,9 @@ function accumulateStreamingDelta(result: object, delta: string): boolean {
 	return false;
 }
 
+// Fix P13: Cache stableStringify results for repeated object references
+const stableStringifyCache = new WeakMap<object, string>();
+
 export function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
 	if (value === null || typeof value !== "object") {
 		return JSON.stringify(value);
@@ -347,11 +350,20 @@ export function stableStringify(value: unknown, seen = new WeakSet<object>()): s
 	if (seen.has(value)) {
 		return '"[Circular]"';
 	}
+
+	// Fix P13: Cache stableStringify results for repeated object references
+	if (stableStringifyCache.has(value)) {
+		return stableStringifyCache.get(value)!;
+	}
+
 	seen.add(value);
 
 	if (Array.isArray(value)) {
 		const out = `[${value.map((item) => stableStringify(item, seen)).join(",")}]`;
 		seen.delete(value);
+		if (!out.includes('"[Circular]"')) {
+			stableStringifyCache.set(value, out);
+		}
 		return out;
 	}
 
@@ -360,6 +372,9 @@ export function stableStringify(value: unknown, seen = new WeakSet<object>()): s
 		.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue, seen)}`)
 		.join(",")}}`;
 	seen.delete(value);
+	if (!out.includes('"[Circular]"')) {
+		stableStringifyCache.set(value, out);
+	}
 	return out;
 }
 

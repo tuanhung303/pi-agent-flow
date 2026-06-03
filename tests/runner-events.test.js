@@ -1345,6 +1345,24 @@ describe("stableStringify", () => {
     const result = stableStringify(arr);
     expect(result).toContain('"[Circular]"');
   });
+
+  it("caches repeated object references (P13)", () => {
+    const inner = { x: 1, y: 2 };
+    const obj = { a: inner, b: inner };
+    const first = stableStringify(obj);
+    const second = stableStringify(obj);
+    expect(second).toBe(first);
+  });
+
+  it("does not cache objects with circular references (P13)", () => {
+    const obj = { a: 1 };
+    obj.self = obj;
+    const first = stableStringify(obj);
+    const second = stableStringify(obj);
+    expect(second).toBe(first);
+    // Circular reference marker should still be present
+    expect(second).toContain('"[Circular]"');
+  });
 });
 
 // ---------------------------------------------------------------------------
