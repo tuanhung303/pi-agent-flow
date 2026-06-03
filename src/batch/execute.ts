@@ -84,13 +84,22 @@ function extractLinesFromBuffer(
 	// Skip lines before startLine
 	while (currentLine < startLine && pos < buf.length) {
 		const idx = buf.indexOf(0x0A, pos);
-		if (idx === -1) break;
+		if (idx === -1) {
+			pos = buf.length;
+			currentLine++;
+			break;
+		}
 		pos = idx + 1;
 		currentLine++;
 	}
 
 	// Extract lines from startLine to endLine
-	while (currentLine < endLine && pos < buf.length) {
+	while (currentLine < endLine && pos <= buf.length) {
+		if (pos === buf.length) {
+			lines.push("");
+			currentLine++;
+			continue;
+		}
 		const idx = buf.indexOf(0x0A, pos);
 		if (idx === -1) {
 			lines.push(decoder.decode(buf.subarray(pos)));
