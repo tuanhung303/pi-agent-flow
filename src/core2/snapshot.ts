@@ -367,10 +367,10 @@ export function buildCore2Snapshot(
 	const entriesWithMap = insertContextMap(compressedResult.entries);
 
 	for (const entry of entriesWithMap) {
-		const line = JSON.stringify(entry);
-		// Strip batch read/write/edit bodies from tool result messages
-		const processed = maybeStripBatchBodies(line, options?.compressionLevel);
-		lines.push(processed);
+		// Fix P1: Eliminate double JSON.stringify by operating on objects before serialization
+		const processedEntry = stripBatchBodiesFromEntry(entry as Record<string, unknown>, options?.compressionLevel);
+		const line = JSON.stringify(processedEntry);
+		lines.push(line);
 	}
 
 	const snapshot = `${lines.join("\n")}\n`;
@@ -1230,35 +1230,49 @@ function applyContextCompression(
 	const headers = entries.slice(0, headerEnd);
 	const rest = entries.slice(headerEnd);
 
-	const scored = rest.map((entry, idx) => ({
-		entry,
-		originalIndex: headerEnd + idx,
-		score: scoreMessageForProfile(entry, profile),
-		isMessage: entry && typeof entry === "object" && (entry as Record<string, unknown>).type === "message",
-	}));
-
-	// Separate messages from non-messages (e.g. compaction events, etc.)
-	const messageScored = scored.filter((s) => s.isMessage);
-	const nonMessageScored = scored.filter((s) => !s.isMessage);
+	// Fix P7: Reduce applyContextCompression from 5-6 passes to 2 passes
+	// Pass 1: Score all entries in a single pass, collecting message tuples separately
+	const messageTuples: { entry: unknown; originalIndex: number; score: number }[] = [];
+	const restLength = rest.length;
+	for (let i = 0; i < restLength; i++) {
+		const entry = rest[i];
+		const isMessage = entry && typeof entry === "object" && (entry as Record<string, unknown>).type === "message";
+		if (isMessage) {
+			messageTuples.push({
+				entry,
+				originalIndex: headerEnd + i,
+				score: scoreMessageForProfile(entry, profile),
+			});
+		}
+	}
 
 	// Sort messages by score desc, then originalIndex desc (prefer newer)
-	messageScored.sort((a, b) => {
+	messageTuples.sort((a, b) => {
 		if (b.score !== a.score) return b.score - a.score;
 		return b.originalIndex - a.originalIndex;
 	});
 
-	// Keep top N messages
-	const keptMessages = messageScored.slice(0, targetMessageCount);
-	const droppedMessages = messageScored.slice(targetMessageCount);
+	// Take top N messages; build a Set of their original indices for O(1) lookup
+	const keptMessageIndices = new Set<number>();
+	for (let i = 0; i < targetMessageCount && i < messageTuples.length; i++) {
+		keptMessageIndices.add(messageTuples[i].originalIndex);
+	}
 
-	// Combine kept messages with all non-messages, sort by original index
-	const combined = [...nonMessageScored, ...keptMessages];
-	combined.sort((a, b) => a.originalIndex - b.originalIndex);
+	// Pass 2: Single pass to reconstruct in original order, keeping all non-messages and top-N messages
+	let result: unknown[] = [...headers];
+	const droppedEntries: unknown[] = [];
+	for (let i = 0; i < restLength; i++) {
+		const entry = rest[i];
+		const originalIndex = headerEnd + i;
+		const isMessage = entry && typeof entry === "object" && (entry as Record<string, unknown>).type === "message";
+		if (!isMessage || keptMessageIndices.has(originalIndex)) {
+			result.push(entry);
+		} else {
+			droppedEntries.push(entry);
+		}
+	}
 
-	const droppedEntries = droppedMessages.map((d) => d.entry);
 	const syntheticSummaryText = generateSyntheticSummary(droppedEntries);
-
-	let result = [...headers, ...combined.map((c) => c.entry)];
 
 	if (level === "medium" || level === "aggressive") {
 		result = stripOldSystemMessages(result, profile);
@@ -1278,7 +1292,7 @@ function applyContextCompression(
 
 	return {
 		entries: result,
-		droppedCount: droppedMessages.length,
+		droppedCount: droppedEntries.length,
 		syntheticSummary: syntheticSummaryText,
 	};
 }
@@ -1376,28 +1390,17 @@ function stripBatchBodies(text: string, level?: CompressionLevel): string {
 	return out.join("\n");
 }
 
-/** If the JSONL line is a tool/toolResult message, strip batch bodies from its text. */
-function maybeStripBatchBodies(line: string, level?: CompressionLevel): string {
-	// Fast path: skip non-tool messages without parsing JSON.
-	if (!line.includes('"role":"tool"') && !line.includes('"role":"toolResult"')) {
-		return line;
-	}
-
-	let entry: Record<string, unknown>;
-	try {
-		entry = JSON.parse(line) as Record<string, unknown>;
-	} catch (e) {
-		logWarn(`[pi-agent-flow] Failed to parse JSONL line in snapshot: ${e}`);
-		return line;
-	}
-
+/** If the entry is a tool/toolResult message, strip batch bodies from its text.
+ *  Fix P1: Operates on the parsed object directly to eliminate double JSON.stringify/parse.
+ */
+function stripBatchBodiesFromEntry(entry: Record<string, unknown>, level?: CompressionLevel): Record<string, unknown> {
 	if (entry.type !== "message" || !entry.message) {
-		return line;
+		return entry;
 	}
 
 	const message = entry.message as Record<string, unknown>;
 	if (message.role !== "tool" && message.role !== "toolResult") {
-		return line;
+		return entry;
 	}
 
 	// Extract text content (string or first text part in array)
@@ -1419,17 +1422,17 @@ function maybeStripBatchBodies(line: string, level?: CompressionLevel): string {
 
 	// Fast path: no batch section headers or directive/hint markers present
 	if (!text || (!text.includes("\n--- ") && !text.includes("[Directive:") && !text.includes("[Hint:"))) {
-		return line;
+		return entry;
 	}
 
 	const stripped = stripBatchBodies(text, level);
 	const cleaned = stripDirectives(stripped);
 	if (cleaned === text) {
-		return line;
+		return entry;
 	}
 
 	if (typeof message.content === "string") {
-		entry = {
+		return {
 			...entry,
 			message: { ...message, content: cleaned },
 		};
@@ -1440,13 +1443,13 @@ function maybeStripBatchBodies(line: string, level?: CompressionLevel): string {
 			}
 			return part;
 		});
-		entry = {
+		return {
 			...entry,
 			message: { ...message, content: newContent },
 		};
 	}
 
-	return JSON.stringify(entry);
+	return entry;
 }
 
 /**
