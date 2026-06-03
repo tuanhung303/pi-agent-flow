@@ -25,7 +25,7 @@ const _flushScheduled = new Set<string>();
 const _inFlightFlushes = new Map<string, Promise<void>>();
 const _flushHandles = new Map<string, NodeJS.Immediate>();
 const _flushResolvers = new Map<string, () => void>();
-const _flushLock = new Set<string>(); // Prevents async flush rename during sync flush
+const _syncFlushGeneration = new Map<string, number>(); // Generation counter for sync/async flush coordination
 
 function readFromDisk(cwd: string): GoalState {
   const filePath = getStorePath(cwd);
@@ -89,6 +89,10 @@ function _scheduleFlush(cwd: string): void {
 export function writeState(cwd: string, state: GoalState): void {
   _cache.set(cwd, deepCopy(state));
   _flushScheduled.add(cwd);
+  // Capture generation at scheduling time. If a sync flush increments the
+  // counter before this async flush runs, the flush will detect the mismatch
+  // and abort its rename to avoid overwriting fresher data.
+  const _generationAtSchedule = _syncFlushGeneration.get(cwd) ?? 0;
   _scheduleFlush(cwd);
 }
 
@@ -98,14 +102,22 @@ async function flushState(cwd: string): Promise<void> {
     const state = _cache.get(cwd);
     if (!state) return;
 
-    // Skip if a sync flush is already active for this cwd
-    if (_flushLock.has(cwd)) {
+    // Capture generation at entry. If a sync flush increments this counter
+    // while our async write is in-flight, our data becomes stale.
+    const capturedGeneration = _syncFlushGeneration.get(cwd) ?? 0;
+
+    // If a sync flush already happened since we were scheduled, the sync
+    // flush already persisted the latest state. Skip this cycle.
+    if ((_syncFlushGeneration.get(cwd) ?? 0) !== capturedGeneration) {
       return;
     }
 
     try {
       await atomicWriteJsonAsync(getStorePath(cwd), state, {
-        shouldAbort: () => _flushLock.has(cwd),
+        // If a sync flush incremented the generation during our async write,
+        // the sync flush already persisted the latest state. Abort our rename
+        // to avoid overwriting it with stale data.
+        shouldAbort: () => (_syncFlushGeneration.get(cwd) ?? 0) !== capturedGeneration,
       });
     } catch (err) {
       logWarn(`[pi-agent-flow] Async flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
@@ -114,7 +126,7 @@ async function flushState(cwd: string): Promise<void> {
 
     // If a sync flush happened while we were writing, the sync flush already
     // persisted the latest state. We can safely return.
-    if (_flushLock.has(cwd)) {
+    if ((_syncFlushGeneration.get(cwd) ?? 0) !== capturedGeneration) {
       return;
     }
 
@@ -159,15 +171,16 @@ export function flushAllStoreCachesSync(): void {
     }
     _flushScheduled.delete(cwd);
 
-    _flushLock.add(cwd);
+    // Increment generation BEFORE writing. This ensures any in-flight async
+    // flush will see the generation change and abort its rename.
+    const currentGen = _syncFlushGeneration.get(cwd) ?? 0;
+    _syncFlushGeneration.set(cwd, currentGen + 1);
     try {
       atomicWriteJsonSync(getStorePath(cwd), state);
     } catch (err) {
       logWarn(
         `[pi-agent-flow] Sync flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`,
       );
-    } finally {
-      _flushLock.delete(cwd);
     }
   }
 }
@@ -185,7 +198,7 @@ export function _clearStoreCache(): void {
   _cache.clear();
   _flushScheduled.clear();
   _inFlightFlushes.clear();
-  _flushLock.clear();
+  _syncFlushGeneration.clear();
 }
 
 export function getGoal(cwd: string): GoalEntry | undefined {

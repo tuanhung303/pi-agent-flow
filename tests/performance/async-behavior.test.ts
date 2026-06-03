@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { cleanupStaleDumps } from "../../src/flow/dump-io.js";
+import * as atomicWrite from "../../src/io/atomic-write.js";
 import {
   writeState,
   readState,
@@ -186,6 +187,86 @@ describe("store async behavior", () => {
       rmSync(dir1, { recursive: true, force: true });
       rmSync(dir2, { recursive: true, force: true });
       rmSync(dir3, { recursive: true, force: true });
+      _clearStoreCache();
+    }
+  });
+
+  it("P1-race: generation counter aborts stale async rename during sync flush", async () => {
+    const dir = createTempDir("pi-store-race-gen-test-");
+    try {
+      _clearStoreCache();
+
+      // Slow down atomicWriteJsonAsync to create a wide race window
+      const original = atomicWrite.atomicWriteJsonAsync;
+      let shouldAbortFn: (() => boolean) | undefined;
+      const spy = vi.spyOn(atomicWrite, "atomicWriteJsonAsync").mockImplementation(async (targetPath, data, options) => {
+        shouldAbortFn = options?.shouldAbort;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return original(targetPath, data, options);
+      });
+
+      const state1 = { history: [], current: { objective: "first", status: "active" as const } };
+      writeState(dir, state1);
+
+      // Yield so the async flush starts (and hits the 50ms delay)
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // While the async flush is in-flight, write a new state and sync flush
+      const state2 = { history: [], current: { objective: "second", status: "active" as const } };
+      writeState(dir, state2);
+      flushAllStoreCachesSync();
+
+      // The shouldAbort closure should detect the generation change caused by the sync flush
+      expect(shouldAbortFn).toBeDefined();
+      expect(shouldAbortFn!()).toBe(true);
+
+      // Wait for the async flush to complete (it will abort its rename)
+      await flushAllStoreCaches();
+
+      const filePath = path.join(dir, ".pi", "flow.json");
+      const parsed = JSON.parse(require("node:fs").readFileSync(filePath, "utf-8"));
+      // The sync flush should have persisted the latest state
+      expect(parsed.current.objective).toBe("second");
+
+      spy.mockRestore();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      _clearStoreCache();
+    }
+  });
+
+  it("P1: flushAllStoreCaches waits for in-flight async flushes", async () => {
+    const dir = createTempDir("pi-store-race-test-");
+    try {
+      _clearStoreCache();
+
+      // Slow down atomicWriteJsonAsync so the race window is wide
+      const original = atomicWrite.atomicWriteJsonAsync;
+      const spy = vi.spyOn(atomicWrite, "atomicWriteJsonAsync").mockImplementation(async (targetPath, data) => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return original(targetPath, data);
+      });
+
+      const state1 = { history: [], current: { objective: "first", status: "active" as const } };
+      writeState(dir, state1);
+
+      // Yield to event loop so the setImmediate flush starts (and hits the 30ms delay)
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // While the first flush is still in-flight, write a new state
+      const state2 = { history: [], current: { objective: "second", status: "active" as const } };
+      writeState(dir, state2);
+
+      // flushAllStoreCaches must wait for BOTH the in-flight flush and the newly scheduled one
+      await flushAllStoreCaches();
+
+      const filePath = path.join(dir, ".pi", "flow.json");
+      const parsed = JSON.parse(require("node:fs").readFileSync(filePath, "utf-8"));
+      expect(parsed.current.objective).toBe("second");
+
+      spy.mockRestore();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
       _clearStoreCache();
     }
   });
