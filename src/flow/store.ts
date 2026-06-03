@@ -7,7 +7,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { logWarn } from "../config/log.js";
-import { atomicWriteJsonSync } from "../io/atomic-write.js";
+import { atomicWriteJsonSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 import type { GoalEntry, GoalState, GoalStatus } from "./types.js";
 
 function ensureDir(dir: string): void {
@@ -20,8 +20,11 @@ function getStorePath(cwd: string): string {
   return path.join(cwd, ".pi", "flow.json");
 }
 
+// Fix P9: Use in-memory cache with async flush to avoid blocking the event loop on goal state I/O
+const _cache = new Map<string, GoalState>();
+const _flushScheduled = new Set<string>();
 
-export function readState(cwd: string): GoalState {
+function readFromDisk(cwd: string): GoalState {
   const filePath = getStorePath(cwd);
   if (!fs.existsSync(filePath)) {
     return { history: [] };
@@ -38,6 +41,18 @@ export function readState(cwd: string): GoalState {
   }
 }
 
+function deepCopy<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj)) as T;
+}
+
+export function readState(cwd: string): GoalState {
+  const cached = _cache.get(cwd);
+  if (cached) return deepCopy(cached);
+  const state = readFromDisk(cwd);
+  _cache.set(cwd, state);
+  return deepCopy(state);
+}
+
 const MAX_HISTORY_ENTRIES = 5;
 const MAX_INTENT_LENGTH = 200;
 
@@ -52,7 +67,37 @@ function truncateIntent(intent: string): string {
 }
 
 export function writeState(cwd: string, state: GoalState): void {
-  atomicWriteJsonSync(getStorePath(cwd), state);
+  _cache.set(cwd, deepCopy(state));
+  if (!_flushScheduled.has(cwd)) {
+    _flushScheduled.add(cwd);
+    setImmediate(() => flushState(cwd));
+  }
+}
+
+async function flushState(cwd: string): Promise<void> {
+  _flushScheduled.delete(cwd);
+  const state = _cache.get(cwd);
+  if (!state) return;
+  try {
+    await atomicWriteJsonAsync(getStorePath(cwd), state);
+  } catch (err) {
+    logWarn(`[pi-agent-flow] Async flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Flush all pending writes. For tests or graceful shutdown. */
+export function flushAllStoreCaches(): Promise<void> {
+  const promises: Promise<void>[] = [];
+  for (const cwd of Array.from(_flushScheduled.keys())) {
+    promises.push(flushState(cwd));
+  }
+  return Promise.all(promises).then(() => {});
+}
+
+/** Clear the in-memory cache. For tests. */
+export function _clearStoreCache(): void {
+  _cache.clear();
+  _flushScheduled.clear();
 }
 
 export function getGoal(cwd: string): GoalEntry | undefined {
@@ -175,5 +220,3 @@ export function addTokens(cwd: string, tokens: number): GoalEntry | undefined {
   writeState(cwd, state);
   return state.current;
 }
-
-

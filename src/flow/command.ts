@@ -14,6 +14,7 @@ import {
   updateGoalObjective,
 } from "./store.js";
 import { getLoop, terminateLoop } from "./loop.js";
+import { cleanupContinuationState } from "./continuation.js";
 
 function formatGoal(entry: NonNullable<ReturnType<typeof getGoal>>): string {
   const lines = [
@@ -76,6 +77,10 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
           break;
         }
         case "clear": {
+          const goalToClear = getGoal(cwd);
+          if (goalToClear?.sessionId) {
+            cleanupContinuationState(goalToClear.sessionId); // Fix L3: Prevent unbounded Map growth by cleaning up session tracking state
+          }
           clearGoal(cwd);
           ctx.ui.notify?.("Goal cleared", "info");
           break;
@@ -180,6 +185,7 @@ export function setupFlowCommand(pi: ExtensionAPI): void {
             const entry = updateGoalStatus(cwd, "completed");
             if (entry) {
               ctx.ui.notify?.("Goal marked as completed", "info");
+              cleanupContinuationState(currentSessionId); // Fix L3: Prevent unbounded Map growth by cleaning up session tracking state
               const loop = getLoop(cwd);
               if (loop && loop.status !== "terminated") {
                 terminateLoop(cwd, "goal_completed");

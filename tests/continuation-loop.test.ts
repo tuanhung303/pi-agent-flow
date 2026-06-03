@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setupContinuation, markFlowCompleted } from "../src/flow/continuation.js";
-import { setGoal, clearGoal, getGoal } from "../src/flow/store.js";
+import { setGoal, clearGoal, getGoal, flushAllStoreCaches, _clearStoreCache } from "../src/flow/store.js";
 import { setLoop, clearLoop, disableLoop } from "../src/flow/loop.js";
 import * as sessionRegistry from "../src/flow/session-registry.js";
 import type { TurnEndEvent } from "@earendil-works/pi-coding-agent";
@@ -66,11 +66,13 @@ describe("continuation loop integration", () => {
     clearGoal(tmpDir);
     setGoal(tmpDir, "Test goal", { maxTokens: 100, sessionId: "session-a" });
     disableLoop(tmpDir);
+    await flushAllStoreCaches();
     // Manually write state to exceed budget
     const statePath = path.join(tmpDir, ".pi", "flow.json");
     const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
     state.current.totalTokens = 150;
     fs.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
+    _clearStoreCache();
 
     if (!turnEndHandler) throw new Error("turnEndHandler not set");
     await turnEndHandler(makeTurnEndEvent("hello"));
@@ -91,11 +93,13 @@ describe("continuation loop integration", () => {
       totalTokensAcrossSessions: 250,
       totalFlowsAcrossSessions: 3,
     });
+    await flushAllStoreCaches();
     // Exceed token budget
     const statePath = path.join(tmpDir, ".pi", "flow.json");
     const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
     state.current.totalTokens = 250;
     fs.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
+    _clearStoreCache();
 
     if (!turnEndHandler) throw new Error("turnEndHandler not set");
     await turnEndHandler(makeTurnEndEvent("hello"));
@@ -115,6 +119,7 @@ describe("continuation loop integration", () => {
       totalTokensAcrossSessions: 100,
       totalFlowsAcrossSessions: 5,
     });
+    await flushAllStoreCaches();
     // Exceed flow budget
     const statePath = path.join(tmpDir, ".pi", "flow.json");
     const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
@@ -124,6 +129,7 @@ describe("continuation loop integration", () => {
       { type: "build", intent: "c", aim: "c", completedAt: "2026-01-01T00:00:00Z" },
     ];
     fs.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
+    _clearStoreCache();
 
     if (!turnEndHandler) throw new Error("turnEndHandler not set");
     await turnEndHandler(makeTurnEndEvent("hello"));

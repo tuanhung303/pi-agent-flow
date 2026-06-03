@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setupFlowCommand } from "../src/flow/command.js";
-import { setGoal, clearGoal } from "../src/flow/store.js";
+import { setGoal, clearGoal, flushAllStoreCaches } from "../src/flow/store.js";
 import { clearLoop } from "../src/flow/loop.js";
 
 describe("setupFlowCommand", () => {
@@ -72,6 +72,7 @@ describe("setupFlowCommand", () => {
   it("set parses --max-tokens flag", async () => {
     const handler = registered["flow:goal"].handler;
     await handler("set optimize --max-tokens 5000", makeCtx());
+    await flushAllStoreCaches();
     const goal = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8")).current;
     expect(goal.maxTokens).toBe(5000);
   });
@@ -79,6 +80,7 @@ describe("setupFlowCommand", () => {
   it("set parses --max-flows flag", async () => {
     const handler = registered["flow:goal"].handler;
     await handler("set optimize --max-flows 5", makeCtx());
+    await flushAllStoreCaches();
     const goal = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8")).current;
     expect(goal.maxFlows).toBe(5);
   });
@@ -97,6 +99,7 @@ describe("setupFlowCommand", () => {
     const handler = registered["flow:goal"].handler;
     await handler("clear", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Goal cleared", type: "info" });
+    await flushAllStoreCaches();
     const state = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8"));
     expect(state.current).toBeUndefined();
   });
@@ -106,6 +109,7 @@ describe("setupFlowCommand", () => {
     const handler = registered["flow:goal"].handler;
     await handler("pause", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Goal paused", type: "info" });
+    await flushAllStoreCaches();
     const state = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8"));
     expect(state.current.status).toBe("paused");
   });
@@ -132,6 +136,7 @@ describe("setupFlowCommand", () => {
     await handler("resume", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Goal resumed", type: "info" });
     expect(sendMessages[0].content).toContain("Goal resumed");
+    await flushAllStoreCaches();
     const state = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8"));
     expect(state.current.status).toBe("active");
   });
@@ -164,6 +169,7 @@ describe("setupFlowCommand", () => {
     const handler = registered["flow:goal"].handler;
     await handler("edit new objective", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Goal updated: new objective", type: "info" });
+    await flushAllStoreCaches();
     const state = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8"));
     expect(state.current.objective).toBe("new objective");
     expect(sendMessages[0].content).toContain("Previous: old objective");
@@ -173,6 +179,7 @@ describe("setupFlowCommand", () => {
     setGoal(tmpDir, "old", { sessionId: "session-test" });
     const handler = registered["flow:goal"].handler;
     await handler("edit new --acceptance All pass", makeCtx());
+    await flushAllStoreCaches();
     const state = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8"));
     expect(state.current.acceptance).toBe("All pass");
   });
@@ -223,6 +230,7 @@ describe("setupFlowCommand", () => {
     const handler = registered["flow:goal"].handler;
     await handler("complete", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Goal marked as completed", type: "info" });
+    await flushAllStoreCaches();
     const state = JSON.parse(fs.readFileSync(path.join(tmpDir, ".pi", "flow.json"), "utf-8"));
     expect(state.current.status).toBe("completed");
   });

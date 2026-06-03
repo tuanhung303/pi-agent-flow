@@ -52,6 +52,26 @@ export function markFlowCompleted(sessionId?: string): void {
 }
 
 /**
+ * Clean up session tracking state for a specific session.
+ * Fix L3: Prevent unbounded Map growth by cleaning up session tracking state.
+ */
+export function cleanupContinuationState(sessionId: string): void {
+  _lastSpawnAt.delete(sessionId);
+  _lastFlowCompleteAt.delete(sessionId);
+  _lastTurnEndAt.delete(sessionId);
+}
+
+/**
+ * Wipe all continuation tracking state. Call on shutdown.
+ * Fix L3: Prevent unbounded Map growth by cleaning up session tracking state.
+ */
+export function clearAllContinuationState(): void {
+  _lastSpawnAt.clear();
+  _lastFlowCompleteAt.clear();
+  _lastTurnEndAt.clear();
+}
+
+/**
  * Shut down the idle wake-up interval. Call during process exit cleanup.
  */
 export function shutdownWakeup(): void {

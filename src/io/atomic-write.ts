@@ -24,3 +24,20 @@ export function atomicWriteFileSync(targetPath: string, data: string | Buffer, o
 export function atomicWriteJsonSync(targetPath: string, data: unknown): void {
 	atomicWriteFileSync(targetPath, JSON.stringify(data, null, 2) + "\n");
 }
+
+export async function atomicWriteFileAsync(targetPath: string, data: string | Buffer, options?: { mode?: number }): Promise<void> {
+	const dir = path.dirname(targetPath);
+	await fs.promises.mkdir(dir, { recursive: true });
+	const tmpPath = path.join(dir, `.tmp-${path.basename(targetPath)}.${process.pid}.${Date.now()}`);
+	try {
+		await fs.promises.writeFile(tmpPath, data, { encoding: "utf-8", mode: options?.mode ?? 0o600 });
+		await fs.promises.rename(tmpPath, targetPath);
+	} catch (err) {
+		try { await fs.promises.unlink(tmpPath); } catch (e) { logWarn(`[pi-agent-flow] Failed to clean up temp file ${tmpPath}: ${e}`); }
+		throw err;
+	}
+}
+
+export async function atomicWriteJsonAsync(targetPath: string, data: unknown): Promise<void> {
+	await atomicWriteFileAsync(targetPath, JSON.stringify(data, null, 2) + "\n");
+}
