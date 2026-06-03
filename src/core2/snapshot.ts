@@ -186,7 +186,7 @@ function extractMessageText(msg: Record<string, unknown>): string {
 }
 
 /** Classify a tool/toolResult message into a category for profile-aware compression. */
-function classifyToolResult(entry: unknown): ToolResultCategory {
+export function classifyToolResult(entry: unknown): ToolResultCategory {
 	if (!entry || typeof entry !== "object") return "other";
 	const e = entry as Record<string, unknown>;
 	if (e.type !== "message" || !e.message || typeof e.message !== "object") return "other";
@@ -196,18 +196,9 @@ function classifyToolResult(entry: unknown): ToolResultCategory {
 	const text = extractMessageText(msg);
 	const toolName = typeof msg.toolName === "string" ? msg.toolName : typeof msg.name === "string" ? msg.name : "";
 
+	// Fix P16: Replace multiple includes() with regex-based matching
 	// Error / stack-trace heuristics
-	if (
-		text.includes("Error:") ||
-		text.includes("error:") ||
-		text.includes("FAIL") ||
-		text.includes("failed") ||
-		text.includes("Exception") ||
-		text.includes("exception") ||
-		text.includes("AssertionError") ||
-		text.includes("TypeError") ||
-		text.includes("ReferenceError")
-	) {
+	if (/Error:|error:|FAIL|failed|Exception|exception|AssertionError|TypeError|ReferenceError/.test(text)) {
 		// Stack trace detection: lines starting with "  at " or "    at "
 		const stackPattern = /^\s+at\s+\S+/gm;
 		if (stackPattern.test(text)) return "stackTrace";
@@ -216,32 +207,21 @@ function classifyToolResult(entry: unknown): ToolResultCategory {
 
 	// Test failure
 	if (
-		text.includes("Test failed") ||
-		text.includes("test failure") ||
-		text.includes("Assertion failed") ||
-		text.includes("expected") && text.includes("received") ||
-		text.includes("✕") ||
-		text.includes("FAIL") && text.includes("test")
+		/Test failed|test failure|Assertion failed|✕/.test(text) ||
+		(text.includes("expected") && text.includes("received")) ||
+		(text.includes("FAIL") && text.includes("test"))
 	) {
 		return "testFailure";
 	}
 
 	// Git diff
-	if (
-		text.includes("diff --git") ||
-		text.includes("--- a/") ||
-		text.includes("+++ b/") ||
-		text.includes("@@ -")
-	) {
+	if (/diff --git|--- a\/|\+\+\+ b\/|@@ -/.test(text)) {
 		return "gitDiff";
 	}
 
 	// Batch file operations (read / write / edit)
 	if (
-		text.includes("--- read:") ||
-		text.includes("--- write:") ||
-		text.includes("--- edit:") ||
-		text.includes("--- delete:") ||
+		/--- read:|--- write:|--- edit:|--- delete:/.test(text) ||
 		(text.includes("✔") && (text.includes("read") || text.includes("write") || text.includes("edit")))
 	) {
 		return "fileContent";
@@ -249,17 +229,14 @@ function classifyToolResult(entry: unknown): ToolResultCategory {
 
 	// Grep / find / ls results
 	if (
-		text.includes("--- rg:") ||
-		text.includes("--- find:") ||
-		text.includes("--- ls:") ||
-		text.includes("grep results") ||
+		/--- rg:|--- find:|--- ls:|grep results/.test(text) ||
 		/^[^\n]+:\d+:.+/m.test(text)
 	) {
 		return "grepResult";
 	}
 
 	// Bash success
-	if (toolName === "bash" || text.includes("--- bash [") || text.includes("--- [") && text.includes("exit")) {
+	if (toolName === "bash" || /--- bash \[/.test(text) || (text.includes("--- [") && text.includes("exit"))) {
 		return "bashSuccess";
 	}
 
@@ -1174,13 +1151,13 @@ function generateSyntheticSummary(droppedEntries: unknown[]): string | undefined
 	return parts.join("\n");
 }
 
-interface CompressionResult {
+export interface CompressionResult {
 	entries: unknown[];
 	droppedCount: number;
 	syntheticSummary?: string;
 }
 
-function applyContextCompression(
+export function applyContextCompression(
 	entries: unknown[],
 	level: CompressionLevel | undefined,
 	profile?: ContextProfile,

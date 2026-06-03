@@ -59,7 +59,7 @@ function isFullFileRead(op: FileOpInput, totalLines: number): boolean {
 // Fix P10: Use Buffer-based line splitting for large files to reduce string allocations
 const LARGE_FILE_THRESHOLD_BYTES = 1024 * 1024; // 1MB
 
-function countLinesInBuffer(buf: Buffer): number {
+export function countLinesInBuffer(buf: Buffer): number {
 	let count = 0;
 	let pos = 0;
 	while (true) {
@@ -71,7 +71,7 @@ function countLinesInBuffer(buf: Buffer): number {
 	return count + 1;
 }
 
-function extractLinesFromBuffer(
+export function extractLinesFromBuffer(
 	buf: Buffer,
 	startLine: number,
 	endLine: number,
@@ -914,7 +914,53 @@ function buildContextMapText(result: OpResult): string {
 	return lines.join("\n");
 }
 
-function buildContentText(summary: string, results: OpResult[]): string {
+export function buildContentText(summary: string, results: OpResult[]): string {
+	// Fix P14: Use Buffer.concat for large result accumulation
+	const useBuffer = results.length > 100;
+
+	if (useBuffer) {
+		const buffers: Buffer[] = [Buffer.from(summary)];
+
+		for (const r of results) {
+			if (r.op === "read" && r.status === "ok" && r.contextMap) {
+				buffers.push(Buffer.from(buildContextMapText(r)));
+			} else if (r.op === "read" && r.status === "ok" && r.content) {
+				const lineInfo = r.totalLines !== undefined ? ` (${r.totalLines} lines)` : "";
+				buffers.push(Buffer.from(`\n--- ${r.path}${lineInfo} ---\n${r.content}`));
+			} else if (r.op === "edit" && r.status === "ok") {
+				const blockInfo = r.blocksChanged !== undefined ? `${r.blocksChanged} block${r.blocksChanged > 1 ? "s" : ""}` : "";
+				buffers.push(Buffer.from(`\n--- edit: ${r.path} (${blockInfo}) ---`));
+			} else if (r.op === "write" && r.status === "ok") {
+				buffers.push(Buffer.from(`\n--- write: ${r.path} (${r.bytes ?? 0} bytes) ---`));
+			} else if (r.op === "delete" && r.status === "ok") {
+				buffers.push(Buffer.from(`\n--- delete: ${r.path} ---`));
+			} else if (r.op === "rg" && r.status === "ok") {
+				let rgBody: string;
+				if (r.enclosingSignatures && Object.keys(r.enclosingSignatures).length > 0) {
+					rgBody = groupRgMatchesByFile(r.content ?? "", r.enclosingSignatures);
+				} else {
+					rgBody = r.content ?? "";
+				}
+				if (r.warning) {
+					rgBody = `[warning] ${r.warning}\n\n${rgBody}`;
+				}
+				buffers.push(Buffer.from(`\n--- rg: ${r.path} ---\n${rgBody}`));
+			} else if (r.status === "error") {
+				buffers.push(Buffer.from(`\n--- ${r.op}: ${r.path} ---\nError: ${r.error}`));
+			} else if (r.op === "patch" && r.status === "ok") {
+				const parts: string[] = [];
+				if (r.affected?.added.length) parts.push(`A ${r.affected.added.join(', ')}`);
+				if (r.affected?.modified.length) parts.push(`M ${r.affected.modified.join(', ')}`);
+				if (r.affected?.deleted.length) parts.push(`D ${r.affected.deleted.join(', ')}`);
+				buffers.push(Buffer.from(`\n--- patch: ${r.path} ---\n${parts.join('\n')}`));
+			} else if (r.status === "skipped") {
+				buffers.push(Buffer.from(`\n--- ${r.op}: ${r.path} ---\n${r.error ?? "Skipped"}`));
+			}
+		}
+
+		return Buffer.concat(buffers).toString();
+	}
+
 	const sections: string[] = [summary];
 
 	for (const r of results) {
