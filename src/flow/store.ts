@@ -22,6 +22,10 @@ function getStorePath(cwd: string): string {
 // Fix P9: Use in-memory cache with async flush to avoid blocking the event loop on goal state I/O
 const _cache = new Map<string, GoalState>();
 const _flushScheduled = new Set<string>();
+const _inFlightFlushes = new Map<string, Promise<void>>();
+const _flushHandles = new Map<string, NodeJS.Immediate>();
+const _flushResolvers = new Map<string, () => void>();
+const _flushLock = new Set<string>(); // Prevents async flush rename during sync flush
 
 function readFromDisk(cwd: string): GoalState {
   const filePath = getStorePath(cwd);
@@ -65,32 +69,67 @@ function truncateIntent(intent: string): string {
   return intent.length > MAX_INTENT_LENGTH ? intent.slice(0, MAX_INTENT_LENGTH) : intent;
 }
 
+function _scheduleFlush(cwd: string): void {
+  if (_inFlightFlushes.has(cwd)) return;
+  const promise = new Promise<void>((resolve) => {
+    _flushResolvers.set(cwd, resolve);
+    const handle = setImmediate(() => {
+      _flushHandles.delete(cwd);
+      flushState(cwd).finally(() => {
+        _flushResolvers.delete(cwd);
+        resolve();
+      });
+    });
+    _flushHandles.set(cwd, handle);
+  });
+  _inFlightFlushes.set(cwd, promise);
+  promise.finally(() => _inFlightFlushes.delete(cwd));
+}
+
 export function writeState(cwd: string, state: GoalState): void {
   _cache.set(cwd, deepCopy(state));
-  if (!_flushScheduled.has(cwd)) {
-    _flushScheduled.add(cwd);
-    setImmediate(() => flushState(cwd));
-  }
+  _flushScheduled.add(cwd);
+  _scheduleFlush(cwd);
 }
 
 async function flushState(cwd: string): Promise<void> {
-  _flushScheduled.delete(cwd);
-  const state = _cache.get(cwd);
-  if (!state) return;
-  try {
-    await atomicWriteJsonAsync(getStorePath(cwd), state);
-  } catch (err) {
-    logWarn(`[pi-agent-flow] Async flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+  while (_flushScheduled.has(cwd)) {
+    _flushScheduled.delete(cwd);
+    const state = _cache.get(cwd);
+    if (!state) return;
+
+    // Skip if a sync flush is already active for this cwd
+    if (_flushLock.has(cwd)) {
+      return;
+    }
+
+    try {
+      await atomicWriteJsonAsync(getStorePath(cwd), state, {
+        shouldAbort: () => _flushLock.has(cwd),
+      });
+    } catch (err) {
+      logWarn(`[pi-agent-flow] Async flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+
+    // If a sync flush happened while we were writing, the sync flush already
+    // persisted the latest state. We can safely return.
+    if (_flushLock.has(cwd)) {
+      return;
+    }
+
+    // Loop if more writes were scheduled during the async write
   }
 }
 
 /** Flush all pending writes. For tests or graceful shutdown. */
 export function flushAllStoreCaches(): Promise<void> {
-  const promises: Promise<void>[] = [];
-  for (const cwd of Array.from(_flushScheduled.keys())) {
-    promises.push(flushState(cwd));
+  // Ensure every scheduled cwd has an in-flight flush
+  for (const cwd of Array.from(_flushScheduled)) {
+    _scheduleFlush(cwd);
   }
-  return Promise.all(promises).then(() => {});
+  // Wait for all in-flight flushes (deduplicated per cwd)
+  return Promise.all(Array.from(_inFlightFlushes.values())).then(() => {});
 }
 
 /**
@@ -106,20 +145,47 @@ export function flushAllStoreCachesSync(): void {
   for (const cwd of Array.from(_cache.keys())) {
     const state = _cache.get(cwd);
     if (!state) continue;
+
+    // Cancel any pending setImmediate flush and resolve its promise
+    const handle = _flushHandles.get(cwd);
+    if (handle) {
+      clearImmediate(handle);
+      _flushHandles.delete(cwd);
+      const resolver = _flushResolvers.get(cwd);
+      if (resolver) {
+        resolver();
+        _flushResolvers.delete(cwd);
+      }
+    }
+    _flushScheduled.delete(cwd);
+
+    _flushLock.add(cwd);
     try {
       atomicWriteJsonSync(getStorePath(cwd), state);
     } catch (err) {
       logWarn(
         `[pi-agent-flow] Sync flush failed for ${cwd}: ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      _flushLock.delete(cwd);
     }
   }
 }
 
 /** Clear the in-memory cache. For tests. */
 export function _clearStoreCache(): void {
+  for (const handle of _flushHandles.values()) {
+    clearImmediate(handle);
+  }
+  for (const resolver of _flushResolvers.values()) {
+    resolver();
+  }
+  _flushHandles.clear();
+  _flushResolvers.clear();
   _cache.clear();
   _flushScheduled.clear();
+  _inFlightFlushes.clear();
+  _flushLock.clear();
 }
 
 export function getGoal(cwd: string): GoalEntry | undefined {
