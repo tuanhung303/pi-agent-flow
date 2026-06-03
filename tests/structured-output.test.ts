@@ -138,6 +138,25 @@ not json at all
 `;
 		expect(extractStructuredOutput(text)).toBeUndefined();
 	});
+
+	it("handles nested code blocks inside the JSON string", () => {
+		const text = `
+Some response.
+
+\`\`\`json
+{
+  "version": "1.0",
+  "status": "complete",
+  "summary": "Nested \`\`\`markdown\\ncode\\n\`\`\` block."
+}
+\`\`\`
+`;
+		const result = extractStructuredOutput(text);
+		expect(result).toBeDefined();
+		expect(result!.version).toBe("1.0");
+		expect(result!.status).toBe("complete");
+		expect(result!.summary).toBe("Nested ```markdown\ncode\n``` block.");
+	});
 });
 
 // ---------------------------------------------------------------------------

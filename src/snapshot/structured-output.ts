@@ -30,6 +30,9 @@ type StructuredOutputRecord = {
 
 const VALID_STATUSES: FlowStatus[] = ["complete", "partial", "blocked", "failed"];
 
+// Pre-compiled regex for structured output extraction (fallback path).
+const STRUCTURED_OUTPUT_REGEX = /```json\s*([\s\S]*?)\s*```/g;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -87,13 +90,25 @@ function isValidStructuredOutput(obj: unknown): obj is StructuredOutputRecord {
 export function extractStructuredOutput(text: string): FlowStructuredOutput | undefined {
 	if (!text) return undefined;
 
-	// Find the last ```json ... ``` block in the text.
-	// Scan backward from the end to handle multiple blocks.
-	const allMatches = [...text.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
-	const match = allMatches.length > 0 ? allMatches[allMatches.length - 1] : null;
-	if (!match || !match[1]) return undefined;
+	// Fix P12: Optimize structured output extraction with fast-path string search
+	// Find the last ```json ... ``` block in the text using string search
+	// instead of an expensive regex with a lazy quantifier on large text.
+	const lastClose = text.lastIndexOf("```");
+	let jsonStr: string | null = null;
+	if (lastClose !== -1) {
+		const lastOpen = text.lastIndexOf("```json", lastClose);
+		if (lastOpen !== -1) {
+			jsonStr = text.slice(lastOpen + 7, lastClose).trim() || null;
+		}
+	}
 
-	const jsonStr = match[1].trim();
+	// Fallback: use the regex scan if the fast path didn't find a block.
+	if (!jsonStr) {
+		const allMatches = [...text.matchAll(STRUCTURED_OUTPUT_REGEX)];
+		const lastMatch = allMatches.length > 0 ? allMatches[allMatches.length - 1] : null;
+		jsonStr = lastMatch && lastMatch[1] ? lastMatch[1].trim() : null;
+	}
+
 	if (!jsonStr) return undefined;
 
 	let parsed: unknown;
