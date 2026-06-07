@@ -78,6 +78,8 @@ export interface FlowExecutorDeps {
 	goalContinuationCallback?: (results: SingleResult[]) => Promise<void>;
 	goalContext?: GoalContext;
 	debugMode: boolean;
+	subAgentMaxRetries?: number;
+	subAgentBaseDelayMs?: number;
 }
 
 export interface ExecuteFlowParams {
@@ -395,6 +397,8 @@ export async function executeFlows(
 		projectFlowsDir, hasUI, uiConfirm, onFlowMetrics,
 		confirmProjectFlows,
 		goalContext,
+		subAgentMaxRetries,
+		subAgentBaseDelayMs,
 	} = deps;
 
 	const requested = new Set<string>(params.map((f) => f.type.toLowerCase()));

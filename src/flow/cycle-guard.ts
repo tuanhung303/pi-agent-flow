@@ -43,6 +43,52 @@ export function shouldFailover(result: SingleResult): boolean {
 	return false;
 }
 
+/**
+ * Patterns indicating transient connection / network errors that are
+ * worth retrying at the sub-agent level before surfacing failure.
+ */
+export const CONNECTION_ERROR_PATTERNS: RegExp[] = [
+	/ECONNREFUSED/,
+	/ECONNRESET/,
+	/ECONNABORTED/,
+	/EPIPE/,
+	/EHOSTUNREACH/,
+	/EHOSTDOWN/,
+	/ENETUNREACH/,
+	/ENETDOWN/,
+	/ETIMEDOUT/,
+	/ESOCKETTIMEDOUT/,
+	/EAI_AGAIN/,
+	/EDNS/,
+	/socket hang up/,
+	/socket disconnected/,
+	/network error/,
+	/network timeout/,
+	/fetch failed/,
+	/request failed/,
+	/request timed? ?out/i,
+	/429\b/,
+	/502\b/,
+	/503\b/,
+	/504\b/,
+	/500\b.*internal/i,
+	/connection reset/i,
+	/connection refused/i,
+	/connection timed? ?out/i,
+	/rate limit/i,
+	/provider error/i,
+];
+
+/**
+ * Returns true when the combined stderr + errorMessage text matches
+ * any pattern in CONNECTION_ERROR_PATTERNS.
+ */
+export function isRetryableConnectionError(stderr: string, errorMessage?: string): boolean {
+	const text = `${stderr ?? ""}\n${errorMessage ?? ""}`;
+	if (!text.trim()) return false;
+	return CONNECTION_ERROR_PATTERNS.some((pat) => pat.test(text));
+}
+
 export function createGhostResult(type: string, intent: string, aim: string, model?: string, maxContextTokens?: number): SingleResult {
 	return {
 		type,
