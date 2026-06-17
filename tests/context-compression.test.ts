@@ -49,7 +49,6 @@ describe("buildCore2Snapshot — compression level none", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "tc-1",
           name: "bash",
           content: [{ type: "text", text: "long output here\nline2\nline3" }],
         },
@@ -71,7 +70,6 @@ describe("buildCore2Snapshot — light compression", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "batch-1",
           name: "batch_read",
           content: [
             {
@@ -99,7 +97,6 @@ describe("buildCore2Snapshot — light compression", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "bash-1",
           name: "bash",
           content: [{ type: "text", text: "npm test output" }],
         },
@@ -160,8 +157,7 @@ describe("buildCore2Snapshot — medium compression", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "batch-1",
-          name: "batch_read",
+          name: "batch",
           content: [
             {
               type: "text",
@@ -213,7 +209,6 @@ describe("buildCore2Snapshot — aggressive compression", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "bash-1",
           name: "bash",
           content: [{ type: "text", text: "npm test" }],
         },
@@ -226,7 +221,6 @@ describe("buildCore2Snapshot — aggressive compression", () => {
     });
     expect(snapshot).not.toContain("src/file.ts");
     expect(snapshot).not.toContain("npm test");
-    expect(snapshot).toContain("[toolResult: batch_read]");
     expect(snapshot).toContain("[toolResult: bash]");
   });
 
@@ -310,7 +304,6 @@ describe("buildCore2Snapshot — profile-aware compression", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "bash-1",
           name: "bash",
           content: [
             {
@@ -335,7 +328,6 @@ describe("buildCore2Snapshot — profile-aware compression", () => {
         type: "message",
         message: {
           role: "toolResult",
-          toolCallId: "bash-1",
           name: "bash",
           content: [{ type: "text", text: "All tests passed" }],
         },

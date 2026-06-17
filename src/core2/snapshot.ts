@@ -9,7 +9,6 @@
 import { stripDirectives } from "../steering/tool-utils.js";
 import type { FlowTier, ContextProfile, ToolResultCategory } from "../flow/agents.js";
 import { logWarn } from "../config/log.js";
-import { tokenize } from "../cli/tokenize.js";
 
 export type CompressionLevel = "none" | "light" | "medium" | "aggressive";
 
@@ -279,26 +278,42 @@ const CONTEXT_MAP_ENTRY = {
  * don't have batch_read in their active tools.
  */
 function stripOrphanedToolResultsAndBatchRead(entries: unknown[]): unknown[] {
+	const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
+	const getToolCallId = (value: unknown): string | undefined => normalizeToolCallId(value);
+	const getToolResultId = (value: Record<string, unknown>): string | undefined => {
+		return (value.toolCallId as string | undefined) || (value[SNAKE_TOOL_CALL_ID] as string | undefined);
+	};
+	const getToolName = (value: Record<string, unknown>): string | undefined => {
+		if (typeof value.name === "string") return value.name;
+		const nested = value.toolCall;
+		if (isRecord(nested) && typeof nested.name === "string") return nested.name;
+		return undefined;
+	};
+	const isSubstantiveBlock = (block: unknown): boolean => {
+		if (!isRecord(block)) return false;
+		if (block.type === "text" && typeof block.text === "string" && block.text.trim() === "") return false;
+		if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim() === "") return false;
+		return true;
+	};
+
 	// Pass 1: Collect valid toolCall IDs and batch_read IDs from assistant messages
 	const validToolCallIds = new Set<string>();
 	const batchReadToolCallIds = new Set<string>();
-	let hasAnyToolCalls = false;
 
 	for (const entry of entries) {
-		if (!entry || typeof entry !== "object") continue;
-		const e = entry as Record<string, unknown>;
-		if (e.type !== "message" || !e.message || typeof e.message !== "object") continue;
-		const msg = e.message as Record<string, unknown>;
+		if (!isRecord(entry)) continue;
+		const e = entry;
+		if (e.type !== "message" || !isRecord(e.message)) continue;
+		const msg = e.message;
 		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
 
 		for (const block of msg.content) {
-			if (!block || typeof block !== "object") continue;
-			const b = block as Record<string, unknown>;
+			if (!isRecord(block)) continue;
+			const b = block;
 			if (b.type === "toolCall") {
-				hasAnyToolCalls = true;
-				const id = (b.id as string) || (b.toolCallId as string) || (b[SNAKE_TOOL_CALL_ID] as string);
+				const id = getToolCallId(b);
 				if (id) {
-					if (b.name === "batch_read") {
+					if (getToolName(b) === "batch_read") {
 						batchReadToolCallIds.add(id);
 					} else {
 						validToolCallIds.add(id);
@@ -311,24 +326,19 @@ function stripOrphanedToolResultsAndBatchRead(entries: unknown[]): unknown[] {
 	// Pass 2: Filter entries
 	const result: unknown[] = [];
 	for (const entry of entries) {
-		if (!entry || typeof entry !== "object") { result.push(entry); continue; }
-		const e = entry as Record<string, unknown>;
-		if (e.type !== "message" || !e.message || typeof e.message !== "object") { result.push(entry); continue; }
-		const msg = e.message as Record<string, unknown>;
+		if (!isRecord(entry)) { result.push(entry); continue; }
+		const e = entry;
+		if (e.type !== "message" || !isRecord(e.message)) { result.push(entry); continue; }
+		const msg = e.message;
 
 		// Strip batch_read toolCalls from assistant messages
 		if (msg.role === "assistant" && Array.isArray(msg.content)) {
-			const filtered = msg.content.filter((block: any) => {
-				if (block && block.type === "toolCall" && block.name === "batch_read") return false;
+			const filtered = msg.content.filter((block: unknown) => {
+				if (isRecord(block) && block.type === "toolCall" && getToolName(block) === "batch_read") return false;
 				return true;
 			});
 
-			const hasSubstance = filtered.some((block: any) => {
-				if (!block) return false;
-				if (block.type === "text" && typeof block.text === "string" && block.text.trim() === "") return false;
-				if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim() === "") return false;
-				return true;
-			});
+			const hasSubstance = filtered.some(isSubstantiveBlock);
 
 			if (filtered.length === 0 || !hasSubstance) continue; // Drop empty assistant
 
@@ -342,25 +352,23 @@ function stripOrphanedToolResultsAndBatchRead(entries: unknown[]): unknown[] {
 
 		// Drop orphaned toolResult/tool messages
 		if (msg.role === "toolResult" || msg.role === "tool") {
-			const toolCallId = (msg.toolCallId as string) || (msg.id as string) || (msg[SNAKE_TOOL_CALL_ID] as string);
+			const toolCallId = getToolResultId(msg);
 
 			let contentToolCallId: string | undefined;
 			if (Array.isArray(msg.content)) {
 				for (const part of msg.content) {
-					if (part && typeof part === "object" && (part as any).type === "toolResult") {
-						contentToolCallId = (part as any).toolCallId || (part as any).id || (part as any)[SNAKE_TOOL_CALL_ID];
+					if (isRecord(part) && part.type === "toolResult") {
+						contentToolCallId = getToolCallId(part);
 						break;
 					}
 				}
 			}
 
 			const effectiveId = toolCallId || contentToolCallId;
-			// Preserve toolResults without ID — sanitizeSnapshotEntry deletes toolCallId
-			// from valid toolResults, so we cannot distinguish valid from orphaned here.
-			// Only strip toolResults that HAVE an ID with no matching toolCall.
+			// Preserve truly unidentifiable toolResults as a conservative fallback.
 			if (!effectiveId) { result.push(entry); continue; }
 			if (batchReadToolCallIds.has(effectiveId)) continue; // batch_read result
-			if (hasAnyToolCalls && !validToolCallIds.has(effectiveId)) continue; // Orphaned
+			if (!validToolCallIds.has(effectiveId)) continue; // Orphaned
 			result.push(entry);
 			continue;
 		}
@@ -547,11 +555,6 @@ function sanitizeSnapshotEntry(entry: unknown): unknown | null {
 			delete msg.usage;
 		}
 
-		// Strip tool correlation IDs — child flows replay linearly, no invocation by ID
-		if (msg.role === "toolResult" || msg.role === "tool") {
-			delete msg.toolCallId;
-		}
-
 		// Defensive: upstream host assumes content is always an array for tool/toolResult
 		// messages. Normalize string / null / undefined into a block array so .filter()
 		// never explodes on the platform side.
@@ -686,8 +689,8 @@ function optimizeSharedContext(branchEntries: unknown[]): unknown[] {
 						}
 					} else if (typeof cmd === "string") {
 						const trimmedCmd = cmd.trim();
-						const cmdTokens = tokenize(trimmedCmd);
-						const cmdOp = (cmdTokens[0] === "read" || cmdTokens[0] === "write" || cmdTokens[0] === "edit") ? cmdTokens[0] : "batch";
+						const firstCmdToken = trimmedCmd.split(/\s+/, 1)[0];
+						const cmdOp = (firstCmdToken === "read" || firstCmdToken === "write" || firstCmdToken === "edit") ? firstCmdToken : "batch";
 						const key = `${name}:${trimmedCmd}`;
 						toolCallMap.set(id, { toolName: name, keys: [key], isReadWrite: true, op: cmdOp });
 						const existing = lastExecution.get(key);

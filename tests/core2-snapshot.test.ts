@@ -54,6 +54,15 @@ describe("buildCore2Snapshot — retention", () => {
 			{
 				type: "message",
 				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "bash", toolCallId: "bash-1", arguments: { command: "echo hello" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
 					role: "toolResult",
 					toolCallId: "bash-1",
 					content: [{ type: "text", text: "hello\nworld" }],
@@ -64,6 +73,7 @@ describe("buildCore2Snapshot — retention", () => {
 		const parsed = parseSnapshot(snapshot);
 		const toolMsg = parsed.find((e: any) => e.message?.role === "toolResult");
 		expect(toolMsg.message.content[0].text).toBe("hello\nworld");
+		expect(toolMsg.message.toolCallId).toBe("bash-1");
 	});
 
 	it("preserves system messages verbatim", () => {
@@ -128,14 +138,25 @@ describe("buildCore2Snapshot — retention", () => {
 		expect(snapshot).not.toContain("parentId");
 	});
 
-	it("strips toolCallId from tool and toolResult messages", () => {
-		const entry = {
-			type: "message",
-			message: { role: "toolResult", toolCallId: "tc-1", content: [{ type: "text", text: "output" }] },
-		};
-		const snapshot = buildCore2Snapshot(makeSource([entry]));
-		expect(snapshot).not.toContain("tc-1");
-		expect(snapshot).not.toContain("toolCallId");
+	it("preserves paired toolCallId on tool and toolResult messages", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "tc-1", name: "bash", arguments: { command: "echo output" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: { role: "toolResult", toolCallId: "tc-1", content: [{ type: "text", text: "output" }] },
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).toContain("tc-1");
+		expect(snapshot).toContain("toolCallId");
 		expect(snapshot).toContain("output");
 	});
 
@@ -192,7 +213,6 @@ describe("buildCore2Snapshot — retention", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text: batchText }],
 				},
 			},
@@ -206,6 +226,227 @@ describe("buildCore2Snapshot — retention", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tool-call pairing cleanup tests
+// ---------------------------------------------------------------------------
+
+describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
+	it("preserves valid camelCase assistant toolCall and matching toolResult", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "bash", toolCallId: "tc-camel", arguments: { command: "echo ok" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "tc-camel",
+					content: [{ type: "text", text: "ok" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).toContain('"toolCallId":"tc-camel"');
+		expect(snapshot).toContain("ok");
+	});
+
+	it("preserves valid snake_case assistant toolCall and matching toolResult", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "bash", tool_call_id: "tc-snake", arguments: { command: "echo ok" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					tool_call_id: "tc-snake",
+					content: [{ type: "text", text: "snake ok" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).toContain('"tool_call_id":"tc-snake"');
+		expect(snapshot).toContain("snake ok");
+	});
+
+	it("strips orphaned camelCase toolResults with no matching toolCall", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "missing-camel",
+					content: [{ type: "text", text: "orphan output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).not.toContain("missing-camel");
+		expect(snapshot).not.toContain("orphan output");
+	});
+
+	it("strips orphaned snake_case toolResults with no matching toolCall", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					tool_call_id: "missing-snake",
+					content: [{ type: "text", text: "snake orphan output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).not.toContain("missing-snake");
+		expect(snapshot).not.toContain("snake orphan output");
+	});
+
+	it("strips identified toolResults when message limiting drops all matching assistant toolCalls", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "bash", toolCallId: "dropped-call", arguments: { command: "echo old" } },
+					],
+				},
+			},
+			...Array.from({ length: 30 }, (_, i) => ({
+				type: "message",
+				message: { role: "user" as const, content: `newer-${i}` },
+			})),
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "dropped-call",
+					content: [{ type: "text", text: "late orphan output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "lite" });
+		expect(snapshot).not.toContain("dropped-call");
+		expect(snapshot).not.toContain("late orphan output");
+		expect(snapshot).toContain("newer-29");
+	});
+
+	it("strips batch_read toolCalls and their matching toolResults", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "batch_read", toolCallId: "batch-read-1", arguments: { cmd: "read src/index.ts" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "batch-read-1",
+					content: [{ type: "text", text: "batch read output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).not.toContain("batch_read");
+		expect(snapshot).not.toContain("batch-read-1");
+		expect(snapshot).not.toContain("batch read output");
+	});
+
+	it("drops assistant messages that become empty after batch_read removal", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "batch_read", toolCallId: "batch-only", arguments: { cmd: "read README.md" } },
+					],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		expect(parsed.some((entry: any) => entry.message?.role === "assistant")).toBe(false);
+		expect(snapshot).not.toContain("batch-only");
+	});
+
+	it("keeps assistant messages with mixed batch_read and other toolCalls", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", name: "batch_read", toolCallId: "batch-mixed", arguments: { cmd: "read README.md" } },
+						{ type: "toolCall", name: "bash", toolCallId: "bash-mixed", arguments: { command: "npm test" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "batch-mixed",
+					content: [{ type: "text", text: "batch mixed output" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "bash-mixed",
+					content: [{ type: "text", text: "bash mixed output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).not.toContain("batch-mixed");
+		expect(snapshot).not.toContain("batch mixed output");
+		expect(snapshot).toContain('"toolCallId":"bash-mixed"');
+		expect(snapshot).toContain("bash mixed output");
+	});
+
+	it("preserves toolResults without identifiable ID as fallback", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					content: [{ type: "text", text: "unidentified output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).toContain("unidentified output");
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Chronology tests — order maintained
 // ---------------------------------------------------------------------------
 
@@ -214,7 +455,7 @@ describe("buildCore2Snapshot — chronology", () => {
 		const entries = [
 			{ type: "message", message: { role: "user", content: "A", id: "1" } },
 			{ type: "message", message: { role: "assistant", content: "B", id: "2" } },
-			{ type: "message", message: { role: "toolResult", toolCallId: "tc1", content: "C", id: "3" } },
+			{ type: "message", message: { role: "toolResult", content: "C", id: "3" } },
 			{ type: "message", message: { role: "assistant", content: "D", id: "4" } },
 			{ type: "message", message: { role: "user", content: "E", id: "5" } },
 		];
@@ -228,7 +469,7 @@ describe("buildCore2Snapshot — chronology", () => {
 			{ type: "message", message: { role: "system", content: "system" } },
 			{ type: "message", message: { role: "user", content: "user" } },
 			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "assistant" }] } },
-			{ type: "message", message: { role: "tool", toolCallId: "tc1", content: "tool" } },
+			{ type: "message", message: { role: "tool", content: "tool" } },
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
@@ -264,7 +505,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text: batchText }],
 				},
 			},
@@ -291,7 +531,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text: batchText }],
 				},
 			},
@@ -315,7 +554,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text: batchText }],
 				},
 			},
@@ -339,7 +577,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text: batchText }],
 				},
 			},
@@ -362,7 +599,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text: batchText }],
 				},
 			},
@@ -388,7 +624,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "batch-1",
 					content: [{ type: "text", text }],
 				},
 			},
@@ -436,7 +671,6 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 				type: "message",
 				message: {
 					role: "tool",
-					toolCallId: "batch-1",
 					content: batchText,
 				},
 			},
@@ -582,7 +816,10 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 				timestamp: "2026-05-23T15:35:19.588Z",
 				message: {
 					role: "assistant",
-					content: [{ type: "text", text: "Hello" }],
+					content: [
+						{ type: "text", text: "Hello" },
+						{ type: "toolCall", name: "bash", toolCallId: "bash-1", arguments: { command: "true" } },
+					],
 					api: "openai-completions",
 					provider: "fireworks.ai",
 					model: "kimi-k2p6-turbo",
@@ -686,7 +923,6 @@ describe("buildCore2Snapshot — tier compression", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "tc-1",
 					name: "bash",
 					content: [{ type: "text", text: "long output here\nline2\nline3" }],
 				},
@@ -703,7 +939,6 @@ describe("buildCore2Snapshot — tier compression", () => {
 				type: "message",
 				message: {
 					role: "tool",
-					toolCallId: "tc-1",
 					content: "tool output text",
 				},
 			},
@@ -798,7 +1033,6 @@ describe("buildCore2Snapshot — tier compression", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "tc-1",
 					name: "bash",
 					content: [{ type: "text", text: longText }],
 				},
@@ -815,7 +1049,6 @@ describe("buildCore2Snapshot — tier compression", () => {
 				type: "message",
 				message: {
 					role: "tool",
-					toolCallId: "tc-1",
 					content: "short",
 				},
 			},
@@ -832,7 +1065,6 @@ describe("buildCore2Snapshot — tier compression", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "tc-1",
 					name: "trace",
 					content: [{ type: "text", text: longText }],
 				},
@@ -866,7 +1098,6 @@ describe("buildCore2Snapshot — tier compression", () => {
 				type: "message",
 				message: {
 					role: "toolResult",
-					toolCallId: "tc-1",
 					content: [{ type: "text", text: "output" }],
 				},
 			},
@@ -1026,7 +1257,7 @@ describe("buildCore2Snapshot — tier compression", () => {
 				message: {
 					role: "assistant",
 					content: [
-						{ type: "toolCall", id: "batch-1", name: "batch_read", arguments: { o: [{ o: "read", p: "src/a.ts" }] } }
+						{ type: "toolCall", id: "batch-1", name: "batch", arguments: { o: [{ o: "read", p: "src/a.ts" }] } }
 					]
 				}
 			},
@@ -1044,7 +1275,7 @@ describe("buildCore2Snapshot — tier compression", () => {
 				message: {
 					role: "assistant",
 					content: [
-						{ type: "toolCall", id: "batch-2", name: "batch_read", arguments: { o: [{ o: "read", p: "src/a.ts" }] } }
+						{ type: "toolCall", id: "batch-2", name: "batch", arguments: { o: [{ o: "read", p: "src/a.ts" }] } }
 					]
 				}
 			},

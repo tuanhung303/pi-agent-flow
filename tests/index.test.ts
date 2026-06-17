@@ -235,11 +235,12 @@ describe("flow tool execute", () => {
 		const unchangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer — see [build] output for full details." }], timestamp: 2 } };
 		const changedAssistant = { type: "message", message: { role: "assistant", reasoning: "SECRET_REASONING", content: [{ type: "text", text: "Visible answer — [build] output shows success." }], timestamp: 3 } };
 		const droppedSystem = { type: "message", message: { role: "system", content: steeringHint, timestamp: 4 } };
+		const unchangedToolCall = { type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash", toolCallId: "tool-1", arguments: { command: "echo unchanged" } }], timestamp: 4.5 } };
 		const unchangedTool = { type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
 		const unchangedUserExpected = { type: "message", message: { role: "user", content: "Unchanged requirement specified in /src/config.ts for the project" } };
 		const unchangedAssistantExpected = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer — see [build] output for full details." }] } };
-		const unchangedToolExpected = JSON.stringify({ type: "message", message: { role: "toolResult", content: [{ type: "text", text: "[toolResult result omitted]" }] } });
-		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedTool];
+		const unchangedToolExpected = JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "[toolResult result omitted]" }] } });
+		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedToolCall, unchangedTool];
 
 		const tool = pi.getTool("flow");
 		await tool.execute(
