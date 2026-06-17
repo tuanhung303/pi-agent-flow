@@ -444,6 +444,25 @@ describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		expect(snapshot).toContain("unidentified output");
 	});
+
+	it("strips identified toolResults when no assistant toolCalls remain in snapshot", () => {
+		// If all assistant messages were dropped by compression, identified
+		// toolResults are orphaned and must be stripped to keep provider replay valid.
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "no-assistant",
+					content: [{ type: "text", text: "survived output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).not.toContain("no-assistant");
+		expect(snapshot).not.toContain("survived output");
+	});
 });
 
 // ---------------------------------------------------------------------------
