@@ -233,32 +233,40 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 	let liveEstimatedOutputTokens = 0;
 	let lastActualOutputTokens = result.usage.output;
 	const emitUpdate = () => {
-		const streamingDelta = drainStreamingText(result);
-		if (streamingDelta) liveStreamingText += streamingDelta;
-		const estimatedTokens = drainStreamingEstimate(result);
-		const toolCallTokens = drainToolCallEstimate(result);
-		if (result.usage.output !== lastActualOutputTokens) {
-			lastActualOutputTokens = result.usage.output;
-			liveEstimatedOutputTokens = result.usage.output;
+		try {
+			const streamingDelta = drainStreamingText(result);
+			if (streamingDelta) liveStreamingText += streamingDelta;
+			const estimatedTokens = drainStreamingEstimate(result);
+			const toolCallTokens = drainToolCallEstimate(result);
+			if (result.usage.output !== lastActualOutputTokens) {
+				lastActualOutputTokens = result.usage.output;
+				liveEstimatedOutputTokens = result.usage.output;
+			}
+			liveEstimatedOutputTokens += estimatedTokens + toolCallTokens;
+			const ctxEst = drainCtxEstimate(result);
+			updateSmoothedTps(result, estimatedTokens);
+			const smoothedTps = drainSmoothedTps(result);
+			const elapsedSec = (Date.now() - startedAtMs) / 1000;
+			const fallbackTps = elapsedSec > 0.5 && smoothedTps <= 0 ? result.usage.output / elapsedSec : 0;
+			const displayTps = smoothedTps > 0 ? smoothedTps : fallbackTps;
+			const mergedUsage = mergeStreamingUsage(result.usage, liveEstimatedOutputTokens, ctxEst, displayTps);
+			onUpdate?.({
+				content: [
+					{
+						type: "text",
+						text: liveStreamingText || getFlowOutput(result.messages) || "(running...)",
+					},
+				],
+				details: makeDetails([{ ...result, usage: mergedUsage, streamingText: liveStreamingText || undefined }]),
+				...(toolCallId ? { _toolCallId: toolCallId } : {}),
+			});
+		} catch (err) {
+			if (err instanceof Error && err.message.includes("outside active run")) {
+				// Silently ignore stale emit after run ended
+			} else {
+				logWarn(`[pi-agent-flow] emitUpdate error: ${err}`);
+			}
 		}
-		liveEstimatedOutputTokens += estimatedTokens + toolCallTokens;
-		const ctxEst = drainCtxEstimate(result);
-		updateSmoothedTps(result, estimatedTokens);
-		const smoothedTps = drainSmoothedTps(result);
-		const elapsedSec = (Date.now() - startedAtMs) / 1000;
-		const fallbackTps = elapsedSec > 0.5 && smoothedTps <= 0 ? result.usage.output / elapsedSec : 0;
-		const displayTps = smoothedTps > 0 ? smoothedTps : fallbackTps;
-		const mergedUsage = mergeStreamingUsage(result.usage, liveEstimatedOutputTokens, ctxEst, displayTps);
-		onUpdate?.({
-			content: [
-				{
-					type: "text",
-					text: liveStreamingText || getFlowOutput(result.messages) || "(running...)",
-				},
-			],
-			details: makeDetails([{ ...result, usage: mergedUsage, streamingText: liveStreamingText || undefined }]),
-			...(toolCallId ? { _toolCallId: toolCallId } : {}),
-		});
 	};
 
 	let forkSessionTmpDir: string | null = null;
