@@ -126,22 +126,31 @@ export function aggregateFlowUsage(results: SingleResult[]): UsageStats {
 	let weightedTps = 0;
 	let totalOutput = 0;
 	for (const r of results) {
-		total.input += r.usage.input;
-		total.output += r.usage.output;
-		total.cacheRead += r.usage.cacheRead;
-		total.cacheWrite += r.usage.cacheWrite;
-		total.cost += r.usage.cost;
-		total.turns += r.usage.turns;
-		total.toolCalls += r.usage.toolCalls;
-		if ((r.usage.smoothedTps ?? 0) > 0) {
-			weightedTps += (r.usage.smoothedTps ?? 0) * r.usage.output;
-			totalOutput += r.usage.output;
+		const usage = r.usage ?? emptyFlowUsage();
+		const input = usage.input ?? 0;
+		const output = usage.output ?? 0;
+		const cacheRead = usage.cacheRead ?? 0;
+		const cacheWrite = usage.cacheWrite ?? 0;
+		const cost = usage.cost ?? 0;
+		const turns = usage.turns ?? 0;
+		const toolCalls = usage.toolCalls ?? 0;
+
+		total.input += input;
+		total.output += output;
+		total.cacheRead += cacheRead;
+		total.cacheWrite += cacheWrite;
+		total.cost += cost;
+		total.turns += turns;
+		total.toolCalls += toolCalls;
+		if ((usage.smoothedTps ?? 0) > 0) {
+			weightedTps += (usage.smoothedTps ?? 0) * output;
+			totalOutput += output;
 		}
 	}
 	if (totalOutput > 0) {
 		total.smoothedTps = weightedTps / totalOutput;
 	} else if (results.length > 0) {
-		total.smoothedTps = Math.max(...results.map((r) => r.usage.smoothedTps ?? 0));
+		total.smoothedTps = Math.max(...results.map((r) => r.usage?.smoothedTps ?? 0));
 	}
 	return total;
 }

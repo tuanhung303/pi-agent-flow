@@ -83,6 +83,27 @@ describe("aggregateFlowUsage", () => {
 		expect(total.turns).toBe(0);
 	});
 
+	it("treats missing usage cost as zero", () => {
+		const results = [
+			makeResult({
+				usage: {
+					input: 100,
+					output: 50,
+					cacheRead: 0,
+					cacheWrite: 0,
+					contextTokens: 150,
+					turns: 1,
+					toolCalls: 0,
+				} as SingleResult["usage"],
+			}),
+		];
+
+		const total = aggregateFlowUsage(results);
+
+		expect(total.cost).toBe(0);
+		expect(Number.isNaN(total.cost)).toBe(false);
+	});
+
 	it("computes weighted average smoothedTps by output tokens", () => {
 		const results = [
 			makeResult({ usage: { input: 100, output: 100, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1, toolCalls: 0, smoothedTps: 100 } }),

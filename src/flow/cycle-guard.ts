@@ -33,7 +33,12 @@ export function shouldFailover(result: SingleResult): boolean {
 	if (result.stopReason === "aborted") return false;
 	const text = `${result.errorMessage ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
 	if (!text.trim()) return false;
-	if (text.includes("permission") || text.includes("invalid tool") || text.includes("bad settings")) {
+	if (text.includes("permission") || text.includes("bad settings")) {
+		return false;
+	}
+	// Generic "invalid tool" failures are not retryable, but "invalid tool_call_id"
+	// errors are a specific provider-side rejection that failover can recover from.
+	if (text.includes("invalid tool") && !text.includes("tool_call_id")) {
 		return false;
 	}
 	if (result.exitCode > 0) return true;
@@ -45,6 +50,14 @@ export function shouldFailover(result: SingleResult): boolean {
 	// tool_call_id mismatch — strict API providers (kimi, DeepSeek) reject
 	// snapshots with orphaned toolResult messages.
 	if (!isFlowComplete(result) && text.includes("400") && text.includes("tool_call_id")) {
+		return true;
+	}
+	// Provider-side 404 / resource-not-found errors should fail over to the next
+	// configured model even when the process exits 0.
+	if (
+		!isFlowComplete(result) &&
+		(text.includes("resource_not_found_error") || text.includes("requested resource was not found"))
+	) {
 		return true;
 	}
 	return false;

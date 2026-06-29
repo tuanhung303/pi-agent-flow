@@ -63,17 +63,55 @@ export async function executeSingleFlow(
 
 	const shouldInheritContext = targetFlow?.inheritContext !== false;
 	const tier = targetFlow?.tier ?? "flash";
-	const { candidates } = resolveFlowModelCandidates({
+	const { candidates, invalidCandidates } = resolveFlowModelCandidates({
 		tier,
 		flowModel: targetFlow?.model,
 		cliTierOverride: tierOverrideResolver(tier),
 		strategy: selectedFlowModelConfig.strategy,
 		fallbackModel,
 	});
-	const attemptModels = candidates.length > 0 ? candidates : [undefined];
 	const attemptedModels: string[] = [];
 	let result = allResults[resultIndex];
 	const flowStart = Date.now();
+
+	// Fail fast when every configured model is known to be missing from models.json.
+	if (invalidCandidates.length > 0 && candidates.length === invalidCandidates.length) {
+		const badSettingsMessage = `Bad settings: all configured flow models are missing from models.json: ${invalidCandidates.join(", ")}`;
+		result = {
+			type: normalizedType,
+			agentSource: targetFlow?.source ?? "unknown",
+			intent: item.intent,
+			aim: item.aim,
+			exitCode: 1,
+			messages: [],
+			stderr: badSettingsMessage,
+			usage: emptyFlowUsage(),
+			model: invalidCandidates[0],
+			stopReason: "error",
+			errorMessage: badSettingsMessage,
+		};
+		const previous = allResults[resultIndex];
+		allResults[resultIndex] = result;
+		preserveMetadata(allResults[resultIndex], previous);
+		emitProgress();
+		if (onFlowMetrics) {
+			onFlowMetrics({
+				type: normalizedType,
+				durationMs: Date.now() - flowStart,
+				exitCode: result.exitCode,
+				success: false,
+				model: result.model,
+				failoverCount: 0,
+				connectionRetryCount: 0,
+				usage: result.usage,
+				source: result.agentSource,
+				depth: currentDepth + 1,
+			});
+		}
+		return result;
+	}
+
+	const attemptModels = candidates.length > 0 ? candidates : [undefined];
 
 	const maxRetries = deps.subAgentMaxRetries ?? DEFAULT_SUB_AGENT_MAX_RETRIES;
 	const baseDelayMs = deps.subAgentBaseDelayMs ?? DEFAULT_SUB_AGENT_BASE_DELAY_MS;

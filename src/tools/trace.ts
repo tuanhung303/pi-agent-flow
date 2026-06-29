@@ -211,7 +211,8 @@ export interface TraceToolOptions {
 	fallbackModel?: string;
 }
 
-function resolveTraceRuntime(
+/** Exported for unit testing; not part of the public API. */
+export function resolveTraceRuntime(
 	opts: TraceToolOptions,
 	traceFlow: FlowConfig,
 	ctx: ExtensionContext,
@@ -228,13 +229,18 @@ function resolveTraceRuntime(
 		);
 		selectedStrategy = selectedFlowModelConfig.strategy;
 	}
-	const { candidates } = resolveFlowModelCandidates({
+	const { candidates, invalidCandidates } = resolveFlowModelCandidates({
 		tier,
 		flowModel: traceFlow.model,
 		cliTierOverride: opts.tierOverrideResolver?.(tier),
 		strategy: selectedStrategy ?? {},
 		fallbackModel: opts.fallbackModel,
 	});
+	if (invalidCandidates.length > 0 && candidates.length === invalidCandidates.length) {
+		throw new Error(
+			`Bad settings: all configured trace models are missing from models.json: ${invalidCandidates.join(", ")}`,
+		);
+	}
 	const resolvedModel = candidates[0];
 	const maxContextTokens = resolveModelContextWindow(resolvedModel);
 	// INTENTIONALLY OMIT: `tier` and `compressionProfile`.

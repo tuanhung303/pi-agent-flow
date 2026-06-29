@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -15,7 +15,7 @@ import {
 	onSettingsChange,
 	_clearSettingsChangeListeners,
 } from "../src/config/config.js";
-import { resolveModelContextWindow } from "../src/config/models.js";
+import { hasConfiguredModel, resolveModelContextWindow } from "../src/config/models.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;
@@ -278,6 +278,32 @@ describe("writeGlobalFlowMode", () => {
 });
 
 describe("resolveFlowModelCandidates", () => {
+	let tmpDir: string;
+	let originalHome: string | undefined;
+	let originalAgentDir: string | undefined;
+	let warnSpy: MockInstance<(...args: unknown[]) => void>;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-candidates-test-"));
+		originalHome = process.env.HOME;
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.HOME = tmpDir;
+		delete process.env.PI_CODING_AGENT_DIR;
+		_clearSettingsCache();
+		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		warnSpy.mockRestore();
+		process.env.HOME = originalHome;
+		if (originalAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
 	it("returns explicit flow model only", () => {
 		const result = resolveFlowModelCandidates({
 			tier: "flash",
@@ -291,6 +317,7 @@ describe("resolveFlowModelCandidates", () => {
 		expect(result).toEqual({
 			primary: "explicit-model",
 			candidates: ["explicit-model"],
+			invalidCandidates: [],
 		});
 	});
 
@@ -306,6 +333,7 @@ describe("resolveFlowModelCandidates", () => {
 		expect(result).toEqual({
 			primary: "primary-a",
 			candidates: ["primary-a", "primary-b", "parent-model"],
+			invalidCandidates: [],
 		});
 	});
 
@@ -321,6 +349,72 @@ describe("resolveFlowModelCandidates", () => {
 		expect(result).toEqual({
 			primary: "cli-model",
 			candidates: ["cli-model"],
+			invalidCandidates: [],
+		});
+	});
+
+	it("warns but still tries models known to be missing from models.json", () => {
+		const agentDir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(agentDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					kimi: {
+						models: [{ id: "kimi-k2.7-code", contextWindow: 262144 }],
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const result = resolveFlowModelCandidates({
+			tier: "flash",
+			strategy: {
+				flash: {
+					primary: "kimi/kimi-for-coding",
+					failover: ["kimi/kimi-k2.7-code"],
+				},
+			},
+		});
+
+		expect(result).toEqual({
+			primary: "kimi/kimi-for-coding",
+			candidates: ["kimi/kimi-for-coding", "kimi/kimi-k2.7-code"],
+			invalidCandidates: ["kimi/kimi-for-coding"],
+		});
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not present in models.json"));
+	});
+
+	it("reports invalid candidates when every configured model is missing", () => {
+		const agentDir = path.join(tmpDir, ".pi", "agent");
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(agentDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					kimi: {
+						models: [{ id: "kimi-k2.7-code", contextWindow: 262144 }],
+					},
+				},
+			}),
+			"utf-8",
+		);
+
+		const result = resolveFlowModelCandidates({
+			tier: "full",
+			strategy: {
+				full: {
+					primary: "kimi/kimi-for-coding",
+					failover: ["kimi/kimi-old"],
+				},
+			},
+		});
+
+		expect(result).toEqual({
+			primary: "kimi/kimi-for-coding",
+			candidates: ["kimi/kimi-for-coding", "kimi/kimi-old"],
+			invalidCandidates: ["kimi/kimi-for-coding", "kimi/kimi-old"],
 		});
 	});
 });
@@ -516,7 +610,22 @@ describe("resolveModelContextWindow", () => {
 		expect(resolveModelContextWindow("openai/gpt-4o")).toBeUndefined();
 	});
 
-	it("returns undefined for invalid model string format", () => {
+	it("reports whether a provider/model is configured", () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [{ id: "gpt-4o", contextWindow: 128000 }],
+				},
+			},
+		});
+
+		expect(hasConfiguredModel("openai/gpt-4o")).toBe(true);
+		expect(hasConfiguredModel("openai/gpt-4o-mini")).toBe(false);
+		expect(hasConfiguredModel("anthropic/claude-3-5-sonnet")).toBeUndefined();
+		expect(hasConfiguredModel("gpt-4o")).toBeUndefined();
+	});
+
+	it("returns undefined for invalid model string format", () =>{
 		writeModelsJson({
 			providers: {
 				openai: {

@@ -11,7 +11,7 @@ import * as path from "node:path";
 import { parseComplexity, type Complexity } from "../flow/complexity.js";
 import { type FlowTier } from "../flow/agents.js";
 import { logWarn } from "./log.js";
-import { resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
+import { getModelsJsonPath, hasConfiguredModel, resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
 import { getAgentDir, hasAgentDirOverride } from "./paths.js";
 import { atomicWriteFileSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 
@@ -615,26 +615,35 @@ export function resolveFlowModelCandidates(opts: {
 	cliTierOverride?: string;
 	strategy: FlowModelStrategy;
 	fallbackModel?: string;
-}): { primary: string | undefined; candidates: string[] } {
+}): { primary: string | undefined; candidates: string[]; invalidCandidates: string[] } {
 	const unique = new Set<string>();
 	const candidates: string[] = [];
+	const invalidCandidates: string[] = [];
+	// Read the registry once; models without a provider prefix or unknown providers
+	// are treated as "cannot answer authoritatively" and are still tried.
+	const registry = readSettingsJson(getModelsJsonPath());
 
 	const add = (value: string | undefined) => {
 		if (!value) return;
 		const normalized = value.trim();
 		if (!normalized || unique.has(normalized)) return;
 		unique.add(normalized);
+		const configured = hasConfiguredModel(normalized, registry);
+		if (configured === false) {
+			invalidCandidates.push(normalized);
+			logWarn(`[pi-agent-flow] Model "${normalized}" is not present in models.json; trying it anyway.`);
+		}
 		candidates.push(normalized);
 	};
 
 	if (opts.flowModel) {
 		add(opts.flowModel);
-		return { primary: candidates[0], candidates };
+		return { primary: candidates[0], candidates, invalidCandidates };
 	}
 
 	if (opts.cliTierOverride) {
 		add(opts.cliTierOverride);
-		return { primary: candidates[0], candidates };
+		return { primary: candidates[0], candidates, invalidCandidates };
 	}
 
 	const tierConfig = opts.strategy[opts.tier];
@@ -642,7 +651,7 @@ export function resolveFlowModelCandidates(opts: {
 	for (const model of tierConfig?.failover ?? []) add(model);
 	add(opts.fallbackModel);
 
-	return { primary: candidates[0], candidates };
+	return { primary: candidates[0], candidates, invalidCandidates };
 }
 
 export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStrategy): string {
