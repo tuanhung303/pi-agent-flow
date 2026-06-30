@@ -22,6 +22,39 @@ function loadSession(p: string) {
 	}).filter(Boolean);
 }
 
+function createDefaultSession(): unknown[] {
+	return [
+		{
+			type: "session",
+			version: 1,
+			id: "repro-session-id",
+			model: "default",
+			createdAt: new Date().toISOString(),
+		},
+		{
+			type: "message",
+			message: {
+				role: "user",
+				content: [{ type: "text", text: "map files" }],
+			},
+		},
+		{
+			type: "message",
+			message: {
+				role: "assistant",
+				content: [{ type: "text", text: "I'll map the files for you." }],
+			},
+		},
+	];
+}
+
+function loadSessionForRepro(p: string): unknown[] {
+	if (fs.existsSync(p)) {
+		return loadSession(p);
+	}
+	return createDefaultSession();
+}
+
 function makeMockProcess() {
 	const proc = new EventEmitter() as any;
 	proc.stdin = new EventEmitter();
@@ -73,9 +106,9 @@ describe("repro flow execute", () => {
 	beforeEach(() => vi.clearAllMocks());
 	afterEach(() => vi.restoreAllMocks());
 
-	it.skipIf(!fs.existsSync(SESSION), "bare scout (no dispatch) does not throw 'length'")(async () => {
+	it("bare scout (no dispatch) does not throw 'length'", async () => {
 		const cwd = process.cwd();
-		const entries = loadSession(SESSION);
+		const entries = loadSessionForRepro(SESSION);
 		const { api, ctx, tools, fire } = makeFakePi(cwd, entries);
 		extDefault(api as any);
 		await fire("session_start", { type: "session_start" }, ctx);
