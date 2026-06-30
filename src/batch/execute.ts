@@ -9,7 +9,6 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { logWarn } from "../config/log.js";
 import { execFile } from "node:child_process";
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import {
 	type FileOpInput,
 	type RgOpInput,
@@ -41,6 +40,40 @@ import {
 import { formatDirectoryListing } from "./format-directory-listing.js";
 import { applyPatch } from "./apply-patch.js";
 import { buildFileContextMap } from "./symbols.js";
+
+// ---------------------------------------------------------------------------
+// Per-file mutation queue
+// ---------------------------------------------------------------------------
+
+const fileMutationQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Queue file mutations by path so concurrent operations on the same file
+ * are serialized. This replaces the host-provided helper that older OMP
+ * builds do not re-export, avoiding extension-validation failures on
+ * install.
+ */
+async function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+	const previous = fileMutationQueues.get(filePath);
+	const next = (async () => {
+		if (previous) {
+			try {
+				await previous;
+			} catch {
+				// Continue regardless of prior failure.
+			}
+		}
+		return fn();
+	})();
+	fileMutationQueues.set(filePath, next);
+	try {
+		return await next;
+	} finally {
+		if (fileMutationQueues.get(filePath) === next) {
+			fileMutationQueues.delete(filePath);
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Read helpers

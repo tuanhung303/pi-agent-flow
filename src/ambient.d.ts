@@ -68,7 +68,6 @@ export interface ExtensionContext {
 	export const DEFAULT_MAX_BYTES: number;
 	export const DEFAULT_MAX_LINES: number;
 	export function truncateHead(text: string, options: { maxBytes?: number; maxLines?: number }): { content: string };
-	export function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T>;
 	export function convertToLlm(branch: unknown[]): any[];
 	export function serializeConversation(messages: any[]): string;
 	export function createBashToolDefinition(
