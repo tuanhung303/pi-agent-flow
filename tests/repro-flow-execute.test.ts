@@ -73,7 +73,7 @@ describe("repro flow execute", () => {
 	beforeEach(() => vi.clearAllMocks());
 	afterEach(() => vi.restoreAllMocks());
 
-	it("bare scout (no dispatch) does not throw 'length'", async () => {
+	it.skipIf(!fs.existsSync(SESSION), "bare scout (no dispatch) does not throw 'length'")(async () => {
 		const cwd = process.cwd();
 		const entries = loadSession(SESSION);
 		const { api, ctx, tools, fire } = makeFakePi(cwd, entries);
