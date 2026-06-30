@@ -21,14 +21,14 @@ export function resolveAuditModel(
 ): { model?: string; maxContextTokens?: number } {
 	const auditFlow = flows.find((f) => f.name === "audit");
 	const tier = auditFlow?.tier ?? "flash";
-	const { candidates } = resolveFlowModelCandidates({
+	const { effectivePrimary } = resolveFlowModelCandidates({
 		tier,
 		flowModel: auditFlow?.model,
 		cliTierOverride: tierOverrideResolver(tier),
 		strategy,
 		fallbackModel,
 	});
-	const model = candidates[0];
+	const model = effectivePrimary;
 	const maxContextTokens = resolveModelContextWindow(model);
 	return { model, maxContextTokens };
 }

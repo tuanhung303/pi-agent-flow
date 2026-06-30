@@ -239,7 +239,7 @@ export function resolveTraceRuntime(
 		);
 		selectedStrategy = selectedFlowModelConfig.strategy;
 	}
-	const { candidates, invalidCandidates } = resolveFlowModelCandidates({
+	const { candidates, invalidCandidates, effectivePrimary } = resolveFlowModelCandidates({
 		tier,
 		flowModel: traceFlow.model,
 		cliTierOverride: opts.tierOverrideResolver?.(tier),
@@ -251,8 +251,7 @@ export function resolveTraceRuntime(
 			`Bad settings: all configured trace models are missing from models.json: ${invalidCandidates.join(", ")}`,
 		);
 	}
-	const invalidSet = new Set(invalidCandidates);
-	const resolvedModel = candidates.find((candidate) => !invalidSet.has(candidate));
+	const resolvedModel = effectivePrimary;
 	const maxContextTokens = resolveModelContextWindow(resolvedModel);
 	// INTENTIONALLY OMIT: `tier` and `compressionProfile`.
 	//
