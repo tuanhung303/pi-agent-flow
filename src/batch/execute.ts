@@ -53,7 +53,7 @@ const fileMutationQueues = new Map<string, Promise<unknown>>();
  * builds do not re-export, avoiding extension-validation failures on
  * install.
  */
-async function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+export async function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
 	const previous = fileMutationQueues.get(filePath);
 	const next = (async () => {
 		if (previous) {
