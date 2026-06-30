@@ -13,6 +13,21 @@ export function getModelsJsonPath(): string {
 	return defaultPath;
 }
 
+const _modelsJsonCache = new Map<string, Record<string, unknown> | null>();
+
+function readModelsJson(): Record<string, unknown> | null {
+	const filePath = getModelsJsonPath();
+	if (_modelsJsonCache.has(filePath)) return _modelsJsonCache.get(filePath)!;
+	const parsed = readSettingsJson(filePath);
+	_modelsJsonCache.set(filePath, parsed);
+	return parsed;
+}
+
+/** Clear the parsed models.json cache. Exposed for tests and future hot-reload boundaries. */
+export function invalidateModelsJsonCache(): void {
+	_modelsJsonCache.clear();
+}
+
 function readSettingsJson(filePath: string): Record<string, unknown> | null {
 	try {
 		const content = fs.readFileSync(filePath, "utf-8");
@@ -34,7 +49,7 @@ export function resolveModelContextWindow(model: string): number | undefined {
 	const providerKey = parts[0];
 	const modelId = parts.slice(1).join("/");
 
-	const raw = readSettingsJson(getModelsJsonPath());
+	const raw = readModelsJson();
 	if (!isPlainObject(raw)) return undefined;
 
 	const providers = raw.providers;
@@ -73,7 +88,7 @@ export function hasConfiguredModel(
 	const providerKey = parts[0];
 	const modelId = parts.slice(1).join("/");
 
-	const raw = registry === undefined ? readSettingsJson(getModelsJsonPath()) : registry;
+	const raw = registry === undefined ? readModelsJson() : registry;
 	if (!isPlainObject(raw)) return undefined;
 
 	const providers = raw.providers;

@@ -318,6 +318,7 @@ describe("resolveFlowModelCandidates", () => {
 			primary: "explicit-model",
 			candidates: ["explicit-model"],
 			invalidCandidates: [],
+			effectivePrimary: "explicit-model",
 		});
 	});
 
@@ -334,6 +335,7 @@ describe("resolveFlowModelCandidates", () => {
 			primary: "primary-a",
 			candidates: ["primary-a", "primary-b", "parent-model"],
 			invalidCandidates: [],
+			effectivePrimary: "primary-a",
 		});
 	});
 
@@ -350,6 +352,7 @@ describe("resolveFlowModelCandidates", () => {
 			primary: "cli-model",
 			candidates: ["cli-model"],
 			invalidCandidates: [],
+			effectivePrimary: "cli-model",
 		});
 	});
 
@@ -382,6 +385,7 @@ describe("resolveFlowModelCandidates", () => {
 			primary: "kimi/kimi-for-coding",
 			candidates: ["kimi/kimi-for-coding", "kimi/kimi-k2.7-code"],
 			invalidCandidates: ["kimi/kimi-for-coding"],
+			effectivePrimary: "kimi/kimi-k2.7-code",
 		});
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not present in models.json"));
 	});
@@ -415,6 +419,7 @@ describe("resolveFlowModelCandidates", () => {
 			primary: "kimi/kimi-for-coding",
 			candidates: ["kimi/kimi-for-coding", "kimi/kimi-old"],
 			invalidCandidates: ["kimi/kimi-for-coding", "kimi/kimi-old"],
+			effectivePrimary: undefined,
 		});
 	});
 });
@@ -625,7 +630,7 @@ describe("resolveModelContextWindow", () => {
 		expect(hasConfiguredModel("gpt-4o")).toBeUndefined();
 	});
 
-	it("returns undefined for invalid model string format", () =>{
+	it("returns undefined for invalid model string format", () => {
 		writeModelsJson({
 			providers: {
 				openai: {

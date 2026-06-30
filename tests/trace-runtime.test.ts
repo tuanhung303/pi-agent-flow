@@ -90,4 +90,34 @@ describe("resolveTraceRuntime", () => {
 			),
 		).toThrow(/Bad settings: all configured trace models are missing from models\.json/);
 	});
+
+	it("selects the failover candidate when the primary is missing from models.json", () => {
+		writeModelsJson({
+			providers: {
+				kimi: {
+					models: [{ id: "kimi-k2.7-code", contextWindow: 262144 }],
+				},
+			},
+		});
+
+		const runtime = resolveTraceRuntime(
+			{
+				getSettings: () => ({ toolOptimize: false, structuredOutput: false, bodyVerbosity: "lite" }),
+				getLoadedFlowModelConfigs: () => ({
+					configs: {
+						default: {
+							lite: { primary: "kimi/kimi-for-coding", failover: ["kimi/kimi-k2.7-code"] },
+						},
+					},
+					selectedName: "default",
+				}),
+			},
+			makeTraceFlow(),
+			makeMockCtx(),
+			"call-2",
+			"test intent",
+		);
+
+		expect(runtime.resolvedModel).toBe("kimi/kimi-k2.7-code");
+	});
 });

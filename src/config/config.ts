@@ -615,7 +615,7 @@ export function resolveFlowModelCandidates(opts: {
 	cliTierOverride?: string;
 	strategy: FlowModelStrategy;
 	fallbackModel?: string;
-}): { primary: string | undefined; candidates: string[]; invalidCandidates: string[] } {
+}): { primary: string | undefined; candidates: string[]; invalidCandidates: string[]; effectivePrimary: string | undefined } {
 	const unique = new Set<string>();
 	const candidates: string[] = [];
 	const invalidCandidates: string[] = [];
@@ -636,14 +636,19 @@ export function resolveFlowModelCandidates(opts: {
 		candidates.push(normalized);
 	};
 
+	const effectivePrimary = () => {
+		const invalidSet = new Set(invalidCandidates);
+		return candidates.find((candidate) => !invalidSet.has(candidate));
+	};
+
 	if (opts.flowModel) {
 		add(opts.flowModel);
-		return { primary: candidates[0], candidates, invalidCandidates };
+		return { primary: candidates[0], candidates, invalidCandidates, effectivePrimary: effectivePrimary() };
 	}
 
 	if (opts.cliTierOverride) {
 		add(opts.cliTierOverride);
-		return { primary: candidates[0], candidates, invalidCandidates };
+		return { primary: candidates[0], candidates, invalidCandidates, effectivePrimary: effectivePrimary() };
 	}
 
 	const tierConfig = opts.strategy[opts.tier];
@@ -651,7 +656,7 @@ export function resolveFlowModelCandidates(opts: {
 	for (const model of tierConfig?.failover ?? []) add(model);
 	add(opts.fallbackModel);
 
-	return { primary: candidates[0], candidates, invalidCandidates };
+	return { primary: candidates[0], candidates, invalidCandidates, effectivePrimary: effectivePrimary() };
 }
 
 export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStrategy): string {

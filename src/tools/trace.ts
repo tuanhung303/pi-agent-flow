@@ -13,7 +13,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { runFlowWithLiveSession } from "../flow/flow-live.js";
 import { discoverFlows, type FlowConfig } from "../flow/agents.js";
-import { buildSnapshotWithCompression, parseSharedContext } from "../core2/snapshot.js";
+import { buildSnapshotWithCompression, parseSharedContext, type CompressionStats, type SharedContext } from "../core2/snapshot.js";
 import {
 	resolveFlowModelCandidates,
 	resolveModelContextWindow,
@@ -211,14 +211,24 @@ export interface TraceToolOptions {
 	fallbackModel?: string;
 }
 
-/** Exported for unit testing; not part of the public API. */
+/** @internal Exported for unit testing only. */
+export interface TraceRuntimeResolution {
+	resolvedModel: string | undefined;
+	maxContextTokens: number | undefined;
+	forkSessionSnapshotJsonl: string | null;
+	sharedContext: SharedContext | undefined;
+	compressionStats: CompressionStats | undefined;
+	intent: string;
+}
+
+/** @internal Exported for unit testing only. */
 export function resolveTraceRuntime(
 	opts: TraceToolOptions,
 	traceFlow: FlowConfig,
 	ctx: ExtensionContext,
 	toolCallId: string,
 	intent: string,
-) {
+): TraceRuntimeResolution {
 	const tier = (traceFlow.tier ?? "lite") as "lite" | "flash" | "full";
 	let selectedStrategy: FlowModelStrategy | undefined;
 	const loadedFlowModelConfigs = opts.getLoadedFlowModelConfigs?.();
@@ -241,7 +251,8 @@ export function resolveTraceRuntime(
 			`Bad settings: all configured trace models are missing from models.json: ${invalidCandidates.join(", ")}`,
 		);
 	}
-	const resolvedModel = candidates[0];
+	const invalidSet = new Set(invalidCandidates);
+	const resolvedModel = candidates.find((candidate) => !invalidSet.has(candidate));
 	const maxContextTokens = resolveModelContextWindow(resolvedModel);
 	// INTENTIONALLY OMIT: `tier` and `compressionProfile`.
 	//

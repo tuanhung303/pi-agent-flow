@@ -697,14 +697,14 @@ export default function (pi: ExtensionAPI) {
 					for (const f of flowParams) {
 						const config = flowConfigs.find((flow) => flow.name === f.type.toLowerCase());
 						const tier = config?.tier ?? getFlowTier(f.type);
-						const { primary } = resolveFlowModelCandidates({
+						const { effectivePrimary } = resolveFlowModelCandidates({
 							tier,
 							flowModel: config?.model,
 							cliTierOverride: tierOverrideResolver(tier),
 							strategy,
 							fallbackModel,
 						});
-						const tokens = resolveModelContextWindow(primary);
+						const tokens = resolveModelContextWindow(effectivePrimary);
 						if (tokens !== undefined) {
 							minTokens = minTokens === undefined ? tokens : Math.min(minTokens, tokens);
 						}
