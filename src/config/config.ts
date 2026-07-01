@@ -646,11 +646,6 @@ export function resolveFlowModelCandidates(opts: {
 		candidates.push(normalized);
 	};
 
-	const effectivePrimary = () => {
-		const invalidSet = new Set(invalidCandidates);
-		return candidates.find((candidate) => !invalidSet.has(candidate));
-	};
-
 	const buildResult = () => {
 		if (invalidCandidates.length > 0) {
 			logWarn(
@@ -661,7 +656,7 @@ export function resolveFlowModelCandidates(opts: {
 			primary: candidates[0],
 			candidates,
 			invalidCandidates,
-			effectivePrimary: effectivePrimary(),
+			effectivePrimary: candidates.find((candidate) => !invalidCandidates.includes(candidate)),
 		};
 	};
 

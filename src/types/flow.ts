@@ -127,21 +127,15 @@ export function aggregateFlowUsage(results: SingleResult[]): UsageStats {
 	let totalOutput = 0;
 	for (const r of results) {
 		const usage = r.usage ?? emptyFlowUsage();
-		const input = usage.input ?? 0;
 		const output = usage.output ?? 0;
-		const cacheRead = usage.cacheRead ?? 0;
-		const cacheWrite = usage.cacheWrite ?? 0;
-		const cost = usage.cost ?? 0;
-		const turns = usage.turns ?? 0;
-		const toolCalls = usage.toolCalls ?? 0;
 
-		total.input += input;
+		total.input += usage.input ?? 0;
 		total.output += output;
-		total.cacheRead += cacheRead;
-		total.cacheWrite += cacheWrite;
-		total.cost += cost;
-		total.turns += turns;
-		total.toolCalls += toolCalls;
+		total.cacheRead += usage.cacheRead ?? 0;
+		total.cacheWrite += usage.cacheWrite ?? 0;
+		total.cost += usage.cost ?? 0;
+		total.turns += usage.turns ?? 0;
+		total.toolCalls += usage.toolCalls ?? 0;
 		if ((usage.smoothedTps ?? 0) > 0) {
 			weightedTps += (usage.smoothedTps ?? 0) * output;
 			totalOutput += output;

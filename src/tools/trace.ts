@@ -212,23 +212,13 @@ export interface TraceToolOptions {
 }
 
 /** @internal Exported for unit testing only. */
-export interface TraceRuntimeResolution {
-	resolvedModel: string | undefined;
-	maxContextTokens: number | undefined;
-	forkSessionSnapshotJsonl: string | null;
-	sharedContext: SharedContext | undefined;
-	compressionStats: CompressionStats | undefined;
-	intent: string;
-}
-
-/** @internal Exported for unit testing only. */
 export function resolveTraceRuntime(
 	opts: TraceToolOptions,
 	traceFlow: FlowConfig,
 	ctx: ExtensionContext,
 	toolCallId: string,
 	intent: string,
-): TraceRuntimeResolution {
+) {
 	const tier = (traceFlow.tier ?? "lite") as "lite" | "flash" | "full";
 	let selectedStrategy: FlowModelStrategy | undefined;
 	const loadedFlowModelConfigs = opts.getLoadedFlowModelConfigs?.();

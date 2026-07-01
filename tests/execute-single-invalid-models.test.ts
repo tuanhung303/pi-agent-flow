@@ -176,7 +176,8 @@ describe("executeSingleFlow invalid model guard", () => {
 			complexity: "snap",
 		};
 
-		const result = await executeSingleFlow(makeDeps(), item, allResults, 0, "call-1", () => {}, makeDeps().loadedFlowModelConfigs);
+		const deps = makeDeps();
+		const result = await executeSingleFlow(deps, item, allResults, 0, "call-1", () => {}, deps.loadedFlowModelConfigs);
 
 		expect(runFlowMock).toHaveBeenCalled();
 		expect(result.exitCode).toBe(0);

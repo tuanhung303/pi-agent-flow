@@ -59,11 +59,10 @@ export function shouldFailover(result: SingleResult): boolean {
 	// unrelated stderr text (e.g. tool output or docs) does not trigger
 	// failover.
 	const has404Token = /\b404\b/.test(text);
-	const hasResourceJsonError = /"type"\s*:\s*"resource_not_found_error"/.test(text);
 	const hasEnglishPhrase = text.includes("requested resource was not found");
 	if (
 		!isFlowComplete(result) &&
-		(hasResourceJsonError || text.includes("resource_not_found_error") || (hasEnglishPhrase && has404Token))
+		(text.includes("resource_not_found_error") || (hasEnglishPhrase && has404Token))
 	) {
 		return true;
 	}
