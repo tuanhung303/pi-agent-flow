@@ -52,4 +52,34 @@ describe("shouldFailover", () => {
 
 		expect(shouldFailover(result)).toBe(false);
 	});
+
+	it("does not fail over on benign 'requested resource was not found' text without a 404 token", () => {
+		const result = makeResult({
+			stopReason: "error",
+			stderr:
+				"The user said the requested resource was not found in our internal docs.",
+		});
+
+		expect(shouldFailover(result)).toBe(false);
+	});
+
+	it("does not fail over on bare English phrase even with 200 OK response", () => {
+		const result = makeResult({
+			stopReason: "error",
+			stderr:
+				"GET /api/notes -> 200 OK (The requested resource was not found on this server)",
+		});
+
+		expect(shouldFailover(result)).toBe(false);
+	});
+
+	it("does fail over on English phrase paired with an explicit 404 token", () => {
+		const result = makeResult({
+			stopReason: "error",
+			stderr:
+				"GET /v1/models/missing -> 404 The requested resource was not found.",
+		});
+
+		expect(shouldFailover(result)).toBe(true);
+	});
 });

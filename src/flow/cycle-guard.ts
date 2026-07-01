@@ -53,10 +53,17 @@ export function shouldFailover(result: SingleResult): boolean {
 		return true;
 	}
 	// Provider-side 404 / resource-not-found errors should fail over to the next
-	// configured model even when the process exits 0.
+	// configured model even when the process exits 0. Only treat the bare
+	// "requested resource was not found" phrasing as a 404 when it is paired
+	// with an explicit HTTP 404 token or the canonical JSON envelope, so that
+	// unrelated stderr text (e.g. tool output or docs) does not trigger
+	// failover.
+	const has404Token = /\b404\b/.test(text);
+	const hasResourceJsonError = /"type"\s*:\s*"resource_not_found_error"/.test(text);
+	const hasEnglishPhrase = text.includes("requested resource was not found");
 	if (
 		!isFlowComplete(result) &&
-		(text.includes("resource_not_found_error") || text.includes("requested resource was not found"))
+		(hasResourceJsonError || text.includes("resource_not_found_error") || (hasEnglishPhrase && has404Token))
 	) {
 		return true;
 	}

@@ -11,7 +11,12 @@ import * as path from "node:path";
 import { parseComplexity, type Complexity } from "../flow/complexity.js";
 import { type FlowTier } from "../flow/agents.js";
 import { logWarn } from "./log.js";
-import { getModelsJsonPath, hasConfiguredModel, resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
+import {
+	hasConfiguredModel,
+	invalidateModelsJsonCache,
+	readModelsJson,
+	resolveModelContextWindow as resolveModelContextWindowFromModels,
+} from "./models.js";
 import { getAgentDir, hasAgentDirOverride } from "./paths.js";
 import { atomicWriteFileSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 
@@ -251,6 +256,9 @@ export function writeGlobalFlowMode(mode: string): { path: string; previous?: st
 
 	_settingsCache.set(filePath, settings);
 	scheduleSettingsFlush(filePath);
+	// Models.json lookups are routed through their own cache; keep it in sync in
+	// case the user is editing it from the same flow-settings transaction.
+	invalidateModelsJsonCache();
 
 	return {
 		path: filePath,
@@ -544,6 +552,7 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 		_settingsCache.set(filePath, settings);
 		scheduleSettingsFlush(filePath);
 		emitSettingsChange(keyPath, value);
+		invalidateModelsJsonCache();
 		return { path: filePath, previous };
 	}
 
@@ -563,6 +572,7 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 	_settingsCache.set(filePath, settings);
 	scheduleSettingsFlush(filePath);
 	emitSettingsChange(keyPath, value);
+	invalidateModelsJsonCache();
 
 	return { path: filePath, previous };
 }
@@ -619,9 +629,10 @@ export function resolveFlowModelCandidates(opts: {
 	const unique = new Set<string>();
 	const candidates: string[] = [];
 	const invalidCandidates: string[] = [];
-	// Read the registry once; models without a provider prefix or unknown providers
-	// are treated as "cannot answer authoritatively" and are still tried.
-	const registry = readSettingsJson(getModelsJsonPath());
+	// Read the registry once via the cached reader; models without a provider prefix
+	// or unknown providers are treated as "cannot answer authoritatively" and are
+	// still tried.
+	const registry = readModelsJson();
 
 	const add = (value: string | undefined) => {
 		if (!value) return;
@@ -631,7 +642,6 @@ export function resolveFlowModelCandidates(opts: {
 		const configured = hasConfiguredModel(normalized, registry);
 		if (configured === false) {
 			invalidCandidates.push(normalized);
-			logWarn(`[pi-agent-flow] Model "${normalized}" is not present in models.json; trying it anyway.`);
 		}
 		candidates.push(normalized);
 	};
@@ -641,14 +651,28 @@ export function resolveFlowModelCandidates(opts: {
 		return candidates.find((candidate) => !invalidSet.has(candidate));
 	};
 
+	const buildResult = () => {
+		if (invalidCandidates.length > 0) {
+			logWarn(
+				`[pi-agent-flow] ${invalidCandidates.length} configured flow model(s) are not present in models.json; trying them anyway: ${invalidCandidates.join(", ")}`,
+			);
+		}
+		return {
+			primary: candidates[0],
+			candidates,
+			invalidCandidates,
+			effectivePrimary: effectivePrimary(),
+		};
+	};
+
 	if (opts.flowModel) {
 		add(opts.flowModel);
-		return { primary: candidates[0], candidates, invalidCandidates, effectivePrimary: effectivePrimary() };
+		return buildResult();
 	}
 
 	if (opts.cliTierOverride) {
 		add(opts.cliTierOverride);
-		return { primary: candidates[0], candidates, invalidCandidates, effectivePrimary: effectivePrimary() };
+		return buildResult();
 	}
 
 	const tierConfig = opts.strategy[opts.tier];
@@ -656,7 +680,7 @@ export function resolveFlowModelCandidates(opts: {
 	for (const model of tierConfig?.failover ?? []) add(model);
 	add(opts.fallbackModel);
 
-	return { primary: candidates[0], candidates, invalidCandidates, effectivePrimary: effectivePrimary() };
+	return buildResult();
 }
 
 export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStrategy): string {

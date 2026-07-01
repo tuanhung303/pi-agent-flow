@@ -44,8 +44,7 @@ jobs:
       - name: Sync latest main
         run: |
           git fetch origin main
-          git checkout main
-          git reset --hard FETCH_HEAD
+          git checkout -B main FETCH_HEAD
 
       - uses: actions/setup-node@v4
         with:

@@ -15,7 +15,7 @@ export function getModelsJsonPath(): string {
 
 const _modelsJsonCache = new Map<string, Record<string, unknown> | null>();
 
-function readModelsJson(): Record<string, unknown> | null {
+export function readModelsJson(): Record<string, unknown> | null {
 	const filePath = getModelsJsonPath();
 	if (_modelsJsonCache.has(filePath)) return _modelsJsonCache.get(filePath)!;
 	const parsed = readSettingsJson(filePath);
