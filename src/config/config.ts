@@ -257,9 +257,6 @@ export function writeGlobalFlowMode(mode: string): { path: string; previous?: st
 
 	_settingsCache.set(filePath, settings);
 	scheduleSettingsFlush(filePath);
-	// Models.json lookups are routed through their own cache; keep it in sync in
-	// case the user is editing it from the same flow-settings transaction.
-	invalidateModelsJsonCache();
 
 	return {
 		path: filePath,
@@ -553,7 +550,6 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 		_settingsCache.set(filePath, settings);
 		scheduleSettingsFlush(filePath);
 		emitSettingsChange(keyPath, value);
-		invalidateModelsJsonCache();
 		return { path: filePath, previous };
 	}
 
@@ -573,7 +569,6 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 	_settingsCache.set(filePath, settings);
 	scheduleSettingsFlush(filePath);
 	emitSettingsChange(keyPath, value);
-	invalidateModelsJsonCache();
 
 	return { path: filePath, previous };
 }
@@ -630,17 +625,23 @@ export function resolveFlowModelCandidates(opts: {
 	const unique = new Set<string>();
 	const candidates: string[] = [];
 	const invalidCandidates: string[] = [];
-	// Read the registry once via the cached reader; models without a provider prefix
-	// or unknown providers are treated as "cannot answer authoritatively" and are
-	// still tried.
-	const registry = readModelsJson();
+	// Lazy-load models.json only when a candidate actually needs a registry
+	// lookup. For empty strategies (no flowModel / cliTierOverride /
+	// strategy[tier] / fallbackModel) this skips the disk read entirely and
+	// avoids emitting a "Failed to read settings JSON" warn in fresh tmpDir
+	// environments where models.json legitimately does not exist.
+	let registry: Record<string, unknown> | null | undefined;
+	const getRegistry = (): Record<string, unknown> | null => {
+		if (registry === undefined) registry = readModelsJson();
+		return registry ?? null;
+	};
 
 	const add = (value: string | undefined) => {
 		if (!value) return;
 		const normalized = value.trim();
 		if (!normalized || unique.has(normalized)) return;
 		unique.add(normalized);
-		const configured = hasConfiguredModel(normalized, registry);
+		const configured = hasConfiguredModel(normalized, getRegistry());
 		if (configured === false) {
 			invalidCandidates.push(normalized);
 		}
@@ -793,4 +794,9 @@ export function writeFlowModelConfig(
 
 	_settingsCache.set(filePath, settings);
 	scheduleSettingsFlush(filePath);
+	// Flow model config writes change which models are configured, so any
+	// in-memory cache of models.json (registry lookups, provider/model probes)
+	// must be dropped before the next read. Settings.json writes do not touch
+	// models.json, so they do NOT invalidate this cache.
+	invalidateModelsJsonCache();
 }

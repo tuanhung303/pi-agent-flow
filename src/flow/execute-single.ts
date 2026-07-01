@@ -77,6 +77,10 @@ export async function executeSingleFlow(
 	// Fail fast when every configured model is known to be missing from models.json.
 	if (invalidCandidates.length > 0 && candidates.length === invalidCandidates.length) {
 		const badSettingsMessage = `Bad settings: all configured flow models are missing from models.json: ${invalidCandidates.join(", ")}`;
+		// model stays undefined: no candidate was actually invoked, so any
+		// per-model telemetry rollup would be poisoned if we set it to one
+		// of the invalid candidates. Downstream consumers can read
+		// invalidCandidates from errorMessage / stderr for diagnostics.
 		result = {
 			type: normalizedType,
 			agentSource: targetFlow?.source ?? "unknown",
@@ -86,7 +90,6 @@ export async function executeSingleFlow(
 			messages: [],
 			stderr: badSettingsMessage,
 			usage: emptyFlowUsage(),
-			model: invalidCandidates[0],
 			stopReason: "error",
 			errorMessage: badSettingsMessage,
 		};

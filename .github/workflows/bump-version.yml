@@ -28,12 +28,15 @@ permissions:
   id-token: write
 
 concurrency:
-  group: release-main
+  group: release-bump-version
   cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Cap a hung release at 30 minutes; a network flake on `npm ci` or a
+    # stuck npm publish should not block the concurrency queue indefinitely.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:

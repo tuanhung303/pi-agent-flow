@@ -1925,7 +1925,10 @@ describe("tilde expansion", () => {
 		// ~ expands to os.homedir() which is outside tmpDir cwd — now allowed
 		expect(result.details.results[0].status).toBe("ok");
 
-		expect(fs.readFileSync(path.join(os.homedir(), "malicious.txt"), "utf-8")).toBe("hacked\n");
+		// Read back via process.env.HOME (the variable we redirected in beforeEach)
+		// rather than os.homedir() — on Windows / CI containers the two can diverge
+		// and reading via os.homedir() would target the real user home.
+		expect(fs.readFileSync(path.join(process.env.HOME ?? os.homedir(), "malicious.txt"), "utf-8")).toBe("hacked\n");
 	});
 });
 

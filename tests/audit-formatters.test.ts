@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -80,5 +80,62 @@ describe("resolveAuditModel (effectivePrimary regression)", () => {
 
 		// [V] All configured models are invalid → effectivePrimary is undefined.
 		expect(result.model).toBeUndefined();
+	});
+
+	it("emits a warn when audit drifts to a failover model because primary is missing", () => {
+		writeModelsJson({
+			providers: {
+				kimi: {
+					models: [{ id: "kimi-k2.7-code", contextWindow: 262144 }],
+				},
+			},
+		});
+
+		const strategy: FlowModelStrategy = {
+			flash: { primary: "kimi/kimi-for-coding", failover: ["kimi/kimi-k2.7-code"] },
+		};
+
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const result = resolveAuditModel(makeAuditFlows(), noopTierOverride, strategy);
+
+			expect(result.model).toBe("kimi/kimi-k2.7-code");
+			expect(warnSpy).toHaveBeenCalled();
+			const warnMessages = warnSpy.mock.calls.map((c) => String(c[0] ?? ""));
+			expect(
+				warnMessages.some((m) =>
+					m.includes('Audit model drifted from requested "kimi/kimi-for-coding"'),
+				),
+			).toBe(true);
+		} finally {
+			warnSpy.mockRestore();
+		}
+	});
+
+	it("does not emit a drift warn when the primary is registered", () => {
+		writeModelsJson({
+			providers: {
+				kimi: {
+					models: [{ id: "kimi-k2.7-code", contextWindow: 262144 }],
+				},
+			},
+		});
+
+		const strategy: FlowModelStrategy = {
+			flash: { primary: "kimi/kimi-k2.7-code", failover: [] },
+		};
+
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const result = resolveAuditModel(makeAuditFlows(), noopTierOverride, strategy);
+
+			expect(result.model).toBe("kimi/kimi-k2.7-code");
+			const driftWarns = warnSpy.mock.calls
+				.map((c) => String(c[0] ?? ""))
+				.filter((m) => m.includes("Audit model drifted"));
+			expect(driftWarns).toHaveLength(0);
+		} finally {
+			warnSpy.mockRestore();
+		}
 	});
 });

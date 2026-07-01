@@ -131,7 +131,66 @@ describe("executeSingleFlow invalid model guard", () => {
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toMatch(/Bad settings: all configured flow models are missing from models\.json/);
 		expect(result.errorMessage).toMatch(/Bad settings: all configured flow models are missing from models\.json/);
-		expect(result.model).toBe("openai/gpt-5");
+		// model must be undefined — no candidate was actually invoked, so a
+		// telemetry rollup that groups by model must not see this row tagged
+		// with a model that never ran.
+		expect(result.model).toBeUndefined();
+		// The missing-model list is preserved in stderr for diagnostics.
+		expect(result.stderr).toContain("openai/gpt-5");
+		expect(result.stderr).toContain("openai/gpt-5.5");
+	});
+
+	it("fail-fast path forwards undefined model to onFlowMetrics (no telemetry poison)", async () => {
+		writeModelsJson({
+			providers: {
+				openai: {
+					models: [{ id: "gpt-4o", contextWindow: 128000 }],
+				},
+			},
+		});
+
+		const metricsCalls: Array<Record<string, unknown>> = [];
+		const allResults: SingleResult[] = [{
+			type: "scout",
+			agentSource: "bundled",
+			intent: "test",
+			aim: "test aim",
+			exitCode: -1,
+			messages: [],
+			stderr: "",
+			usage: emptyFlowUsage(),
+		}];
+		const item: ExecuteFlowParams = {
+			type: "scout",
+			intent: "test",
+			aim: "test aim",
+			complexity: "snap",
+		};
+
+		const loadedFlowModelConfigs = {
+			selectedName: "balance",
+			configs: {},
+			strategy: { lite: { primary: "openai/gpt-5", failover: [] } },
+		};
+		await executeSingleFlow(
+			makeDeps({
+				loadedFlowModelConfigs,
+				onFlowMetrics: (m) => metricsCalls.push({ ...m }),
+			}),
+			item,
+			allResults,
+			0,
+			"call-1",
+			() => {},
+			loadedFlowModelConfigs,
+		);
+
+		expect(metricsCalls).toHaveLength(1);
+		expect(metricsCalls[0].model).toBeUndefined();
+		expect(metricsCalls[0].success).toBe(false);
+		expect(metricsCalls[0].exitCode).toBe(1);
+		expect(metricsCalls[0].failoverCount).toBe(0);
+		expect(metricsCalls[0].connectionRetryCount).toBe(0);
 	});
 
 	it("still runs when at least one configured model is known", async () => {

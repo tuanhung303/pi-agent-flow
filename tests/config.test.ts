@@ -8,6 +8,7 @@ import {
 	loadFlowModelConfigs,
 	loadFlowSettings,
 	resolveFlowModelCandidates,
+	writeFlowModelConfig,
 	writeGlobalFlowMode,
 	writeFlowSetting,
 	flushAllSettingsCachesSync,
@@ -15,7 +16,12 @@ import {
 	onSettingsChange,
 	_clearSettingsChangeListeners,
 } from "../src/config/config.js";
-import { hasConfiguredModel, resolveModelContextWindow } from "../src/config/models.js";
+import {
+	hasConfiguredModel,
+	invalidateModelsJsonCache,
+	readModelsJson,
+	resolveModelContextWindow,
+} from "../src/config/models.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;
@@ -435,6 +441,30 @@ describe("resolveFlowModelCandidates", () => {
 			invalidCandidates: ["kimi/kimi-for-coding", "kimi/kimi-old"],
 			effectivePrimary: undefined,
 		});
+	});
+
+	it("does not read models.json (and emits no warn) when the strategy is fully empty", () => {
+		// Lazy-load: if no candidates are added at all, the registry is never
+		// consulted. In a fresh tmpDir HOME without models.json, this means
+		// the spurious "Failed to read settings JSON" warn must not appear.
+		const warnBefore = warnSpy.mock.calls.length;
+		const result = resolveFlowModelCandidates({
+			tier: "flash",
+			strategy: {}, // no flowModel, no cliTierOverride, no tier primary/failover, no fallbackModel
+		});
+
+		expect(result).toEqual({
+			primary: undefined,
+			candidates: [],
+			invalidCandidates: [],
+			effectivePrimary: undefined,
+		});
+
+		const newWarns = warnSpy.mock.calls
+			.slice(warnBefore)
+			.map((c) => String(c[0] ?? ""))
+			.filter((m) => m.includes("Failed to read settings JSON"));
+		expect(newWarns).toHaveLength(0);
 	});
 });
 
@@ -866,5 +896,111 @@ describe("onSettingsChange", () => {
 
 		writeFlowSetting(projectCwd, "toolOptimize", false);
 		expect(calls).toEqual([]);
+	});
+});
+
+describe("cache invalidation boundaries", () => {
+	let tmpDir: string;
+	let originalHome: string | undefined;
+	let originalAgentDir: string | undefined;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-cache-invalidation-test-"));
+		originalHome = process.env.HOME;
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.HOME = tmpDir;
+		process.env.PI_CODING_AGENT_DIR = path.join(tmpDir, ".pi", "agent");
+		_clearSettingsCache();
+	});
+
+	afterEach(() => {
+		process.env.HOME = originalHome;
+		if (originalAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function writeModelsJson(content: Record<string, unknown>) {
+		const dir = process.env.PI_CODING_AGENT_DIR!;
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, "models.json"), JSON.stringify(content, null, 2), "utf-8");
+	}
+
+	it("writeFlowSetting does NOT invalidate the models.json cache (settings don't touch models.json)", () => {
+		writeModelsJson({ providers: { openai: { models: [{ id: "gpt-4o", contextWindow: 128000 }] } } });
+		// Warm the cache.
+		expect(readModelsJson()).not.toBeNull();
+
+		// Touch a settings.json-only field.
+		writeFlowSetting(tmpDir, "toolOptimize", false);
+
+		// Prove the cache was not invalidated: edit models.json on disk to a
+		// different registry, then read — if the cache had been invalidated,
+		// the new registry would be returned. With the fix, the warm value
+		// persists (settings writes don't touch models.json).
+		const modelsPath = path.join(process.env.PI_CODING_AGENT_DIR!, "models.json");
+		fs.writeFileSync(
+			modelsPath,
+			JSON.stringify({ providers: { openai: { models: [{ id: "totally-different-model" }] } } }, null, 2),
+			"utf-8",
+		);
+		expect(hasConfiguredModel("openai/gpt-4o", readModelsJson())).toBe(true);
+		expect(hasConfiguredModel("openai/totally-different-model", readModelsJson())).toBe(false);
+	});
+
+	it("writeGlobalFlowMode does NOT invalidate the models.json cache", () => {
+		writeModelsJson({ providers: { openai: { models: [{ id: "gpt-4o", contextWindow: 128000 }] } } });
+		expect(readModelsJson()).not.toBeNull();
+
+		// Touch global flow mode — a settings.json-only writer.
+		writeGlobalFlowMode("balance");
+
+		// The cache must still serve the warm value.
+		expect(hasConfiguredModel("openai/gpt-4o", readModelsJson())).toBe(true);
+	});
+
+	it("writeFlowModelConfig DOES invalidate the models.json cache", () => {
+		writeModelsJson({ providers: { openai: { models: [{ id: "gpt-4o", contextWindow: 128000 }] } } });
+		expect(readModelsJson()).not.toBeNull();
+
+		// Snapshot the cached object identity.
+		const beforeRef = readModelsJson();
+
+		// writeFlowModelConfig changes which models are configured — cache must drop.
+		writeFlowModelConfig(tmpDir, "custom", "flash", { primary: "openai/gpt-4o" });
+
+		// After invalidation, readModelsJson re-reads from disk and returns a
+		// different object reference (deep clone from JSON.parse).
+		expect(readModelsJson()).not.toBe(beforeRef);
+	});
+
+	it("writeFlowModelConfig sees updated models.json registry on the very next readModelsJson call", () => {
+		writeModelsJson({ providers: { openai: { models: [{ id: "gpt-4o", contextWindow: 128000 }] } } });
+		expect(readModelsJson()).not.toBeNull();
+
+		// Edit models.json on disk to add a new model.
+		const modelsPath = path.join(process.env.PI_CODING_AGENT_DIR!, "models.json");
+		const updated = { providers: { openai: { models: [{ id: "gpt-4o-mini", contextWindow: 128000 }] } } };
+		fs.writeFileSync(modelsPath, JSON.stringify(updated, null, 2), "utf-8");
+
+		// Without invalidation, the cache would still report only "gpt-4o".
+		writeFlowModelConfig(tmpDir, "custom", "flash", { primary: "openai/gpt-4o-mini" });
+
+		// The next read sees the new model.
+		expect(hasConfiguredModel("openai/gpt-4o-mini", readModelsJson())).toBe(true);
+	});
+
+	it("invalidateModelsJsonCache drops the cached models.json reference", () => {
+		writeModelsJson({ providers: { openai: { models: [{ id: "gpt-4o", contextWindow: 128000 }] } } });
+		const beforeRef = readModelsJson();
+		expect(beforeRef).not.toBeNull();
+
+		invalidateModelsJsonCache();
+
+		const afterRef = readModelsJson();
+		expect(afterRef).not.toBe(beforeRef);
 	});
 });

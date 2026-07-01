@@ -37,7 +37,7 @@ Use `flowModelConfigs` in your Pi settings to define tiered model strategies. Ea
 
 Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`.
 
-Models referenced in `flowModelConfigs` are checked against the local `models.json` registry (usually `~/.pi/agent/models.json`). If a model is known to be missing from the registry, a warning is logged, but the model is still tried so that stale or incomplete registries do not silently block valid provider-side models. If **every** configured model for a flow or trace is missing from the registry, the invocation fails fast with a clear `Bad settings` error.
+Models referenced in `flowModelConfigs` are checked against the local `models.json` registry (usually `~/.pi/agent/models.json`). If a model is known to be missing from the registry, a warning is logged, but the model is still tried so that stale or incomplete registries do not silently block valid provider-side models. The missing-model warning is coalesced into a single line per resolution (`N configured flow model(s) are not present in models.json; trying them anyway: a, b, c`) rather than emitted per-candidate. If **every** configured model for a flow or trace is missing from the registry, the invocation fails fast with a clear `Bad settings` error and the synthesized result leaves `model` undefined so per-model telemetry rollups are not poisoned.
 
 ## Persistent Flow Mode Switch
 

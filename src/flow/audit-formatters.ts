@@ -8,6 +8,7 @@ import {
 	resolveModelContextWindow,
 	type FlowModelStrategy,
 } from "../config/config.js";
+import { logWarn } from "../config/log.js";
 import { type CycleHistoryEntry } from "./cycle-guard.js";
 
 // ~6 KB limit to keep grouped audit intent under typical prompt budget while preserving enough context for meaningful audit
@@ -21,13 +22,28 @@ export function resolveAuditModel(
 ): { model?: string; maxContextTokens?: number } {
 	const auditFlow = flows.find((f) => f.name === "audit");
 	const tier = auditFlow?.tier ?? "flash";
-	const { effectivePrimary } = resolveFlowModelCandidates({
+	const { candidates, effectivePrimary } = resolveFlowModelCandidates({
 		tier,
 		flowModel: auditFlow?.model,
 		cliTierOverride: tierOverrideResolver(tier),
 		strategy,
 		fallbackModel,
 	});
+	// Drift detection: if the resolved effectivePrimary differs from the
+	// originally requested primary, surface a one-time warn so silent audit
+	// model swaps (e.g. stale models.json, provider renames) are visible.
+	// The candidates list preserves priority order; the first candidate is
+	// what would have been used pre-effectivePrimary filtering.
+	const requestedPrimary = candidates[0];
+	if (requestedPrimary && effectivePrimary && requestedPrimary !== effectivePrimary) {
+		logWarn(
+			`[pi-agent-flow] Audit model drifted from requested "${requestedPrimary}" to effective "${effectivePrimary}" (requested model missing from models.json).`,
+		);
+	} else if (requestedPrimary && !effectivePrimary) {
+		logWarn(
+			`[pi-agent-flow] Audit requested "${requestedPrimary}" but no valid candidate is registered in models.json; audit will run on heuristics.`,
+		);
+	}
 	const model = effectivePrimary;
 	const maxContextTokens = resolveModelContextWindow(model);
 	return { model, maxContextTokens };

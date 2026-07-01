@@ -65,6 +65,7 @@ import {
 	type ResolvedSettings,
 	resolveToolSettings,
 } from "./config/settings-resolver.js";
+import { invalidateModelsJsonCache } from "./config/models.js";
 import { getSkipFlowTools, clearClassificationCache, type SkipFlowConfig, type ClassifyDeps } from "./tools/skip-flow.js";
 
 import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
@@ -392,6 +393,10 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		clearClassificationCache();
 		invalidateSettingsCache();
+		// models.json may have been edited externally between sessions (text editor,
+		// `pi agent config set provider/model`); drop the in-memory cache so the
+		// first resolveFlowModelCandidates call in this session sees the latest file.
+		invalidateModelsJsonCache();
 		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
 

@@ -1,28 +1,41 @@
 # Standalone manual fallback for publishing tagged releases to npm.
-# The primary publish step now lives in bump-version.yml, so releases
-# normally publish end-to-end in a single workflow run. Use this only
-# when you need to re-publish or publish a tag created outside the
-# Release workflow.
+# The primary publish step lives in bump-version.yml, which bumps, commits,
+# tags, pushes, and publishes in a single workflow run. Use this workflow only
+# when you need to re-publish or publish a tag created outside the Release
+# workflow.
 #
 # Triggers:
-#   - push: tags: v*   (legacy safety net)
 #   - workflow_dispatch (manual fallback)
+#
+# Note: a `push: tags: ['v*']` trigger used to live here as a legacy safety
+# net, but it produced a deterministic npm 409 "You cannot publish over the
+# previously published version" because bump-version.yml pushes the tag and
+# then publishes the same version in the same job. The shared concurrency
+# group only serializes the duplicate run; it does not prevent it. Tag pushes
+# are now exclusively handled by bump-version.yml.
 
 name: Publish
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
 
+# share concurrency with bump-version.yml's publish step so simultaneous
+# manual dispatches don't race on `npm publish` and produce a 409
+# "You cannot publish over the previously published version".
+concurrency:
+  group: release-bump-version
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Match the bump-version release job timeout so a hung publish doesn't
+    # park the queue past the bump-version cap.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
