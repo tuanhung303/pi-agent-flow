@@ -356,6 +356,20 @@ describe("resolveFlowModelCandidates", () => {
 		});
 	});
 
+	it("returns empty candidates when no model source is configured", () => {
+		const result = resolveFlowModelCandidates({
+			tier: "lite",
+			strategy: {},
+		});
+
+		expect(result).toEqual({
+			primary: undefined,
+			candidates: [],
+			invalidCandidates: [],
+			effectivePrimary: undefined,
+		});
+	});
+
 	it("warns but still tries models known to be missing from models.json", () => {
 		const agentDir = path.join(tmpDir, ".pi", "agent");
 		fs.mkdirSync(agentDir, { recursive: true });

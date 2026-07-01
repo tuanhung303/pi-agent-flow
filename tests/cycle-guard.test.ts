@@ -35,6 +35,15 @@ describe("shouldFailover", () => {
 		expect(shouldFailover(result)).toBe(true);
 	});
 
+	it("does not fail over on generic invalid tool errors", () => {
+		const result = makeResult({
+			exitCode: 1,
+			stderr: "invalid tool definition in manifest",
+		});
+
+		expect(shouldFailover(result)).toBe(false);
+	});
+
 	it("does not fail over on arbitrary 404 text", () => {
 		const result = makeResult({
 			stopReason: "error",

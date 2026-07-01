@@ -200,6 +200,7 @@ export function invalidateSettingsCache(filePath?: string): void {
 /** Clear the in-memory settings cache. For tests. */
 export function _clearSettingsCache(): void {
 	invalidateSettingsCache();
+	invalidateModelsJsonCache();
 }
 
 export function getGlobalSettingsPath(): string {
