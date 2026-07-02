@@ -18,7 +18,12 @@ import { extractStructuredOutput } from "../snapshot/structured-output.js";
 
 
 import { getFlowSummaryText } from "../snapshot/runner-events.js";
-import { normalizeFlowModeName, resolveFlowModelCandidates, resolveModelContextWindow, selectFlowModelStrategy, type LoadedFlowModelConfigs, type FlowModelStrategy } from "../config/config.js";
+import {
+	normalizeFlowModeName,
+	selectFlowModelStrategy,
+	type LoadedFlowModelConfigs,
+	type FlowModelStrategy,
+} from "../config/config.js";
 import { getComplexityTimeoutMs, resolveComplexity, getImpliedAuditLoop, type Complexity } from "./complexity.js";
 import { setFlowComplete } from "../notify/notify-state.js";
 import { setLiveText, clearLiveText } from '../tui/scramble/index.js';

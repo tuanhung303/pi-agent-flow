@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { logWarn } from "./log.js";
 import { getAgentDir, hasAgentDirOverride } from "./paths.js";
 
-function getModelsJsonPath(): string {
+export function getModelsJsonPath(): string {
 	const agentDir = getAgentDir();
 	const defaultPath = path.join(agentDir, "models.json");
 	if (!hasAgentDirOverride() && !fs.existsSync(defaultPath)) {
@@ -11,6 +11,21 @@ function getModelsJsonPath(): string {
 		if (fs.existsSync(rootPath)) return rootPath;
 	}
 	return defaultPath;
+}
+
+const _modelsJsonCache = new Map<string, Record<string, unknown> | null>();
+
+export function readModelsJson(): Record<string, unknown> | null {
+	const filePath = getModelsJsonPath();
+	if (_modelsJsonCache.has(filePath)) return _modelsJsonCache.get(filePath)!;
+	const parsed = readSettingsJson(filePath);
+	_modelsJsonCache.set(filePath, parsed);
+	return parsed;
+}
+
+/** Clear the parsed models.json cache. Exposed for tests and future hot-reload boundaries. */
+export function invalidateModelsJsonCache(): void {
+	_modelsJsonCache.clear();
 }
 
 function readSettingsJson(filePath: string): Record<string, unknown> | null {
@@ -34,7 +49,7 @@ export function resolveModelContextWindow(model: string): number | undefined {
 	const providerKey = parts[0];
 	const modelId = parts.slice(1).join("/");
 
-	const raw = readSettingsJson(getModelsJsonPath());
+	const raw = readModelsJson();
 	if (!isPlainObject(raw)) return undefined;
 
 	const providers = raw.providers;
@@ -55,4 +70,35 @@ export function resolveModelContextWindow(model: string): number | undefined {
 	}
 
 	return undefined;
+}
+
+/**
+ * Return whether a provider/model entry is known in models.json.
+ *
+ * `undefined` means the local model registry cannot answer authoritatively
+ * (for example, no provider/model form or unreadable models.json).
+ */
+export function hasConfiguredModel(
+	model: string,
+	registry?: Record<string, unknown> | null,
+): boolean | undefined {
+	const parts = model.split("/");
+	if (parts.length < 2) return undefined;
+
+	const providerKey = parts[0];
+	const modelId = parts.slice(1).join("/");
+
+	const raw = registry === undefined ? readModelsJson() : registry;
+	if (!isPlainObject(raw)) return undefined;
+
+	const providers = raw.providers;
+	if (!isPlainObject(providers)) return undefined;
+
+	const provider = providers[providerKey];
+	if (!isPlainObject(provider)) return undefined;
+
+	const models = provider.models;
+	if (!Array.isArray(models)) return undefined;
+
+	return models.some((m) => isPlainObject(m) && m.id === modelId);
 }

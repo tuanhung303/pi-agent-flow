@@ -13,7 +13,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { runFlowWithLiveSession } from "../flow/flow-live.js";
 import { discoverFlows, type FlowConfig } from "../flow/agents.js";
-import { buildSnapshotWithCompression, parseSharedContext } from "../core2/snapshot.js";
+import { buildSnapshotWithCompression, parseSharedContext, type CompressionStats, type SharedContext } from "../core2/snapshot.js";
 import {
 	resolveFlowModelCandidates,
 	resolveModelContextWindow,
@@ -211,7 +211,8 @@ export interface TraceToolOptions {
 	fallbackModel?: string;
 }
 
-function resolveTraceRuntime(
+/** @internal Exported for unit testing only. */
+export function resolveTraceRuntime(
 	opts: TraceToolOptions,
 	traceFlow: FlowConfig,
 	ctx: ExtensionContext,
@@ -228,14 +229,19 @@ function resolveTraceRuntime(
 		);
 		selectedStrategy = selectedFlowModelConfig.strategy;
 	}
-	const { candidates } = resolveFlowModelCandidates({
+	const { candidates, invalidCandidates, effectivePrimary } = resolveFlowModelCandidates({
 		tier,
 		flowModel: traceFlow.model,
 		cliTierOverride: opts.tierOverrideResolver?.(tier),
 		strategy: selectedStrategy ?? {},
 		fallbackModel: opts.fallbackModel,
 	});
-	const resolvedModel = candidates[0];
+	if (invalidCandidates.length > 0 && candidates.length === invalidCandidates.length) {
+		throw new Error(
+			`Bad settings: all configured trace models are missing from models.json: ${invalidCandidates.join(", ")}`,
+		);
+	}
+	const resolvedModel = effectivePrimary;
 	const maxContextTokens = resolveModelContextWindow(resolvedModel);
 	// INTENTIONALLY OMIT: `tier` and `compressionProfile`.
 	//

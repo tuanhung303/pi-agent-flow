@@ -27,14 +27,27 @@ permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: release-bump-version
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Cap a hung release at 30 minutes; a network flake on `npm ci` or a
+    # stuck npm publish should not block the concurrency queue indefinitely.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN || secrets.PAT || github.token }}
           fetch-depth: 0
+          ref: main
+
+      - name: Sync latest main
+        run: |
+          git fetch origin main
+          git checkout -B main FETCH_HEAD
 
       - uses: actions/setup-node@v4
         with:

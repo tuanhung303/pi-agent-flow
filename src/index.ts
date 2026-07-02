@@ -65,6 +65,7 @@ import {
 	type ResolvedSettings,
 	resolveToolSettings,
 } from "./config/settings-resolver.js";
+import { invalidateModelsJsonCache } from "./config/models.js";
 import { getSkipFlowTools, clearClassificationCache, type SkipFlowConfig, type ClassifyDeps } from "./tools/skip-flow.js";
 
 import { scrambleManager, setAnimationConfig } from "./tui/scramble/index.js";
@@ -392,6 +393,10 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		clearClassificationCache();
 		invalidateSettingsCache();
+		// models.json may have been edited externally between sessions (text editor,
+		// `pi agent config set provider/model`); drop the in-memory cache so the
+		// first resolveFlowModelCandidates call in this session sees the latest file.
+		invalidateModelsJsonCache();
 		_sessionCtx = ctx;
 		resolved = resolveSettings(pi, ctx.cwd);
 
@@ -697,14 +702,14 @@ export default function (pi: ExtensionAPI) {
 					for (const f of flowParams) {
 						const config = flowConfigs.find((flow) => flow.name === f.type.toLowerCase());
 						const tier = config?.tier ?? getFlowTier(f.type);
-						const { primary } = resolveFlowModelCandidates({
+						const { effectivePrimary } = resolveFlowModelCandidates({
 							tier,
 							flowModel: config?.model,
 							cliTierOverride: tierOverrideResolver(tier),
 							strategy,
 							fallbackModel,
 						});
-						const tokens = resolveModelContextWindow(primary);
+						const tokens = resolveModelContextWindow(effectivePrimary);
 						if (tokens !== undefined) {
 							minTokens = minTokens === undefined ? tokens : Math.min(minTokens, tokens);
 						}

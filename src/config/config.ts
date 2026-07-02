@@ -11,7 +11,12 @@ import * as path from "node:path";
 import { parseComplexity, type Complexity } from "../flow/complexity.js";
 import { type FlowTier } from "../flow/agents.js";
 import { logWarn } from "./log.js";
-import { resolveModelContextWindow as resolveModelContextWindowFromModels } from "./models.js";
+import {
+	hasConfiguredModel,
+	invalidateModelsJsonCache,
+	readModelsJson,
+	resolveModelContextWindow as resolveModelContextWindowFromModels,
+} from "./models.js";
 import { getAgentDir, hasAgentDirOverride } from "./paths.js";
 import { atomicWriteFileSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 
@@ -195,6 +200,7 @@ export function invalidateSettingsCache(filePath?: string): void {
 /** Clear the in-memory settings cache. For tests. */
 export function _clearSettingsCache(): void {
 	invalidateSettingsCache();
+	invalidateModelsJsonCache();
 }
 
 export function getGlobalSettingsPath(): string {
@@ -615,26 +621,55 @@ export function resolveFlowModelCandidates(opts: {
 	cliTierOverride?: string;
 	strategy: FlowModelStrategy;
 	fallbackModel?: string;
-}): { primary: string | undefined; candidates: string[] } {
+}): { primary: string | undefined; candidates: string[]; invalidCandidates: string[]; effectivePrimary: string | undefined } {
 	const unique = new Set<string>();
 	const candidates: string[] = [];
+	const invalidCandidates: string[] = [];
+	// Lazy-load models.json only when a candidate actually needs a registry
+	// lookup. For empty strategies (no flowModel / cliTierOverride /
+	// strategy[tier] / fallbackModel) this skips the disk read entirely and
+	// avoids emitting a "Failed to read settings JSON" warn in fresh tmpDir
+	// environments where models.json legitimately does not exist.
+	let registry: Record<string, unknown> | null | undefined;
+	const getRegistry = (): Record<string, unknown> | null => {
+		if (registry === undefined) registry = readModelsJson();
+		return registry ?? null;
+	};
 
 	const add = (value: string | undefined) => {
 		if (!value) return;
 		const normalized = value.trim();
 		if (!normalized || unique.has(normalized)) return;
 		unique.add(normalized);
+		const configured = hasConfiguredModel(normalized, getRegistry());
+		if (configured === false) {
+			invalidCandidates.push(normalized);
+		}
 		candidates.push(normalized);
+	};
+
+	const buildResult = () => {
+		if (invalidCandidates.length > 0) {
+			logWarn(
+				`[pi-agent-flow] ${invalidCandidates.length} configured flow model(s) are not present in models.json; trying them anyway: ${invalidCandidates.join(", ")}`,
+			);
+		}
+		return {
+			primary: candidates[0],
+			candidates,
+			invalidCandidates,
+			effectivePrimary: candidates.find((candidate) => !invalidCandidates.includes(candidate)),
+		};
 	};
 
 	if (opts.flowModel) {
 		add(opts.flowModel);
-		return { primary: candidates[0], candidates };
+		return buildResult();
 	}
 
 	if (opts.cliTierOverride) {
 		add(opts.cliTierOverride);
-		return { primary: candidates[0], candidates };
+		return buildResult();
 	}
 
 	const tierConfig = opts.strategy[opts.tier];
@@ -642,7 +677,7 @@ export function resolveFlowModelCandidates(opts: {
 	for (const model of tierConfig?.failover ?? []) add(model);
 	add(opts.fallbackModel);
 
-	return { primary: candidates[0], candidates };
+	return buildResult();
 }
 
 export function formatFlowModelStrategy(modeName: string, strategy: FlowModelStrategy): string {
@@ -759,4 +794,9 @@ export function writeFlowModelConfig(
 
 	_settingsCache.set(filePath, settings);
 	scheduleSettingsFlush(filePath);
+	// Flow model config writes change which models are configured, so any
+	// in-memory cache of models.json (registry lookups, provider/model probes)
+	// must be dropped before the next read. Settings.json writes do not touch
+	// models.json, so they do NOT invalidate this cache.
+	invalidateModelsJsonCache();
 }

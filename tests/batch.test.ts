@@ -1860,6 +1860,7 @@ describe("batch tool", () => {
 
 describe("tilde expansion", () => {
 	let tmpDir: string;
+	let originalHome: string | undefined;
 
 	function createTool() {
 		return createBatchTool();
@@ -1871,9 +1872,17 @@ describe("tilde expansion", () => {
 
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-tilde-test-"));
+		originalHome = process.env.HOME;
+		process.env.HOME = path.join(tmpDir, "home");
+		fs.mkdirSync(process.env.HOME, { recursive: true });
 	});
 
 	afterEach(() => {
+		if (originalHome !== undefined) {
+			process.env.HOME = originalHome;
+		} else {
+			delete process.env.HOME;
+		}
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
 
@@ -1916,9 +1925,10 @@ describe("tilde expansion", () => {
 		// ~ expands to os.homedir() which is outside tmpDir cwd — now allowed
 		expect(result.details.results[0].status).toBe("ok");
 
-		// Clean up the file we created
-		const target = path.join(os.homedir(), "malicious.txt");
-		try { fs.unlinkSync(target); } catch {}
+		// Read back via process.env.HOME (the variable we redirected in beforeEach)
+		// rather than os.homedir() — on Windows / CI containers the two can diverge
+		// and reading via os.homedir() would target the real user home.
+		expect(fs.readFileSync(path.join(process.env.HOME ?? os.homedir(), "malicious.txt"), "utf-8")).toBe("hacked\n");
 	});
 });
 
