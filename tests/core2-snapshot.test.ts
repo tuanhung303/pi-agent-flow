@@ -770,6 +770,39 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 		});
 	});
 
+	it("still strips other metadata from assistant tool-call messages", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} }],
+					api: "openai-codex-responses",
+					provider: "openai-codex",
+					model: "gpt-5.6-terra",
+					cost: { input: 0.001, output: 0.002 },
+					details: "some details",
+					responseId: "resp-123",
+					responseModel: "gpt-5.6-terra",
+					timestamp: "2026-01-01T00:00:00Z",
+					isError: false,
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		const msg = parsed[2].message as any;
+		expect(msg.api).toBe("openai-codex-responses");
+		expect(msg.provider).toBe("openai-codex");
+		expect(msg.model).toBe("gpt-5.6-terra");
+		expect(msg).not.toHaveProperty("cost");
+		expect(msg).not.toHaveProperty("details");
+		expect(msg).not.toHaveProperty("responseId");
+		expect(msg).not.toHaveProperty("responseModel");
+		expect(msg).not.toHaveProperty("timestamp");
+		expect(msg).not.toHaveProperty("isError");
+	});
+
 	it("keeps assistant message when it contains other substance/tool calls after filtering", () => {
 		const entries = [
 			{
