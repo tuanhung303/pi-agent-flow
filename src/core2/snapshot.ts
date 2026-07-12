@@ -527,16 +527,23 @@ function sanitizeSnapshotEntry(entry: unknown): unknown | null {
 	// 2. Process message entries
 	if (result.type === "message" && result.message && typeof result.message === "object") {
 		const msg = { ...result.message as Record<string, unknown> };
+		const hasToolCalls = msg.role === "assistant" && (
+			(Array.isArray(msg.content) && msg.content.some((block: any) => block?.type === "toolCall")) ||
+			normalizeToolCalls(msg).length > 0
+		);
 
 		// Strip message-level reasoning/thinking fields
 		delete msg.thinking;
 		delete msg.reasoning;
 		delete msg.reasoningContent;
 
-		// Strip model execution metadata and noise fields
-		delete msg.api;
-		delete msg.provider;
-		delete msg.model;
+		// Responses API uses these fields to detect cross-model tool calls and
+		// discard their stale fc_* item IDs before replaying their outputs.
+		if (!hasToolCalls) {
+			delete msg.api;
+			delete msg.provider;
+			delete msg.model;
+		}
 		delete msg.cost;
 		delete msg.details;
 		delete msg.responseId;

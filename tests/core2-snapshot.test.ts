@@ -746,6 +746,86 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 		expect(parsed[2]).toMatchObject({ type: "message", message: { role: "user", content: "Hi" } });
 	});
 
+	it("preserves Responses transport metadata for replayed tool calls", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} }],
+					api: "openai-codex-responses",
+					provider: "openai-codex",
+					model: "gpt-5.6-terra",
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		expect(parsed[2]).toMatchObject({
+			message: {
+				api: "openai-codex-responses",
+				provider: "openai-codex",
+				model: "gpt-5.6-terra",
+			},
+		});
+	});
+
+	it("preserves transport metadata when tool_calls field is used", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: "I am using tools in tool_calls",
+					tool_calls: [{ id: "call_123", type: "function", function: { name: "trace", arguments: "{}" } }],
+					api: "openai-responses",
+					provider: "openai",
+					model: "gpt-4o",
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		expect(parsed[2].message).toMatchObject({
+			api: "openai-responses",
+			provider: "openai",
+			model: "gpt-4o",
+		});
+	});
+
+	it("still strips other metadata from assistant tool-call messages", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} }],
+					api: "openai-codex-responses",
+					provider: "openai-codex",
+					model: "gpt-5.6-terra",
+					cost: { input: 0.001, output: 0.002 },
+					details: "some details",
+					responseId: "resp-123",
+					responseModel: "gpt-5.6-terra",
+					timestamp: "2026-01-01T00:00:00Z",
+					isError: false,
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		const msg = parsed[2].message as any;
+		expect(msg.api).toBe("openai-codex-responses");
+		expect(msg.provider).toBe("openai-codex");
+		expect(msg.model).toBe("gpt-5.6-terra");
+		expect(msg).not.toHaveProperty("cost");
+		expect(msg).not.toHaveProperty("details");
+		expect(msg).not.toHaveProperty("responseId");
+		expect(msg).not.toHaveProperty("responseModel");
+		expect(msg).not.toHaveProperty("timestamp");
+		expect(msg).not.toHaveProperty("isError");
+	});
+
 	it("keeps assistant message when it contains other substance/tool calls after filtering", () => {
 		const entries = [
 			{
@@ -827,7 +907,7 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 		});
 	});
 
-	it("strips API metadata and slims usage to context fields only", () => {
+	it("preserves tool-call transport metadata and slims usage to context fields only", () => {
 		const entries = [
 			{
 				type: "message",
@@ -840,8 +920,8 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 						{ type: "toolCall", name: "bash", toolCallId: "bash-1", arguments: { command: "true" } },
 					],
 					api: "openai-completions",
-					provider: "fireworks.ai",
-					model: "kimi-k2p6-turbo",
+					provider: "kimi-coding",
+					model: "kimi-k2p6",
 					usage: { input: 100, output: 200, totalTokens: 300 },
 					cost: { input: 0.001, output: 0.002, total: 0.003 },
 					stopReason: "stop",
@@ -877,9 +957,11 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 		// Message 1 checks
 		const msg1 = parsed[2] as any;
 		expect(msg1).not.toHaveProperty("timestamp");
-		expect(msg1.message).not.toHaveProperty("api");
-		expect(msg1.message).not.toHaveProperty("provider");
-		expect(msg1.message).not.toHaveProperty("model");
+		expect(msg1.message).toMatchObject({
+			api: "openai-completions",
+			provider: "kimi-coding",
+			model: "kimi-k2p6",
+		});
 		expect(msg1.message.usage).toEqual({
 			input: 100,
 			output: 200,
@@ -901,6 +983,27 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 		expect(msg2.message).not.toHaveProperty("isError");
 		expect(msg2.message).not.toHaveProperty("timestamp");
 		expect(msg2.message.content[0].text).toBe("exit 0");
+	});
+
+	it("strips api, provider, and model from standard assistant replies", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Hello" }],
+					api: "openai-completions",
+					provider: "fireworks.ai",
+					model: "kimi-k2p6-turbo",
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		const msg1 = parsed[2] as any;
+		expect(msg1.message).not.toHaveProperty("api");
+		expect(msg1.message).not.toHaveProperty("provider");
+		expect(msg1.message).not.toHaveProperty("model");
 	});
 
 	it("strips API metadata and slims usage with snake_case fields", () => {
