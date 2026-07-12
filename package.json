@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-flow",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "Flow-state transition extension for Pi coding agent.",
   "type": "module",
   "main": "dist/index.js",
