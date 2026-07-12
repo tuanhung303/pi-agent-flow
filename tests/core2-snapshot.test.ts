@@ -770,6 +770,29 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 		});
 	});
 
+	it("preserves transport metadata when tool_calls field is used", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: "I am using tools in tool_calls",
+					tool_calls: [{ id: "call_123", type: "function", function: { name: "trace", arguments: "{}" } }],
+					api: "openai-responses",
+					provider: "openai",
+					model: "gpt-4o",
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		expect(parsed[2].message).toMatchObject({
+			api: "openai-responses",
+			provider: "openai",
+			model: "gpt-4o",
+		});
+	});
+
 	it("still strips other metadata from assistant tool-call messages", () => {
 		const entries = [
 			{

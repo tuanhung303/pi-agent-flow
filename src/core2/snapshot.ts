@@ -527,8 +527,9 @@ function sanitizeSnapshotEntry(entry: unknown): unknown | null {
 	// 2. Process message entries
 	if (result.type === "message" && result.message && typeof result.message === "object") {
 		const msg = { ...result.message as Record<string, unknown> };
-		const hasToolCalls = msg.role === "assistant" && Array.isArray(msg.content) && msg.content.some(
-			(block: any) => block?.type === "toolCall",
+		const hasToolCalls = msg.role === "assistant" && (
+			(Array.isArray(msg.content) && msg.content.some((block: any) => block?.type === "toolCall")) ||
+			normalizeToolCalls(msg).length > 0
 		);
 
 		// Strip message-level reasoning/thinking fields
