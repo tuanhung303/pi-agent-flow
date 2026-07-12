@@ -985,6 +985,27 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 		expect(msg2.message.content[0].text).toBe("exit 0");
 	});
 
+	it("strips api, provider, and model from standard assistant replies", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Hello" }],
+					api: "openai-completions",
+					provider: "fireworks.ai",
+					model: "kimi-k2p6-turbo",
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		const msg1 = parsed[2] as any;
+		expect(msg1.message).not.toHaveProperty("api");
+		expect(msg1.message).not.toHaveProperty("provider");
+		expect(msg1.message).not.toHaveProperty("model");
+	});
+
 	it("strips API metadata and slims usage with snake_case fields", () => {
 		const entries = [
 			{
