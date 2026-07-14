@@ -86,6 +86,51 @@ describe("buildCore2Snapshot — retention", () => {
 		expect(parsed[3]).toMatchObject({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Hi" }] } });
 	});
 
+	it("preserves canonical Pi images while dropping provider-specific image blocks", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: [
+						{ type: "text", text: "Inspect this image" },
+						{ type: "image", data: "base64-image", mimeType: "image/png", dimensions: { width: 1, height: 1 } },
+						{ type: "image_url", image_url: "data:image/png;base64,provider-specific" },
+					],
+				},
+			},
+		];
+
+		const parsed = parseSnapshot(buildCore2Snapshot(makeSource(entries)));
+		const user = parsed.find((entry: any) => entry.message?.role === "user") as any;
+		expect(user.message.content).toEqual([
+			{ type: "text", text: "Inspect this image" },
+			{ type: "image", data: "base64-image", mimeType: "image/png" },
+		]);
+		expect(JSON.stringify(user)).not.toContain("provider-specific");
+		expectProviderNeutralHistory(parsed);
+	});
+
+	it("drops malformed canonical image blocks without dropping surrounding text", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: [
+						{ type: "image", data: "", mimeType: "image/png" },
+						{ type: "image", data: "base64-image", mimeType: "text/plain" },
+						{ type: "text", text: "Keep this text" },
+					],
+				},
+			},
+		];
+
+		const parsed = parseSnapshot(buildCore2Snapshot(makeSource(entries)));
+		const user = parsed.find((entry: any) => entry.message?.role === "user") as any;
+		expect(user.message.content).toEqual([{ type: "text", text: "Keep this text" }]);
+	});
+
 	it("flattens completed non-batch tool results into assistant history", () => {
 		const entries = [
 			{

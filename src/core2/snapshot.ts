@@ -700,14 +700,29 @@ const PROVIDER_NEUTRAL_ROLES: Record<string, true> = {
 	assistant: true,
 };
 
-function providerNeutralContent(content: unknown): string | Array<{ type: "text"; text: string }> | undefined {
+type ProviderNeutralContentBlock =
+	| { type: "text"; text: string }
+	| { type: "image"; data: string; mimeType: string };
+
+function providerNeutralContent(content: unknown): string | ProviderNeutralContentBlock[] | undefined {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return undefined;
-	return content.flatMap((block) =>
-		isRecord(block) && block.type === "text" && typeof block.text === "string"
-			? [{ type: "text" as const, text: block.text }]
-			: [],
-	);
+	return content.flatMap((block): ProviderNeutralContentBlock[] => {
+		if (!isRecord(block)) return [];
+		if (block.type === "text" && typeof block.text === "string") {
+			return [{ type: "text", text: block.text }];
+		}
+		if (
+			block.type === "image" &&
+			typeof block.data === "string" &&
+			block.data.length > 0 &&
+			typeof block.mimeType === "string" &&
+			block.mimeType.startsWith("image/")
+		) {
+			return [{ type: "image", data: block.data, mimeType: block.mimeType }];
+		}
+		return [];
+	});
 }
 
 function providerNeutralHeader(value: Record<string, unknown>): Record<string, unknown> {
@@ -732,9 +747,15 @@ function isProviderNeutralHistoryEntry(entry: unknown): boolean {
 	if (typeof message.content === "string") return true;
 	return Array.isArray(message.content) && message.content.every(
 		(block) => isRecord(block) &&
-			Object.keys(block).every((key) => key === "type" || key === "text") &&
-			block.type === "text" &&
-			typeof block.text === "string",
+			((block.type === "text" &&
+				Object.keys(block).every((key) => key === "type" || key === "text") &&
+				typeof block.text === "string") ||
+			(block.type === "image" &&
+				Object.keys(block).every((key) => key === "type" || key === "data" || key === "mimeType") &&
+				typeof block.data === "string" &&
+				block.data.length > 0 &&
+				typeof block.mimeType === "string" &&
+				block.mimeType.startsWith("image/"))),
 	);
 }
 

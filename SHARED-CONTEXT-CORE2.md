@@ -40,7 +40,7 @@ The pipeline runs in this order:
 | 6 | Context-map insertion | Insert the shared-context orientation seal. |
 | 7 | Result-text sanitization | Apply batch-body truncation and directive/hint stripping to every retained result text part, including nested result output. |
 | 8 | Pairing and flattening | Exclude `batch_read`; pair completed calls/results deterministically; replace them with labelled assistant text; drop identifiable orphans and incomplete calls. |
-| 9 | Provider-neutral enforcement | Rebuild retained entries from a strict header/message/text whitelist; omit all unknown roles, entry types, fields, and content blocks. |
+| 9 | Provider-neutral enforcement | Rebuild retained entries from a strict header/message/text/image whitelist; omit all unknown roles, entry types, fields, and content blocks. |
 | 10 | JSONL serialization | Serialize only the enforced provider-neutral entries. |
 
 Native protocol is deliberately retained through optimization and compression, but never crosses the child-session boundary.
@@ -65,7 +65,7 @@ Native protocol is deliberately retained through optimization and compression, b
 - Session/header `type`, numeric `version`, scalar `id`, and compressed `cwd`.
 - Message and entry scalar `id` fields.
 - Slim assistant usage required for child token accounting.
-- Plain text content only, including literal `call_*`, `fc_*`, marker-like, and signature-like substrings in that text.
+- Plain text content and canonical Pi image blocks (`type: "image"`, non-empty `data`, `image/*` `mimeType`), including literal `call_*`, `fc_*`, marker-like, and signature-like substrings in text.
 ### 1.5 What Is Stripped — Summary
 
 - The active call and matching result before shared-context optimization.
@@ -74,10 +74,10 @@ Native protocol is deliberately retained through optimization and compression, b
 - Native call/result content types: `toolCall`, `tool_call`, `function_call`, `toolResult`, `tool_result`, and `function_call_output`.
 - Native `tool` and `toolResult` message roles, plus every unrecognized message role and entry type.
 - Message-level `toolCalls`, `tool_calls`, pairing/signature fields, transport metadata, response metadata, and arbitrary application fields.
-- Non-text content blocks and their nested metadata, including unrelated nested `api`, `provider`, `model`, and `call_id` values.
+- Provider-specific non-text content blocks and their nested metadata, including `image_url`, unrelated `api`, `provider`, `model`, and `call_id` values.
 - Reasoning/thinking fields and blocks, control events, irrelevant response metadata, batch bodies beyond configured orientation lines, and injected directive/hint suffixes.
 
-The boundary is an output whitelist: only session/header identity fields and `system`/`user`/`assistant` text messages can serialize. It intentionally does not preserve arbitrary nested application data.
+The boundary is an output whitelist: only session/header identity fields and `system`/`user`/`assistant` text or canonical image content can serialize. It intentionally does not preserve arbitrary nested application data.
 ### 1.6 CWD Compression
 
 The session header's `cwd` field is compressed to save ~50–100 bytes:
@@ -128,7 +128,7 @@ Completed native interactions remain intact through shared-context deduplication
 
 ### 2.5 Provider-Neutral Enforcement
 
-`enforceProviderNeutralHistory()` rebuilds every retained entry from a strict whitelist: session/header identity fields, scalar entry/message IDs, slim assistant usage, and `system`/`user`/`assistant` text content. It omits all unknown entry types, roles, fields, and non-text blocks, so an unrecognized future provider protocol cannot cross the child-session boundary.
+`enforceProviderNeutralHistory()` rebuilds every retained entry from a strict whitelist: session/header identity fields, scalar entry/message IDs, slim assistant usage, and `system`/`user`/`assistant` text plus canonical Pi image content. It omits all unknown entry types, roles, fields, and provider-specific blocks, so an unrecognized future provider protocol cannot cross the child-session boundary.
 
 ### 2.6 Standalone Bash Truncation
 
