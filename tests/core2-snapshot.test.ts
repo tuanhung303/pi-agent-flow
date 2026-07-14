@@ -24,6 +24,43 @@ function parseSnapshot(snapshot: string | null): unknown[] {
 function makeSnapshot(entries: unknown[]): string {
 	return entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
 }
+function expectProviderNeutralHistory(entries: unknown[]): void {
+	const protocolTypes: Record<string, true> = {
+		toolCall: true,
+		tool_call: true,
+		function_call: true,
+		toolResult: true,
+		tool_result: true,
+		function_call_output: true,
+	};
+	const forbiddenMessageKeys = [
+		"toolCalls",
+		"tool_calls",
+		"toolCallId",
+		"tool_call_id",
+		"call_id",
+		"signature",
+		"signatures",
+		"api",
+		"provider",
+		"model",
+	];
+	for (const entry of entries) {
+		if (!entry || typeof entry !== "object") continue;
+		const record = entry as Record<string, unknown>;
+		expect(protocolTypes[String(record.type)]).not.toBe(true);
+		if (record.type !== "message" || !record.message || typeof record.message !== "object") continue;
+		const message = record.message as Record<string, unknown>;
+		expect(message.role).not.toBe("tool");
+		expect(message.role).not.toBe("toolResult");
+		for (const key of forbiddenMessageKeys) expect(message).not.toHaveProperty(key);
+		if (!Array.isArray(message.content)) continue;
+		for (const block of message.content) {
+			if (!block || typeof block !== "object") continue;
+			expect(protocolTypes[String((block as Record<string, unknown>).type)]).not.toBe(true);
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Retention tests — non-batch content preserved verbatim
@@ -49,7 +86,7 @@ describe("buildCore2Snapshot — retention", () => {
 		expect(parsed[3]).toMatchObject({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Hi" }] } });
 	});
 
-	it("preserves non-batch tool results verbatim", () => {
+	it("flattens completed non-batch tool results into assistant history", () => {
 		const entries = [
 			{
 				type: "message",
@@ -71,9 +108,11 @@ describe("buildCore2Snapshot — retention", () => {
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
-		const toolMsg = parsed.find((e: any) => e.message?.role === "toolResult");
-		expect(toolMsg.message.content[0].text).toBe("hello\nworld");
-		expect(toolMsg.message.toolCallId).toBe("bash-1");
+		expect(snapshot).toContain("[Historical tool interaction]");
+		expect(snapshot).toContain("Tool: bash");
+		expect(snapshot).toContain("hello\\nworld");
+		expect(snapshot).not.toContain("bash-1");
+		expectProviderNeutralHistory(parsed);
 	});
 
 	it("preserves system messages verbatim", () => {
@@ -106,7 +145,7 @@ describe("buildCore2Snapshot — retention", () => {
 		expect(snapshot).toContain("Visible text");
 	});
 
-	it("preserves flow tool calls and results verbatim", () => {
+	it("flattens completed flow calls and results", () => {
 		const entries = [
 			{
 				type: "message",
@@ -122,13 +161,15 @@ describe("buildCore2Snapshot — retention", () => {
 				message: {
 					role: "toolResult",
 					toolCallId: "flow-1",
-					content: [{ type: "text", text: "Prior flow result should be inherited verbatim" }],
+					content: [{ type: "text", text: "Prior flow result should be inherited semantically" }],
 				},
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		expect(snapshot).toContain("Prior flow result should be inherited verbatim");
-		expect(snapshot).toContain('"name":"flow"');
+		expect(snapshot).toContain("Prior flow result should be inherited semantically");
+		expect(snapshot).toContain("Tool: flow");
+		expect(snapshot).not.toContain('"name":"flow"');
+		expectProviderNeutralHistory(parseSnapshot(snapshot));
 	});
 
 	it("preserves id and strips parentId from entries", () => {
@@ -138,7 +179,7 @@ describe("buildCore2Snapshot — retention", () => {
 		expect(snapshot).not.toContain("parentId");
 	});
 
-	it("preserves paired toolCallId on tool and toolResult messages", () => {
+	it("removes pairing IDs after retaining a completed interaction", () => {
 		const entries = [
 			{
 				type: "message",
@@ -155,9 +196,76 @@ describe("buildCore2Snapshot — retention", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		expect(snapshot).toContain("tc-1");
-		expect(snapshot).toContain("toolCallId");
+		expect(snapshot).not.toContain("tc-1");
+		expect(snapshot).not.toContain("toolCallId");
+		expect(snapshot).toContain("Tool: bash");
 		expect(snapshot).toContain("output");
+	});
+	it("sanitizes nested directives in canonical tool arguments without mutating the calls", () => {
+		const objectArguments = {
+			command: "echo safe\n\n[Directive: discard this instruction.]",
+			nested: { hint: "keep this\n\n[Hint: discard this hint.]" },
+			items: ["plain", "also keep\n\n[Directive: discard this too.]"],
+			count: 2,
+		};
+		const encodedArguments = JSON.stringify({
+			path: "src/file.ts",
+			nested: ["encoded value\n\n[Directive: discard encoded instruction.]"],
+		});
+		const originalArguments = structuredClone(objectArguments);
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", toolCallId: "argument-object", name: "bash", arguments: objectArguments },
+						{ type: "toolCall", toolCallId: "argument-encoded", name: "read", arguments: encodedArguments },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "argument-object",
+					content: [{ type: "text", text: "object result" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "argument-encoded",
+					content: [{ type: "text", text: "encoded result" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const argumentTexts = parseSnapshot(snapshot)
+			.flatMap((entry) => {
+				const candidate = entry && typeof entry === "object" ? (entry as Record<string, unknown>).message : undefined;
+				const message = candidate && typeof candidate === "object" ? candidate as Record<string, unknown> : undefined;
+				return Array.isArray(message?.content)
+					? message.content
+						.filter((block) => block && typeof block === "object" && (block as Record<string, unknown>).type === "text" && typeof (block as Record<string, unknown>).text === "string")
+						.map((block) => (block as Record<string, unknown>).text as string)
+					: [];
+			})
+			.filter((text) => text.startsWith("[Historical tool interaction]"))
+			.map((text) => {
+				const start = text.indexOf("Arguments:\n") + "Arguments:\n".length;
+				return JSON.parse(text.slice(start, text.indexOf("\n\nResult:", start)));
+			});
+
+		expect(snapshot).not.toContain("[Directive:");
+		expect(snapshot).not.toContain("[Hint:");
+		expect(argumentTexts).toEqual([
+			{ command: "echo safe", nested: { hint: "keep this" }, items: ["plain", "also keep"], count: 2 },
+			{ path: "src/file.ts", nested: ["encoded value"] },
+		]);
+		expect(objectArguments).toEqual(originalArguments);
 	});
 
 	it("strips directive blocks from tool result text", () => {
@@ -230,7 +338,7 @@ describe("buildCore2Snapshot — retention", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
-	it("preserves valid camelCase assistant toolCall and matching toolResult", () => {
+	it("flattens valid camelCase assistant toolCall and matching toolResult", () => {
 		const entries = [
 			{
 				type: "message",
@@ -252,11 +360,12 @@ describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
 		];
 
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		expect(snapshot).toContain('"toolCallId":"tc-camel"');
+		expect(snapshot).not.toContain("tc-camel");
+		expect(snapshot).toContain("Tool: bash");
 		expect(snapshot).toContain("ok");
 	});
 
-	it("preserves valid snake_case assistant toolCall and matching toolResult", () => {
+	it("flattens valid snake_case assistant toolCall and matching toolResult", () => {
 		const entries = [
 			{
 				type: "message",
@@ -278,7 +387,8 @@ describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
 		];
 
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		expect(snapshot).toContain('"tool_call_id":"tc-snake"');
+		expect(snapshot).not.toContain("tc-snake");
+		expect(snapshot).toContain("Tool: bash");
 		expect(snapshot).toContain("snake ok");
 	});
 
@@ -389,7 +499,11 @@ describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
 
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
-		expect(parsed.some((entry: any) => entry.message?.role === "assistant")).toBe(false);
+		expect(parsed.some((entry) => {
+			if (!entry || typeof entry !== "object") return false;
+			const message = (entry as Record<string, unknown>).message;
+			return !!message && typeof message === "object" && (message as Record<string, unknown>).role === "assistant";
+		})).toBe(false);
 		expect(snapshot).not.toContain("batch-only");
 	});
 
@@ -426,7 +540,8 @@ describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		expect(snapshot).not.toContain("batch-mixed");
 		expect(snapshot).not.toContain("batch mixed output");
-		expect(snapshot).toContain('"toolCallId":"bash-mixed"');
+		expect(snapshot).not.toContain("bash-mixed");
+		expect(snapshot).toContain("Tool: bash");
 		expect(snapshot).toContain("bash mixed output");
 	});
 
@@ -463,6 +578,189 @@ describe("buildCore2Snapshot — tool-call pairing cleanup", () => {
 		expect(snapshot).not.toContain("no-assistant");
 		expect(snapshot).not.toContain("survived output");
 	});
+	it("pairs all ID shapes, preserves message IDs, and drops text-block metadata", () => {
+		const entries = [
+			{
+				type: "message",
+				id: "entry-id",
+				message: {
+					role: "assistant",
+					id: "message-id",
+					api: "responses",
+					provider: "terra",
+					model: "gpt",
+					signature: "provider-signature",
+					content: [
+						{ type: "text", id: "text-part-id", text: "before", data: { call_id: "domain-call" } },
+						{
+							type: "function_call",
+							id: "fc-terra",
+							call_id: "call-terra",
+							name: "bash",
+							arguments: '{"command":"terra"}',
+						},
+						{ type: "text", text: "after" },
+					],
+					toolCalls: [{ toolCallId: "camel-id", name: "read", arguments: { path: "a.ts" } }],
+					tool_calls: [{ tool_call_id: "snake-id", function: { name: "write", arguments: '{"path":"b.ts"}' } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					call_id: "other|call-terra",
+					content: [{ type: "text", text: "terra output" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "tool",
+					toolCallId: "camel-id",
+					content: [{ type: "text", text: "read output" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					tool_call_id: "snake-id",
+					content: [{ type: "text", text: "write output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		const assistantEntry = parsed[2] as Record<string, unknown>;
+		const assistantMessage = assistantEntry.message as Record<string, unknown>;
+		const content = assistantMessage.content as Array<Record<string, unknown>>;
+		const texts = content.map((part) => part.text).filter((text): text is string => typeof text === "string");
+
+		expect(assistantEntry.id).toBe("entry-id");
+		expect(assistantMessage.id).toBe("message-id");
+		expect(content[0]).toEqual({ type: "text", text: "before" });
+		expect(texts[0]).toBe("before");
+		expect(texts[1]).toContain("Tool: bash");
+		expect(texts[2]).toBe("after");
+		expect(texts[3]).toContain("Tool: read");
+		expect(texts[4]).toContain("Tool: write");
+		expect(snapshot).toContain("terra output");
+		expect(snapshot).not.toContain("fc-terra");
+		expect(snapshot).not.toContain("call-terra");
+		expect(snapshot).not.toContain("provider-signature");
+		expectProviderNeutralHistory(parsed);
+	});
+
+	it("removes an active flow pair before deduplication", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "flow-1", name: "flow", arguments: { flow: [{ type: "scout" }] } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "flow-1",
+					content: [{ type: "text", text: "completed flow output" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{
+						type: "toolCall",
+						id: "fc-active",
+						call_id: "call-active",
+						name: "flow",
+						arguments: { flow: [{ type: "scout" }] },
+					}],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					call_id: "call-active",
+					content: [{ type: "text", text: "active output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries), { activeToolCallId: "call-active|fc-active" });
+		expect(snapshot).toContain("completed flow output");
+		expect(snapshot).toContain("Tool: flow");
+		expect(snapshot).not.toContain("active output");
+		expect(snapshot).not.toContain("fc-active");
+		expectProviderNeutralHistory(parseSnapshot(snapshot));
+	});
+
+	it("sanitizes multipart results and applies deterministic batch_read policy", () => {
+		const entries = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "multi", name: "trace", arguments: { intent: "inspect" } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "multi",
+					content: [
+						{ type: "text", text: "first\n\n[Directive: remove one]" },
+						{ type: "text", text: "second\n\n[Hint: remove two]" },
+						{
+							type: "tool_result",
+							output: [
+								{ type: "text", text: "nested call_literal fc_literal\n\n[Directive: remove nested]" },
+								{ type: "image_url", image_url: "data:image/png;base64,abc" },
+							],
+						},
+						{ type: "image", data: "abc" },
+						{ type: "audio", data: "abc" },
+					],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					name: "batch_read",
+					content: [{ type: "text", text: "named batch output" }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					content: [{ type: "text", text: "unidentifiable output" }],
+				},
+			},
+		];
+
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		expect(snapshot).toContain("first");
+		expect(snapshot).toContain("second");
+		expect(snapshot).toContain("nested call_literal fc_literal");
+		expect(snapshot.match(/\[image output omitted\]/g)).toHaveLength(2);
+		expect(snapshot).toContain("[audio output omitted]");
+		expect(snapshot).not.toContain("[Directive:");
+		expect(snapshot).not.toContain("[Hint:");
+		expect(snapshot).not.toContain("named batch output");
+		expect(snapshot).toContain("[Historical tool result]");
+		expect(snapshot).toContain("Tool: unknown");
+		expect(snapshot).toContain("unidentifiable output");
+		expectProviderNeutralHistory(parseSnapshot(snapshot));
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -474,13 +772,17 @@ describe("buildCore2Snapshot — chronology", () => {
 		const entries = [
 			{ type: "message", message: { role: "user", content: "A", id: "1" } },
 			{ type: "message", message: { role: "assistant", content: "B", id: "2" } },
-			{ type: "message", message: { role: "toolResult", content: "C", id: "3" } },
+			{ type: "message", message: { role: "system", content: "C", id: "3" } },
 			{ type: "message", message: { role: "assistant", content: "D", id: "4" } },
 			{ type: "message", message: { role: "user", content: "E", id: "5" } },
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
-		expect(parsed.slice(2).map((e: any) => e.message?.id)).toEqual(["1", "2", "3", "4", "5"]);
+		expect(parsed.slice(2).map((entry) => {
+			if (!entry || typeof entry !== "object") return undefined;
+			const message = (entry as Record<string, unknown>).message;
+			return message && typeof message === "object" ? (message as Record<string, unknown>).id : undefined;
+		})).toEqual(["1", "2", "3", "4", "5"]);
 	});
 
 	it("does not drop or reorder messages", () => {
@@ -497,7 +799,7 @@ describe("buildCore2Snapshot — chronology", () => {
 		expect(parsed[2]).toMatchObject({ type: "message", message: { role: "system" } });
 		expect(parsed[3]).toMatchObject({ type: "message", message: { role: "user" } });
 		expect(parsed[4]).toMatchObject({ type: "message", message: { role: "assistant" } });
-		expect(parsed[5]).toMatchObject({ type: "message", message: { role: "tool" } });
+		expect(parsed[5]).toMatchObject({ type: "message", message: { role: "assistant", content: [{ text: expect.stringContaining("[Historical tool result]") }] } });
 	});
 });
 
@@ -648,23 +950,18 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		const toolMsg = parsed.find((e: any) => e.message?.role === "toolResult") as any;
-		const textContent = toolMsg.message.content[0].text;
-		// a.ts body has 11 lines (including trailing empty before next header)
-		expect(textContent).toContain("a1");
-		expect(textContent).toContain("a2");
-		expect(textContent).toContain("a3");
-		expect(textContent).toContain("[...5 lines truncated...]");
-		expect(textContent).toContain("a9");
-		expect(textContent).toContain("a10");
-		// b.ts: 8 lines -> 3 + trunc + 2 (8-6=2)
-		expect(textContent).toContain("b1");
-		expect(textContent).toContain("b2");
-		expect(textContent).toContain("b3");
-		expect(textContent).toContain("[...2 lines truncated...]");
-		expect(textContent).toContain("b7");
-		expect(textContent).toContain("b8");
+		expect(snapshot).toContain("a1");
+		expect(snapshot).toContain("a2");
+		expect(snapshot).toContain("a3");
+		expect(snapshot).toContain("[...5 lines truncated...]");
+		expect(snapshot).toContain("a9");
+		expect(snapshot).toContain("a10");
+		expect(snapshot).toContain("b1");
+		expect(snapshot).toContain("b2");
+		expect(snapshot).toContain("b3");
+		expect(snapshot).toContain("[...2 lines truncated...]");
+		expect(snapshot).toContain("b7");
+		expect(snapshot).toContain("b8");
 	});
 
 	it("preserves user messages that happen to contain --- headers", () => {
@@ -746,13 +1043,16 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 		expect(parsed[2]).toMatchObject({ type: "message", message: { role: "user", content: "Hi" } });
 	});
 
-	it("preserves Responses transport metadata for replayed tool calls", () => {
+	it("strips Responses transport metadata and unmatched protocol", () => {
 		const entries = [
 			{
 				type: "message",
 				message: {
 					role: "assistant",
-					content: [{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} }],
+					content: [
+						{ type: "text", text: "Visible response" },
+						{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} },
+					],
 					api: "openai-codex-responses",
 					provider: "openai-codex",
 					model: "gpt-5.6-terra",
@@ -761,16 +1061,12 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
-		expect(parsed[2]).toMatchObject({
-			message: {
-				api: "openai-codex-responses",
-				provider: "openai-codex",
-				model: "gpt-5.6-terra",
-			},
-		});
+		expect(snapshot).toContain("Visible response");
+		expect(snapshot).not.toContain("call_123");
+		expectProviderNeutralHistory(parsed);
 	});
 
-	it("preserves transport metadata when tool_calls field is used", () => {
+	it("strips transport metadata and unmatched tool_calls fields", () => {
 		const entries = [
 			{
 				type: "message",
@@ -785,21 +1081,21 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		expect(parsed[2].message).toMatchObject({
-			api: "openai-responses",
-			provider: "openai",
-			model: "gpt-4o",
-		});
+		expect(snapshot).toContain("I am using tools in tool_calls");
+		expect(snapshot).not.toContain("call_123");
+		expectProviderNeutralHistory(parseSnapshot(snapshot));
 	});
 
-	it("still strips other metadata from assistant tool-call messages", () => {
+	it("strips all assistant transport and response metadata", () => {
 		const entries = [
 			{
 				type: "message",
 				message: {
 					role: "assistant",
-					content: [{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} }],
+					content: [
+						{ type: "text", text: "Visible text" },
+						{ type: "toolCall", id: "call_123|fc_123", name: "trace", arguments: {} },
+					],
 					api: "openai-codex-responses",
 					provider: "openai-codex",
 					model: "gpt-5.6-terra",
@@ -814,16 +1110,9 @@ describe("buildCore2Snapshot — nuance (batch body stripping)", () => {
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
-		const msg = parsed[2].message as any;
-		expect(msg.api).toBe("openai-codex-responses");
-		expect(msg.provider).toBe("openai-codex");
-		expect(msg.model).toBe("gpt-5.6-terra");
-		expect(msg).not.toHaveProperty("cost");
-		expect(msg).not.toHaveProperty("details");
-		expect(msg).not.toHaveProperty("responseId");
-		expect(msg).not.toHaveProperty("responseModel");
-		expect(msg).not.toHaveProperty("timestamp");
-		expect(msg).not.toHaveProperty("isError");
+		expect(snapshot).toContain("Visible text");
+		expect(snapshot).not.toContain("resp-123");
+		expectProviderNeutralHistory(parsed);
 	});
 
 	it("keeps assistant message when it contains other substance/tool calls after filtering", () => {
@@ -907,7 +1196,7 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 		});
 	});
 
-	it("preserves tool-call transport metadata and slims usage to context fields only", () => {
+	it("removes tool transport metadata while retaining usage and semantic history", () => {
 		const entries = [
 			{
 				type: "message",
@@ -933,56 +1222,32 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 			{
 				type: "message",
 				id: "msg-2",
-				timestamp: "2026-05-23T15:35:21.164Z",
 				message: {
 					role: "toolResult",
 					toolCallId: "bash-1",
 					toolName: "bash",
 					content: [{ type: "text", text: "exit 0" }],
-					details: { results: [{ op: "run", status: "success" }] },
-					isError: false,
-					timestamp: 1779550521164,
 				},
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
 		const parsed = parseSnapshot(snapshot);
-		
-		// Header (first entry) should not contain timestamp
-		expect(parsed[0]).not.toHaveProperty("timestamp");
-
-		// Context map
-		expect(parsed[1]).toMatchObject({ type: "message", message: { role: "system", content: expect.stringContaining("[SHARED CONTEXT]") } });
-
-		// Message 1 checks
-		const msg1 = parsed[2] as any;
-		expect(msg1).not.toHaveProperty("timestamp");
-		expect(msg1.message).toMatchObject({
-			api: "openai-completions",
-			provider: "kimi-coding",
-			model: "kimi-k2p6",
-		});
-		expect(msg1.message.usage).toEqual({
+		const firstMessageEntry = parsed[2] as Record<string, unknown>;
+		const firstMessage = firstMessageEntry.message as Record<string, unknown>;
+		expect(firstMessageEntry).not.toHaveProperty("timestamp");
+		expect(firstMessage.usage).toEqual({
 			input: 100,
 			output: 200,
 			cacheRead: 0,
 			cacheWrite: 0,
 			totalTokens: 300,
 		});
-		expect(msg1.message).not.toHaveProperty("cost");
-		expect(msg1.message).toHaveProperty("stopReason", "stop");
-		expect(msg1.message).not.toHaveProperty("responseId");
-		expect(msg1.message).not.toHaveProperty("responseModel");
-		expect(msg1.message).not.toHaveProperty("timestamp");
-		expect(msg1.message.content[0].text).toBe("Hello");
-
-		// Message 2 checks
-		const msg2 = parsed[3] as any;
-		expect(msg2).not.toHaveProperty("timestamp");
-		expect(msg2.message).not.toHaveProperty("details");
-		expect(msg2.message).not.toHaveProperty("isError");
-		expect(msg2.message).not.toHaveProperty("timestamp");
-		expect(msg2.message.content[0].text).toBe("exit 0");
+		expect(firstMessage).not.toHaveProperty("stopReason");
+		expect(snapshot).toContain("Hello");
+		expect(snapshot).toContain("Tool: bash");
+		expect(snapshot).toContain("exit 0");
+		expect(snapshot).not.toContain("bash-1");
+		expectProviderNeutralHistory(parsed);
 	});
 
 	it("strips api, provider, and model from standard assistant replies", () => {
@@ -1030,6 +1295,70 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 			cacheRead: 0,
 			cacheWrite: 0,
 			totalTokens: 300,
+		});
+	});
+
+	it("whitelists headers and message content against unknown provider protocol shapes", () => {
+		const snapshot = buildCore2Snapshot({
+			getHeader: () => ({
+				type: "session",
+				version: 1,
+				id: "safe-session",
+				provider: "future-provider",
+				model: "future-model",
+				transportState: { resumeToken: "secret-header-token" },
+			}),
+			getBranch: () => [
+				{
+					type: "session",
+					version: 1,
+					id: "safe-session",
+					provider: "future-provider",
+					transportState: { resumeToken: "secret-branch-token" },
+				},
+				{ type: "vendor_transport_event", payload: "drop-root-event" },
+				{ type: "message", message: { role: "vendor_tool", content: "drop-unknown-role" } },
+				{
+					type: "message",
+					id: "safe-entry-id",
+					message: {
+						role: "assistant",
+						id: "safe-message-id",
+						content: [
+							{ type: "text", text: "safe text" },
+							{ type: "vendor_tool_invocation", call_id: "future-call", payload: "drop-content-block" },
+						],
+						provider: "future-provider",
+						transportState: { opaque: "drop-message-metadata" },
+					},
+				},
+			],
+		});
+		const parsed = parseSnapshot(snapshot);
+		const assistantEntry = parsed.find((entry) => {
+			const message = entry && typeof entry === "object" ? (entry as Record<string, unknown>).message : undefined;
+			return message && typeof message === "object" && (message as Record<string, unknown>).role === "assistant";
+		}) as Record<string, unknown>;
+
+		expect(parsed[0]).toEqual({ type: "session", version: 1, id: "safe-session" });
+		expect(snapshot).toContain("safe text");
+		expect(snapshot).not.toContain("future-provider");
+		expect(snapshot).not.toContain("future-model");
+		expect(snapshot).not.toContain("secret-header-token");
+		expect(snapshot).not.toContain("secret-branch-token");
+		expect(snapshot).not.toContain("drop-root-event");
+		expect(snapshot).not.toContain("drop-unknown-role");
+		expect(snapshot).not.toContain("future-call");
+		expect(snapshot).not.toContain("drop-content-block");
+		expect(snapshot).not.toContain("drop-message-metadata");
+		expect(assistantEntry).toEqual({
+			type: "message",
+			id: "safe-entry-id",
+			message: {
+				role: "assistant",
+				id: "safe-message-id",
+				content: [{ type: "text", text: "safe text" }],
+			},
 		});
 	});
 });
@@ -1292,16 +1621,9 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		
-		// First toolResult should be omitted/replaced with count-aware placeholder
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("Bash output omitted")) as any;
-		expect(firstResult).toBeDefined();
-		expect(firstResult.message.content[0].text).toBe("[Bash output omitted; re-run 1 more time]");
-
-		// Second toolResult should be preserved verbatim
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("second build passed")) as any;
-		expect(secondResult).toBeDefined();
+		expect(snapshot).toContain("[Bash output omitted; re-run 1 more time]");
+		expect(snapshot).toContain("second build passed");
+		expect(snapshot).toContain("Tool: bash");
 	});
 
 	it("deduplicates repeated identical bash commands with count-aware placeholder for 3+ runs", () => {
@@ -1359,16 +1681,9 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text === "[Bash output omitted; re-run 2 more times]") as any;
-		expect(firstResult).toBeDefined();
-
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text === "[Bash output omitted; re-run 2 more times]") as any;
-		expect(secondResult).toBeDefined();
-
-		const thirdResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("test 3")) as any;
-		expect(thirdResult).toBeDefined();
+		expect(snapshot.match(/\[Bash output omitted; re-run 2 more times\]/g)).toHaveLength(2);
+		expect(snapshot).toContain("test 3");
+		expect(snapshot.match(/Tool: bash/g)).toHaveLength(3);
 	});
 
 	it("deduplicates repeated read/write/edit operations on the same file path", () => {
@@ -1411,16 +1726,9 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-
-		// First toolResult should be omitted/replaced with count-aware placeholder
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("File read output omitted")) as any;
-		expect(firstResult).toBeDefined();
-		expect(firstResult.message.content[0].text).toBe("[File read output omitted; read 1 more time]");
-
-		// Second toolResult should be preserved verbatim
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("file a content new")) as any;
-		expect(secondResult).toBeDefined();
+		expect(snapshot).toContain("[File read output omitted; read 1 more time]");
+		expect(snapshot).toContain("file a content new");
+		expect(snapshot).toContain("Tool: batch");
 	});
 
 	it("deduplicates repeated edit operations with count-aware placeholder", () => {
@@ -1478,16 +1786,8 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text === "[File edit output omitted; edited 2 more times]") as any;
-		expect(firstResult).toBeDefined();
-
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text === "[File edit output omitted; edited 2 more times]") as any;
-		expect(secondResult).toBeDefined();
-
-		const thirdResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("edit 3")) as any;
-		expect(thirdResult).toBeDefined();
+		expect(snapshot.match(/\[File edit output omitted; edited 2 more times\]/g)).toHaveLength(2);
+		expect(snapshot).toContain("edit 3");
 	});
 
 	it("deduplicates repeated write operations with count-aware placeholder", () => {
@@ -1528,13 +1828,8 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text === "[File write output omitted; written 1 more time]") as any;
-		expect(firstResult).toBeDefined();
-
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("write 2")) as any;
-		expect(secondResult).toBeDefined();
+		expect(snapshot).toContain("[File write output omitted; written 1 more time]");
+		expect(snapshot).toContain("write 2");
 	});
 
 	it("deduplicates repeated flow tool calls, keeping only the latest run's output", () => {
@@ -1577,16 +1872,9 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-		
-		// First flow result should be replaced with placeholder
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("Flow scout output omitted")) as any;
-		expect(firstResult).toBeDefined();
-		expect(firstResult.message.content[0].text).toBe("[Flow scout output omitted; superseded by later run]");
-
-		// Second flow result should be preserved verbatim
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("second scout result")) as any;
-		expect(secondResult).toBeDefined();
+		expect(snapshot).toContain("[Flow scout output omitted; superseded by later run]");
+		expect(snapshot).toContain("second scout result");
+		expect(snapshot.match(/Tool: flow/g)).toHaveLength(2);
 	});
 
 	it("deduplicates multi-flow tool calls, tracking each flow type separately", () => {
@@ -1681,15 +1969,8 @@ describe("buildCore2Snapshot — tier compression", () => {
 			}
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries));
-		const parsed = parseSnapshot(snapshot);
-
-		// First trace result should be replaced with placeholder
-		const firstResult = parsed.find((e: any) => e.message?.content?.[0]?.text === "[Trace output omitted; superseded by later trace]") as any;
-		expect(firstResult).toBeDefined();
-
-		// Second trace result should be preserved verbatim
-		const secondResult = parsed.find((e: any) => e.message?.content?.[0]?.text && e.message.content[0].text.includes("second audit result")) as any;
-		expect(secondResult).toBeDefined();
+		expect(snapshot).toContain("[Trace output omitted; superseded by later trace]");
+		expect(snapshot).toContain("second audit result");
 	});
 
 	it("does not collapse trace tool calls with distinct intents", () => {

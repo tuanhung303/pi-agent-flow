@@ -19,10 +19,10 @@ When you transition to a flow, the flow state receives an automatic **sanitized 
 
 ### How it works
 
-1. **Snapshot serialized** — your conversation (files read, commands run, prior flow results) is serialized into a JSONL snapshot.
-2. **Sanitized** — steering hints, reasoning/thinking artifacts, and other non-inheritable content are stripped.
-3. **Compressed** — prior flow tool results are compacted into short summaries: files touched, commands used, outcome status.
-4. **Forked** — the flow state loads this snapshot via `--session` at startup.
+1. **Snapshot serialized** — chronological parent conversation and completed tool/`flow` interactions are collected as JSONL history.
+2. **Sanitized and optimized** — the active interaction, reasoning/thinking artifacts, and non-inheritable metadata are removed while native completed interactions remain available for deduplication.
+3. **Compressed and flattened** — retained outputs use the configured compression policy; completed interactions become labelled assistant text, and `batch_read` history is excluded.
+4. **Forked** — the provider-neutral snapshot is loaded via `--session`; the child starts a fresh provider-owned tool lifecycle.
 
 ### Writing good intents
 
@@ -40,7 +40,7 @@ Set `inheritContext: false` in a custom flow's front-matter to start with a clea
 
 ### What the child sees
 
-The child's `<context-seal>` prompt tells it: *"The conversation above is sealed — it is your session history for situational awareness only."* The child can reference files and findings already in context but shouldn't act as if it's still in the parent's conversation.
+The child's `<context-seal>` prompt tells it: *"The conversation above is sealed — it is your session history for situational awareness only."* Completed parent tool and `flow` work appears as labelled historical text, not replayable native calls. `batch_read` history is absent. The child can reuse prior findings, but every tool call it makes is a new call owned by the child's provider session.
 
 ## Bundled Flows
 

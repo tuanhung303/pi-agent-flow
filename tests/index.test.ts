@@ -189,13 +189,15 @@ describe("flow tool execute", () => {
 		const snapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
 		expect(snapshot).toContain("Keep this product requirement in mind as you work through /src/product.ts");
 		expect(snapshot).toContain("Normal assistant context with implementation details and code examples and a file reference to /src/index.ts for context.");
-		expect(snapshot).toContain("bash-call-1");
+		expect(snapshot).toContain("[Historical tool interaction]");
+		expect(snapshot).toContain("Tool: bash");
 		expect(snapshot).toContain("[toolResult: bash]");
 		expect(snapshot).toContain("Implementation summary after transition");
-		expect(snapshot).toContain("flow-call-1");
-		expect(snapshot).toContain('"name":"flow"');
-		// Core-2 compresses tool results for all tiers.
+		expect(snapshot).toContain("Tool: flow");
 		expect(snapshot).toContain("[toolResult: flow]");
+		expect(snapshot).not.toContain("bash-call-1");
+		expect(snapshot).not.toContain("flow-call-1");
+		expect(snapshot).not.toContain('"role":"toolResult"');
 		expect(snapshot).toContain("Current request should be inherited from /src/config.ts and applied consistently");
 		// Core-2 strips reasoning/thinking fields and blocks.
 		expect(snapshot).not.toContain("SECRET_THINKING_FIELD");
@@ -206,7 +208,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("</pi-flow-steering-hint>");
 	});
 
-	it("preserves unmodified fork snapshot lines exactly", async () => {
+	it("preserves ordinary fork lines and canonicalizes paired tool history", async () => {
 		setupFlowsDir([
 			{
 				fileName: "scout.md",
@@ -239,7 +241,6 @@ describe("flow tool execute", () => {
 		const unchangedTool = { type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "Unchanged tool result" }], timestamp: 5 } };
 		const unchangedUserExpected = { type: "message", message: { role: "user", content: "Unchanged requirement specified in /src/config.ts for the project" } };
 		const unchangedAssistantExpected = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Unchanged answer — see [build] output for full details." }] } };
-		const unchangedToolExpected = JSON.stringify({ type: "message", message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "[toolResult result omitted]" }] } });
 		const sessionBranch = [unchangedUser, unchangedAssistant, changedAssistant, droppedSystem, unchangedToolCall, unchangedTool];
 
 		const tool = pi.getTool("flow");
@@ -262,13 +263,16 @@ describe("flow tool execute", () => {
 		const lines = snapshot.trimEnd().split("\n");
 
 		expect(lines[0]).toContain('"version":1');
-		expect(lines[0]).toContain('"meta"');
+		expect(lines[0]).not.toContain('"meta"');
 		// forkMetadataInjection removed: forkedAt/depth are in <activation> XML only
 		expect(lines[0]).not.toContain('forkedAt');
 		expect(lines[0]).not.toContain('"depth"');
 		expect(lines).toContain(JSON.stringify(unchangedUserExpected));
 		expect(lines).toContain(JSON.stringify(unchangedAssistantExpected));
-		expect(lines).toContain(unchangedToolExpected);
+		expect(snapshot).toContain("Tool: bash");
+		expect(snapshot).toContain("[toolResult result omitted]");
+		expect(snapshot).not.toContain("tool-1");
+		expect(snapshot).not.toContain('"role":"toolResult"');
 		expect(lines).not.toContain(JSON.stringify({ type: "system", content: header.systemPrompt }));
 		// Core-2 strips assistant messages with reasoning.
 		const expectedChangedAssistant = { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Visible answer — [build] output shows success." }] } };
@@ -331,7 +335,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toMatch(/<pi-flow-steering-hint\b/);
 	});
 
-	it("preserves flow calls/results in mixed assistant messages", async () => {
+	it("flattens flow calls/results in mixed assistant messages", async () => {
 		setupFlowsDir([
 			{
 				fileName: "scout.md",
@@ -392,10 +396,11 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Original requirement defined in /src/requirements.md for reference");
 		expect(snapshot).toContain("Text before transition.");
 		expect(snapshot).toContain("Text after transition — [debug] completed.");
-		// Core-2 compresses tool results for all tiers.
 		expect(snapshot).toContain("[toolResult result omitted]");
-		expect(snapshot).toContain("flow-call-2");
-		expect(snapshot).toContain('"name":"flow"');
+		expect(snapshot).toContain("Tool: flow");
+		expect(snapshot).not.toContain("flow-call-2");
+		expect(snapshot).not.toContain('"name":"flow"');
+		expect(snapshot).not.toContain('"role":"toolResult"');
 		expect(snapshot).toContain("Current request should be inherited");
 	});
 

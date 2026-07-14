@@ -1,9 +1,8 @@
 /**
- * Core-2 snapshot builder — dead-simple fork snapshot.
+ * Core-2 snapshot builder.
  *
- * Strips batch read/write/edit bodies (keeping first 3 + last 3 lines as
- * orientation) and preserves all other conversation verbatim in
- * chronological order.
+ * Preserves chronological semantic history, keeps native tool protocol only
+ * while optimizers need it, then emits provider-neutral labelled history.
  */
 
 import { stripDirectives } from "../steering/tool-utils.js";
@@ -147,23 +146,30 @@ export interface BuildCore2SnapshotOptions {
 	compressionStats?: CompressionStats;
 }
 
-/** Normalize toolCalls field from various input shapes. */
+/** Normalize toolCalls fields from various input shapes. */
 function normalizeToolCalls(msg: unknown): unknown[] {
 	if (!msg || typeof msg !== "object") return [];
 	const m = msg as Record<string, unknown>;
-	const tcs = m.toolCalls ?? m.tool_calls;
-	if (Array.isArray(tcs)) return tcs;
-	return [];
+	return [
+		...(Array.isArray(m.toolCalls) ? m.toolCalls : []),
+		...(Array.isArray(m.tool_calls) ? m.tool_calls : []),
+	];
 }
 
-// Fallback for external APIs that use snake_case
+// Fallbacks for external APIs that use snake_case.
 const SNAKE_TOOL_CALL_ID = "tool_call_id";
+const SNAKE_CALL_ID = "call_id";
 
-/** Normalize tool call id from various input shapes. */
+/** Normalize one tool protocol id from various input shapes. */
 function normalizeToolCallId(tc: unknown): string | undefined {
 	if (!tc || typeof tc !== "object") return undefined;
 	const t = tc as Record<string, unknown>;
-	return (t.id as string | undefined) || (t.toolCallId as string | undefined) || (t[SNAKE_TOOL_CALL_ID] as string | undefined);
+	return (
+		(t.id as string | undefined) ||
+		(t.toolCallId as string | undefined) ||
+		(t[SNAKE_TOOL_CALL_ID] as string | undefined) ||
+		(t[SNAKE_CALL_ID] as string | undefined)
+	);
 }
 
 /** Rough token estimate for a snapshot string (1 token ≈ 4 chars). */
@@ -267,115 +273,506 @@ const CONTEXT_MAP_ENTRY = {
 	},
 };
 
-/**
- * Strip orphaned toolResult messages and batch_read toolCalls from snapshot entries.
- *
- * After compression/trimming, assistant messages may be dropped while their
- * toolResult children remain. Strict API providers (kimi, DeepSeek) reject
- * these with `400 tool_call_id is not found`.
- *
- * Also strips batch_read toolCalls from assistant messages since child flows
- * don't have batch_read in their active tools.
- */
-function stripOrphanedToolResultsAndBatchRead(entries: unknown[]): unknown[] {
-	const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
-	const getToolCallId = (value: unknown): string | undefined => normalizeToolCallId(value);
-	const getToolResultId = (value: Record<string, unknown>): string | undefined => {
-		return (value.toolCallId as string | undefined) || (value[SNAKE_TOOL_CALL_ID] as string | undefined);
-	};
-	const getToolName = (value: Record<string, unknown>): string | undefined => {
-		if (typeof value.name === "string") return value.name;
-		const nested = value.toolCall;
-		if (isRecord(nested) && typeof nested.name === "string") return nested.name;
-		return undefined;
-	};
-	const isSubstantiveBlock = (block: unknown): boolean => {
-		if (!isRecord(block)) return false;
-		if (block.type === "text" && typeof block.text === "string" && block.text.trim() === "") return false;
-		if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim() === "") return false;
-		return true;
-	};
+const TOOL_CALL_TYPES: Record<string, true> = {
+	toolCall: true,
+	tool_call: true,
+	function_call: true,
+};
+const TOOL_RESULT_TYPES: Record<string, true> = {
+	toolResult: true,
+	tool_result: true,
+	function_call_output: true,
+};
+const TOOL_RESULT_ROLES: Record<string, true> = {
+	tool: true,
+	toolResult: true,
+};
 
-	// Pass 1: Collect valid toolCall IDs and batch_read IDs from assistant messages
-	const validToolCallIds = new Set<string>();
-	const batchReadToolCallIds = new Set<string>();
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object";
+}
+
+function isToolCallType(value: unknown): boolean {
+	return typeof value === "string" && TOOL_CALL_TYPES[value] === true;
+}
+
+function isToolResultType(value: unknown): boolean {
+	return typeof value === "string" && TOOL_RESULT_TYPES[value] === true;
+}
+
+function addProtocolIdCandidates(target: Set<string>, value: unknown): void {
+	if (typeof value !== "string") return;
+	target.add(value);
+	for (const part of value.split("|")) {
+		if (part) target.add(part);
+	}
+}
+
+function toolProtocolIdCandidates(value: unknown): Set<string> {
+	const candidates = new Set<string>();
+	if (typeof value === "string") {
+		addProtocolIdCandidates(candidates, value);
+		return candidates;
+	}
+	if (!isRecord(value)) return candidates;
+	addProtocolIdCandidates(candidates, value.id);
+	addProtocolIdCandidates(candidates, value.toolCallId);
+	addProtocolIdCandidates(candidates, value[SNAKE_TOOL_CALL_ID]);
+	addProtocolIdCandidates(candidates, value[SNAKE_CALL_ID]);
+	return candidates;
+}
+
+function protocolIdsIntersect(left: Set<string>, right: Set<string>): boolean {
+	for (const id of left) {
+		if (right.has(id)) return true;
+	}
+	return false;
+}
+
+function mergeProtocolIds(target: Set<string>, value: unknown): void {
+	for (const id of toolProtocolIdCandidates(value)) target.add(id);
+}
+
+function getToolProtocolName(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	if (typeof value.name === "string") return value.name;
+	if (typeof value.toolName === "string") return value.toolName;
+	if (isRecord(value.toolCall) && typeof value.toolCall.name === "string") return value.toolCall.name;
+	if (isRecord(value.function) && typeof value.function.name === "string") return value.function.name;
+	return undefined;
+}
+
+function getToolProtocolArguments(value: unknown): unknown {
+	if (!isRecord(value)) return undefined;
+	if ("arguments" in value) return value.arguments;
+	if (isRecord(value.toolCall) && "arguments" in value.toolCall) return value.toolCall.arguments;
+	if (isRecord(value.function) && "arguments" in value.function) return value.function.arguments;
+	return undefined;
+}
+
+function hasSubstantiveContent(value: unknown): boolean {
+	if (typeof value === "string") return value.trim().length > 0;
+	if (!Array.isArray(value)) return value !== undefined && value !== null;
+	return value.some((part) => {
+		if (!isRecord(part)) return part !== undefined && part !== null;
+		if (part.type === "text" && typeof part.text === "string") return part.text.trim().length > 0;
+		if (part.type === "thinking" && typeof part.thinking === "string") return part.thinking.trim().length > 0;
+		return true;
+	});
+}
+
+/**
+ * Remove the currently executing call and result before any optimizer can use
+ * the incomplete interaction as deduplication history.
+ */
+function stripActiveToolInteraction(entries: unknown[], activeToolCallId?: string): unknown[] {
+	if (!activeToolCallId) return entries;
+	const activeIds = toolProtocolIdCandidates(activeToolCallId);
+	const output: unknown[] = [];
 
 	for (const entry of entries) {
-		if (!isRecord(entry)) continue;
-		const e = entry;
-		if (e.type !== "message" || !isRecord(e.message)) continue;
-		const msg = e.message;
-		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+		if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) {
+			output.push(entry);
+			continue;
+		}
 
-		for (const block of msg.content) {
-			if (!isRecord(block)) continue;
-			const b = block;
-			if (b.type === "toolCall") {
-				const id = getToolCallId(b);
-				if (id) {
-					if (getToolName(b) === "batch_read") {
-						batchReadToolCallIds.add(id);
-					} else {
-						validToolCallIds.add(id);
-					}
-				}
+		const message = entry.message;
+		const content = Array.isArray(message.content) ? message.content : undefined;
+		const matchingNestedResult = content?.some(
+			(block) => isRecord(block) && isToolResultType(block.type) && protocolIdsIntersect(toolProtocolIdCandidates(block), activeIds),
+		);
+		if (
+			TOOL_RESULT_ROLES[String(message.role)] === true &&
+			(protocolIdsIntersect(toolProtocolIdCandidates(message), activeIds) || matchingNestedResult)
+		) {
+			continue;
+		}
+
+		const filteredContent = content?.filter((block) => {
+			if (!isRecord(block) || (!isToolCallType(block.type) && !isToolResultType(block.type))) return true;
+			return !protocolIdsIntersect(toolProtocolIdCandidates(block), activeIds);
+		});
+		const filteredCamel = Array.isArray(message.toolCalls)
+			? message.toolCalls.filter((call) => !protocolIdsIntersect(toolProtocolIdCandidates(call), activeIds))
+			: undefined;
+		const filteredSnake = Array.isArray(message.tool_calls)
+			? message.tool_calls.filter((call) => !protocolIdsIntersect(toolProtocolIdCandidates(call), activeIds))
+			: undefined;
+		const nextMessage = {
+			...message,
+			...(filteredContent ? { content: filteredContent } : {}),
+			...(filteredCamel ? { toolCalls: filteredCamel } : {}),
+			...(filteredSnake ? { tool_calls: filteredSnake } : {}),
+		};
+
+		if (
+			message.role === "assistant" &&
+			!hasSubstantiveContent(nextMessage.content) &&
+			normalizeToolCalls(nextMessage).length === 0
+		) {
+			continue;
+		}
+		if (TOOL_RESULT_ROLES[String(message.role)] === true && !hasSubstantiveContent(nextMessage.content)) {
+			continue;
+		}
+		output.push({ ...entry, message: nextMessage });
+	}
+
+	return output;
+}
+
+interface HistoricalResult {
+	source: Record<string, unknown>;
+	ids: Set<string>;
+	name?: string;
+	output: unknown;
+	consumed: boolean;
+	batchRead: boolean;
+}
+
+interface HistoricalCall {
+	source: Record<string, unknown>;
+	ids: Set<string>;
+	name?: string;
+	arguments: unknown;
+	batchRead: boolean;
+	result?: HistoricalResult;
+}
+
+function sanitizeHistoricalArgumentStrings(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
+	if (typeof value === "string") return stripDirectives(value);
+	if (Array.isArray(value)) {
+		const existing = seen.get(value);
+		if (existing) return existing;
+		const sanitized: unknown[] = [];
+		seen.set(value, sanitized);
+		for (const item of value) sanitized.push(sanitizeHistoricalArgumentStrings(item, seen));
+		return sanitized;
+	}
+	if (!isRecord(value)) return value;
+	const existing = seen.get(value);
+	if (existing) return existing;
+	const sanitized: Record<string, unknown> = {};
+	seen.set(value, sanitized);
+	for (const [key, item] of Object.entries(value)) {
+		sanitized[key] = sanitizeHistoricalArgumentStrings(item, seen);
+	}
+	return sanitized;
+}
+
+function serializeHistoricalArguments(value: unknown): string {
+	try {
+		if (typeof value === "string") {
+			try {
+				return JSON.stringify(sanitizeHistoricalArgumentStrings(JSON.parse(value))) ?? "[unserializable arguments omitted]";
+			} catch {
+				return stripDirectives(value);
+			}
+		}
+		return JSON.stringify(sanitizeHistoricalArgumentStrings(value)) ?? "[unserializable arguments omitted]";
+	} catch {
+		return "[unserializable arguments omitted]";
+	}
+}
+
+function historicalResultText(value: unknown): string {
+	const parts: string[] = [];
+	const visit = (current: unknown): void => {
+		if (typeof current === "string") {
+			if (current.length > 0) parts.push(current);
+			return;
+		}
+		if (Array.isArray(current)) {
+			for (const part of current) visit(part);
+			return;
+		}
+		if (!isRecord(current)) {
+			if (current !== undefined && current !== null) parts.push(`[${typeof current} output omitted]`);
+			return;
+		}
+		if (current.type === "text" && typeof current.text === "string") {
+			if (current.text.length > 0) parts.push(current.text);
+			return;
+		}
+		if (current.type === "image" || current.type === "image_url") {
+			parts.push("[image output omitted]");
+			return;
+		}
+		if (isToolResultType(current.type)) {
+			visit("output" in current ? current.output : current.content);
+			return;
+		}
+		const type = typeof current.type === "string" ? current.type : "object";
+		parts.push(`[${type} output omitted]`);
+	};
+	visit(value);
+	return parts.length > 0 ? parts.join("\n") : "[empty output]";
+}
+
+function canonicalHistoricalInteraction(call: HistoricalCall, result: HistoricalResult): string {
+	return [
+		"[Historical tool interaction]",
+		`Tool: ${call.name ?? result.name ?? "unknown"}`,
+		"Arguments:",
+		serializeHistoricalArguments(call.arguments),
+		"",
+		"Result:",
+		historicalResultText(result.output),
+		"[/Historical tool interaction]",
+	].join("\n");
+}
+
+function canonicalHistoricalResult(result: HistoricalResult): string {
+	return [
+		"[Historical tool result]",
+		`Tool: ${result.name ?? "unknown"}`,
+		"Result:",
+		historicalResultText(result.output),
+		"[/Historical tool result]",
+	].join("\n");
+}
+
+/**
+ * Pair completed native tool protocol records, remove batch_read history, and
+ * retain provider-neutral labelled assistant text at the serialization edge.
+ */
+function flattenCompletedToolInteractions(entries: unknown[]): unknown[] {
+	const calls: HistoricalCall[] = [];
+	const callsBySource = new Map<Record<string, unknown>, HistoricalCall>();
+	const results: HistoricalResult[] = [];
+	const resultsBySource = new Map<Record<string, unknown>, HistoricalResult>();
+	const batchReadIds = new Set<string>();
+
+	for (const entry of entries) {
+		if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
+		const message = entry.message;
+		if (message.role !== "assistant") continue;
+		const contentCalls = Array.isArray(message.content)
+			? message.content.filter((block): block is Record<string, unknown> => isRecord(block) && isToolCallType(block.type))
+			: [];
+		for (const source of [...contentCalls, ...normalizeToolCalls(message).filter(isRecord)]) {
+			const call: HistoricalCall = {
+				source,
+				ids: toolProtocolIdCandidates(source),
+				name: getToolProtocolName(source),
+				arguments: getToolProtocolArguments(source),
+				batchRead: getToolProtocolName(source) === "batch_read",
+			};
+			calls.push(call);
+			callsBySource.set(source, call);
+			if (call.batchRead) {
+				for (const id of call.ids) batchReadIds.add(id);
 			}
 		}
 	}
 
-	// Pass 2: Filter entries
+	for (const entry of entries) {
+		if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
+		const message = entry.message;
+		if (TOOL_RESULT_ROLES[String(message.role)] === true) {
+			const ids = toolProtocolIdCandidates(message);
+			let name = getToolProtocolName(message);
+			if (Array.isArray(message.content)) {
+				for (const block of message.content) {
+					if (!isRecord(block) || !isToolResultType(block.type)) continue;
+					mergeProtocolIds(ids, block);
+					name ??= getToolProtocolName(block);
+				}
+			}
+			const result: HistoricalResult = {
+				source: message,
+				ids,
+				name,
+				output: "output" in message ? message.output : message.content,
+				consumed: false,
+				batchRead: name === "batch_read" || protocolIdsIntersect(ids, batchReadIds),
+			};
+			results.push(result);
+			resultsBySource.set(message, result);
+			continue;
+		}
+		if (!Array.isArray(message.content)) continue;
+		for (const block of message.content) {
+			if (!isRecord(block) || !isToolResultType(block.type)) continue;
+			const ids = toolProtocolIdCandidates(block);
+			const name = getToolProtocolName(block);
+			const result: HistoricalResult = {
+				source: block,
+				ids,
+				name,
+				output: "output" in block ? block.output : block.content,
+				consumed: false,
+				batchRead: name === "batch_read" || protocolIdsIntersect(ids, batchReadIds),
+			};
+			results.push(result);
+			resultsBySource.set(block, result);
+		}
+	}
+
+	for (const call of calls) {
+		if (call.batchRead || call.ids.size === 0) continue;
+		const match = results.find(
+			(result) =>
+				!result.consumed &&
+				!result.batchRead &&
+				result.ids.size > 0 &&
+				protocolIdsIntersect(call.ids, result.ids),
+		);
+		if (match) {
+			call.result = match;
+			match.consumed = true;
+		}
+	}
+
+	const flattened: unknown[] = [];
+	for (const entry of entries) {
+		if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) {
+			flattened.push(entry);
+			continue;
+		}
+		const message = entry.message;
+		if (TOOL_RESULT_ROLES[String(message.role)] === true) {
+			const result = resultsBySource.get(message);
+			if (!result || result.batchRead || result.consumed || result.ids.size > 0) continue;
+			flattened.push({
+				...entry,
+				message: {
+					...message,
+					role: "assistant",
+					content: [{ type: "text", text: canonicalHistoricalResult(result) }],
+				},
+			});
+			continue;
+		}
+
+		let content: unknown = message.content;
+		if (Array.isArray(message.content)) {
+			content = message.content.flatMap((block) => {
+				if (!isRecord(block)) return [block];
+				if (isToolCallType(block.type)) {
+					const call = callsBySource.get(block);
+					return call?.result
+						? [{ type: "text", text: canonicalHistoricalInteraction(call, call.result) }]
+						: [];
+				}
+				if (isToolResultType(block.type)) {
+					const result = resultsBySource.get(block);
+					return result && !result.batchRead && !result.consumed && result.ids.size === 0
+						? [{ type: "text", text: canonicalHistoricalResult(result) }]
+						: [];
+				}
+				return [block];
+			});
+		}
+
+		const appendedCalls = normalizeToolCalls(message).flatMap((source) => {
+			if (!isRecord(source)) return [];
+			const call = callsBySource.get(source);
+			return call?.result
+				? [{ type: "text", text: canonicalHistoricalInteraction(call, call.result) }]
+				: [];
+		});
+		if (appendedCalls.length > 0) {
+			if (Array.isArray(content)) {
+				content = [...content, ...appendedCalls];
+			} else if (typeof content === "string" && content.length > 0) {
+				content = [{ type: "text", text: content }, ...appendedCalls];
+			} else {
+				content = appendedCalls;
+			}
+		}
+		flattened.push({
+			...entry,
+			message: {
+				...message,
+				content,
+				toolCalls: undefined,
+				tool_calls: undefined,
+			},
+		});
+	}
+	return flattened;
+}
+
+const PROVIDER_NEUTRAL_ROLES: Record<string, true> = {
+	system: true,
+	user: true,
+	assistant: true,
+};
+
+function providerNeutralContent(content: unknown): string | Array<{ type: "text"; text: string }> | undefined {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return undefined;
+	return content.flatMap((block) =>
+		isRecord(block) && block.type === "text" && typeof block.text === "string"
+			? [{ type: "text" as const, text: block.text }]
+			: [],
+	);
+}
+
+function providerNeutralHeader(value: Record<string, unknown>): Record<string, unknown> {
+	const header: Record<string, unknown> = {};
+	if (value.type === "session" || value.type === "header") header.type = value.type;
+	if (typeof value.version === "number") header.version = value.version;
+	if (typeof value.id === "string" || typeof value.id === "number") header.id = value.id;
+	if (typeof value.cwd === "string") header.cwd = value.cwd;
+	return header;
+}
+
+function isProviderNeutralHistoryEntry(entry: unknown): boolean {
+	if (!isRecord(entry)) return false;
+	if (entry.type === "session" || entry.type === "header") {
+		return Object.keys(entry).every((key) => key === "type" || key === "version" || key === "id" || key === "cwd");
+	}
+	if (entry.type !== "message" || !isRecord(entry.message)) return false;
+	if (!Object.keys(entry).every((key) => key === "type" || key === "id" || key === "message")) return false;
+	const message = entry.message;
+	if (PROVIDER_NEUTRAL_ROLES[String(message.role)] !== true) return false;
+	if (!Object.keys(message).every((key) => key === "role" || key === "id" || key === "content" || key === "usage")) return false;
+	if (typeof message.content === "string") return true;
+	return Array.isArray(message.content) && message.content.every(
+		(block) => isRecord(block) &&
+			Object.keys(block).every((key) => key === "type" || key === "text") &&
+			block.type === "text" &&
+			typeof block.text === "string",
+	);
+}
+
+function enforceProviderNeutralHistory(entries: unknown[]): unknown[] {
 	const result: unknown[] = [];
 	for (const entry of entries) {
-		if (!isRecord(entry)) { result.push(entry); continue; }
-		const e = entry;
-		if (e.type !== "message" || !isRecord(e.message)) { result.push(entry); continue; }
-		const msg = e.message;
-
-		// Strip batch_read toolCalls from assistant messages
-		if (msg.role === "assistant" && Array.isArray(msg.content)) {
-			const filtered = msg.content.filter((block: unknown) => {
-				if (isRecord(block) && block.type === "toolCall" && getToolName(block) === "batch_read") return false;
-				return true;
-			});
-
-			const hasSubstance = filtered.some(isSubstantiveBlock);
-
-			if (filtered.length === 0 || !hasSubstance) continue; // Drop empty assistant
-
-			if (filtered.length !== msg.content.length) {
-				result.push({ ...e, message: { ...msg, content: filtered } });
-			} else {
-				result.push(entry);
-			}
+		if (!isRecord(entry)) continue;
+		if (entry.type === "session" || entry.type === "header") {
+			result.push(providerNeutralHeader(entry));
 			continue;
 		}
+		if (entry.type !== "message" || !isRecord(entry.message)) continue;
+		const message = entry.message;
+		if (PROVIDER_NEUTRAL_ROLES[String(message.role)] !== true) continue;
+		const content = providerNeutralContent(message.content);
+		if (content === undefined || (message.role === "assistant" && !hasSubstantiveContent(content))) continue;
 
-		// Drop orphaned toolResult/tool messages
-		if (msg.role === "toolResult" || msg.role === "tool") {
-			const toolCallId = getToolResultId(msg);
-
-			let contentToolCallId: string | undefined;
-			if (Array.isArray(msg.content)) {
-				for (const part of msg.content) {
-					if (isRecord(part) && part.type === "toolResult") {
-						contentToolCallId = getToolCallId(part);
-						break;
-					}
-				}
-			}
-
-			const effectiveId = toolCallId || contentToolCallId;
-			// Preserve truly unidentifiable toolResults as a conservative fallback.
-			if (!effectiveId) { result.push(entry); continue; }
-			if (batchReadToolCallIds.has(effectiveId)) continue; // batch_read result
-			if (!validToolCallIds.has(effectiveId)) continue; // Orphaned
-			result.push(entry);
-			continue;
+		const providerNeutralMessage: Record<string, unknown> = {
+			role: message.role,
+			content,
+		};
+		if (typeof message.id === "string" || typeof message.id === "number") providerNeutralMessage.id = message.id;
+		if (message.role === "assistant") {
+			const usage = slimAssistantUsage(message.usage);
+			if (usage) providerNeutralMessage.usage = usage;
 		}
 
-		result.push(entry);
+		const providerNeutralEntry: Record<string, unknown> = {
+			type: "message",
+			message: providerNeutralMessage,
+		};
+		if (typeof entry.id === "string" || typeof entry.id === "number") providerNeutralEntry.id = entry.id;
+		if (!isProviderNeutralHistoryEntry(providerNeutralEntry)) {
+			logWarn(`[pi-agent-flow] Omitting non-neutral snapshot entry type=message role=${String(message.role)}`);
+			continue;
+		}
+		result.push(providerNeutralEntry);
 	}
-
 	return result;
 }
 
@@ -389,8 +786,7 @@ export function buildCore2Snapshot(
 	// Compress cwd in session header: relative to repo root if under it,
 	// otherwise basename only. Saves ~50-100 bytes per snapshot.
 	const repoRoot = process.cwd();
-	let compressedHeader = { ...(header as Record<string, unknown>) };
-	delete compressedHeader.timestamp;
+	let compressedHeader = providerNeutralHeader(header as Record<string, unknown>);
 	if (typeof compressedHeader.cwd === "string") {
 		const cwd = compressedHeader.cwd;
 		let compressedCwd: string;
@@ -407,7 +803,7 @@ export function buildCore2Snapshot(
 		}
 	}
 
-	const branchEntries = sessionManager.getBranch();
+	const branchEntries = stripActiveToolInteraction(sessionManager.getBranch(), options?.activeToolCallId);
 	const optimizedEntries = optimizeSharedContext(branchEntries);
 	const lines: string[] = [];
 
@@ -443,10 +839,6 @@ export function buildCore2Snapshot(
 		processedEntry = compressSnapshotEntry(processedEntry, options?.tier, options?.compressionLevel, options?.compressionProfile);
 		processedEntry = truncateStandaloneBashResult(processedEntry, options?.compressionLevel, options?.compressionProfile);
 
-		if (options?.activeToolCallId) {
-			processedEntry = stripActiveToolCall(processedEntry, options.activeToolCallId);
-			if (!processedEntry) continue;
-		}
 
 		processedEntries.push(processedEntry);
 	}
@@ -455,16 +847,16 @@ export function buildCore2Snapshot(
 	const compressedResult = applyContextCompression(finalEntries, options?.compressionLevel, options?.compressionProfile);
 	const entriesWithMap = insertContextMap(compressedResult.entries);
 
-	// Strip orphaned toolResults and batch_read toolCalls that cause 400 errors
-	// with strict API providers (kimi, DeepSeek). Must run AFTER compression/trimming
-	// since those steps can drop assistant messages and orphan their toolResults.
-	const cleanedEntries = stripOrphanedToolResultsAndBatchRead(entriesWithMap);
+	// Final boundary order: sanitize retained result text, pair/flatten native
+	// protocol, then enforce that only provider-neutral history is serialized.
+	const strippedEntries = entriesWithMap.map((entry) =>
+		stripBatchBodiesFromEntry(entry as Record<string, unknown>, options?.compressionLevel),
+	);
+	const flattenedEntries = flattenCompletedToolInteractions(strippedEntries);
+	const providerNeutralEntries = enforceProviderNeutralHistory(flattenedEntries);
 
-	for (const entry of cleanedEntries) {
-		// Fix P1: Eliminate double JSON.stringify by operating on objects before serialization.
-		const processedEntry = stripBatchBodiesFromEntry(entry as Record<string, unknown>, options?.compressionLevel);
-		const line = JSON.stringify(processedEntry);
-		lines.push(line);
+	for (const entry of providerNeutralEntries) {
+		lines.push(JSON.stringify(entry));
 	}
 
 	const snapshot = `${lines.join("\n")}\n`;
@@ -527,23 +919,12 @@ function sanitizeSnapshotEntry(entry: unknown): unknown | null {
 	// 2. Process message entries
 	if (result.type === "message" && result.message && typeof result.message === "object") {
 		const msg = { ...result.message as Record<string, unknown> };
-		const hasToolCalls = msg.role === "assistant" && (
-			(Array.isArray(msg.content) && msg.content.some((block: any) => block?.type === "toolCall")) ||
-			normalizeToolCalls(msg).length > 0
-		);
-
-		// Strip message-level reasoning/thinking fields
 		delete msg.thinking;
 		delete msg.reasoning;
 		delete msg.reasoningContent;
-
-		// Responses API uses these fields to detect cross-model tool calls and
-		// discard their stale fc_* item IDs before replaying their outputs.
-		if (!hasToolCalls) {
-			delete msg.api;
-			delete msg.provider;
-			delete msg.model;
-		}
+		delete msg.api;
+		delete msg.provider;
+		delete msg.model;
 		delete msg.cost;
 		delete msg.details;
 		delete msg.responseId;
@@ -931,6 +1312,18 @@ function compressSnapshotEntry(
 	const role = msg.role;
 	if (role !== "tool" && role !== "toolResult") {
 		return entry;
+	}
+	// Compression may replace nested result blocks; promote only their recognized
+	// protocol identity so the final pairing boundary can still match the call.
+	if (Array.isArray(msg.content)) {
+		const nestedResult = msg.content.find((block) => isRecord(block) && isToolResultType(block.type));
+		if (isRecord(nestedResult)) {
+			for (const key of ["id", "toolCallId", SNAKE_TOOL_CALL_ID, SNAKE_CALL_ID]) {
+				if (!(key in msg) && typeof nestedResult[key] === "string") msg[key] = nestedResult[key];
+			}
+			const nestedName = getToolProtocolName(nestedResult);
+			if (!getToolProtocolName(msg) && nestedName) msg.toolName = nestedName;
+		}
 	}
 
 	// Legacy behavior when no compression level is active
@@ -1498,116 +1891,62 @@ function stripBatchBodies(text: string, level?: CompressionLevel): string {
 /** If the entry is a tool/toolResult message, strip batch bodies from its text.
  *  Fix P1: Operates on the parsed object directly to eliminate double JSON.stringify/parse.
  */
-function stripBatchBodiesFromEntry(entry: Record<string, unknown>, level?: CompressionLevel): Record<string, unknown> {
-	if (entry.type !== "message" || !entry.message) {
-		return entry;
+function stripBatchBodiesFromResultContent(value: unknown, level?: CompressionLevel): unknown {
+	if (typeof value === "string") {
+		return stripDirectives(stripBatchBodies(value, level));
 	}
-
-	const message = entry.message as Record<string, unknown>;
-	if (message.role !== "tool" && message.role !== "toolResult") {
-		return entry;
-	}
-
-	// Extract text content (string or first text part in array)
-	let text: string | undefined;
-	let textIndex: number | undefined;
-
-	if (typeof message.content === "string") {
-		text = message.content;
-	} else if (Array.isArray(message.content)) {
-		for (let idx = 0; idx < message.content.length; idx++) {
-			const part = message.content[idx] as Record<string, unknown>;
+	if (Array.isArray(value)) {
+		return value.map((part) => {
+			if (!isRecord(part)) return part;
 			if (part.type === "text" && typeof part.text === "string") {
-				text = part.text;
-				textIndex = idx;
-				break;
+				return { ...part, text: stripDirectives(stripBatchBodies(part.text, level)) };
 			}
-		}
-	}
-
-	// Fast path: no batch section headers or directive/hint markers present
-	if (!text || (!text.includes("\n--- ") && !text.includes("[Directive:") && !text.includes("[Hint:"))) {
-		return entry;
-	}
-
-	const stripped = stripBatchBodies(text, level);
-	const cleaned = stripDirectives(stripped);
-	if (cleaned === text) {
-		return entry;
-	}
-
-	if (typeof message.content === "string") {
-		return {
-			...entry,
-			message: { ...message, content: cleaned },
-		};
-	} else if (textIndex !== undefined) {
-		const newContent = (message.content as Array<Record<string, unknown>>).map((part, idx) => {
-			if (idx === textIndex && part.type === "text" && typeof part.text === "string") {
-				return { ...part, text: cleaned };
+			if (isToolResultType(part.type)) {
+				const nested = { ...part };
+				if ("content" in nested) nested.content = stripBatchBodiesFromResultContent(nested.content, level);
+				if ("output" in nested) nested.output = stripBatchBodiesFromResultContent(nested.output, level);
+				return nested;
 			}
 			return part;
 		});
-		return {
-			...entry,
-			message: { ...message, content: newContent },
-		};
 	}
-
-	return entry;
+	if (isRecord(value) && isToolResultType(value.type)) {
+		const nested = { ...value };
+		if ("content" in nested) nested.content = stripBatchBodiesFromResultContent(nested.content, level);
+		if ("output" in nested) nested.output = stripBatchBodiesFromResultContent(nested.output, level);
+		return nested;
+	}
+	return value;
 }
 
-/**
- * Filter out the active tool call from assistant messages in snapshot.
- * If the assistant message becomes empty (e.g. no other tool calls, no text/thinking),
- * it returns null to omit the message entirely from the snapshot.
- */
-function stripActiveToolCall(entry: unknown, activeToolCallId: string | undefined): unknown | null {
-	if (!activeToolCallId || !entry || typeof entry !== "object") return entry;
-	const e = entry as Record<string, unknown>;
+/** Sanitize all retained result text before native protocol is flattened. */
+function stripBatchBodiesFromEntry(entry: Record<string, unknown>, level?: CompressionLevel): Record<string, unknown> {
+	if (entry.type !== "message" || !isRecord(entry.message)) return entry;
+	const message = entry.message;
+	let content = message.content;
+	let output = message.output;
 
-	if (e.type !== "message" || !e.message || typeof e.message !== "object") {
-		return entry;
-	}
-
-	const message = e.message as Record<string, unknown>;
-	if (message.role !== "assistant" || !Array.isArray(message.content)) {
-		return entry;
-	}
-
-	const newContent = message.content.filter((block: any) => {
-		if (block && block.type === "toolCall") {
-			const id = normalizeToolCallId(block);
-			if (id === activeToolCallId) {
-				return false;
-			}
-		}
-		return true;
-	});
-
-	const hasSubstance = newContent.some((block: any) => {
-		if (!block) return false;
-		if (block.type === "text" && typeof block.text === "string" && block.text.trim() === "") {
-			return false;
-		}
-		if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim() === "") {
-			return false;
-		}
-		return true;
-	});
-
-	if (newContent.length === 0 || !hasSubstance) {
-		return null;
+	if (TOOL_RESULT_ROLES[String(message.role)] === true) {
+		content = stripBatchBodiesFromResultContent(content, level);
+		if ("output" in message) output = stripBatchBodiesFromResultContent(output, level);
+	} else if (Array.isArray(content)) {
+		content = content.map((block) =>
+			isRecord(block) && isToolResultType(block.type)
+				? stripBatchBodiesFromResultContent(block, level)
+				: block,
+		);
 	}
 
 	return {
-		...e,
+		...entry,
 		message: {
 			...message,
-			content: newContent,
+			content,
+			...("output" in message ? { output } : {}),
 		},
 	};
 }
+
 
 // ---------------------------------------------------------------------------
 // Shared context
@@ -1695,13 +2034,28 @@ export function parseSharedContext(snapshotJsonl: string | null): SharedContext 
 							}
 						}
 					}
+					const assistantTexts =
+						typeof msg.content === "string"
+							? [msg.content]
+							: Array.isArray(msg.content)
+								? msg.content
+									.filter((part: unknown) => isRecord(part) && part.type === "text" && typeof part.text === "string")
+									.map((part: Record<string, unknown>) => part.text as string)
+								: [];
+					const canonicalInteraction =
+						/\[Historical tool interaction\]\r?\nTool: ([^\r\n]+)\r?\nArguments:\r?\n[\s\S]*?\r?\n\r?\nResult:\r?\n[\s\S]*?\r?\n\[\/Historical tool interaction\]/g;
+					for (const text of assistantTexts) {
+						for (const match of text.matchAll(canonicalInteraction)) {
+							const name = match[1];
+							toolCalls[name] = (toolCalls[name] || 0) + 1;
+						}
+					}
 				}
 				// Aggregate tool calls from any message
 				const tcs = normalizeToolCalls(msg);
 				if (tcs.length > 0) {
 					for (const tc of tcs) {
-						const t = tc as Record<string, unknown>;
-						const name = t.name || (t.function as Record<string, unknown> | undefined)?.name;
+						const name = getToolProtocolName(tc);
 						if (typeof name === "string") {
 							toolCalls[name] = (toolCalls[name] || 0) + 1;
 						}
@@ -1709,8 +2063,8 @@ export function parseSharedContext(snapshotJsonl: string | null): SharedContext 
 				}
 				if (Array.isArray(msg.content)) {
 					for (const block of msg.content) {
-						if (block && block.type === "toolCall") {
-							const name = block.name || block.toolCall?.name || block.function?.name;
+						if (isRecord(block) && isToolCallType(block.type)) {
+							const name = getToolProtocolName(block);
 							if (typeof name === "string") {
 								toolCalls[name] = (toolCalls[name] || 0) + 1;
 							}
