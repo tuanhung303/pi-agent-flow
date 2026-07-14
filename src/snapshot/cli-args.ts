@@ -140,6 +140,7 @@ export function parseFlowCliArgs(argv: string[]): ParsedFlowCliArgs {
 			[
 				"--mode",
 				"--session",
+				"--session-id",
 				"--append-system-prompt",
 				"--export",
 				"--flow-max-depth",
