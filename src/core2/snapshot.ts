@@ -750,7 +750,7 @@ function enforceProviderNeutralHistory(entries: unknown[]): unknown[] {
 		const message = entry.message;
 		if (PROVIDER_NEUTRAL_ROLES[String(message.role)] !== true) continue;
 		const content = providerNeutralContent(message.content);
-		if (content === undefined || (message.role === "assistant" && !hasSubstantiveContent(content))) continue;
+		if (content === undefined || !hasSubstantiveContent(content)) continue;
 
 		const providerNeutralMessage: Record<string, unknown> = {
 			role: message.role,

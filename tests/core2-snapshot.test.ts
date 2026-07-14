@@ -115,6 +115,45 @@ describe("buildCore2Snapshot — retention", () => {
 		expectProviderNeutralHistory(parsed);
 	});
 
+	it("drops user messages that become empty after nested tool protocol flattening", () => {
+		const entries = [
+			{
+				type: "message",
+				id: "empty-wrapper",
+				message: {
+					role: "user",
+					content: [{ type: "toolCall", name: "bash", toolCallId: "unmatched", arguments: { command: "echo orphan" } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", name: "bash", toolCallId: "paired", arguments: { command: "echo hi" } }],
+				},
+			},
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolCallId: "paired",
+					content: [{ type: "text", text: "hi" }],
+				},
+			},
+		];
+		const snapshot = buildCore2Snapshot(makeSource(entries));
+		const parsed = parseSnapshot(snapshot);
+		expect(parsed.some((entry) => {
+			if (!entry || typeof entry !== "object") return false;
+			const message = (entry as Record<string, unknown>).message;
+			return message && typeof message === "object" && (message as Record<string, unknown>).role === "user";
+		})).toBe(false);
+		expect(snapshot).toContain("[Historical tool interaction]");
+		expect(snapshot).toContain("Tool: bash");
+		expect(snapshot).toContain("hi");
+		expectProviderNeutralHistory(parsed);
+	});
+
 	it("preserves system messages verbatim", () => {
 		const entries = [
 			{ type: "message", message: { role: "system", content: "<pi-flow-steering-hint>Steer</pi-flow-steering-hint>" } },
