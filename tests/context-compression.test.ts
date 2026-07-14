@@ -64,7 +64,7 @@ describe("buildCore2Snapshot — compression level none", () => {
 });
 
 describe("buildCore2Snapshot — light compression", () => {
-  it("keeps fileContent tool results for files-first profile", () => {
+  it("drops a named ID-less batch_read result for files-first profile", () => {
     const entries = [
       {
         type: "message",
@@ -85,10 +85,8 @@ describe("buildCore2Snapshot — light compression", () => {
       compressionLevel: "light",
       compressionProfile: filesFirstProfile,
     });
-    expect(snapshot).toContain("src/file.ts");
-    expect(snapshot).toContain("a");
-    expect(snapshot).toContain("b");
-    expect(snapshot).toContain("c");
+    expect(snapshot).not.toContain("batch_read");
+    expect(snapshot).not.toContain("src/file.ts");
   });
 
   it("compresses bash tool results for files-first profile", () => {

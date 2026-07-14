@@ -1,13 +1,13 @@
 # Shared Context Pipeline — Core-2 Specification
 
-> **Active document.** This describes the core-2 snapshot pipeline (`src/core2/snapshot.ts`) introduced in v2.1+ as a replacement for the core-1 23-pass compression pipeline (see `SHARED-CONTEXT.md`, historical). Core-2 applies a deterministic **6-stage sanitization pipeline** that strips metadata noise irrelevant to child flow orientation while preserving chronological conversation history.
+> **Active document.** This describes the core-2 provider-neutral semantic-history snapshot pipeline (`src/core2/snapshot.ts`) used by forked child flows. The pipeline keeps completed parent interactions useful for orientation while preventing replay of parent-provider tool protocol.
 >
-> **Correction note:** Prior versions of this spec (dated 2026-05-18) incorrectly claimed "verbatim preservation — strip only batch file bodies." The actual pipeline strips 10+ field categories and performs six distinct passes. This document was rewritten on 2026-05-23 to match reality.
+> **Correction note:** Earlier revisions described a six-stage, native-result-preserving pipeline. The implementation now removes the active interaction before optimization, retains native structures only while deduplication and compression need them, then flattens completed interactions and enforces a provider-neutral serialization boundary.
 >
 > **Document type:** Conservative architectural specification  
 > **Scope:** What IS, not what could be. Based on source-code evidence (`src/core2/snapshot.ts`, `src/flow/runner.ts`, `src/index.ts`) and test evidence (`tests/core2-snapshot.test.ts`).  
-> **Date:** 2026-05-23  
-> **Pipeline version:** 2.x
+> **Date:** 2026-07-14
+> **Pipeline version:** 2.4.2
 
 ## §1 Main Ideas — What Every Child Flow Receives
 
@@ -16,7 +16,7 @@
 When a flow is spawned, the parent's session is serialized into a JSONL string and passed as the `--session` argument. This JSONL contains:
 
 1. **One header line** — the session header (with compressed `cwd` and stripped `timestamp`).
-2. **N branch entries** — one `JSON.stringify()` per branch entry, in exact chronological order, each processed through the 6-stage pipeline.
+2. **N branch entries** — one `JSON.stringify()` per retained entry, in chronological semantic order, after the ordered provider-neutral pipeline.
 
 The function that builds this is `buildCore2Snapshot()` in `src/core2/snapshot.ts`.
 
@@ -24,76 +24,60 @@ The function that builds this is `buildCore2Snapshot()` in `src/core2/snapshot.t
 
 Core-2's design principle: **strip metadata noise that cannot be acted on by a child flow, while preserving every piece of conversation history the child needs for orientation.**
 
-Core-1 used a 23-pass compression pipeline that made heuristic decisions about what to keep, truncate, or collapse. Core-2 takes a deterministic, stage-based approach: every entry runs through the same six passes in the same order, and each pass has a single, well-defined responsibility.
+Core-1 used a 23-pass compression pipeline that made heuristic decisions about what to keep, truncate, or collapse. Core-2 uses deterministic sequence-level and per-entry transforms with one responsibility each and an explicit final serialization boundary.
 
-### 1.3 The 6 Stages
+### 1.3 Ordered Pipeline
 
-The pipeline runs in this exact order for every branch entry:
+The pipeline runs in this order:
 
-| Stage | Name | Function | What it strips |
-|-------|------|----------|----------------|
-| 1 | **Header compression** | `buildCore2Snapshot` | `timestamp` from header; `cwd` → relative/basename |
-| 2 | **Entry sanitization** | `sanitizeSnapshotEntry` | `parentId`, `timestamp`; `thinking`/`reasoning`/`reasoningContent`; `api`/`provider`/`model`/`cost`/`details`/`responseId`/`responseModel`/`usage`/`isError`; `toolCallId` from tool/toolResult; `model_change`/`thinking_level_change` events; empty assistant messages |
-| 3 | **Compaction filtering** | `maybeStripCompaction` | `compaction_trigger` events; replaces `compaction`/`context_compaction` with summary |
-| 4 | **Active tool-call stripping** | `stripActiveToolCall` | Removes the active `toolCall` block from assistant messages; drops message if empty |
-| 5 | **Batch body truncation** | `stripBatchBodies` | Truncates read/write/edit/context-map/file-summary bodies to first 3 + last 3 lines |
-| 6 | **Directive/hint stripping** | `stripDirectives` | Removes `[Directive:...]` and `[Hint:...]` blocks from tool result text |
+| Order | Operation | Contract |
+|-------|-----------|----------|
+| 1 | Header compression | Remove header timestamp and shorten `cwd`. |
+| 2 | Active interaction removal | Remove the active call and matching result, across camelCase, snake_case, and Responses ID shapes, before optimization. |
+| 3 | Shared-context optimization | Deduplicate repeated bash, file, flow, and trace work while native protocol is still available. |
+| 4 | Entry sanitization and compaction handling | Remove reasoning and transport metadata; summarize compaction entries. |
+| 5 | Tier/profile compression | Apply placeholders, standalone bash truncation, message limits, and context compression. |
+| 6 | Context-map insertion | Insert the shared-context orientation seal. |
+| 7 | Result-text sanitization | Apply batch-body truncation and directive/hint stripping to every retained result text part, including nested result output. |
+| 8 | Pairing and flattening | Exclude `batch_read`; pair completed calls/results deterministically; replace them with labelled assistant text; drop identifiable orphans and incomplete calls. |
+| 9 | Provider-neutral enforcement | Rebuild retained entries from a strict header/message/text whitelist; omit all unknown roles, entry types, fields, and content blocks. |
+| 10 | JSONL serialization | Serialize only the enforced provider-neutral entries. |
 
-Source: `src/core2/snapshot.ts:24–406`.
-
+Native protocol is deliberately retained through optimization and compression, but never crosses the child-session boundary.
 ### 1.4 What Is Preserved
 
-The following content survives all six stages and is delivered to the child flow:
+- Chronological semantic history and ordinary system, user, and assistant text.
+- Completed non-`batch_read` interactions as separate labelled assistant text blocks:
 
-- **Chronological order** — every entry's sequence is maintained exactly.
-- **System messages** — including compaction summaries.
-- **User messages** — including those containing `---` headers (these are never stripped).
-- **Assistant messages** — minus thinking blocks, API metadata, and usage telemetry.
-- **Tool results** — after batch body truncation and directive stripping.
-- **Bash output** — batch tool bash results are preserved verbatim (batch body rules do not truncate bash sections), but standalone bash tool results are subject to standalone bash truncation based on compression levels (see §2.7).
-- **`rg` output** — preserved verbatim.
-- **Web tool results** — preserved verbatim (unless they contain batch section headers).
-- **`ask_user` results** — preserved verbatim.
-- **Non-batch tool results** — any tool result not containing `\n--- ` section headers passes through untouched.
-- **Flow tool calls and results** — name, arguments, and output text are preserved (minus `toolCallId`).
-- **Entry-level `id`** — preserved for child session manager deduplication.
+  ```text
+  [Historical tool interaction]
+  Tool: <tool-name>
+  Arguments:
+  <serialized arguments>
 
-Test evidence: `tests/core2-snapshot.test.ts` retention suite (lines 29–110) and metadata-stripping suite (lines 500–632).
+  Result:
+  <compressed and sanitized output>
+  [/Historical tool interaction]
+  ```
 
+- Truly unidentifiable result-only history as a labelled `[Historical tool result]` assistant block.
+- Existing deduplication and compression placeholders inside canonical result text.
+- Session/header `type`, numeric `version`, scalar `id`, and compressed `cwd`.
+- Message and entry scalar `id` fields.
+- Slim assistant usage required for child token accounting.
+- Plain text content only, including literal `call_*`, `fc_*`, marker-like, and signature-like substrings in that text.
 ### 1.5 What Is Stripped — Summary
 
-The following fields and content categories are removed by the pipeline:
+- The active call and matching result before shared-context optimization.
+- `batch_read` calls, named results, and results matched to removed `batch_read` calls.
+- Unmatched/incomplete calls and identifiable orphan results introduced by trimming or compression.
+- Native call/result content types: `toolCall`, `tool_call`, `function_call`, `toolResult`, `tool_result`, and `function_call_output`.
+- Native `tool` and `toolResult` message roles, plus every unrecognized message role and entry type.
+- Message-level `toolCalls`, `tool_calls`, pairing/signature fields, transport metadata, response metadata, and arbitrary application fields.
+- Non-text content blocks and their nested metadata, including unrelated nested `api`, `provider`, `model`, and `call_id` values.
+- Reasoning/thinking fields and blocks, control events, irrelevant response metadata, batch bodies beyond configured orientation lines, and injected directive/hint suffixes.
 
-**From entries:**
-- `parentId` — tree linkage is irrelevant to linear replay.
-- `timestamp` — on both the header and every entry.
-
-**From messages:**
-- `thinking`, `reasoning`, `reasoningContent` — reasoning blocks are stripped from both message-level fields and content-array blocks.
-- `api`, `provider`, `model` — execution provider metadata.
-- `cost` — cost telemetry.
-- `details` — arbitrary detail objects on tool results.
-- `responseId`, `responseModel` — response identifiers.
-- `usage` — token telemetry (input/output/total) irrelevant to child orientation.
-- `isError` — error flag on tool results.
-- `toolCallId` — from `role: "tool"` and `role: "toolResult"` messages only; child flows replay linearly and never invoke by ID.
-
-**Dropped entirely:**
-- `model_change` events — child flows do not need to know the parent switched models.
-- `thinking_level_change` events — internal control signal.
-- `compaction_trigger` events — internal compaction signal.
-- Empty assistant messages — if stripping leaves an assistant message with no text and no tool calls, the entry is omitted.
-
-**Replaced:**
-- `compaction` and `context_compaction` entries — replaced with a lightweight system message: `[Context Compacted] <summary> (<N> tokens summarized)`.
-
-**Truncated:**
-- Batch read/write/edit/context-map/file-summary bodies exceeding 6 lines — truncated to first 3 + last 3 lines.
-- Standalone bash tool results exceeding limits (default: head 30 + tail 20; light: 15+10; medium: 10+5; aggressive: 5+3 lines) are truncated.
-
-**Cleaned:**
-- `[Directive: ...]` and `[Hint: ...]` blocks — removed from all tool result text.
-
+The boundary is an output whitelist: only session/header identity fields and `system`/`user`/`assistant` text messages can serialize. It intentionally does not preserve arbitrary nested application data.
 ### 1.6 CWD Compression
 
 The session header's `cwd` field is compressed to save ~50–100 bytes:
@@ -117,175 +101,53 @@ Source: `src/core2/snapshot.ts:55–70`.
 
 ## §2 Stage Details
 
-### 2.1 Stage 1 — Header Compression
+### 2.1 Active Removal and Optimization
 
-Before iterating branch entries, `buildCore2Snapshot` receives the session header from `sessionManager.getHeader()`. It:
+`stripActiveToolInteraction()` runs on `sessionManager.getBranch()` before `optimizeSharedContext()`. ID candidate sets include the full ID and non-empty `|` components from `id`, `toolCallId`, `tool_call_id`, and `call_id`. Intersection matching preserves Terra-style `fc_*` and `call_*` identities without inspecting arbitrary text or data.
 
-1. Deletes `timestamp` from the header object.
-2. Compresses `cwd` according to §1.6 rules.
-3. Stores the compressed header for later emission (unless deduplicated per §1.7).
+Completed native interactions remain intact through shared-context deduplication so bash/read/write/edit/flow/trace optimizers continue to recognize prior work.
 
-Source: `src/core2/snapshot.ts:26–41`.
+### 2.2 Sanitization, Compaction, and Compression
 
-### 2.2 Stage 2 — Entry Sanitization (`sanitizeSnapshotEntry`)
+`sanitizeSnapshotEntry()` removes reasoning, control metadata, and message-level `api`/`provider`/`model` unconditionally. Compaction entries become readable summaries. Tier/profile compression, standalone bash truncation, message limits, and context compression run before flattening. When compression replaces nested result blocks, their recognized protocol identity is retained solely for final pairing.
 
-This is the most extensive stage. It operates on a single branch entry and returns `null` to drop the entry entirely.
+### 2.3 Result Sanitization
 
-**Step A — Drop config events:**
-If `entry.type === "model_change"` or `entry.type === "thinking_level_change"`, return `null`.
+`stripBatchBodiesFromEntry()` recursively applies `stripDirectives(stripBatchBodies(text, level))` to every retained result string and text part, including recognized nested result `content` and `output`. Images and unrelated non-text parts remain structurally intact until the flattener emits omission markers.
 
-**Step B — Strip entry-level fields:**
-- `delete result.timestamp`
-- `delete result.parentId`
+### 2.4 Deterministic Pairing and Flattening
 
-**Step C — Strip message metadata:**
-For `type === "message"` entries, a copy of `entry.message` is made and the following fields are deleted:
-- `msg.thinking`
-- `msg.reasoning`
-- `msg.reasoningContent`
-- `msg.api`
-- `msg.provider`
-- `msg.model`
-- `msg.cost`
-- `msg.details`
-- `msg.responseId`
-- `msg.responseModel`
-- `msg.timestamp`
-- `msg.isError`
-- `msg.usage` (deleted for non-assistant roles; **slimmed** for `role === "assistant"` via `slimAssistantUsage` to `{input, output, cacheRead, cacheWrite, totalTokens}` — child `pi` needs `totalTokens` for compaction accounting)
+`flattenCompletedToolInteractions()`:
 
-**Step D — Strip tool correlation IDs:**
-If `msg.role === "toolResult"` or `msg.role === "tool"`, delete `msg.toolCallId`.
+1. Collects recognized calls and results without searching arbitrary text or data.
+2. Removes `batch_read` by name and by IDs matched to removed calls.
+3. Pairs by ID-candidate intersection, consuming the first unconsumed result in snapshot order.
+4. Replaces completed calls at their assistant-turn position with canonical labelled text. Message-level `toolCalls` precede `tool_calls` and append after existing content.
+5. Drops unmatched calls and identifiable orphan results.
+6. Retains only results with no pairing ID as labelled result-only assistant text.
 
-**Step E — Filter thinking blocks from content array:**
-If `msg.content` is an array, filter out any block where `block.type === "thinking"` or `block.type === "reasoning"`.
+### 2.5 Provider-Neutral Enforcement
 
-**Step F — Drop empty assistant messages:**
-If, after the above filtering, an assistant message has:
-- No remaining content blocks with substance (non-empty text, non-thinking blocks, or tool calls), **and**
-- No `toolCalls` / `tool_calls`
+`enforceProviderNeutralHistory()` rebuilds every retained entry from a strict whitelist: session/header identity fields, scalar entry/message IDs, slim assistant usage, and `system`/`user`/`assistant` text content. It omits all unknown entry types, roles, fields, and non-text blocks, so an unrecognized future provider protocol cannot cross the child-session boundary.
 
-…then the entire entry is dropped (`return null`).
+### 2.6 Standalone Bash Truncation
 
-Source: `src/core2/snapshot.ts:104–188`.
+Standalone bash output is truncated before flattening according to the selected compression level. Its retained placeholder or output then appears inside the canonical interaction result.
+## §3 Processing Pipeline
 
-### 2.3 Stage 3 — Compaction Filtering (`maybeStripCompaction`)
+`buildCore2Snapshot()` performs sequence-level work around the per-entry transforms:
 
-Handles two compaction-related entry types:
+1. Get branch and remove the active interaction.
+2. Optimize completed native interactions.
+3. Sanitize, compact, and compress each entry.
+4. Apply message limiting and context compression.
+5. Insert the context map.
+6. Sanitize all result text.
+7. Exclude `batch_read`, pair results, and flatten completed interactions.
+8. Enforce the provider-neutral boundary.
+9. Serialize one JSON object per line.
 
-| Input type | Action |
-|------------|--------|
-| `compaction_trigger` | Return `null` (drop entirely). |
-| `compaction` or `context_compaction` | Replace with a synthetic system message: `[Context Compacted] <summary> (<N> tokens summarized)`. If no summary is present, uses `"Parent context was compacted."` as fallback. The potentially large `encrypted_content` blob is discarded. |
-
-Source: `src/core2/snapshot.ts:189–219`.
-
-### 2.4 Stage 4 — Active Tool-Call Stripping (`stripActiveToolCall`)
-
-When `buildCore2Snapshot` is called with `options.activeToolCallId` (the ID of the tool call that triggered the current flow spawn), this stage removes that tool call block from any assistant message in the snapshot.
-
-**Why:** The assistant message that invoked the `flow` tool should not appear to the child flow as if it still needs to execute that same tool call. The child receives the tool call via its own activation prompt, not via the snapshot.
-
-If removing the active tool call leaves the assistant message with no other substance (no text, no other tool calls), the entire entry is dropped.
-
-Source: `src/core2/snapshot.ts:359–406`.
-
-### 2.5 Stage 5 — Batch Body Truncation (`stripBatchBodies`)
-
-This stage operates on the **text content** of `role: "tool"` and `role: "toolResult"` messages. It identifies batch section headers and truncates their bodies.
-
-**Section header regexes (what triggers truncation):**
-
-| Regex | Matches | Example |
-|-------|---------|---------|
-| `/^--- (.+) \((\d+) lines\) ---$/` | Batch file read with line count | `--- src/foo.ts (42 lines) ---` |
-| `/^--- (.+) (context map\|file summary) ---$/` | Context map or file summary | `--- src/bar.ts context map ---` |
-| `/^--- read: (.+) ---$/` | Individual read | `--- read: src/baz.ts ---` |
-| `/^--- write: (.+) \((\d+) bytes\) ---$/` | Write with byte count | `--- write: src/qux.ts (128 bytes) ---` |
-| `/^--- write: (.+) ---$/` | Write without byte count | `--- write: src/qux.ts ---` |
-| `/^--- edit: (.+) \(([^)]*)\) ---$/` | Edit with details | `--- edit: src/qux.ts (3 changes) ---` |
-| `/^--- edit: (.+) ---$/` | Edit without details | `--- edit: src/qux.ts ---` |
-
-**Boundary headers (end of current section):**
-
-These mark where one section ends and the next begins. A header can be both a batch truncation trigger AND a section boundary.
-
-| Regex | Matches |
-|-------|---------|
-| `/^--- (.+) \((\d+) lines\) ---$/` | Batch file read (dual role) |
-| `/^--- (.+) (context map\|file summary) ---$/` | Context map / file summary (dual role) |
-| `/^--- bash \[.+\] (exit (\d+)\|pending\|error) ---$/` | Bash result header |
-| `/^--- \[.+\] (exit (\d+)\|interrupted) ---$/` | Generic command result |
-| `/^--- \[.+\] still running ---$/` | Still-running process |
-| `/^--- edit: .+ ---$/` | Edit header (dual role) |
-| `/^--- write: .+ ---$/` | Write header (dual role) |
-| `/^--- delete: .+ ---$/` | Delete header |
-| `/^--- read: .+ ---$/` | Read header (dual role) |
-| `/^--- rg: .+ ---$/` | Grep result header |
-| `/^--- patch: .+ ---$/` | Patch header |
-| `/^--- (?!bash \[\|edit:\|write:\|delete:\|read:\|rg:\|patch:)(.+) ---$/` | Generic section header (catch-all) |
-
-**Truncation math:**
-
-```
-if body.length > 6:
-  output = header_line
-          + body[0..2]              // first 3 lines
-          + "[...{body.length - 6} lines truncated...]"
-          + body[body.length - 3]   // last 3 lines
-else:
-  output = header_line + body    // keep entire body
-```
-
-- "Body" = all lines between the batch section header and the next `isKnownSectionHeader` match.
-- The section header itself is **not** counted in the body.
-- `\r\n` is normalized to `\n` before splitting.
-- The `[...N lines truncated...]` marker is a single line.
-
-Source: `src/core2/snapshot.ts:220–235` (`isKnownSectionHeader`), `src/core2/snapshot.ts:238–248` (`isBatchSectionHeader`), `src/core2/snapshot.ts:251–280` (`stripBatchBodies`).
-
-### 2.6 Stage 6 — Directive/Hint Stripping (`stripDirectives`)
-
-After batch body truncation, the text is passed to `stripDirectives()` (imported from `src/steering/tool-utils.ts`). This removes:
-
-- Any line containing `[Directive: ...]`
-- Any line containing `[Hint: ...]`
-
-These directives are injected by the parent flow's steering system to guide the *parent* agent. Child flows receive their own fresh directives in the activation prompt, so inherited directives are noise.
-
-This stage is applied inside `maybeStripBatchBodies` immediately after `stripBatchBodies`, but it runs on the full text regardless of whether batch sections were present.
-
-Source: `src/core2/snapshot.ts:328` (inside `maybeStripBatchBodies`); `src/steering/tool-utils.ts` (`stripDirectives`).
-
-### 2.7 Standalone Bash Truncation (`truncateStandaloneBashResult`)
-
-For standalone bash tool results (where `toolName` or `name` is `"bash"`), the output is truncated to fit token limits based on the active compression level:
-
-| Compression Level | Kept Head Lines | Kept Tail Lines | Max Intact Lines |
-|-------------------|-----------------|-----------------|------------------|
-| `none` / default  | 30              | 20              | 50               |
-| `light`           | 15              | 10              | 25               |
-| `medium`          | 10              | 5               | 15               |
-| `aggressive`      | 5               | 3               | 8                |
-
-If the bash output text has more lines than the sum of the head and tail limits, the lines in between are replaced with a single placeholder line: `[...<N> lines of bash output truncated...]`.
-
-Source: `src/core2/snapshot.ts:692–761` (`truncateStandaloneBashResult`).
-
-## §3 Processing Pipeline (Per-Entry)
-
-1. `buildCore2Snapshot()` iterates branch entries in order (`src/core2/snapshot.ts:72–77`).
-2. For each entry, `sanitizeSnapshotEntry()` runs Stage 2 (`src/core2/snapshot.ts:104–188`).
-3. `maybeStripCompaction()` runs Stage 3 (`src/core2/snapshot.ts:189–219`).
-4. `compressSnapshotEntry()` handles tier-based placeholder compression (`src/core2/snapshot.ts:800–860`).
-5. `truncateStandaloneBashResult()` truncates standalone bash output (`src/core2/snapshot.ts:692–761`).
-6. `stripActiveToolCall()` runs Stage 4 if `options.activeToolCallId` is set (`src/core2/snapshot.ts:359–404`).
-5. `JSON.stringify()` produces a JSONL line.
-6. `maybeStripBatchBodies()` runs Stages 5 and 6 on the string (`src/core2/snapshot.ts:283–352`).
-   - Fast path: if the line does not contain `"role":"tool"` or `"role":"toolResult"`, skip.
-   - Otherwise JSON-parse, extract text content, run `stripBatchBodies` then `stripDirectives`.
-   - If the text changed, reconstruct the entry and re-stringify.
-
+This ordering is required: moving flattening earlier would disable native deduplication; moving it later would expose replayable provider protocol.
 ## §4 Function Interface
 
 ### 4.1 `SessionSnapshotSource`
@@ -303,16 +165,16 @@ The session manager must implement these two methods. `getHeader()` returns the 
 
 ```ts
 export interface BuildCore2SnapshotOptions {
-  forkedFrom?: string;
-  forkedAt?: string;
-  parentFlow?: string;
-  depth?: number;
   activeToolCallId?: string;
+  tier?: FlowTier;
+  compressionLevel?: CompressionLevel;
+  compressionProfile?: ContextProfile;
+  compressionStats?: CompressionStats;
+  // fork lineage fields omitted here
 }
 ```
 
-`activeToolCallId` is the critical field for Stage 4. When a flow is spawned in response to a tool call, this ID ensures the child snapshot does not contain the still-pending tool call block.
-
+`activeToolCallId` excludes the currently executing interaction before optimization. `tier`, `compressionLevel`, and `compressionProfile` control limiting and compression. When supplied, `compressionStats` is populated with byte counts, selected level/profile, dropped-message count, and any synthetic summary.
 ### 4.3 `buildCore2Snapshot` Return
 
 ```ts
@@ -336,12 +198,11 @@ The first line (if emitted — see §1.7 for dedup) is the session header with c
 
 ### 5.2 Branch Entries
 
-Each branch entry is `JSON.stringify(entry)` on its own line. Entries may be dropped entirely (`null` returned by a stage) or have their text content modified by Stages 5 and 6.
+Each retained branch entry is `JSON.stringify(entry)` on its own line. Entries can be removed by sanitization, trimming, pairing, or boundary enforcement; completed tool history appears only as canonical assistant text.
 
-### 5.3 No Compression Stats Entry
+### 5.3 Compression Statistics Are Out-of-Band
 
-Unlike core-1, core-2 JSONL does **not** contain a trailing `compression-stats` entry. There is no post-pipeline metrics entry.
-
+The JSONL contains no `compression-stats` entry. `buildSnapshotWithCompression()` returns `CompressionStats` alongside the snapshot when compression runs. The caller logs the applied level and byte/message reductions and forwards the stats for result/UI rendering.
 ## §6 Dump File Format
 
 When `PI_FLOW_DUMP_SNAPSHOT` is set, each flow produces two files:
@@ -359,7 +220,7 @@ When `PI_FLOW_DUMP_SNAPSHOT` is set, each flow produces two files:
 {reconstructed raw prompt}
 ```
 
-> **Note:** The `## Compression Stats` markdown section that existed in earlier versions has been removed (it always showed zeroed values and provided no signal). Core-2 does not emit pre/post byte metrics.
+> **Note:** Compression statistics are not embedded in the dump JSONL. They are returned out-of-band and surfaced in flow logging/result statistics when compression is applied.
 
 ### 6.2 Text Dump (`.txt`)
 
@@ -376,11 +237,10 @@ Source: `src/flow/runner.ts` (dump writing and activation prompt construction).
 | Feature | Core-1 | Core-2 |
 |---------|--------|--------|
 | `compression-stats` JSONL entry | Present | **Absent** |
-| `## Compression Stats` markdown section | Present | **Absent** |
+| Compression metrics | Embedded in snapshot/dump | Returned out-of-band as `CompressionStats` and surfaced by callers |
 | `passesApplied` array | Present | **Absent** |
-| `preBytes` / `postBytes` metrics | Present | Zeroed (section removed) |
+| Parent tool protocol | Replayable native records | Canonical labelled assistant history |
 | `Transition:` line in prompt | Present | **Absent** |
-
 ## §7 Conservative Improvement Principles
 
 ### 7.1 Bar for Adding New Stripping
@@ -411,21 +271,20 @@ If `isBatchSectionHeader` or `isKnownSectionHeader` regexes change:
 
 ## §8 File References
 
-| File | Role | Lines of Interest |
-|------|------|-------------------|
-| `src/core2/snapshot.ts` | Snapshot builder, all 6 stages | 24–95 (`buildCore2Snapshot`), 104–182 (`sanitizeSnapshotEntry`), 189–213 (`maybeStripCompaction`), 220–235 (`isKnownSectionHeader`), 238–248 (`isBatchSectionHeader`), 251–280 (`stripBatchBodies`), 283–352 (`maybeStripBatchBodies`), 359–404 (`stripActiveToolCall`) |
-| `tests/core2-snapshot.test.ts` | 19+ regression tests | 29–110 (retention), 113–145 (chronology), 148–300 (nuance), 350–632 (compaction + metadata stripping) |
-| `src/flow/runner.ts` | Dump writing, activation prompt builder, env propagation | 660–720 (dump format), 700–720 (env propagation) |
-| `src/flow/transition.ts` | Transition state logic | 1–88 (`buildGuardLine`, `buildFlowListSection`, `buildLineage`) |
-| `src/steering/tool-utils.ts` | Directive/hint stripping helper | `stripDirectives()` |
-| `src/index.ts` | Core-2 switch point | 561–567 (`buildCore2Snapshot` call) |
-
+| File | Role |
+|------|------|
+| `src/core2/snapshot.ts` | Active removal, native optimization/compression, recursive result sanitization, deterministic pairing/flattening, boundary enforcement, and shared-context metrics |
+| `tests/core2-snapshot.test.ts` | Provider-neutral structural matrix, ID matching, `batch_read`, active-call ordering, sanitization, deduplication, and metadata regressions |
+| `tests/index.test.ts` | End-to-end fork snapshot integration and canonical flow/bash history |
+| `tests/context-compression.test.ts` | Compression profile/placeholder behavior at the canonical boundary |
+| `tests/shared-context.test.ts` | Native and canonical tool-call metric aggregation |
+| `src/index.ts` / `src/tools/trace.ts` | Snapshot construction, compression logging, and child-flow handoff |
 ## §9 Glossary
 
 | Term | Meaning |
 |------|---------|
 | **Fork snapshot** | Serialized session state passed to child flow via `--session` argument |
-| **Sanitization** | The 6-stage pipeline that strips metadata noise before serialization |
+| **Sanitization** | Ordered pipeline that removes active work, preserves optimizer inputs, flattens completed semantic history, and enforces provider neutrality |
 | **Batch body stripping** | Truncation of read/write/edit/context-map/file-summary sections to first 3 + last 3 lines when body exceeds 6 lines |
 | **Orientation lines** | The first 3 and last 3 lines kept after truncation, providing context about what was read/written/edited without the full body |
 | **JSONL** | JSON Lines format — one JSON object per line, newline-delimited |

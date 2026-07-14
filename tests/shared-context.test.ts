@@ -146,6 +146,41 @@ describe("parseSharedContext", () => {
 		});
 	});
 
+	it("counts only complete canonical interactions in assistant messages", () => {
+		const canonical = (tool: string, result: string) =>
+			`[Historical tool interaction]\nTool: ${tool}\nArguments:\n{}\n\nResult:\n${result}\n[/Historical tool interaction]`;
+		const lines = [
+			JSON.stringify({
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: `${canonical("bash", "ok")}\nTool: ignored` },
+						{ type: "text", text: canonical("flow", "done") },
+					],
+				},
+			}),
+			JSON.stringify({
+				type: "message",
+				message: {
+					role: "assistant",
+					content: "[Historical tool interaction]\nTool: trace\nArguments:\n{}\n\nResult:\nincomplete",
+				},
+			}),
+			JSON.stringify({
+				type: "message",
+				message: { role: "user", content: canonical("read", "pasted example") },
+			}),
+			JSON.stringify({
+				type: "message",
+				message: { role: "system", content: canonical("write", "pasted example") },
+			}),
+		];
+
+		const result = parseSharedContext(lines.join("\n"));
+		expect(result?.toolCalls).toEqual({ bash: 1, flow: 1 });
+	});
+
 	it("captures the last assistant message's cumulative totalTokens", () => {
 		const lines = [
 			JSON.stringify({ type: "message", message: { role: "user", content: "hello" } }),
