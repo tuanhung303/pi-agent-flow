@@ -52,6 +52,17 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
             ctx.ui.notify?.("Cannot enable loop: no active goal. Set a goal first with /flow:goal set.", "error");
             return;
           }
+          if (goal.status !== "active") {
+            ctx.ui.notify?.("Cannot enable loop: goal is not active.", "error");
+            return;
+          }
+          const sessionId = ctx.sessionManager.getSessionId();
+          // Unbound legacy goals follow the same ownership convention as
+          // getGoalForSession(): they are available to the current session.
+          if (goal.sessionId && goal.sessionId !== sessionId) {
+            ctx.ui.notify?.("Cannot enable loop: active goal belongs to another session.", "error");
+            return;
+          }
           try {
             const loop = enableLoop(cwd, goal.objective);
             ctx.ui.notify?.(`Loop enabled: ${loop.objective}`, "info");

@@ -166,7 +166,7 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 
 ### Loop mode
 
-`/flow:loop enable` enables budget handoff for the active goal; it always uses that goal's objective. It accepts no custom objective because loop state does not replace the active goal. Supplying `--max-tokens` or `--max-flows` to `/flow:goal set` automatically creates a **fresh active loop** for that goal. At a budget limit, that loop requests a warp rather than pausing the goal. A manual `set` replacement or `clear` abandons the old goal and removes its loop state; only the internal `/flow:warp` handoff preserves loop counters across sessions.
+`/flow:loop enable` enables budget handoff only for an active goal owned by the current session (legacy unbound goals remain available to that session); it always uses that goal's objective. It accepts no custom objective because loop state does not replace the active goal. Supplying `--max-tokens` or `--max-flows` to `/flow:goal set` automatically creates a **fresh active loop** for that goal. At a budget limit, that loop requests a warp rather than pausing the goal. A manual `set` replacement or `clear` abandons the old goal and removes its loop state; only the internal `/flow:warp` handoff preserves loop counters across sessions.
 
 | Command | Effect |
 |---------|--------|

@@ -277,8 +277,12 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// The atomic handoff already released pending state.
-			recordSessionWarp(cwd);
+			// Only a completed owner handoff starts another loop session. Ordinary
+			// warps still create a session, but must not change another goal's
+			// counters when no handoff was acquired or completed.
+			if (handoffSessionId) {
+				recordSessionWarp(cwd);
+			}
 		} catch (err) {
 			if (handoffSessionId) restoreWarpHandoff(cwd, sessionId, handoffSessionId);
 			clearWarpHandoff(cwd, sessionId);

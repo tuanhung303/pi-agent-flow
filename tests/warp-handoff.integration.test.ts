@@ -7,6 +7,47 @@ import { setupContinuation, shutdownWakeup } from "../src/flow/continuation.js";
 import { beginWarpHandoff, clearGoal, clearWarpHandoff, completeWarpHandoff, getGoal, readState, restoreWarpHandoff, setGoal, _clearStoreCache } from "../src/flow/store.js";
 import * as sessionRegistry from "../src/flow/session-registry.js";
 
+async function executeWarp(
+  cwd: string,
+  sourceSessionId: string,
+  newSessionId: string,
+  beforeHandoff?: () => void,
+): Promise<number> {
+  const branch: any[] = [];
+  const commands = new Map<string, any>();
+  let newSessionCalls = 0;
+  const pi = {
+    registerCommand: (name: string, command: any) => commands.set(name, command),
+    sendUserMessage: (content: string) => {
+      branch.push({ type: "message", message: { role: "user", content } });
+      branch.push({ type: "message", message: { role: "assistant", stopReason: "stop", content: "---\nsummary: handoff" } });
+    },
+  };
+  setupWarp(pi as any);
+  await commands.get("flow:warp").handler("continue", {
+    cwd,
+    model: { provider: "test", id: "test" },
+    sessionManager: {
+      getSessionId: () => sourceSessionId,
+      getSessionFile: () => path.join(cwd, `${sourceSessionId}.jsonl`),
+      getBranch: () => branch,
+    },
+    isIdle: () => true,
+    ui: { notify: () => {} },
+    newSession: async (options: any) => {
+      newSessionCalls += 1;
+      beforeHandoff?.();
+      await options.withSession({
+        sessionManager: { getSessionId: () => newSessionId },
+        ui: { notify: () => {} },
+        sendUserMessage: async () => {},
+      });
+      return { cancelled: false };
+    },
+  });
+  return newSessionCalls;
+}
+
 describe("warp handoff integration", () => {
   it("unlocks the new session before its first turn while blocking the old-session race", async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-handoff-"));
@@ -120,6 +161,52 @@ describe("warp handoff integration", () => {
       const state = readState(cwd);
       expect(state.current?.pendingWarpSessionId).toBe("old-session");
       expect(state.loop?.pendingWarpSessionId).toBeUndefined();
+    } finally {
+      _clearStoreCache();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not increment a loop owned by another session, but increments after an owner handoff", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-owner-"));
+    try {
+      setGoal(cwd, "Budgeted goal", { maxFlows: 3, sessionId: "owner" });
+      expect(await executeWarp(cwd, "other", "other-new")).toBe(1);
+      expect(getGoal(cwd)?.sessionId).toBe("owner");
+      expect(readState(cwd).loop?.sessionCount).toBe(1);
+
+      expect(await executeWarp(cwd, "owner", "owner-new")).toBe(1);
+      expect(getGoal(cwd)?.sessionId).toBe("owner-new");
+      expect(readState(cwd).loop?.sessionCount).toBe(2);
+    } finally {
+      clearGoal(cwd);
+      _clearStoreCache();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not increment loop counters when a previously acquired handoff cannot complete", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-failed-"));
+    try {
+      setGoal(cwd, "Original goal", { maxFlows: 3, sessionId: "owner" });
+      expect(await executeWarp(cwd, "owner", "owner-new", () => {
+        setGoal(cwd, "Replacement goal", { maxFlows: 3, sessionId: "replacement" });
+      })).toBe(1);
+      expect(getGoal(cwd)).toMatchObject({ objective: "Replacement goal", sessionId: "replacement" });
+      expect(readState(cwd).current?.pendingWarpSessionId).toBeUndefined();
+      expect(readState(cwd).loop?.sessionCount).toBe(1);
+    } finally {
+      clearGoal(cwd);
+      _clearStoreCache();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("still creates a new session for an ordinary warp with no goal", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-no-goal-"));
+    try {
+      expect(await executeWarp(cwd, "source", "destination")).toBe(1);
+      expect(readState(cwd)).toEqual({ history: [] });
     } finally {
       _clearStoreCache();
       fs.rmSync(cwd, { recursive: true, force: true });

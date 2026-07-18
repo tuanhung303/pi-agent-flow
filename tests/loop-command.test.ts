@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setupLoopCommand } from "../src/flow/loop-command.js";
-import { setGoal, getGoal, clearGoal, _clearStoreCache } from "../src/flow/store.js";
-import { clearLoop } from "../src/flow/loop.js";
+import { setGoal, getGoal, clearGoal, getGoalForSession, updateGoalStatus, _clearStoreCache } from "../src/flow/store.js";
+import { clearLoop, getLoop } from "../src/flow/loop.js";
 
 describe("setupLoopCommand", () => {
   let tmpDir: string;
@@ -53,11 +53,38 @@ describe("setupLoopCommand", () => {
     expect(notifyCalls).toContainEqual({ msg: "Cannot enable loop: no active goal. Set a goal first with /flow:goal set.", type: "error" });
   });
 
-  it("enable succeeds with active goal", async () => {
-    setGoal(tmpDir, "test objective");
+  it("enable succeeds with an active goal owned by this session", async () => {
+    setGoal(tmpDir, "test objective", { sessionId: "session-test" });
     const handler = registered["flow:loop"].handler;
     await handler("enable", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Loop enabled: test objective", type: "info" });
+  });
+
+  it("enable allows an unbound legacy goal using the established ownership convention", async () => {
+    setGoal(tmpDir, "legacy objective");
+    expect(getGoalForSession(tmpDir, "session-test")?.objective).toBe("legacy objective");
+    const handler = registered["flow:loop"].handler;
+    await handler("enable", makeCtx());
+    expect(notifyCalls).toContainEqual({ msg: "Loop enabled: legacy objective", type: "info" });
+  });
+
+  it("enable rejects another session's goal without resetting loop counters", async () => {
+    setGoal(tmpDir, "other objective", { maxFlows: 3, sessionId: "other-session" });
+    const before = getLoop(tmpDir);
+    const handler = registered["flow:loop"].handler;
+    await handler("enable", makeCtx());
+    expect(notifyCalls).toContainEqual({ msg: "Cannot enable loop: active goal belongs to another session.", type: "error" });
+    expect(getLoop(tmpDir)).toEqual(before);
+  });
+
+  it.each(["paused", "completed"] as const)("enable rejects a %s goal without resetting loop counters", async (status) => {
+    setGoal(tmpDir, "inactive objective", { maxFlows: 3, sessionId: "session-test" });
+    updateGoalStatus(tmpDir, status);
+    const before = getLoop(tmpDir);
+    const handler = registered["flow:loop"].handler;
+    await handler("enable", makeCtx());
+    expect(notifyCalls).toContainEqual({ msg: "Cannot enable loop: goal is not active.", type: "error" });
+    expect(getLoop(tmpDir)).toEqual(before);
   });
 
   it("enable rejects a cosmetic custom objective", async () => {
