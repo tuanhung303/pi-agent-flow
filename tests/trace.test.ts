@@ -314,6 +314,54 @@ describe("Trace Structured Output Parser & Resolver", () => {
 			expect(evidence).toContain("[Evidence truncated: 1 more tool call(s) omitted]");
 			expect(Buffer.byteLength(evidence, "utf-8")).toBeLessThanOrEqual(400);
 		});
+
+		it("promotes an environment cap of 1 to the mandatory heading-and-marker minimum", () => {
+			const previous = process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES;
+			process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES = "1";
+			try {
+				const messages: any[] = [
+					{ role: "assistant", content: [{ type: "toolCall", id: "oversized", name: "bash", arguments: { command: "echo oversized" } }] },
+					{ role: "tool", toolCallId: "oversized", content: "output ".repeat(100) },
+				];
+				const marker = "[Evidence truncated: 1 more tool call(s) omitted]";
+				const effectiveMinimum = Buffer.byteLength(`## Verbatim Evidence\n\n${marker}`, "utf-8");
+				const evidence = resolveToolEvidence(["oversized"], messages, []);
+				expect(evidence).toBe(`## Verbatim Evidence\n\n${marker}`);
+				expect(Buffer.byteLength(evidence, "utf-8")).toBe(effectiveMinimum);
+			} finally {
+				if (previous === undefined) delete process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES;
+				else process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES = previous;
+			}
+		});
+
+		it("promotes environment caps smaller than the heading-and-marker minimum", () => {
+			const previous = process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES;
+			const marker = "[Evidence truncated: 1 more tool call(s) omitted]";
+			const effectiveMinimum = Buffer.byteLength(`## Verbatim Evidence\n\n${marker}`, "utf-8");
+			process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES = String(effectiveMinimum - 1);
+			try {
+				const messages: any[] = [
+					{ role: "assistant", content: [{ type: "toolCall", id: "first", name: "bash", arguments: { command: "echo first" } }] },
+					{ role: "tool", toolCallId: "first", content: "first output".repeat(100) },
+				];
+				const evidence = resolveToolEvidence(["first"], messages, []);
+				expect(evidence).toBe(`## Verbatim Evidence\n\n${marker}`);
+				expect(Buffer.byteLength(evidence, "utf-8")).toBe(effectiveMinimum);
+			} finally {
+				if (previous === undefined) delete process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES;
+				else process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES = previous;
+			}
+		});
+
+		it("omits an oversized first entry without breaking the evidence heading format", () => {
+			const messages: any[] = [
+				{ role: "assistant", content: [{ type: "toolCall", id: "oversized", name: "batch", arguments: { o: [{ o: "read", p: "large.ts" }] } }] },
+				{ role: "tool", toolCallId: "oversized", content: "x".repeat(10_000) },
+			];
+			const evidence = resolveToolEvidence(["oversized"], messages, [], 100);
+			expect(evidence).toBe("## Verbatim Evidence\n\n[Evidence truncated: 1 more tool call(s) omitted]");
+			expect(evidence).not.toContain("### batch [oversized]");
+		});
 	});
 });
 

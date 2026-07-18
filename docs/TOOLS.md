@@ -99,7 +99,7 @@ A lightweight flow state with `maxDepth: 0` that runs verbatim checks, explorati
 
 ### Verbatim evidence
 
-Trace responses retain the agent's short narrative note and deterministically append `## Verbatim Evidence` for every tool call executed by that trace, including pre-dispatch calls. The agent's `tool_ids` identify especially relevant calls and may add unique parent-branch calls, but cannot omit executed-call evidence. Evidence is capped at 100000 bytes by default; set `PI_FLOW_TRACE_EVIDENCE_MAX_BYTES` to override it. Whole call entries are retained from the head, followed by a truncation marker when necessary.
+Trace responses retain the agent's short narrative note and deterministically append `## Verbatim Evidence` for every tool call executed by that trace, including pre-dispatch calls. The agent's `tool_ids` identify especially relevant calls and may add unique parent-branch calls, but cannot omit executed-call evidence. Evidence is capped at 100000 bytes by default; set `PI_FLOW_TRACE_EVIDENCE_MAX_BYTES` to override it. Positive overrides smaller than the required `## Verbatim Evidence` heading plus truncation marker are promoted to that per-response minimum, preserving valid evidence structure. Whole call entries are retained from the head, followed by a truncation marker when necessary.
 
 ### Example using `dispatch` for quick edits/reads/bash
 

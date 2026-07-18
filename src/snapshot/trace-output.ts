@@ -66,6 +66,7 @@ export function extractTraceStructuredOutput(text: string): TraceStructuredOutpu
 // Fallback for external APIs that use snake_case
 const SNAKE_TOOL_CALL_ID = "tool_call_id";
 const DEFAULT_TRACE_EVIDENCE_MAX_BYTES = 100_000;
+const VERBATIM_EVIDENCE_HEADING = "## Verbatim Evidence\n\n";
 
 function getToolCallId(part: unknown): string | undefined {
 	if (!part || typeof part !== "object") return undefined;
@@ -112,10 +113,18 @@ export function buildTraceEvidenceIds(messages: Message[], reportedToolIds: unkn
 	return ids;
 }
 
-/** Read the evidence cap at resolution time so tests and live settings can override it. */
+/**
+ * Read the evidence cap at resolution time so tests and live settings can override it.
+ * Positive overrides below the mandatory heading + truncation marker are promoted while
+ * resolving evidence, because that minimum depends on the number of omitted calls.
+ */
 export function getTraceEvidenceMaxBytes(): number {
 	const parsed = Number.parseInt(process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES ?? "", 10);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TRACE_EVIDENCE_MAX_BYTES;
+}
+
+function truncationMarker(omitted: number): string {
+	return `[Evidence truncated: ${omitted} more tool call(s) omitted]`;
 }
 
 function findToolCall(messages: Message[], targetId: string) {
@@ -215,24 +224,32 @@ export function resolveToolEvidence(
 		return "";
 	}
 
-	const heading = "## Verbatim Evidence\n\n";
+	// A positive configured cap smaller than this structural minimum is promoted so
+	// fallback evidence always retains its required heading and truncation marker.
+	const minimumEvidenceBytes = Buffer.byteLength(
+		VERBATIM_EVIDENCE_HEADING + truncationMarker(evidenceParts.length),
+		"utf-8",
+	);
+	const requestedMaxBytes = Number.isFinite(maxBytes) && maxBytes > 0
+		? maxBytes
+		: DEFAULT_TRACE_EVIDENCE_MAX_BYTES;
+	const effectiveMaxBytes = Math.max(requestedMaxBytes, minimumEvidenceBytes);
 	let includedCount = 0;
 	for (let index = 0; index < evidenceParts.length; index++) {
 		const candidateEntries = evidenceParts.slice(0, index + 1);
 		const omitted = evidenceParts.length - candidateEntries.length;
-		const marker = omitted > 0 ? `\n\n[Evidence truncated: ${omitted} more tool call(s) omitted]` : "";
-		const candidate = heading + candidateEntries.join("\n\n") + marker;
-		if (Buffer.byteLength(candidate, "utf-8") > maxBytes) break;
+		const marker = omitted > 0 ? `\n\n${truncationMarker(omitted)}` : "";
+		const candidate = VERBATIM_EVIDENCE_HEADING + candidateEntries.join("\n\n") + marker;
+		if (Buffer.byteLength(candidate, "utf-8") > effectiveMaxBytes) break;
 		includedCount = candidateEntries.length;
 	}
 
-	if (includedCount === evidenceParts.length) return heading + evidenceParts.join("\n\n");
+	if (includedCount === evidenceParts.length) return VERBATIM_EVIDENCE_HEADING + evidenceParts.join("\n\n");
 
 	const omitted = evidenceParts.length - includedCount;
-	const marker = `[Evidence truncated: ${omitted} more tool call(s) omitted]`;
+	const marker = truncationMarker(omitted);
 	const separator = includedCount > 0 ? "\n\n" : "";
-	const truncated = heading + evidenceParts.slice(0, includedCount).join("\n\n") + separator + marker;
-	// Do not cut entries mid-block; the configured cap is enforced whenever it
-	// can contain the required heading and truncation marker.
+	const truncated = VERBATIM_EVIDENCE_HEADING + evidenceParts.slice(0, includedCount).join("\n\n") + separator + marker;
+	// Do not cut entries mid-block; effectiveMaxBytes always fits this required fallback.
 	return truncated;
 }

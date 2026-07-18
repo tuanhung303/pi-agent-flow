@@ -315,7 +315,7 @@ Key env vars that control flow behavior. All are read from the `pi` process envi
 | `PI_FLOW_IDLE_WAKEUP_MS` | Override the idle wake-up threshold in milliseconds (default 600000 = 10 minutes). |
 | `PI_FLOW_TOOL_OPTIMIZE` | Set to `1` to enable tool-call optimization. |
 | `PI_FLOW_TOOLS_TRACE` | Set to `1` or `0` to enable/disable the `trace` tool (default: `1`). |
-| `PI_FLOW_TRACE_EVIDENCE_MAX_BYTES` | Maximum bytes of deterministic trace verbatim evidence (default 100000). Whole call entries are retained from the head; omitted entries are summarized by a truncation marker. |
+| `PI_FLOW_TRACE_EVIDENCE_MAX_BYTES` | Maximum bytes of deterministic trace verbatim evidence (default 100000). Positive values below the required heading + truncation marker are promoted to that per-response minimum so valid evidence structure is preserved. Whole call entries are retained from the head; omitted entries are summarized by a truncation marker. |
 | `PI_FLOW_TOOLS_BATCH_READ` | Set to `1` or `0` to enable/disable the `batch_read` tool (default: follows `PI_FLOW_TOOL_OPTIMIZE`). |
 | `PI_FLOW_COMPLEXITY` | Override the default child-flow complexity (`snap`, `simple`, `moderate`, `complex`, `intricate`). |
 | `PI_TUI_MODE` | Set to `1` to route `logWarn`/`logError` to a log file instead of stderr, preventing on-screen text flash. Detected automatically when stdout is a TTY or `PI_FLOW_DEPTH > 0`. |
