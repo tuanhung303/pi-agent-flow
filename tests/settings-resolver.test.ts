@@ -86,3 +86,59 @@ describe("runtime flow model strategy resolution", () => {
     expect(resolve(undefined, "explicit").loadedFlowModelConfigs.selectedName).toBe("explicit");
   });
 });
+
+describe("runtime setting resolution", () => {
+  let cwd: string;
+  let agentDir: string;
+  let originalAgentDir: string | undefined;
+  let originalAskTimeout: string | undefined;
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-flow-runtime-settings-"));
+    agentDir = path.join(cwd, "agent");
+    originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+    originalAskTimeout = process.env.PI_ASK_USER_TIMEOUT;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    delete process.env.PI_ASK_USER_TIMEOUT;
+    fs.mkdirSync(path.join(cwd, ".pi"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, ".pi", "settings.json"), JSON.stringify({
+      flowSettings: {
+        steering: { customPrompt: "persisted steering" },
+        askUser: { enabled: true, timeout: 120 },
+      },
+    }));
+  });
+
+  afterEach(() => {
+    if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+    if (originalAskTimeout === undefined) delete process.env.PI_ASK_USER_TIMEOUT;
+    else process.env.PI_ASK_USER_TIMEOUT = originalAskTimeout;
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("uses persisted steering prompt and resolves ask-user settings with environment precedence", () => {
+    process.env.PI_ASK_USER_TIMEOUT = "60";
+    const resolved = resolveSettings({ getFlag: () => undefined } as any, cwd);
+
+    expect(resolved.steeringCustomPrompt).toBe("persisted steering");
+    expect(resolved.askUserEnabled).toBe(true);
+    expect(resolved.askUserTimeout).toBe(60_000);
+  });
+
+  it("lets the CLI steering prompt file override the persisted prompt", () => {
+    const promptPath = path.join(cwd, "steering.md");
+    fs.writeFileSync(promptPath, "CLI steering\n");
+    const resolved = resolveSettings({ getFlag: (name: string) => name === "steering-prompt" ? promptPath : undefined } as any, cwd);
+
+    expect(resolved.steeringCustomPrompt).toBe("CLI steering");
+  });
+
+  it("uses the declared disabled ask-user default", () => {
+    fs.writeFileSync(path.join(cwd, ".pi", "settings.json"), JSON.stringify({ flowSettings: {} }));
+    const resolved = resolveSettings({ getFlag: () => undefined } as any, cwd);
+
+    expect(resolved.askUserEnabled).toBe(false);
+    expect(resolved.askUserTimeout).toBe(300_000);
+  });
+});

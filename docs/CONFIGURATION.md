@@ -35,7 +35,7 @@ Use `flowModelConfigs` in your Pi settings to define tiered model strategies. Ea
 - `balance` — best default mix of quality and cost.
 - `quality` — prefers the strongest models first.
 
-Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`.
+Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`. For the nested `steering`, `animation`, `askUser`, and `tools` groups, fields merge independently, so a project setting changes only the named field and retains global siblings.
 
 Models referenced in `flowModelConfigs` are checked against the local `models.json` registry (usually `~/.pi/agent/models.json`) and, when present, the optional `models-store.json` fallback. A missing optional store is silent; malformed or unreadable existing registry files still warn. If a model is known to be missing from the registry, a warning is logged, but the model is still tried so that stale or incomplete registries do not silently block valid provider-side models. The missing-model warning is coalesced into a single line per resolution (`N configured flow model(s) are not present in models.json; trying them anyway: a, b, c`) rather than emitted per-candidate. If **every** configured model for a flow or trace is missing from the registry, the invocation fails fast with a clear `Bad settings` error and the synthesized result leaves `model` undefined so per-model telemetry rollups are not poisoned.
 
@@ -79,6 +79,15 @@ Set flow runtime defaults under `flowSettings`:
 | `maxConcurrency` | `4` | Maximum parallel flows (capped to CPU count) |
 | `toolOptimize` | `true` | Use unified `batch`/`batch_read` instead of separate read/write/edit |
 | `structuredOutput` | `true` | Inject JSON structured-output instructions into flow prompts |
+| `bodyVerbosity` | `lite` | Collapsed result body: `lite` (aim + command) or `full` (includes message) |
+| `steering.enabled` | `true` | Inject the root steering hint |
+| `steering.customPrompt` | unset | Replace the built-in steering hint |
+| `animation.enabled` / `animation.glitch` | `true` / `true` | Enable animation and its scramble effect |
+| `askUser.enabled` / `askUser.timeout` | `false` / `300` seconds | Enable the ask-user countdown and configure its timeout |
+| `tools.trace` | `true` | Enable the `trace` tool |
+| `tools.batchRead` | follows `toolOptimize` | Enable the `batch_read` tool |
+| `debugMode` | `false` | Write child activation prompts for debugging |
+| `contextCompression` | `auto` | Child snapshot compression: `auto`, `light`, `medium`, or `aggressive` |
 | `subAgentMaxRetries` | `3` | Connection-error retries after model failover exhaustion (0–10) |
 | `subAgentBaseDelayMs` | `1000` | Base delay (ms) for exponential backoff between connection retries |
 
@@ -101,10 +110,11 @@ Set flow runtime defaults under `flowSettings`:
 | `--tools-trace` | Enable the `trace` tool | `true` |
 | `--tools-batch-read` | Enable the `batch_read` tool | follows `--tool-optimize` |
 | `--no-steering` | Disable root state steering hint injection | — |
-| `--steering-prompt <text>` | Provide a custom steering prompt (implies `--no-steering` override) | — |
-
 | `--no-animation` | Disable all flow animation (instant render) | — |
 | `--no-glitch` | Disable glitch/scramble effect | — |
+| `--body-lite` / `--body-full` | Select collapsed result verbosity | `lite` |
+| `--flow-debug` | Write child activation prompts for debugging | `false` |
+| `--steering-prompt <path>` | Read a UTF-8 custom steering prompt from a file for this invocation; it overrides `steering.customPrompt` but does not enable or disable steering | — |
 | `--dump <path>` | Base path for snapshot dumps (alternative to `PI_FLOW_DUMP_SNAPSHOT`) | — |
 
 ## Environment Variables
@@ -131,6 +141,9 @@ Set flow runtime defaults under `flowSettings`:
 | `PI_FLOW_NO_STEERING` | Set to `1` to disable root state steering hint injection |
 | `PI_FLOW_NO_ANIMATION` | Set to `1` to disable all flow animation (instant render) |
 | `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect |
+| `PI_FLOW_BODY_VERBOSITY` | Set collapsed body verbosity to `lite` or `full` |
+| `PI_FLOW_STRUCTURED_OUTPUT` | Set to `1` or `0` to enable/disable structured flow output |
+| `PI_FLOW_DEBUG` | Set to `1` or `0` to enable/disable child activation prompt dumps |
 | `PI_FLOW_LOG_FILE` | TUI-safe log file path (default: `$TMPDIR/pi-agent-flow.log`; set to `/dev/null` to suppress) |
 | `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. |
 | `PI_FLOW_LITE_MAX_MESSAGES` | Override lite-tier snapshot message cap (default: `30`) |
@@ -163,7 +176,7 @@ Set flow runtime defaults under `flowSettings`:
 
 | Command | Usage |
 |---------|-------|
-| `show` | `/flow:settings show` — Display current settings and their sources. |
+| `show` | `/flow:settings show` — Display persisted/default values and loop state. It does not annotate sources or display CLI/environment overrides. |
 | `steering` | `/flow:settings steering on\|off` — Enable/disable root state steering hint injection. |
 
 | `animation` | `/flow:settings animation on\|off` — Enable/disable all flow animations. |
@@ -172,7 +185,9 @@ Set flow runtime defaults under `flowSettings`:
 | `trace` | `/flow:settings trace on\|off` — Enable/disable the `trace` tool. |
 | `batch-read` | `/flow:settings batch-read on\|off` — Enable/disable the `batch_read` tool. |
 | `structured-output` | `/flow:settings structured-output on\|off` — Enable/disable structured JSON output from flows. |
+| `body` | `/flow:settings body <lite\|full>` — Set collapsed result verbosity. |
 | `complexity` | `/flow:settings complexity <snap\|simple\|moderate\|complex\|intricate>` — Set the child-flow complexity (budget + review). |
+| `context-compression` | `/flow:settings context-compression <auto\|light\|medium\|aggressive>` — Set child snapshot compression. |
 | `max-concurrency` | `/flow:settings max-concurrency <n>` — Set maximum concurrent flows. |
 | `ask-user` | `/flow:settings ask-user enabled <on\|off>` — Enable/disable ask_user countdown. `/flow:settings ask-user timeout <seconds>` — Set auto-dismiss timeout. |
 | `reset` | `/flow:settings reset` — Reset all settings to their defaults. |
@@ -203,3 +218,5 @@ Set flow runtime defaults under `flowSettings`:
 ```
 
 > 💡 Settings are stored in `.pi/settings.json` and persisted across sessions. Use `/flow:settings reset` to discard them and fall back to defaults.
+
+Changes made through `/flow:settings` are re-resolved immediately for future root-session work, including steering, animation, tools, ask-user, rendering, flow execution defaults, and snapshot compression. Existing child processes keep the settings they were started with. Model strategy discovery and child tool registration remain startup-time concerns.

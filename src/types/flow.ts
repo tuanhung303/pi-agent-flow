@@ -106,12 +106,17 @@ export interface PiAgentFlowAPI {
 		toolOptimize: boolean;
 		structuredOutput: boolean;
 		maxConcurrency: number;
+		defaultComplexity: import("../flow/complexity.js").Complexity;
 		steeringEnabled: boolean;
 		steeringCustomPrompt: string | undefined;
 		animationEnabled: boolean;
 		animationGlitch: boolean;
+		askUserEnabled: boolean;
+		askUserTimeout: number;
 		bodyVerbosity: "lite" | "full";
 		debugMode: boolean;
+		subAgentMaxRetries: number;
+		subAgentBaseDelayMs: number;
 	};
 }
 

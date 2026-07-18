@@ -24,23 +24,6 @@ import type { CompressionPreference } from "../core2/snapshot.js";
 import { logWarn } from "./log.js";
 import { resolveBoolean, resolveString, resolveNumber, type ResolveContext } from "./resolver-helpers.js";
 
-/**
- * Lightweight re-resolution of tool-affecting settings only.
- * Used by the settings-change emitter in index.ts to re-apply pi.setActiveTools
- * without the full overhead of resolveSettings (which re-discovers flows, etc.).
- */
-export function resolveToolSettings(
-	pi: ExtensionAPI,
-	cwd: string,
-): { toolOptimize: boolean; traceEnabled: boolean; batchReadEnabled: boolean } {
-	const flowSettings = loadFlowSettings(cwd);
-	const ctx: ResolveContext = { pi, settings: flowSettings };
-	const toolOptimize = resolveBoolean(ctx, { cliFlag: "tool-optimize", envVar: PI_FLOW_TOOL_OPTIMIZE_ENV, settingsPath: ["toolOptimize"], defaultValue: true });
-	const traceEnabled = resolveBoolean(ctx, { cliFlag: "tools-trace", envVar: PI_FLOW_TOOLS_TRACE_ENV, settingsPath: ["tools", "trace"], defaultValue: true });
-	const batchReadEnabled = resolveBoolean(ctx, { cliFlag: "tools-batch-read", envVar: PI_FLOW_TOOLS_BATCH_READ_ENV, settingsPath: ["tools", "batchRead"], defaultValue: toolOptimize });
-	return { toolOptimize, traceEnabled, batchReadEnabled };
-}
-
 const PI_FLOW_NO_STEERING_ENV = "PI_FLOW_NO_STEERING";
 const PI_FLOW_NO_ANIMATION_ENV = "PI_FLOW_NO_ANIMATION";
 const PI_FLOW_NO_GLITCH_ENV = "PI_FLOW_NO_GLITCH";
@@ -95,7 +78,9 @@ function resolveContextCompression(ctx: ResolveContext): ResolvedContextCompress
 export function resolveSettings(
 	pi: ExtensionAPI,
 	cwd: string,
+	options: { persistFlowMode?: boolean } = {},
 ): ResolvedSettings & { projectFlowsDir: string | null } {
+	const persistFlowMode = options.persistFlowMode ?? true;
 	const inheritedCliArgs = getInheritedCliArgs();
 	const discovery = discoverFlows(cwd, "all");
 	const discoveredFlows = discovery.flows;
@@ -119,20 +104,22 @@ export function resolveSettings(
 				`[pi-agent-flow] Cannot switch flow mode to "${requestedFlowMode}"; no flowModelConfigs.${requestedFlowMode} strategy was found. Available modes: ${availableModes}.`,
 			);
 		} else {
-			try {
-				writeGlobalFlowMode(requestedFlowMode);
-				const strategy = loadedFlowModelConfigs.configs[requestedFlowMode] ?? {};
-				const strategyDescription = formatFlowModelStrategy(requestedFlowMode, strategy);
-				logWarn(strategyDescription);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				logWarn(`[pi-agent-flow] ${message}`);
-			}
-			const projectFlowModelConfig = loadProjectFlowModelConfigName(cwd);
-			if (projectFlowModelConfig !== undefined && projectFlowModelConfig !== requestedFlowMode) {
-				logWarn(
-					`[pi-agent-flow] Switched global flow mode to "${requestedFlowMode}"; this project selects "${projectFlowModelConfig}" in .pi/settings.json, so future runs in this project may still use "${projectFlowModelConfig}" unless project settings are changed.`,
-				);
+			if (persistFlowMode) {
+				try {
+					writeGlobalFlowMode(requestedFlowMode);
+					const strategy = loadedFlowModelConfigs.configs[requestedFlowMode] ?? {};
+					const strategyDescription = formatFlowModelStrategy(requestedFlowMode, strategy);
+					logWarn(strategyDescription);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					logWarn(`[pi-agent-flow] ${message}`);
+				}
+				const projectFlowModelConfig = loadProjectFlowModelConfigName(cwd);
+				if (projectFlowModelConfig !== undefined && projectFlowModelConfig !== requestedFlowMode) {
+					logWarn(
+						`[pi-agent-flow] Switched global flow mode to "${requestedFlowMode}"; this project selects "${projectFlowModelConfig}" in .pi/settings.json, so future runs in this project may still use "${projectFlowModelConfig}" unless project settings are changed.`,
+					);
+				}
 			}
 			activeRuntimeFlowMode = requestedFlowMode;
 			loadedFlowModelConfigs = selectFlowModelStrategy(loadedFlowModelConfigs.configs, requestedFlowMode);
@@ -188,14 +175,9 @@ export function resolveSettings(
 
 	const animationEnabled = resolveBoolean(ctx, { cliFlag: "no-animation", envVar: PI_FLOW_NO_ANIMATION_ENV, settingsPath: ["animation", "enabled"], defaultValue: true, invert: true });
 	const animationGlitch = resolveBoolean(ctx, { cliFlag: "no-glitch", envVar: PI_FLOW_NO_GLITCH_ENV, settingsPath: ["animation", "glitch"], defaultValue: true, invert: true });
-	const askUserEnabled = typeof flowSettings.askUser?.enabled === "boolean" ? flowSettings.askUser.enabled : false;
-	let askUserTimeout = typeof flowSettings.askUser?.timeout === "number" ? flowSettings.askUser.timeout * 1000 : 300000;
-	const envAskUserTimeout = process.env["PI_ASK_USER_TIMEOUT"];
-	if (envAskUserTimeout !== undefined) {
-		const parsed = Number(envAskUserTimeout);
-		if (Number.isSafeInteger(parsed) && parsed >= 1) askUserTimeout = parsed * 1000;
-	}
-	let steeringCustomPrompt: string | undefined = undefined;
+	const askUserEnabled = resolveBoolean(ctx, { settingsPath: ["askUser", "enabled"], defaultValue: false });
+	const askUserTimeout = resolveNumber(ctx, { envVar: "PI_ASK_USER_TIMEOUT", settingsPath: ["askUser", "timeout"], defaultValue: 300, min: 1 }) * 1000;
+	let steeringCustomPrompt: string | undefined = flowSettings.steering?.customPrompt;
 	const cliSteeringPrompt = pi.getFlag("steering-prompt");
 	if (typeof cliSteeringPrompt === "string" && cliSteeringPrompt.trim()) {
 		try {

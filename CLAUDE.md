@@ -350,7 +350,7 @@ Control runtime behavior via slash commands, CLI flags, environment variables, o
 
 | Command | Usage |
 |---------|-------|
-| `show` | `/flow:settings show` — Display current settings and their sources. |
+| `show` | `/flow:settings show` — Display persisted/default values and loop state (without CLI/env source annotations). |
 | `steering` | `/flow:settings steering on\|off` — Enable/disable root state steering hint injection. |
 
 | `animation` | `/flow:settings animation on\|off` — Enable/disable all flow animations. |
@@ -374,7 +374,7 @@ Pass these when starting `pi`:
 |------|--------|
 | `--no-steering` | Disable root state steering hint injection. |
 | `--flow-context-compression <auto\|none\|light\|medium\|aggressive>` | Override child snapshot compression. |
-| `--steering-prompt <text>` | Provide a custom steering prompt (implies `--no-steering` override). |
+| `--steering-prompt <path>` | Read a custom steering prompt from a file for this invocation; it overrides persistent `steering.customPrompt` but does not change steering enabled state. |
 
 | `--no-animation` | Disable all flow animation (instant render). |
 | `--no-glitch` | Disable glitch/scramble effect. |

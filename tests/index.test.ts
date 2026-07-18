@@ -1668,6 +1668,83 @@ describe("main agent tool restriction", () => {
 
 		expect(pi.getTool("batch_read")).toBeUndefined();
 	});
+
+	it("re-resolves live-safe runtime settings after a persistent settings change", async () => {
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		const { writeFlowSetting } = await import("../src/config/config.js");
+		writeFlowSetting(tmpDir, "bodyVerbosity", "full");
+		writeFlowSetting(tmpDir, "complexity", "snap");
+		writeFlowSetting(tmpDir, "maxConcurrency", 1);
+		writeFlowSetting(tmpDir, "structuredOutput", false);
+		writeFlowSetting(tmpDir, "debugMode", true);
+		writeFlowSetting(tmpDir, "contextCompression", "light");
+		writeFlowSetting(tmpDir, "subAgentMaxRetries", 0);
+		writeFlowSetting(tmpDir, "subAgentBaseDelayMs", 10);
+		writeFlowSetting(tmpDir, "steering.enabled", false);
+		writeFlowSetting(tmpDir, "animation.enabled", false);
+		writeFlowSetting(tmpDir, "animation.glitch", false);
+		writeFlowSetting(tmpDir, "askUser.enabled", true);
+		writeFlowSetting(tmpDir, "askUser.timeout", 60);
+		writeFlowSetting(tmpDir, "tools.trace", false);
+
+		const ready = pi.emit.mock.calls.find(([event]: [string]) => event === "pi-agent-flow:ready")?.[1];
+		expect(ready.getSettings()).toMatchObject({
+			bodyVerbosity: "full",
+			defaultComplexity: "snap",
+			maxConcurrency: 1,
+			structuredOutput: false,
+			debugMode: true,
+			contextCompression: "light",
+			subAgentMaxRetries: 0,
+			subAgentBaseDelayMs: 10,
+			steeringEnabled: false,
+			animationEnabled: false,
+			animationGlitch: false,
+			askUserEnabled: true,
+			askUserTimeout: 60_000,
+			traceEnabled: false,
+		});
+		expect(pi.setActiveTools.mock.calls.at(-1)[0]).not.toContain("trace");
+
+		writeFlowSetting(tmpDir, "", {});
+		expect(ready.getSettings()).toMatchObject({
+			bodyVerbosity: "lite",
+			defaultComplexity: "moderate",
+			structuredOutput: true,
+			debugMode: false,
+			contextCompression: "auto",
+			askUserEnabled: false,
+			askUserTimeout: 300_000,
+			traceEnabled: true,
+		});
+	});
+
+	it("preserves CLI and environment overrides after slash settings changes", async () => {
+		const previousNoAnimation = process.env.PI_FLOW_NO_ANIMATION;
+		process.env.PI_FLOW_NO_ANIMATION = "1";
+		try {
+			const { writeFlowSetting } = await import("../src/config/config.js");
+			const { handleTextCommand } = await import("../src/flow/settings-handler.js");
+			writeFlowSetting(tmpDir, "", {});
+			const pi = createMockPi();
+			pi.setFlag("no-steering", true);
+			registerExtension(pi as any);
+			await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+			const commandCtx = { cwd: tmpDir, ui: { notify: vi.fn() } } as any;
+			await handleTextCommand("steering on", commandCtx);
+			await handleTextCommand("animation on", commandCtx);
+
+			const ready = pi.emit.mock.calls.find(([event]: [string]) => event === "pi-agent-flow:ready")?.[1];
+			expect(ready.getSettings()).toMatchObject({ steeringEnabled: false, animationEnabled: false });
+		} finally {
+			if (previousNoAnimation === undefined) delete process.env.PI_FLOW_NO_ANIMATION;
+			else process.env.PI_FLOW_NO_ANIMATION = previousNoAnimation;
+		}
+	});
 });
 
 describe("web tool integration", () => {

@@ -30,7 +30,7 @@ function formatLoop(loop: NonNullable<ReturnType<typeof getLoop>>): string {
 export function setupLoopCommand(pi: ExtensionAPI): void {
   pi.registerCommand("flow:loop", {
     description:
-      "Manage endless loop. Subcommands: enable, disable, status, stop, reset",
+      "Manage endless loop. enable follows the active goal; disable pauses auto-warp; stop terminates loop mode. Subcommands: enable, disable, status, stop, reset",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (!ctx.ui) {
         return;
@@ -43,14 +43,17 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
 
       switch (sub) {
         case "enable": {
+			if (rest) {
+				ctx.ui.notify?.("Usage: /flow:loop enable", "error");
+				return;
+			}
           const goal = getGoal(cwd);
           if (!goal) {
             ctx.ui.notify?.("Cannot enable loop: no active goal. Set a goal first with /flow:goal set.", "error");
             return;
           }
-          const objective = rest || goal.objective;
           try {
-            const loop = enableLoop(cwd, objective);
+            const loop = enableLoop(cwd, goal.objective);
             ctx.ui.notify?.(`Loop enabled: ${loop.objective}`, "info");
           } catch (err) {
             ctx.ui.notify?.(err instanceof Error ? err.message : "Failed to enable loop", "error");

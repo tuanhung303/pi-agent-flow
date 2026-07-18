@@ -62,7 +62,6 @@ import {
 import {
 	resolveSettings,
 	type ResolvedSettings,
-	resolveToolSettings,
 } from "./config/settings-resolver.js";
 import { invalidateModelsJsonCache } from "./config/models.js";
 import { getSkipFlowTools, clearClassificationCache, type SkipFlowConfig, type ClassifyDeps } from "./tools/skip-flow.js";
@@ -355,6 +354,19 @@ export default function (pi: ExtensionAPI) {
 	let _unsubscribeSettings: (() => void) | undefined;
 	let batchReadRegistered = false;
 
+	/** Apply the fully resolved, precedence-aware settings to this root session. */
+	const applyResolvedSettings = (fresh: ResolvedSettings): void => {
+		resolved = fresh;
+		configureSteering({ enabled: fresh.steeringEnabled, customPrompt: fresh.steeringCustomPrompt });
+		scrambleManager.setAnimationConfig({ enabled: fresh.animationEnabled, glitch: fresh.animationGlitch });
+		if (currentDepth !== 0) return;
+		pi.setActiveTools(computeActiveTools(fresh.toolOptimize, fresh.traceEnabled, fresh.batchReadEnabled));
+		if (fresh.batchReadEnabled && !batchReadRegistered) {
+			pi.registerTool(createBatchReadTool());
+			batchReadRegistered = true;
+		}
+	};
+
 	// Auto-discover flows on session start
 	// Fix L2: registerFlow() already handles sessionRegistry.register() — removed duplicate here.
 	pi.on("session_start", async (_event, ctx) => {
@@ -366,18 +378,8 @@ export default function (pi: ExtensionAPI) {
 		// first resolveFlowModelCandidates call in this session sees the latest file.
 		invalidateModelsJsonCache();
 		_sessionCtx = ctx;
-		resolved = resolveSettings(pi, ctx.cwd);
-
-		// Wire resolved settings to modules
-		configureSteering({ enabled: resolved.steeringEnabled, customPrompt: resolved.steeringCustomPrompt });
-		scrambleManager.setAnimationConfig({ enabled: resolved.animationEnabled, glitch: resolved.animationGlitch });
-
-		// Only restrict tools for the main root state (depth 0).
-		// Child flows (depth > 0) receive their tools via --tools CLI arg;
-		// overriding them here would strip bash/batch from children.
-		if (currentDepth === 0) {
-			pi.setActiveTools(computeActiveTools(resolved.toolOptimize, resolved.traceEnabled, resolved.batchReadEnabled));
-		}
+		const sessionSettings = resolveSettings(pi, ctx.cwd);
+		applyResolvedSettings(sessionSettings);
 
 		// Register tools based on depth.
 		// Depth 0 (main root state): batch_read + no bash ops.
@@ -385,13 +387,13 @@ export default function (pi: ExtensionAPI) {
 		// batch_read is registered at all depths for read-only child operations.
 		// The bashProcessTracker is shared between the batch tool (launches bash ops)
 		// and the batch_bash_poll tool (checks on pending bash ops).
-		if (resolved.batchReadEnabled) {
+		if (sessionSettings.batchReadEnabled && !batchReadRegistered) {
 			pi.registerTool(createBatchReadTool());
 			batchReadRegistered = true;
 		}
-		if (resolved.toolOptimize && currentDepth > 0) {
+		if (sessionSettings.toolOptimize && currentDepth > 0) {
 			bashTracker = new BashProcessTracker();
-			pi.registerTool(createBatchTool(bashTracker, resolved.toolOptimize));
+			pi.registerTool(createBatchTool(bashTracker, sessionSettings.toolOptimize));
 			pi.registerTool(createBatchBashPollTool(bashTracker));
 		}
 
@@ -404,19 +406,13 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Live-apply tool-affecting settings when changed via /flow:settings
-		// (same pattern as animation/steering which also live-apply).
-		// Only for root state — child flows get tools from --tools CLI arg.
+		// Re-resolve all settings that are safe to apply to future work in this
+		// session. Do not repeat the persistent --flow-mode write on each change.
+		// Only root settings are mutable here; child tools come from --tools.
 		if (currentDepth === 0) {
 			_unsubscribeSettings = onSettingsChange((_keyPath) => {
 				if (!_sessionCtx) return;
-				const fresh = resolveToolSettings(pi, _sessionCtx.cwd);
-				resolved = { ...resolved!, ...fresh };
-				pi.setActiveTools(computeActiveTools(fresh.toolOptimize, fresh.traceEnabled, fresh.batchReadEnabled));
-				if (fresh.batchReadEnabled && !batchReadRegistered) {
-					pi.registerTool(createBatchReadTool());
-					batchReadRegistered = true;
-				}
+				applyResolvedSettings(resolveSettings(pi, _sessionCtx.cwd, { persistFlowMode: false }));
 			});
 		}
 	});
@@ -600,7 +596,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Register the ask_user tool
-	pi.registerTool(createAskUserTool());
+	pi.registerTool(createAskUserTool(() => ({
+		enabled: resolved?.askUserEnabled ?? false,
+		timeoutMs: resolved?.askUserTimeout ?? 300_000,
+	})));
 
 	const getTierOverride = (tier: "lite" | "flash" | "full"): string | undefined => {
 		const flagName =
@@ -835,12 +834,17 @@ export default function (pi: ExtensionAPI) {
 					toolOptimize: resolved.toolOptimize,
 					structuredOutput: resolved.structuredOutput,
 					maxConcurrency: resolved.maxConcurrency,
+					defaultComplexity: resolved.defaultComplexity,
 					steeringEnabled: resolved.steeringEnabled,
 					steeringCustomPrompt: resolved.steeringCustomPrompt,
 					animationEnabled: resolved.animationEnabled,
 					animationGlitch: resolved.animationGlitch,
+					askUserEnabled: resolved.askUserEnabled,
+					askUserTimeout: resolved.askUserTimeout,
 					bodyVerbosity: resolved.bodyVerbosity,
 					debugMode: resolved.debugMode,
+					subAgentMaxRetries: resolved.subAgentMaxRetries,
+					subAgentBaseDelayMs: resolved.subAgentBaseDelayMs,
 					traceEnabled: resolved.traceEnabled,
 					batchReadEnabled: resolved.batchReadEnabled,
 					contextCompression: resolved.contextCompression.value,
@@ -849,12 +853,17 @@ export default function (pi: ExtensionAPI) {
 					toolOptimize: true,
 					structuredOutput: true,
 					maxConcurrency: 4,
+					defaultComplexity: "moderate",
 					steeringEnabled: true,
 					steeringCustomPrompt: undefined,
 					animationEnabled: true,
 					animationGlitch: true,
+					askUserEnabled: false,
+					askUserTimeout: 300_000,
 					bodyVerbosity: "lite",
 					debugMode: false,
+					subAgentMaxRetries: 3,
+					subAgentBaseDelayMs: 1000,
 					traceEnabled: true,
 					batchReadEnabled: true,
 					contextCompression: "auto",

@@ -9,9 +9,6 @@
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { loadFlowSettings, writeFlowSetting, type FlowSettings } from "../config/config.js";
-import { configureSteering } from "../steering/sliding-prompt.js";
-
-import { scrambleManager } from "../tui/scramble/index.js";
 import {
 	Container,
 	type Component,
@@ -291,9 +288,6 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 								selectList.onSelect = (item) => {
 									if (item.value === "reset") {
 										writeFlowSetting(cwd, "", {});
-										configureSteering({ enabled: true, customPrompt: undefined });
-
-										scrambleManager.setAnimationConfig({ enabled: true, glitch: true });
 										ctx.ui.notify?.("Flow settings reset to defaults", "info");
 										rebuild();
 										tui.requestRender();
@@ -363,7 +357,7 @@ export function setupSettingsCommand(pi: ExtensionAPI): void {
 									Math.min(items.length + 2, 15),
 									settingsTheme,
 									keybindings,
-									getCategoryHandler(currentCategory, cwd, currentSettings, rebuild, tui, ctx),
+									getCategoryHandler(currentCategory, cwd, rebuild, tui, ctx),
 									() => {
 										currentCategory = backCategory;
 										rebuild();

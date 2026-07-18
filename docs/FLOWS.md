@@ -164,6 +164,17 @@ Set a multi-step objective and the system automatically spawns flows to advance 
 | `status`, `show` | `/flow:goal status` (or `show`) — Displays current goal state, budgets, and completed flows |
 | `warp` | `/flow:warp [goal]` — Distills conversation context into a simple context-transfer prompt (## Context + ## Task) and spawns a new session with the goal auto-set. Preserves unresolved blockers, key files, and end-goal intent. If no goal is provided, a default continuation goal is used. |
 
+### Loop mode
+
+`/flow:loop enable` enables budget handoff for the active goal; it always uses that goal's objective. It accepts no custom objective because loop state does not replace the active goal. Supplying `--max-tokens` or `--max-flows` to `/flow:goal set` automatically creates a **fresh active loop** for that goal. At a budget limit, that loop requests a warp rather than pausing the goal. A manual `set` replacement or `clear` abandons the old goal and removes its loop state; only the internal `/flow:warp` handoff preserves loop counters across sessions.
+
+| Command | Effect |
+|---------|--------|
+| `/flow:loop disable` | Pauses loop-mode auto-warp only. The active goal remains active and normal continuation still runs. |
+| `/flow:loop stop` | Terminates loop mode for the current loop state. It does not pause or complete the active goal; use `/flow:goal pause` to pause continuation. A later budget limit follows normal goal behavior and pauses that goal. |
+| `/flow:loop reset` | Reactivates loop mode and clears its cross-session counters without changing the active goal. |
+| `/flow:loop status` | Shows loop-mode state and counters. |
+
 > **Note on `completed` status:** `completed` is a valid `GoalStatus`. Goals can be marked completed manually via `/flow:goal complete`. The agent cannot self-terminate a goal — only the user can end it.
 
 #### Warp gotchas
@@ -211,7 +222,7 @@ Complete the Discover phase by mapping middleware usage, then begin Convert on t
 
 ### How it works
 
-1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, the goal is **auto-paused** and a hidden budget-limit message is sent to the root state.
+1. On `turn_end`, if a goal is **active**, the continuation hook checks token/flow budgets. If `maxTokens` or `maxFlows` is exceeded, a non-loop goal is **auto-paused** and receives a hidden budget-limit message. An active loop instead sends a hidden warp request to the root state; the root invokes `/flow:warp` to start the next session.
 2. If under budget, the hook sends a hidden message instructing the root state to call the `flow` tool.
 3. The spawned flow receives a `<flow>` block in its activation prompt with the objective, acceptance criteria, and progress (`flowCount/maxFlows`).
 4. Completed flows (type, intent, aim, completedAt) and token usage are recorded in goal state.

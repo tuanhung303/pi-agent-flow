@@ -8,6 +8,8 @@ import {
   clearGoal,
   addTokens,
   recordFlowCompletion,
+  beginWarpHandoff,
+  completeWarpHandoff,
   readState,
   writeState,
   _clearStoreCache,
@@ -36,7 +38,7 @@ describe("store loop integration", () => {
     };
   }
 
-  it("(1) setGoal archives as 'warped' when loop active", () => {
+  it("(1) manual goal replacement abandons the prior goal and removes its loop", () => {
     const state: GoalState = {
       current: {
         id: "goal-1",
@@ -55,7 +57,8 @@ describe("store loop integration", () => {
     setGoal(tmpDir, "new goal");
     const updated = readState(tmpDir);
     expect(updated.history).toHaveLength(1);
-    expect(updated.history[0].status).toBe("warped");
+    expect(updated.history[0].status).toBe("abandoned");
+    expect(updated.loop).toBeUndefined();
   });
 
   it("(2) setGoal archives as 'abandoned' when loop inactive", () => {
@@ -130,7 +133,7 @@ describe("store loop integration", () => {
     expect(result).toBeUndefined();
   });
 
-  it("(6) setGoal preserves existing loop state", () => {
+  it("(6) a replacement with a budget initializes a fresh loop", () => {
     const state: GoalState = {
       current: {
         id: "goal-1",
@@ -146,14 +149,16 @@ describe("store loop integration", () => {
     };
     writeState(tmpDir, state);
 
-    setGoal(tmpDir, "new goal");
+    setGoal(tmpDir, "new goal", { maxFlows: 3 });
     const updated = readState(tmpDir);
-    expect(updated.loop?.objective).toBe("test loop");
+    expect(updated.loop?.objective).toBe("new goal");
     expect(updated.loop?.status).toBe("active");
-    expect(updated.loop?.sessionCount).toBe(2);
+    expect(updated.loop?.sessionCount).toBe(1);
+    expect(updated.loop?.totalTokensAcrossSessions).toBe(0);
+    expect(updated.loop?.totalFlowsAcrossSessions).toBe(0);
   });
 
-  it("(7) clearGoal archives as 'warped' when loop active", () => {
+  it("(7) clearGoal abandons the goal and removes active loop state", () => {
     const state: GoalState = {
       current: {
         id: "goal-1",
@@ -172,7 +177,21 @@ describe("store loop integration", () => {
     clearGoal(tmpDir);
     const updated = readState(tmpDir);
     expect(updated.history).toHaveLength(1);
-    expect(updated.history[0].status).toBe("warped");
+    expect(updated.history[0].status).toBe("abandoned");
+    expect(updated.loop).toBeUndefined();
+  });
+
+  it("(8) explicit warp handoff preserves the active goal and loop counters", () => {
+    setGoal(tmpDir, "budgeted goal", { maxFlows: 3, sessionId: "source" });
+    const before = readState(tmpDir).loop;
+
+    expect(beginWarpHandoff(tmpDir, "source")?.pendingWarpSessionId).toBe("source");
+    expect(completeWarpHandoff(tmpDir, "source", "destination")?.sessionId).toBe("destination");
+
+    const updated = readState(tmpDir);
+    expect(updated.current?.objective).toBe("budgeted goal");
+    expect(updated.current?.pendingWarpSessionId).toBeUndefined();
+    expect(updated.loop).toEqual(before);
   });
 
   it("(8) recordFlowCompletion increments loop.totalFlowsAcrossSessions when loop active", () => {
@@ -269,4 +288,3 @@ describe("store loop integration", () => {
     expect(parsed?.totalTokens).toBe(100);
   });
 });
-

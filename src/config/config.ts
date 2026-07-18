@@ -116,11 +116,6 @@ export interface FlowSettings {
 
 	bodyVerbosity?: "lite" | "full";
 
-	loop?: {
-		/** Enable endless loop behavior. Default: false. */
-		enabled?: boolean;
-	};
-
 	/** Connection-error retries after model failover exhaustion. Default: 3. */
 	subAgentMaxRetries?: number;
 	/** Base delay (ms) for exponential backoff between connection retries. Default: 1000. */
@@ -383,15 +378,6 @@ function extractFlowSettings(settings: Record<string, unknown> | null): FlowSett
 		result.bodyVerbosity = obj.bodyVerbosity;
 	}
 
-	// Parse nested loop settings
-	if (isPlainObject(obj.loop)) {
-		const loop: FlowSettings["loop"] = {};
-		if (typeof obj.loop.enabled === "boolean") {
-			loop.enabled = obj.loop.enabled;
-		}
-		result.loop = loop;
-	}
-
 	// Parse debug mode setting
 	if (typeof obj.debugMode === "boolean") {
 		result.debugMode = obj.debugMode;
@@ -464,7 +450,8 @@ function mergeFlowModelConfigs(...configs: FlowModelConfigs[]): FlowModelConfigs
 
 /**
  * Load flowSettings from global and project settings.json.
- * Project overrides global (shallow merge per key).
+ * Project overrides global. Known nested groups merge by field so a project
+ * override of one field does not discard a global sibling field.
  */
 export function loadFlowSettings(cwd: string): FlowSettings {
 	const globalSettings = readSettingsJson(getGlobalSettingsPath());
@@ -473,9 +460,17 @@ export function loadFlowSettings(cwd: string): FlowSettings {
 	const projectSettings = readSettingsJson(getProjectSettingsPath(cwd));
 	const projectFlowSettings = extractFlowSettings(projectSettings);
 
+	return mergeFlowSettings(globalFlowSettings, projectFlowSettings);
+}
+
+function mergeFlowSettings(base: FlowSettings, override: FlowSettings): FlowSettings {
 	return {
-		...globalFlowSettings,
-		...projectFlowSettings,
+		...base,
+		...override,
+		...(base.steering || override.steering ? { steering: { ...base.steering, ...override.steering } } : {}),
+		...(base.animation || override.animation ? { animation: { ...base.animation, ...override.animation } } : {}),
+		...(base.askUser || override.askUser ? { askUser: { ...base.askUser, ...override.askUser } } : {}),
+		...(base.tools || override.tools ? { tools: { ...base.tools, ...override.tools } } : {}),
 	};
 }
 

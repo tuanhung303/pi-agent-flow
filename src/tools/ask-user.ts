@@ -26,9 +26,12 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { renderSingleSelectRows, type QuestionOption } from "../tui/single-select-layout.js";
-import { loadFlowSettings } from "../config/config.js";
-
 const ASK_USER_VERSION = "1.8.40";
+
+export interface ResolvedAskUserSettings {
+	enabled: boolean;
+	timeoutMs: number;
+}
 
 /**
  * Emit a flat `{ type: "string", enum: [...] }` JSON Schema instead of the
@@ -495,6 +498,7 @@ class AskComponent extends Container {
 		theme: Theme,
 		keybindings: KeybindingsManager,
 		onDone: (result: AskUIResult | null) => void,
+		settings: ResolvedAskUserSettings,
 	) {
 		super();
 
@@ -505,9 +509,8 @@ class AskComponent extends Container {
 		this.keybindings = keybindings;
 		this.onDone = onDone;
 
-		const settings = loadFlowSettings(process.cwd());
-		this.timerEnabled = settings.askUser?.enabled ?? true;
-		this.timerSeconds = settings.askUser?.timeout ?? 300;
+		this.timerEnabled = settings.enabled;
+		this.timerSeconds = Math.max(1, Math.ceil(settings.timeoutMs / 1000));
 		this.timerInterval = undefined;
 		this.timerStartMs = Date.now();
 
@@ -695,7 +698,9 @@ async function askViaDialogs(
 // ---------------------------------------------------------------------------
 // Tool factory
 // ---------------------------------------------------------------------------
-export function createAskUserTool() {
+export function createAskUserTool(
+	getSettings: () => ResolvedAskUserSettings = () => ({ enabled: false, timeoutMs: 300_000 }),
+) {
 	return {
 		name: "ask_user",
 		label: "Ask User",
@@ -751,6 +756,7 @@ export function createAskUserTool() {
 
 			let result: AskUIResult | null;
 			try {
+				const settings = getSettings();
 				const customFactory = (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: AskUIResult | null) => void) => {
 					let abortListener: (() => void) | undefined;
 					let component: AskComponent | undefined;
@@ -783,6 +789,7 @@ export function createAskUserTool() {
 						theme,
 						keybindings,
 						wrappedDone,
+						settings,
 					);
 
 					return component;

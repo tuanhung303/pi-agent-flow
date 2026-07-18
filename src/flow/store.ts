@@ -254,14 +254,19 @@ export function setGoal(
     sessionId: opts?.sessionId,
   };
   if (state.current) {
-    const loopActive = state.loop?.status === "active";
-    state.current.status = loopActive ? "warped" : "abandoned";
+    // `setGoal` is a user-initiated replacement, not a warp handoff. Warp
+    // ownership is transferred exclusively by completeWarpHandoff(), which
+    // deliberately leaves the current goal and its loop state in place.
+    state.current.status = "abandoned";
     state.current.updatedAt = now;
     state.history.push(state.current);
     pruneHistory(state);
   }
   state.current = entry;
-  if (opts?.maxTokens || opts?.maxFlows) {
+  // A manual goal replacement must never inherit counters or an objective
+  // from a prior loop. Budgeted goals create their own fresh loop below.
+  delete state.loop;
+  if (opts?.maxTokens !== undefined || opts?.maxFlows !== undefined) {
     state.loop = {
       objective,
       status: "active",
@@ -277,13 +282,15 @@ export function setGoal(
 export function clearGoal(cwd: string): void {
   const state = readState(cwd);
   if (state.current) {
-    const loopActive = state.loop?.status === "active";
-    state.current.status = loopActive ? "warped" : "abandoned";
+    state.current.status = "abandoned";
     state.current.updatedAt = new Date().toISOString();
     state.history.push(state.current);
     pruneHistory(state);
     state.current = undefined;
   }
+  // Clear is an explicit user cancellation. Only the internal warp handoff
+  // functions preserve loop state across sessions.
+  delete state.loop;
   writeState(cwd, state);
 }
 

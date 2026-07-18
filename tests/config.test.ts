@@ -566,6 +566,37 @@ describe("loadFlowSettings", () => {
 		expect(result).toEqual({ toolOptimize: false });
 	});
 
+	it("deep-merges known nested settings with project fields taking precedence", () => {
+		writeGlobalSettings({
+			flowSettings: {
+				steering: { enabled: false, customPrompt: "global prompt" },
+				animation: { enabled: false, glitch: false },
+				askUser: { enabled: true, timeout: 120 },
+				tools: { trace: false, batchRead: false },
+			},
+		});
+		writeProjectSettings(tmpDir, {
+			flowSettings: {
+				steering: { customPrompt: "project prompt" },
+				animation: { glitch: true },
+				askUser: { timeout: 60 },
+				tools: { batchRead: true },
+			},
+		});
+
+		expect(loadFlowSettings(tmpDir)).toEqual({
+			steering: { enabled: false, customPrompt: "project prompt" },
+			animation: { enabled: false, glitch: true },
+			askUser: { enabled: true, timeout: 60 },
+			tools: { trace: false, batchRead: true },
+		});
+	});
+
+	it("ignores the retired flowSettings.loop configuration", () => {
+		writeProjectSettings(tmpDir, { flowSettings: { loop: { enabled: true } } });
+		expect(loadFlowSettings(tmpDir)).toEqual({});
+	});
+
 	it("reads and merges complexity settings", () => {
 		writeGlobalSettings({
 			flowSettings: {

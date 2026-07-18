@@ -244,6 +244,30 @@ describe("createAskUserTool", () => {
       }),
     );
   });
+
+  it("uses the supplied resolved ask-user configuration instead of reloading settings", async () => {
+    const configuredTool = createAskUserTool(() => ({ enabled: false, timeoutMs: 60_000 }));
+    let component: any;
+    await configuredTool.execute(
+      "tc1",
+      { question: "Pick?", options: ["A"] },
+      undefined,
+      undefined,
+      {
+        hasUI: true,
+        ui: {
+          custom: vi.fn(async (factory: any) => {
+            component = factory({ requestRender: vi.fn() }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, { getKeys: () => [] }, () => {});
+            return undefined;
+          }),
+          select: vi.fn(async () => "A"),
+        },
+      } as any,
+    );
+    expect(component.timerEnabled).toBe(false);
+    expect(component.timerSeconds).toBe(60);
+    component.destroy();
+  });
 });
 
 describe("ask-user helpers", () => {

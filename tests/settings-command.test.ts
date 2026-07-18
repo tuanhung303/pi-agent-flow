@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { SettingsList } from "../src/flow/settings-command.js";
 import { handleTextCommand, getCategoryHandler } from "../src/flow/settings-handler.js";
 import { loadFlowSettings, writeFlowSetting } from "../src/config/config.js";
+import { scrambleManager } from "../src/tui/scramble/index.js";
 import { clearGoal, _clearStoreCache } from "../src/flow/store.js";
 import { clearLoop } from "../src/flow/loop.js";
 
@@ -161,6 +162,7 @@ describe("handleTextCommand", () => {
     clearGoal(tmpDir);
     clearLoop(tmpDir);
     _clearStoreCache();
+    vi.restoreAllMocks();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -216,6 +218,12 @@ describe("handleTextCommand", () => {
     await handleTextCommand("batch-read on", ctx);
     const settings = loadFlowSettings(tmpDir);
     expect(settings.tools?.batchRead).toBe(true);
+  });
+
+  it("body persists a valid verbosity value", async () => {
+    await handleTextCommand("body full", ctx);
+    expect(notifyCalls).toContainEqual({ msg: "bodyVerbosity = full", type: "info" });
+    expect(loadFlowSettings(tmpDir).bodyVerbosity).toBe("full");
   });
 
   it("complexity sets valid mode", async () => {
@@ -290,6 +298,27 @@ describe("handleTextCommand", () => {
     expect(settings.debugMode).toBe(true);
   });
 
+  it("text toggles preserve persisted sibling fields", async () => {
+    writeFlowSetting(tmpDir, "steering.customPrompt", "keep this prompt");
+    writeFlowSetting(tmpDir, "animation.glitch", false);
+
+    await handleTextCommand("steering off", ctx);
+    await handleTextCommand("animation off", ctx);
+
+    const settings = loadFlowSettings(tmpDir);
+    expect(settings.steering).toEqual({ enabled: false, customPrompt: "keep this prompt" });
+    expect(settings.animation).toEqual({ enabled: false, glitch: false });
+  });
+
+  it("text commands persist settings without applying raw animation runtime state", async () => {
+    const applyRuntime = vi.spyOn(scrambleManager, "setAnimationConfig");
+
+    await handleTextCommand("animation off", ctx);
+
+    expect(loadFlowSettings(tmpDir).animation?.enabled).toBe(false);
+    expect(applyRuntime).not.toHaveBeenCalled();
+  });
+
   it("unknown subcommand shows error", async () => {
     await handleTextCommand("unknown", ctx);
     expect(notifyCalls).toContainEqual({
@@ -318,51 +347,68 @@ describe("getCategoryHandler", () => {
   }
 
   it("steering handler writes enabled setting", () => {
-    const handler = getCategoryHandler("steering", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("steering", tmpDir, () => {}, mockTui(), {} as any);
     handler("steering.enabled", "off");
     const settings = loadFlowSettings(tmpDir);
     expect(settings.steering?.enabled).toBe(false);
   });
 
   it("animation handler writes glitch setting", () => {
-    const handler = getCategoryHandler("animation", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("animation", tmpDir, () => {}, mockTui(), {} as any);
     handler("animation.glitch", "off");
     const settings = loadFlowSettings(tmpDir);
     expect(settings.animation?.glitch).toBe(false);
   });
 
   it("tools handler writes trace setting", () => {
-    const handler = getCategoryHandler("tools", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("tools", tmpDir, () => {}, mockTui(), {} as any);
     handler("tools.trace", "off");
     const settings = loadFlowSettings(tmpDir);
     expect(settings.tools?.trace).toBe(false);
   });
 
   it("session handler writes complexity", () => {
-    const handler = getCategoryHandler("session", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("session", tmpDir, () => {}, mockTui(), {} as any);
     handler("complexity", "snap");
     const settings = loadFlowSettings(tmpDir);
     expect(settings.complexity).toBe("snap");
   });
 
+  it("session handler writes body verbosity", () => {
+    const handler = getCategoryHandler("session", tmpDir, () => {}, mockTui(), {} as any);
+    handler("bodyVerbosity", "full");
+    expect(loadFlowSettings(tmpDir).bodyVerbosity).toBe("full");
+  });
+
   it("ask-user handler writes timeout", () => {
-    const handler = getCategoryHandler("ask-user", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("ask-user", tmpDir, () => {}, mockTui(), {} as any);
     handler("askUser.timeout", "60");
     const settings = loadFlowSettings(tmpDir);
     expect(settings.askUser?.timeout).toBe(60);
   });
 
   it("loop handler is no-op", () => {
-    const handler = getCategoryHandler("loop", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("loop", tmpDir, () => {}, mockTui(), {} as any);
     handler("loop.status", "active");
     const settings = loadFlowSettings(tmpDir);
     expect(settings).toEqual({});
   });
 
   it("debug handler writes debugMode", () => {
-    const handler = getCategoryHandler("debug", tmpDir, {}, () => {}, mockTui(), {} as any);
+    const handler = getCategoryHandler("debug", tmpDir, () => {}, mockTui(), {} as any);
     handler("debugMode", "on");
     const settings = loadFlowSettings(tmpDir);
     expect(settings.debugMode).toBe(true);
+  });
+
+  it("sequential interactive edits retain sibling settings without stale runtime application", () => {
+    const applyRuntime = vi.spyOn(scrambleManager, "setAnimationConfig");
+    const handler = getCategoryHandler("animation", tmpDir, () => {}, mockTui(), {} as any);
+
+    handler("animation.glitch", "off");
+    handler("animation.enabled", "off");
+
+    expect(loadFlowSettings(tmpDir).animation).toEqual({ glitch: false, enabled: false });
+    expect(applyRuntime).not.toHaveBeenCalled();
   });
 });

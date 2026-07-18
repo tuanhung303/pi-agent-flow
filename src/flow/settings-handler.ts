@@ -3,18 +3,14 @@
  */
 
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { loadFlowSettings, writeFlowSetting, loadFlowModelConfigs, writeGlobalFlowMode, writeFlowModelConfig, type FlowSettings } from "../config/config.js";
+import { loadFlowSettings, writeFlowSetting, loadFlowModelConfigs, writeGlobalFlowMode, writeFlowModelConfig } from "../config/config.js";
 import { logWarn } from "../config/log.js";
-import { configureSteering } from "../steering/sliding-prompt.js";
-
-import { scrambleManager } from "../tui/scramble/index.js";
 import { getLoop } from "./loop.js";
 import type { SettingsCategory } from "./settings-items.js";
 
 export function getCategoryHandler(
 	category: SettingsCategory,
 	cwd: string,
-	currentSettings: FlowSettings,
 	rebuild: () => void,
 	tui: any,
 	ctx: ExtensionCommandContext,
@@ -23,25 +19,12 @@ export function getCategoryHandler(
 		case "steering": {
 			return (id, value) => {
 				if (id === "steering.enabled") {
-					const boolValue = value === "on";
-					writeFlowSetting(cwd, "steering.enabled", boolValue);
-					configureSteering({
-						enabled: boolValue,
-						customPrompt: currentSettings.steering?.customPrompt,
-					});
+					writeFlowSetting(cwd, "steering.enabled", value === "on");
 				} else if (id === "steering.customPrompt") {
 					if (value === "(default)") {
 						writeFlowSetting(cwd, "steering.customPrompt", undefined);
-						configureSteering({
-							enabled: currentSettings.steering?.enabled ?? true,
-							customPrompt: undefined,
-						});
 					} else {
 						writeFlowSetting(cwd, "steering.customPrompt", value);
-						configureSteering({
-							enabled: currentSettings.steering?.enabled ?? true,
-							customPrompt: value,
-						});
 					}
 				}
 				rebuild();
@@ -51,19 +34,9 @@ export function getCategoryHandler(
 		case "animation": {
 			return (id, value) => {
 				if (id === "animation.enabled") {
-					const boolValue = value === "on";
-					writeFlowSetting(cwd, "animation.enabled", boolValue);
-					scrambleManager.setAnimationConfig({
-						enabled: boolValue,
-						glitch: currentSettings.animation?.glitch ?? true,
-					});
+					writeFlowSetting(cwd, "animation.enabled", value === "on");
 				} else if (id === "animation.glitch") {
-					const boolValue = value === "on";
-					writeFlowSetting(cwd, "animation.glitch", boolValue);
-					scrambleManager.setAnimationConfig({
-						enabled: currentSettings.animation?.enabled ?? true,
-						glitch: boolValue,
-					});
+					writeFlowSetting(cwd, "animation.glitch", value === "on");
 				}
 				rebuild();
 				tui.requestRender();
@@ -86,7 +59,9 @@ export function getCategoryHandler(
 		}
 		case "session": {
 			return (id, value) => {
-				if (id === "complexity") {
+				if (id === "bodyVerbosity") {
+					writeFlowSetting(cwd, "bodyVerbosity", value);
+				} else if (id === "complexity") {
 					writeFlowSetting(cwd, "complexity", value);
 				} else if (id === "maxConcurrency") {
 					writeFlowSetting(cwd, "maxConcurrency", Number(value));
@@ -189,7 +164,6 @@ export async function handleTextCommand(args: string, ctx: ExtensionCommandConte
 				return;
 			}
 			writeFlowSetting(cwd, "steering.enabled", parsed);
-			configureSteering({ enabled: parsed, customPrompt: undefined });
 			ctx.ui.notify?.(`steering.enabled = ${parsed}`, "info");
 			break;
 		}
@@ -200,7 +174,6 @@ export async function handleTextCommand(args: string, ctx: ExtensionCommandConte
 				return;
 			}
 			writeFlowSetting(cwd, "animation.enabled", parsed);
-			scrambleManager.setAnimationConfig({ enabled: parsed, glitch: true });
 			ctx.ui.notify?.(`animation.enabled = ${parsed}`, "info");
 			break;
 		}
@@ -211,7 +184,6 @@ export async function handleTextCommand(args: string, ctx: ExtensionCommandConte
 				return;
 			}
 			writeFlowSetting(cwd, "animation.glitch", parsed);
-			scrambleManager.setAnimationConfig({ enabled: true, glitch: parsed });
 			ctx.ui.notify?.(`animation.glitch = ${parsed}`, "info");
 			break;
 		}
@@ -256,9 +228,9 @@ export async function handleTextCommand(args: string, ctx: ExtensionCommandConte
 			break;
 		}
 		case "body": {
-			if (args[0] === "lite" || args[0] === "full") {
-				writeFlowSetting(cwd, "bodyVerbosity", args[0]);
-				ctx.ui.notify?.(`bodyVerbosity = ${args[0]}`, "info");
+			if (value === "lite" || value === "full") {
+				writeFlowSetting(cwd, "bodyVerbosity", value);
+				ctx.ui.notify?.(`bodyVerbosity = ${value}`, "info");
 			} else {
 				ctx.ui.notify?.("Usage: /flow:settings body <lite|full>", "error");
 			}

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setupLoopCommand } from "../src/flow/loop-command.js";
-import { setGoal, clearGoal, _clearStoreCache } from "../src/flow/store.js";
+import { setGoal, getGoal, clearGoal, _clearStoreCache } from "../src/flow/store.js";
 import { clearLoop } from "../src/flow/loop.js";
 
 describe("setupLoopCommand", () => {
@@ -60,11 +60,11 @@ describe("setupLoopCommand", () => {
     expect(notifyCalls).toContainEqual({ msg: "Loop enabled: test objective", type: "info" });
   });
 
-  it("enable uses custom objective when provided", async () => {
+  it("enable rejects a cosmetic custom objective", async () => {
     setGoal(tmpDir, "test objective");
     const handler = registered["flow:loop"].handler;
     await handler("enable custom obj", makeCtx());
-    expect(notifyCalls).toContainEqual({ msg: "Loop enabled: custom obj", type: "info" });
+    expect(notifyCalls).toContainEqual({ msg: "Usage: /flow:loop enable", type: "error" });
   });
 
   it("disable disables active loop", async () => {
@@ -107,6 +107,7 @@ describe("setupLoopCommand", () => {
     notifyCalls.length = 0;
     await handler("stop", makeCtx());
     expect(notifyCalls).toContainEqual({ msg: "Loop stopped", type: "info" });
+    expect(getGoal(tmpDir)?.status).toBe("active");
   });
 
   it("stop errors when no loop", async () => {
