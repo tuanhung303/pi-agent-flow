@@ -46,6 +46,7 @@ import {
 	formatPriorBuildOutputs,
 } from "./audit-formatters.js";
 import { executeSingleFlow } from "./execute-single.js";
+import { confirmProjectFlowsIfNeeded } from "./project-confirmation.js";
 
 export { preserveMetadata, createGhostResult, shouldFailover, type CycleHistoryEntry } from "./cycle-guard.js";
 export { buildReworkIntent, buildGroupAuditIntent, formatPriorAuditHistory, formatPriorBuildOutputs } from "./audit-formatters.js";
@@ -77,6 +78,10 @@ export interface FlowExecutorDeps {
 	forkSessionSnapshotJsonl: string | null;
 	/** Shared conventions resolved during discovery for every child prompt. */
 	conventions?: string;
+	/** Provenance and safe fallback for conventions resolved during discovery. */
+	conventionsSource?: import("./agents.js").ConventionSource;
+	conventionsPath?: string;
+	fallbackConventions?: string;
 	compressionStats?: import("../core2/snapshot.js").CompressionStats;
 	/** Creates a profile- and retry-budget-specific snapshot for generated flows. */
 	getForkSnapshot?: (flowType: string) => {
@@ -131,31 +136,6 @@ function getRequestedProjectFlows(
 	return Array.from(requestedNames)
 		.map((name) => flows.find((f) => f.name === name.toLowerCase()))
 		.filter((f): f is FlowConfig => f?.source === "project");
-}
-
-async function confirmProjectFlowsIfNeeded(
-	projectFlows: FlowConfig[],
-	projectFlowsDir: string | null,
-	hasUI: boolean,
-	uiConfirm: (title: string, body: string) => Promise<boolean>,
-): Promise<{ ok: boolean; blocked?: string }> {
-	if (projectFlows.length === 0) return { ok: true };
-
-	const names = projectFlows.map((f) => f.name).join(", ");
-	const dir = projectFlowsDir ?? "(unknown)";
-
-	if (hasUI) {
-		const ok = await uiConfirm(
-			"Run project-local flows?",
-			`Flows: ${names}\nSource: ${dir}\n\nProject flows are repo-controlled. Only continue for trusted repositories.`,
-		);
-		return { ok };
-	}
-
-	return {
-		ok: false,
-		blocked: `Blocked: project-local flow confirmation required in non-UI mode.\nFlows: ${names}\nRe-run with confirmProjectFlows: false if trusted.`,
-	};
 }
 
 class ConcurrencyLimiter {
@@ -436,14 +416,28 @@ export async function executeFlows(
 	}
 
 	const projectFlows = getRequestedProjectFlows(flows, requested);
-	if (projectFlows.length > 0 && confirmProjectFlows !== false) {
-		const { ok, blocked } = await confirmProjectFlowsIfNeeded(projectFlows, projectFlowsDir, hasUI, uiConfirm);
+	const hasProjectConventions = deps.conventionsSource === "project";
+	let executionDeps = deps;
+	if ((projectFlows.length > 0 || hasProjectConventions) && confirmProjectFlows !== false) {
+		const { ok, blocked } = await confirmProjectFlowsIfNeeded({
+			projectFlows,
+			requestedFlowNames: requested,
+			projectFlowsDir,
+			conventionsPath: hasProjectConventions ? deps.conventionsPath : undefined,
+			hasUI,
+			uiConfirm,
+		});
 		if (!ok) {
-			return {
-				content: [{ type: "text", text: blocked ?? "Canceled: project-local flows not approved." }],
-				details: makeDetails([]),
-				failed: !blocked,
-			};
+			if (projectFlows.length > 0) {
+				return {
+					content: [{ type: "text", text: blocked ?? "Canceled: project-local flows not approved." }],
+					details: makeDetails([]),
+					failed: !blocked,
+				};
+			}
+			// A declined convention is not a declined bundled flow. Keep the flow
+			// runnable, but never pass repo-controlled convention text to it.
+			executionDeps = { ...deps, conventions: deps.fallbackConventions };
 		}
 	}
 
@@ -606,12 +600,12 @@ export async function executeFlows(
 	const regularPromise = regularParams.length > 0
 		? Promise.all(regularParams.map((item, localIndex) => {
 			const globalIndex = regularIndices[localIndex];
-			return limiter.run(() => executeSingleFlow(deps, item, allResults, globalIndex, toolCallId, emitProgress, selectedFlowModelConfig));
+		return limiter.run(() => executeSingleFlow(executionDeps, item, allResults, globalIndex, toolCallId, emitProgress, selectedFlowModelConfig));
 		}))
 		: Promise.resolve([]);
 
 	const groupPromises = groups.map((group) =>
-		executeGroupedPingPong(deps, group, allResults, toolCallId, emitProgress, selectedFlowModelConfig, limiter),
+		executeGroupedPingPong(executionDeps, group, allResults, toolCallId, emitProgress, selectedFlowModelConfig, limiter),
 	);
 
 	await Promise.all([regularPromise, ...groupPromises]);

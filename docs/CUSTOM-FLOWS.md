@@ -47,10 +47,10 @@ flow [myflow] accomplished
 
 ## Shared conventions
 
-Optionally create a plain Markdown `_conventions.md` beside flow files. It is not a flow and needs no front matter. Resolution is **bundled < user < project**, so a project `.pi/agents/_conventions.md` overrides a user file, which overrides the bundled default. The resolved file is added once as `## Conventions` inside every child `<directive>`, including custom flows. If none exists, nothing is added.
+Optionally create a plain Markdown `_conventions.md` beside flow files. It is not a flow and needs no front matter. Resolution is **bundled < user < project**, so a project `.pi/agents/_conventions.md` overrides a user file, which overrides the bundled default. The resolved file is added once as `## Conventions` inside every child `<directive>`, including custom flows. If none exists, nothing is added. Project-sourced conventions use the same trust confirmation as project-local flows: with the default `confirmProjectFlows: true`, Pi prompts in UI mode and uses the user-scope convention (or bundled convention, then none) if approval is declined or unavailable. Set `confirmProjectFlows: false` only for trusted repositories. Bundled and user conventions never prompt.
 
 Every child mission also requires a pre-tool `## Base Understanding` block (maximum five lines): an objective restatement, relied-on context/constraints, and material assumptions or unknowns. Keep custom-flow final-output contracts intact; for example, a JSON-only final response remains JSON-only after the pre-tool handshake.
 
 ## Project flow confirmation
 
-Project-local flows from `.pi/agents/` prompt for confirmation before running for security. Suppress this with `confirmProjectFlows: false` in the `flow` tool call.
+Project-local flows and project-local `_conventions.md` from `.pi/agents/` prompt for confirmation before running for security. Suppress this with `confirmProjectFlows: false` in the `flow` (or optional `trace`) tool call only for trusted repositories.

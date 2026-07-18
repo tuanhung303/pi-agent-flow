@@ -35,6 +35,7 @@ import type { WebOpInput } from "./web-ops.js";
 import { buildTraceEvidenceIds, extractTraceStructuredOutput, resolveToolEvidence } from "../snapshot/trace-output.js";
 import { prepareTraceDispatchArguments } from "./trace-dispatch-prep.js";
 import { DispatchOpSchema } from "../flow/dispatch-schema.js";
+import { confirmProjectFlowsIfNeeded } from "../flow/project-confirmation.js";
 
 async function executeDispatchOps(
 	dispatch: Array<
@@ -145,6 +146,10 @@ export const TraceParams = Type.Object({
 		Type.Literal("complex"),
 		Type.Literal("intricate"),
 	], { description: "Budget level. Default: simple." })),
+	confirmProjectFlows: Type.Optional(Type.Boolean({
+		description: "Prompt before using project-local flow content. Default: true.",
+		default: true,
+	})),
 }, {
 	title: "TraceToolParams",
 	description: "Activate trace mode — read files verbatim, run checks, explore codebase. All fields optional.",
@@ -283,6 +288,18 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 			if (!traceFlow) {
 				throw new Error("Trace agent not found. Expected agents/trace.md to be present.");
 			}
+			let conventions = discovery.conventions;
+			if (discovery.conventionsSource === "project" && params.confirmProjectFlows !== false) {
+				const { ok } = await confirmProjectFlowsIfNeeded({
+					projectFlows: [],
+					requestedFlowNames: [traceFlow.name],
+					projectFlowsDir: discovery.projectFlowsDir,
+					conventionsPath: discovery.conventionsPath,
+					hasUI: ctx.hasUI,
+					uiConfirm: (title, body) => ctx.ui.confirm(title, body),
+				});
+				if (!ok) conventions = discovery.fallbackConventions;
+			}
 
 			const intent = params.intent ?? traceFlow.description;
 			const runtime = resolveTraceRuntime(opts, traceFlow, ctx, toolCallId, intent);
@@ -343,7 +360,7 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 					maxContextTokens,
 					compressionStats,
 					preDispatchResults,
-					conventions: discovery.conventions,
+					conventions,
 					makeDetails,
 					signal,
 					onUpdate,

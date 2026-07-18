@@ -158,6 +158,10 @@ describe("discoverFlows", () => {
 		const result = discoverFlows(tmpDir, "all");
 
 		expect(result.conventions).toBe("Project conventions win.");
+		expect(result.conventionsSource).toBe("project");
+		expect(result.conventionsPath).toBe(path.join(agentsDir, "_conventions.md"));
+		expect(result.fallbackConventions).toBeTruthy();
+		expect(result.fallbackConventionsSource).toBe("bundled");
 	});
 
 	it("injects conventions and the Base Understanding handshake into every bundled prompt", () => {

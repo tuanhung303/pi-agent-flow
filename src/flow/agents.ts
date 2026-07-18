@@ -18,6 +18,7 @@ import { logWarn } from "../config/log.js";
 import { getAgentDir } from "../config/paths.js";
 
 export type FlowScope = "user" | "project" | "both" | "bundled" | "all";
+export type ConventionSource = "user" | "project" | "bundled";
 
 export type FlowTier = "lite" | "flash" | "full";
 
@@ -62,6 +63,13 @@ export interface FlowDiscoveryResult {
 	projectFlowsDir: string | null;
 	/** Shared prompt conventions resolved with bundled < user < project precedence. */
 	conventions?: string;
+	/** Provenance for the resolved conventions, used to trust-gate project content. */
+	conventionsSource?: ConventionSource;
+	conventionsPath?: string;
+	/** Lower-precedence conventions to use if project conventions are not approved. */
+	fallbackConventions?: string;
+	fallbackConventionsSource?: Exclude<ConventionSource, "project">;
+	fallbackConventionsPath?: string;
 }
 
 /** Determine the model tier for a given flow name. */
@@ -328,12 +336,23 @@ function loadFlowsFromDir(dir: string, source: "user" | "project" | "bundled"): 
 	return flows;
 }
 
+interface ResolvedConventions {
+	content: string;
+	source: ConventionSource;
+	filePath: string;
+}
+
+interface ConventionDirectory {
+	dir: string;
+	source: ConventionSource;
+}
+
 /** Read a plain shared-conventions file. Missing or blank files do not override lower scopes. */
-function loadConventionsFromDir(dir: string): string | undefined {
+function loadConventionsFromDir({ dir, source }: ConventionDirectory): ResolvedConventions | undefined {
 	const filePath = path.join(dir, "_conventions.md");
 	try {
 		const content = fs.readFileSync(filePath, "utf-8").trim();
-		return content || undefined;
+		return content ? { content, source, filePath } : undefined;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 			logWarn(`[pi-agent-flow] Failed to read conventions file ${filePath}: ${error}`);
@@ -342,11 +361,11 @@ function loadConventionsFromDir(dir: string): string | undefined {
 	}
 }
 
-function resolveConventions(dirs: string[]): string | undefined {
-	let conventions: string | undefined;
+function resolveConventions(dirs: ConventionDirectory[]): ResolvedConventions | undefined {
+	let conventions: ResolvedConventions | undefined;
 	for (const dir of dirs) {
-		const content = loadConventionsFromDir(dir);
-		if (content) conventions = content;
+		const resolved = loadConventionsFromDir(dir);
+		if (resolved) conventions = resolved;
 	}
 	return conventions;
 }
@@ -380,24 +399,45 @@ export function discoverFlows(cwd: string, scope: FlowScope): FlowDiscoveryResul
 		...loadFlowsFromDir(userFlowsDirs[1], "user"),
 	];
 	const projectFlows = scope === "user" || scope === "bundled" || !projectFlowsDir ? [] : loadFlowsFromDir(projectFlowsDir, "project");
-	const conventions = resolveConventions([
-		...(scope === "user" || scope === "project" ? [] : [bundledFlowsDir]),
-		...(scope === "project" || scope === "bundled" ? [] : userFlowsDirs),
-		...(scope === "user" || scope === "bundled" || !projectFlowsDir ? [] : [projectFlowsDir]),
+	const bundledConventionDirs: ConventionDirectory[] =
+		scope === "user" || scope === "project" ? [] : [{ dir: bundledFlowsDir, source: "bundled" }];
+	const userConventionDirs: ConventionDirectory[] =
+		scope === "project" || scope === "bundled" ? [] : userFlowsDirs.map((dir) => ({ dir, source: "user" }));
+	const projectConventionDirs: ConventionDirectory[] =
+		scope === "user" || scope === "bundled" || !projectFlowsDir ? [] : [{ dir: projectFlowsDir, source: "project" }];
+	const resolvedConventions = resolveConventions([
+		...bundledConventionDirs,
+		...userConventionDirs,
+		...projectConventionDirs,
 	]);
+	const fallbackConventions = resolvedConventions?.source === "project"
+		? resolveConventions([...bundledConventionDirs, ...userConventionDirs])
+		: undefined;
+	const conventionResult = {
+		...(resolvedConventions ? {
+			conventions: resolvedConventions.content,
+			conventionsSource: resolvedConventions.source,
+			conventionsPath: resolvedConventions.filePath,
+		} : {}),
+		...(fallbackConventions ? {
+			fallbackConventions: fallbackConventions.content,
+			fallbackConventionsSource: fallbackConventions.source as Exclude<ConventionSource, "project">,
+			fallbackConventionsPath: fallbackConventions.filePath,
+		} : {}),
+	};
 
 	if (scope === "bundled") {
-		return { flows: bundledFlows, projectFlowsDir, conventions };
+		return { flows: bundledFlows, projectFlowsDir, ...conventionResult };
 	}
 	if (scope === "user") {
-		return { flows: mergeFlows(bundledFlows, userFlows), projectFlowsDir, conventions };
+		return { flows: mergeFlows(bundledFlows, userFlows), projectFlowsDir, ...conventionResult };
 	}
 	if (scope === "project") {
-		return { flows: mergeFlows(projectFlows), projectFlowsDir, conventions };
+		return { flows: mergeFlows(projectFlows), projectFlowsDir, ...conventionResult };
 	}
 	return {
 		flows: mergeFlows(bundledFlows, userFlows, projectFlows),
 		projectFlowsDir,
-		conventions,
+		...conventionResult,
 	};
 }
