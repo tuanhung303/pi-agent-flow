@@ -7,10 +7,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Detect current state: linked installs show "->" in npm ls output
-STATE=$(npm ls -g pi-agent-flow 2>/dev/null || true)
+# Detect current state from the global package directory itself.
+PKG_DIR="$(npm root -g)/pi-agent-flow"
 
-if echo "${STATE}" | grep -q '->'; then
+if [ -L "${PKG_DIR}" ]; then
     echo "🔌 pi-agent-flow is LOCAL (linked). Switching to REMOTE..."
     npm uninstall -g pi-agent-flow
     npm install -g pi-agent-flow
