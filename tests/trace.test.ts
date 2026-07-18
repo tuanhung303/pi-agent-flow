@@ -5,7 +5,7 @@ import * as path from "node:path";
 import registerExtension from "../src/index.js";
 import { runFlow } from "../src/flow/runner.js";
 import { emptyFlowUsage } from "../src/types/flow.js";
-import { extractTraceStructuredOutput, resolveToolEvidence, unwrapMarkdownCodeBlock } from "../src/snapshot/trace-output.js";
+import { buildTraceEvidenceIds, collectExecutedToolCallIds, extractTraceStructuredOutput, resolveToolEvidence, unwrapMarkdownCodeBlock } from "../src/snapshot/trace-output.js";
 
 vi.mock("../src/flow/runner.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../src/flow/runner.js")>();
@@ -128,6 +128,26 @@ describe("Trace Structured Output Parser & Resolver", () => {
 	});
 
 	describe("resolveToolEvidence", () => {
+		it("collects executed tool call IDs in order, deduplicated across ID shapes", () => {
+			const messages: any[] = [
+				{ role: "assistant", content: [{ type: "toolCall", id: "native" }, { type: "text", text: "ignored" }] },
+				{ role: "assistant", content: [{ type: "toolCall", toolCallId: "camel" }, { type: "toolCall", tool_call_id: "snake" }] },
+				{ role: "assistant", content: [{ type: "toolCall", id: "native" }] },
+			];
+			expect(collectExecutedToolCallIds(messages)).toEqual(["native", "camel", "snake"]);
+		});
+
+		it("keeps all executed IDs when reported IDs are empty or malformed and appends unique parent IDs", () => {
+			const messages: any[] = [
+				{ role: "assistant", content: [{ type: "toolCall", id: "live_one" }, { type: "toolCall", toolCallId: "live_two" }] },
+			];
+			expect(buildTraceEvidenceIds(messages, [])).toEqual(["live_one", "live_two"]);
+			expect(buildTraceEvidenceIds(messages, "malformed")).toEqual(["live_one", "live_two"]);
+			expect(buildTraceEvidenceIds(messages, ["live_two", "parent_one", "parent_one"])).toEqual([
+				"live_one", "live_two", "parent_one",
+			]);
+		});
+
 		it("resolves evidence from pre-dispatch or live flow messages", () => {
 			const messages: any[] = [
 				{
@@ -261,6 +281,39 @@ describe("Trace Structured Output Parser & Resolver", () => {
 			expect(outputSection).toContain("```text");
 			expect(outputSection).toContain("```");
 		});
+
+		it("reads the evidence cap from the environment", () => {
+			const previous = process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES;
+			process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES = "400";
+			try {
+				const messages: any[] = [
+					{ role: "assistant", content: [{ type: "toolCall", id: "first", name: "bash", arguments: { command: "echo first" } }] },
+					{ role: "tool", toolCallId: "first", content: "first output" },
+					{ role: "assistant", content: [{ type: "toolCall", id: "second", name: "bash", arguments: { command: "echo second" } }] },
+					{ role: "tool", toolCallId: "second", content: "second output ".repeat(100) },
+				];
+				const evidence = resolveToolEvidence(["first", "second"], messages, []);
+				expect(evidence).toContain("[Evidence truncated: 1 more tool call(s) omitted]");
+				expect(Buffer.byteLength(evidence, "utf-8")).toBeLessThanOrEqual(400);
+			} finally {
+				if (previous === undefined) delete process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES;
+				else process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES = previous;
+			}
+		});
+
+		it("caps evidence at whole entry boundaries and reports omitted calls", () => {
+			const messages: any[] = [
+				{ role: "assistant", content: [{ type: "toolCall", id: "first", name: "bash", arguments: { command: "echo first" } }] },
+				{ role: "tool", toolCallId: "first", content: "first output" },
+				{ role: "assistant", content: [{ type: "toolCall", id: "second", name: "bash", arguments: { command: "echo second" } }] },
+				{ role: "tool", toolCallId: "second", content: "second output ".repeat(100) },
+			];
+			const evidence = resolveToolEvidence(["first", "second"], messages, [], 400);
+			expect(evidence).toContain("### bash [first]");
+			expect(evidence).not.toContain("### bash [second]");
+			expect(evidence).toContain("[Evidence truncated: 1 more tool call(s) omitted]");
+			expect(Buffer.byteLength(evidence, "utf-8")).toBeLessThanOrEqual(400);
+		});
 	});
 });
 
@@ -374,5 +427,27 @@ Prompt`,
 		expect(responseText).toContain("const a = 123;");
 		// Must silently ignore missing_id
 		expect(responseText).not.toContain("missing_id");
+	});
+
+	it("returns executed-call evidence when the trace output is malformed", async () => {
+		setupFlowsDir();
+		const pi = createMockPi();
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+
+		vi.mocked(runFlow).mockResolvedValue({
+			type: "trace", agentSource: "project", intent: "Read index", aim: "", exitCode: 0,
+			messages: [
+				{ role: "assistant", content: [{ type: "toolCall", tool_call_id: "call_snake", name: "batch", arguments: { o: [{ o: "read", p: "src/index.ts" }] } }] },
+				{ role: "tool", tool_call_id: "call_snake", content: "const deterministic = true;" },
+				{ role: "assistant", content: [{ type: "text", text: "not structured JSON" }] },
+			], stderr: "", usage: emptyFlowUsage(),
+		});
+
+		const result = await pi.getTool("trace").execute("call-trace-malformed", { intent: "Read index" }, new AbortController().signal, vi.fn(), makeMockCtx(tmpDir));
+		expect(result.content[0].text).toContain("not structured JSON");
+		expect(result.content[0].text).toContain("## Verbatim Evidence");
+		expect(result.content[0].text).toContain("### batch [call_snake]");
+		expect(result.content[0].text).toContain("const deterministic = true;");
 	});
 });

@@ -88,7 +88,7 @@ export interface FlowStructuredOutput {
 export interface TraceStructuredOutput {
 	/** A 1–3 sentence orientation summary of what was looked at and why it matters (under 50 words). */
 	note: string;
-	/** The tool call IDs containing the verbatim evidence. */
+	/** Tool call IDs most relevant to the inquiry; executed-call evidence is always included. */
 	tool_ids: string[];
 }
 

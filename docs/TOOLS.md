@@ -97,6 +97,10 @@ A lightweight flow state with `maxDepth: 0` that runs verbatim checks, explorati
 
 `trace` receives the **main agent's full session context** — no tier-based message cap, no profile-based compression. The `tier: lite` in `agents/trace.md` only affects which model is selected (cheaper/faster), not the snapshot content. The shared context display accurately reflects the main agent's actual message counts and conversation history.
 
+### Verbatim evidence
+
+Trace responses retain the agent's short narrative note and deterministically append `## Verbatim Evidence` for every tool call executed by that trace, including pre-dispatch calls. The agent's `tool_ids` identify especially relevant calls and may add unique parent-branch calls, but cannot omit executed-call evidence. Evidence is capped at 100000 bytes by default; set `PI_FLOW_TRACE_EVIDENCE_MAX_BYTES` to override it. Whole call entries are retained from the head, followed by a truncation marker when necessary.
+
 ### Example using `dispatch` for quick edits/reads/bash
 
 Run batch modifications or terminal checks directly in a single step via `dispatch` without additional round-trips:

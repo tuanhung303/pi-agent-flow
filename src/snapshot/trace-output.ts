@@ -65,13 +65,65 @@ export function extractTraceStructuredOutput(text: string): TraceStructuredOutpu
 
 // Fallback for external APIs that use snake_case
 const SNAKE_TOOL_CALL_ID = "tool_call_id";
+const DEFAULT_TRACE_EVIDENCE_MAX_BYTES = 100_000;
+
+function getToolCallId(part: unknown): string | undefined {
+	if (!part || typeof part !== "object") return undefined;
+	const record = part as Record<string, unknown>;
+	const id = record.id || record.toolCallId || record[SNAKE_TOOL_CALL_ID];
+	return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
+/**
+ * Collect tool call IDs in execution order from assistant messages. Supports
+ * native, camelCase, and snake_case call ID fields used by provider adapters.
+ */
+export function collectExecutedToolCallIds(messages: Message[]): string[] {
+	const ids: string[] = [];
+	const seen = new Set<string>();
+	for (const message of messages) {
+		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const part of message.content) {
+			if (!part || part.type !== "toolCall") continue;
+			const id = getToolCallId(part);
+			if (id && !seen.has(id)) {
+				seen.add(id);
+				ids.push(id);
+			}
+		}
+	}
+	return ids;
+}
+
+/**
+ * Always include calls executed by this trace. Agent-reported IDs are retained
+ * only as unique trailing references to parent-branch history.
+ */
+export function buildTraceEvidenceIds(messages: Message[], reportedToolIds: unknown): string[] {
+	const ids = collectExecutedToolCallIds(messages);
+	const seen = new Set(ids);
+	if (!Array.isArray(reportedToolIds)) return ids;
+	for (const id of reportedToolIds) {
+		if (typeof id === "string" && id.length > 0 && !seen.has(id)) {
+			seen.add(id);
+			ids.push(id);
+		}
+	}
+	return ids;
+}
+
+/** Read the evidence cap at resolution time so tests and live settings can override it. */
+export function getTraceEvidenceMaxBytes(): number {
+	const parsed = Number.parseInt(process.env.PI_FLOW_TRACE_EVIDENCE_MAX_BYTES ?? "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TRACE_EVIDENCE_MAX_BYTES;
+}
 
 function findToolCall(messages: Message[], targetId: string) {
 	for (const msg of messages) {
 		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
 		for (const part of msg.content) {
 			if (part && part.type === "toolCall") {
-				const id = part.id || part.toolCallId || ((part as unknown) as Record<string, unknown>)[SNAKE_TOOL_CALL_ID] as string | undefined;
+				const id = getToolCallId(part);
 				if (id === targetId) {
 					return {
 						tool: part.name || part.toolName || "",
@@ -111,12 +163,13 @@ function chooseFence(content: string): string {
 }
 
 /**
- * Automatically resolve tool_ids to verbatim args + output
+ * Resolve selected IDs to verbatim args + output, bounded at whole-entry boundaries.
  */
 export function resolveToolEvidence(
 	toolIds: string[],
 	messages: Message[],
 	parentBranch: unknown[],
+	maxBytes = getTraceEvidenceMaxBytes(),
 ): string {
 	const branchMessages: Message[] = [];
 	if (Array.isArray(parentBranch)) {
@@ -162,5 +215,24 @@ export function resolveToolEvidence(
 		return "";
 	}
 
-	return `## Verbatim Evidence\n\n` + evidenceParts.join("\n\n");
+	const heading = "## Verbatim Evidence\n\n";
+	let includedCount = 0;
+	for (let index = 0; index < evidenceParts.length; index++) {
+		const candidateEntries = evidenceParts.slice(0, index + 1);
+		const omitted = evidenceParts.length - candidateEntries.length;
+		const marker = omitted > 0 ? `\n\n[Evidence truncated: ${omitted} more tool call(s) omitted]` : "";
+		const candidate = heading + candidateEntries.join("\n\n") + marker;
+		if (Buffer.byteLength(candidate, "utf-8") > maxBytes) break;
+		includedCount = candidateEntries.length;
+	}
+
+	if (includedCount === evidenceParts.length) return heading + evidenceParts.join("\n\n");
+
+	const omitted = evidenceParts.length - includedCount;
+	const marker = `[Evidence truncated: ${omitted} more tool call(s) omitted]`;
+	const separator = includedCount > 0 ? "\n\n" : "";
+	const truncated = heading + evidenceParts.slice(0, includedCount).join("\n\n") + separator + marker;
+	// Do not cut entries mid-block; the configured cap is enforced whenever it
+	// can contain the required heading and truncation marker.
+	return truncated;
 }

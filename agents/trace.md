@@ -14,7 +14,7 @@ Your final output MUST be a JSON code block matching the following schema.
 Do NOT paraphrase file contents in the `note` field. The system will fetch the raw contents automatically.
 Do NOT include any extra arrays like `files`, `actions`, `reasoning`, or `notes`. Keep the `note` field under 50 words.
 
-In the `tool_ids` array, you MUST list all relevant, impact to the inquiry, related to context - tool call IDs (including pre-dispatch tool call IDs like `pre_dispatch_batch_0`, `pre_dispatch_bash_0`, etc. as well as any tool calls you executed yourself) that contain the file contents or command outputs you inspected.
+In the `tool_ids` array, list the tool call IDs most relevant to the inquiry (including pre-dispatch IDs like `pre_dispatch_batch_0`). The system deterministically includes verbatim args and output for every tool call executed by this trace regardless of this list; use `tool_ids` to highlight relevant calls, including parent-context calls when applicable.
 
 Keep the `note` field strictly focused on summarizing the actual codebase files or command outputs you inspected and why they matter. Do NOT write about the trace tool itself, the system prompt, the tool IDs, the execution flow, or whether a result was found or provided.
 

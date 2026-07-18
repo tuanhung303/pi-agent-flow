@@ -32,7 +32,7 @@ import { logWarn } from "../config/log.js";
 import { runWebOps } from "./web-ops.js";
 import { BASH_DEFAULT_TIMEOUT_MS, type FileOpInput } from "../batch/constants.js";
 import type { WebOpInput } from "./web-ops.js";
-import { extractTraceStructuredOutput, resolveToolEvidence } from "../snapshot/trace-output.js";
+import { buildTraceEvidenceIds, extractTraceStructuredOutput, resolveToolEvidence } from "../snapshot/trace-output.js";
 import { prepareTraceDispatchArguments } from "./trace-dispatch-prep.js";
 import { DispatchOpSchema } from "../flow/dispatch-schema.js";
 
@@ -352,10 +352,14 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 
 			const rawOutput = getFlowOutput(result.messages) || "Trace completed.";
 			const traceOutput = extractTraceStructuredOutput(rawOutput) ?? { note: rawOutput, tool_ids: [] };
+			const evidenceIds = buildTraceEvidenceIds(
+				[...preDispatchMessages, ...result.messages],
+				traceOutput.tool_ids,
+			);
 
 			let outputText = traceOutput.note;
 			const evidence = resolveToolEvidence(
-				traceOutput.tool_ids,
+				evidenceIds,
 				[...preDispatchMessages, ...result.messages],
 				ctx.sessionManager.getBranch(),
 			);
