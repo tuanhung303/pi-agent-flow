@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import { logWarn } from "../config/log.js";
 import { atomicWriteJsonSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
 import type { GoalEntry, GoalState, GoalStatus } from "./types.js";
@@ -241,7 +242,7 @@ export function setGoal(
   const state = readState(cwd);
   const now = new Date().toISOString();
   const entry: GoalEntry = {
-    id: `goal-${Date.now()}`,
+    id: `goal-${randomUUID()}`,
     objective,
     acceptance: opts?.acceptance,
     createdAt: now,
@@ -343,11 +344,35 @@ export function completeWarpHandoff(cwd: string, sourceSessionId: string, newSes
   return goal;
 }
 
+/**
+ * Count a successfully created warp session only when the exact goal handed
+ * off still belongs to that destination session. This makes delayed warp
+ * completion harmless after a user replaces the goal.
+ */
+export function recordWarpHandoffSession(
+  cwd: string,
+  goalId: string,
+  sessionId: string,
+): GoalState["loop"] | undefined {
+  const state = readState(cwd);
+  if (
+    state.current?.id !== goalId ||
+    state.current.sessionId !== sessionId ||
+    state.current.status !== "active" ||
+    state.loop?.status !== "active"
+  ) {
+    return undefined;
+  }
+  state.loop.sessionCount += 1;
+  writeState(cwd, state);
+  return state.loop;
+}
+
 /** Restore the source binding if new-session creation fails after handoff. */
-export function restoreWarpHandoff(cwd: string, sourceSessionId: string, newSessionId: string): GoalEntry | undefined {
+export function restoreWarpHandoff(cwd: string, sourceSessionId: string, newSessionId: string, goalId?: string): GoalEntry | undefined {
   const state = readState(cwd);
   const goal = state.current;
-  if (!goal || goal.sessionId !== newSessionId) return undefined;
+  if (!goal || goal.sessionId !== newSessionId || (goalId !== undefined && goal.id !== goalId)) return undefined;
   goal.status = "active";
   goal.sessionId = sourceSessionId;
   delete goal.pendingWarpSessionId;

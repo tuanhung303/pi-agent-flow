@@ -3,11 +3,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../src/flow/loop.js", () => ({
   setPendingWarpSessionId: vi.fn(),
   clearPendingWarpSessionId: vi.fn(),
-  recordSessionWarp: vi.fn(),
 }));
 
 vi.mock("../src/flow/store.js", () => ({
-  beginWarpHandoff: vi.fn(), clearWarpHandoff: vi.fn(), completeWarpHandoff: vi.fn(), restoreWarpHandoff: vi.fn(),
+  beginWarpHandoff: vi.fn(), clearWarpHandoff: vi.fn(), completeWarpHandoff: vi.fn(), recordWarpHandoffSession: vi.fn(), restoreWarpHandoff: vi.fn(),
 }));
 
 import setupWarp from "../src/flow/warp.js";

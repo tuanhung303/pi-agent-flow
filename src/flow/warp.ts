@@ -12,8 +12,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { recordSessionWarp } from "./loop.js";
-import { beginWarpHandoff, clearWarpHandoff, completeWarpHandoff, restoreWarpHandoff } from "./store.js";
+import { beginWarpHandoff, clearWarpHandoff, completeWarpHandoff, recordWarpHandoffSession, restoreWarpHandoff } from "./store.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -218,7 +217,7 @@ export default function (pi: ExtensionAPI) {
 			warpLocks.add(cwd);
 
 			const task = args.trim() || DEFAULT_GOAL;
-			let handoffSessionId: string | undefined;
+			let handoff: { goalId: string; sessionId: string } | undefined;
 
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 			const startIndex = ctx.sessionManager.getBranch().length;
@@ -261,8 +260,9 @@ export default function (pi: ExtensionAPI) {
 					if (typeof newSessionId === "string" && newSessionId) {
 						// One state write rebinds the goal and releases the old-session
 						// continuation lock before the first new-session turn can fire.
-						if (completeWarpHandoff(cwd, sessionId, newSessionId)) {
-							handoffSessionId = newSessionId;
+						const goal = completeWarpHandoff(cwd, sessionId, newSessionId);
+						if (goal) {
+							handoff = { goalId: goal.id, sessionId: newSessionId };
 						}
 					}
 					await newCtx.sendUserMessage(promptForNewSession);
@@ -272,7 +272,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (newSessionResult.cancelled) {
 				notify("New session cancelled", "info");
-				if (handoffSessionId) restoreWarpHandoff(cwd, sessionId, handoffSessionId);
+				if (handoff) restoreWarpHandoff(cwd, sessionId, handoff.sessionId, handoff.goalId);
 				clearWarpHandoff(cwd, sessionId);
 				return;
 			}
@@ -280,11 +280,11 @@ export default function (pi: ExtensionAPI) {
 			// Only a completed owner handoff starts another loop session. Ordinary
 			// warps still create a session, but must not change another goal's
 			// counters when no handoff was acquired or completed.
-			if (handoffSessionId) {
-				recordSessionWarp(cwd);
+			if (handoff) {
+				recordWarpHandoffSession(cwd, handoff.goalId, handoff.sessionId);
 			}
 		} catch (err) {
-			if (handoffSessionId) restoreWarpHandoff(cwd, sessionId, handoffSessionId);
+			if (handoff) restoreWarpHandoff(cwd, sessionId, handoff.sessionId, handoff.goalId);
 			clearWarpHandoff(cwd, sessionId);
 			throw err;
 		} finally {

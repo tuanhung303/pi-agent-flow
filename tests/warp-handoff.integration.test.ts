@@ -12,6 +12,7 @@ async function executeWarp(
   sourceSessionId: string,
   newSessionId: string,
   beforeHandoff?: () => void,
+  afterHandoff?: () => void,
 ): Promise<number> {
   const branch: any[] = [];
   const commands = new Map<string, any>();
@@ -42,6 +43,7 @@ async function executeWarp(
         ui: { notify: () => {} },
         sendUserMessage: async () => {},
       });
+      afterHandoff?.();
       return { cancelled: false };
     },
   });
@@ -194,6 +196,25 @@ describe("warp handoff integration", () => {
       })).toBe(1);
       expect(getGoal(cwd)).toMatchObject({ objective: "Replacement goal", sessionId: "replacement" });
       expect(readState(cwd).current?.pendingWarpSessionId).toBeUndefined();
+      expect(readState(cwd).loop?.sessionCount).toBe(1);
+    } finally {
+      clearGoal(cwd);
+      _clearStoreCache();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not increment a replacement loop after its predecessor's handoff completes", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-replacement-"));
+    try {
+      setGoal(cwd, "Original goal", { maxFlows: 3, sessionId: "owner" });
+      expect(await executeWarp(cwd, "owner", "owner-new", undefined, () => {
+        // A new goal normally inherits the destination session ID, so the
+        // handed-off goal ID is required to distinguish this replacement.
+        setGoal(cwd, "Replacement goal", { maxFlows: 3, sessionId: "owner-new" });
+      })).toBe(1);
+
+      expect(getGoal(cwd)).toMatchObject({ objective: "Replacement goal", sessionId: "owner-new" });
       expect(readState(cwd).loop?.sessionCount).toBe(1);
     } finally {
       clearGoal(cwd);

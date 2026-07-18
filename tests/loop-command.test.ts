@@ -31,14 +31,14 @@ describe("setupLoopCommand", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function makeCtx(): any {
+  function makeCtx(sessionId = "session-test"): any {
     return {
       cwd: tmpDir,
       ui: {
         notify: (msg: string, type: string) => notifyCalls.push({ msg, type }),
       },
       sessionManager: {
-        getSessionId: () => "session-test",
+        getSessionId: () => sessionId,
       },
     };
   }
@@ -94,6 +94,45 @@ describe("setupLoopCommand", () => {
     expect(notifyCalls).toContainEqual({ msg: "Usage: /flow:loop enable", type: "error" });
   });
 
+  it.each(["disable", "stop", "reset"] as const)("%s rejects a foreign goal without changing loop state", async (subcommand) => {
+    setGoal(tmpDir, "other objective", { maxFlows: 3, sessionId: "other-session" });
+    const before = getLoop(tmpDir);
+
+    await registered["flow:loop"].handler(subcommand, makeCtx());
+
+    expect(notifyCalls).toContainEqual({
+      msg: `Cannot ${subcommand} loop: active goal belongs to another session.`,
+      type: "error",
+    });
+    expect(getLoop(tmpDir)).toEqual(before);
+  });
+
+  it.each(["disable", "stop", "reset"] as const)("%s rejects an inactive goal without changing loop state", async (subcommand) => {
+    setGoal(tmpDir, "inactive objective", { maxFlows: 3, sessionId: "session-test" });
+    updateGoalStatus(tmpDir, "paused");
+    const before = getLoop(tmpDir);
+
+    await registered["flow:loop"].handler(subcommand, makeCtx());
+
+    expect(notifyCalls).toContainEqual({
+      msg: `Cannot ${subcommand} loop: goal is not active.`,
+      type: "error",
+    });
+    expect(getLoop(tmpDir)).toEqual(before);
+  });
+
+  it.each([
+    ["disable", "paused"],
+    ["stop", "terminated"],
+    ["reset", "active"],
+  ] as const)("%s permits an active goal owner to mutate its loop", async (subcommand, expectedStatus) => {
+    setGoal(tmpDir, "owned objective", { maxFlows: 3, sessionId: "session-test" });
+
+    await registered["flow:loop"].handler(subcommand, makeCtx());
+
+    expect(getLoop(tmpDir)?.status).toBe(expectedStatus);
+  });
+
   it("disable disables active loop", async () => {
     setGoal(tmpDir, "test objective");
     const handler = registered["flow:loop"].handler;
@@ -106,7 +145,7 @@ describe("setupLoopCommand", () => {
   it("disable errors when no loop", async () => {
     const handler = registered["flow:loop"].handler;
     await handler("disable", makeCtx());
-    expect(notifyCalls).toContainEqual({ msg: "No active loop to disable", type: "error" });
+    expect(notifyCalls).toContainEqual({ msg: "Cannot disable loop: no active goal.", type: "error" });
   });
 
   it("status shows loop state", async () => {
@@ -140,7 +179,7 @@ describe("setupLoopCommand", () => {
   it("stop errors when no loop", async () => {
     const handler = registered["flow:loop"].handler;
     await handler("stop", makeCtx());
-    expect(notifyCalls).toContainEqual({ msg: "No loop active", type: "error" });
+    expect(notifyCalls).toContainEqual({ msg: "Cannot stop loop: no active goal.", type: "error" });
   });
 
   it("stop info when already terminated", async () => {
@@ -166,7 +205,7 @@ describe("setupLoopCommand", () => {
   it("reset errors when no loop", async () => {
     const handler = registered["flow:loop"].handler;
     await handler("reset", makeCtx());
-    expect(notifyCalls).toContainEqual({ msg: "No loop to reset", type: "error" });
+    expect(notifyCalls).toContainEqual({ msg: "Cannot reset loop: no active goal.", type: "error" });
   });
 
   it("unknown subcommand shows usage error", async () => {

@@ -14,6 +14,35 @@ import {
   terminateLoop,
 } from "./loop.js";
 
+function requireActiveGoalOwner(
+  cwd: string,
+  sessionId: string,
+  action: "enable" | "disable" | "stop" | "reset",
+  notify: (message: string, level: "error") => void,
+): ReturnType<typeof getGoal> {
+  const goal = getGoal(cwd);
+  if (!goal) {
+    notify(
+      action === "enable"
+        ? "Cannot enable loop: no active goal. Set a goal first with /flow:goal set."
+        : `Cannot ${action} loop: no active goal.`,
+      "error",
+    );
+    return undefined;
+  }
+  if (goal.status !== "active") {
+    notify(`Cannot ${action} loop: goal is not active.`, "error");
+    return undefined;
+  }
+  // Unbound legacy goals follow the same ownership convention as
+  // getGoalForSession(): they are available to the current session.
+  if (goal.sessionId && goal.sessionId !== sessionId) {
+    notify(`Cannot ${action} loop: active goal belongs to another session.`, "error");
+    return undefined;
+  }
+  return goal;
+}
+
 function formatLoop(loop: NonNullable<ReturnType<typeof getLoop>>): string {
   const lines = [
     `**Status:** ${loop.status}`,
@@ -43,24 +72,13 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
 
       switch (sub) {
         case "enable": {
-			if (rest) {
-				ctx.ui.notify?.("Usage: /flow:loop enable", "error");
-				return;
-			}
-          const goal = getGoal(cwd);
-          if (!goal) {
-            ctx.ui.notify?.("Cannot enable loop: no active goal. Set a goal first with /flow:goal set.", "error");
-            return;
-          }
-          if (goal.status !== "active") {
-            ctx.ui.notify?.("Cannot enable loop: goal is not active.", "error");
+          if (rest) {
+            ctx.ui.notify?.("Usage: /flow:loop enable", "error");
             return;
           }
           const sessionId = ctx.sessionManager.getSessionId();
-          // Unbound legacy goals follow the same ownership convention as
-          // getGoalForSession(): they are available to the current session.
-          if (goal.sessionId && goal.sessionId !== sessionId) {
-            ctx.ui.notify?.("Cannot enable loop: active goal belongs to another session.", "error");
+          const goal = requireActiveGoalOwner(cwd, sessionId, "enable", (message, level) => ctx.ui!.notify?.(message, level));
+          if (!goal) {
             return;
           }
           try {
@@ -72,6 +90,9 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
           break;
         }
         case "disable": {
+          if (!requireActiveGoalOwner(cwd, ctx.sessionManager.getSessionId(), "disable", (message, level) => ctx.ui!.notify?.(message, level))) {
+            return;
+          }
           const loop = disableLoop(cwd);
           if (loop) {
             ctx.ui.notify?.("Loop disabled", "info");
@@ -90,6 +111,9 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
           break;
         }
         case "stop": {
+          if (!requireActiveGoalOwner(cwd, ctx.sessionManager.getSessionId(), "stop", (message, level) => ctx.ui!.notify?.(message, level))) {
+            return;
+          }
           const loop = getLoop(cwd);
           if (!loop) {
             ctx.ui.notify?.("No loop active", "error");
@@ -104,6 +128,9 @@ export function setupLoopCommand(pi: ExtensionAPI): void {
           break;
         }
         case "reset": {
+          if (!requireActiveGoalOwner(cwd, ctx.sessionManager.getSessionId(), "reset", (message, level) => ctx.ui!.notify?.(message, level))) {
+            return;
+          }
           const loop = resetLoop(cwd);
           if (loop) {
             ctx.ui.notify?.("Loop reset", "info");
