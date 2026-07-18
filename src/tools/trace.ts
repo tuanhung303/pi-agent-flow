@@ -283,22 +283,35 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 			const preventCycles = depthConfig?.preventCycles ?? true;
 
 			const discovery = discoverFlows(ctx.cwd, "all");
-			const traceFlow = discovery.flows.find(f => f.name === "trace");
+			let traceFlow = discovery.flows.find(f => f.name === "trace");
 
 			if (!traceFlow) {
 				throw new Error("Trace agent not found. Expected agents/trace.md to be present.");
 			}
+			let flows = discovery.flows;
 			let conventions = discovery.conventions;
-			if (discovery.conventionsSource === "project" && params.confirmProjectFlows !== false) {
+			const projectTraceFlow = traceFlow.source === "project" ? traceFlow : undefined;
+			const hasProjectConventions = discovery.conventionsSource === "project";
+			if ((projectTraceFlow || hasProjectConventions) && params.confirmProjectFlows !== false) {
 				const { ok } = await confirmProjectFlowsIfNeeded({
-					projectFlows: [],
+					projectFlows: projectTraceFlow ? [projectTraceFlow] : [],
 					requestedFlowNames: [traceFlow.name],
 					projectFlowsDir: discovery.projectFlowsDir,
 					conventionsPath: discovery.conventionsPath,
 					hasUI: ctx.hasUI,
 					uiConfirm: (title, body) => ctx.ui.confirm(title, body),
 				});
-				if (!ok) conventions = discovery.fallbackConventions;
+				if (!ok) {
+					if (projectTraceFlow) {
+						const fallbackTraceFlow = discovery.fallbackFlows?.find((flow) => flow.name === "trace");
+						if (!fallbackTraceFlow) {
+							throw new Error("Trace agent is unavailable without approval for its project-local override.");
+						}
+						traceFlow = fallbackTraceFlow;
+						flows = discovery.flows.map((flow) => flow.name === "trace" ? fallbackTraceFlow : flow);
+					}
+					if (hasProjectConventions) conventions = discovery.fallbackConventions;
+				}
 			}
 
 			const intent = params.intent ?? traceFlow.description;
@@ -343,7 +356,7 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 				},
 				{
 					cwd: ctx.cwd,
-					flows: discovery.flows,
+					flows,
 					flowName: "trace",
 					intent,
 					aim: "",

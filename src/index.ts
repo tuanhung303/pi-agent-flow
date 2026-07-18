@@ -762,6 +762,7 @@ export default function (pi: ExtensionAPI) {
 							conventionsSource: discovery.conventionsSource,
 							conventionsPath: discovery.conventionsPath,
 							fallbackConventions: discovery.fallbackConventions,
+							fallbackFlows: discovery.fallbackFlows,
 							compressionStats,
 							getForkSnapshot,
 							projectFlowsDir: discovery.projectFlowsDir,

@@ -82,6 +82,10 @@ export interface FlowExecutorDeps {
 	conventionsSource?: import("./agents.js").ConventionSource;
 	conventionsPath?: string;
 	fallbackConventions?: string;
+	/** Bundled/user flow definitions for replacing unapproved project overrides. */
+	fallbackFlows?: FlowConfig[];
+	/** Project overrides deliberately removed after denied confirmation and safe fallback lookup. */
+	blockedProjectFlowNames?: string[];
 	compressionStats?: import("../core2/snapshot.js").CompressionStats;
 	/** Creates a profile- and retry-budget-specific snapshot for generated flows. */
 	getForkSnapshot?: (flowType: string) => {
@@ -138,6 +142,24 @@ function getRequestedProjectFlows(
 		.filter((f): f is FlowConfig => f?.source === "project");
 }
 
+/** Replace a project override with its lower-precedence definition, or remove it safely. */
+function replaceProjectFlowWithFallback(deps: FlowExecutorDeps, name: string): FlowExecutorDeps {
+	const normalizedName = name.toLowerCase();
+	const selected = deps.flows.find((flow) => flow.name === normalizedName);
+	if (selected?.source !== "project") return deps;
+	const fallback = deps.fallbackFlows?.find((flow) => flow.name === normalizedName);
+	const blockedProjectFlowNames = fallback
+		? deps.blockedProjectFlowNames
+		: [...(deps.blockedProjectFlowNames ?? []), normalizedName];
+	return {
+		...deps,
+		blockedProjectFlowNames,
+		flows: fallback
+			? deps.flows.map((flow) => flow.name === normalizedName ? fallback : flow)
+			: deps.flows.filter((flow) => flow.name !== normalizedName),
+	};
+}
+
 class ConcurrencyLimiter {
   private activeCount = 0;
   private pendingQueue: (() => void)[] = [];
@@ -181,6 +203,7 @@ async function executeGroupedPingPong(
   limiter: ConcurrencyLimiter,
 ): Promise<SingleResult[]> {
   const { items, auditLoop, buildIndices, auditIndex } = group;
+	const hasAuditFlow = !deps.blockedProjectFlowNames?.includes("audit");
   const maxCycles = (auditLoop ?? 0) + 1;
   let cycle = 0;
   const verdictHistory: Array<{ cycle: number; verdict: string; feedback?: string }> = [];
@@ -238,7 +261,7 @@ async function executeGroupedPingPong(
     emitProgress();
 
     const anyBuildFailed = buildResults.some(r => !isFlowSuccess(r));
-    if (anyBuildFailed) {
+    if (anyBuildFailed || !hasAuditFlow) {
       const { model: skipAuditModel, maxContextTokens: skipAuditMaxCtx } = resolveAuditModel(deps.flows, deps.tierOverrideResolver, selectedFlowModelConfig.strategy, deps.fallbackModel);
       allResults[auditIndex] = {
         ...createGhostResult("audit", "", `Audit ${items.length} build outputs`, skipAuditModel, skipAuditMaxCtx),
@@ -399,6 +422,15 @@ export async function executeFlows(
 	} = deps;
 
 	const requested = new Set<string>(params.map((f) => f.type.toLowerCase()));
+	const effectiveAuditLoops = params.map((p) => {
+		if (p.type.toLowerCase() === "build") {
+			return Math.max(auditLoop ?? 0, getImpliedAuditLoop(p.complexity));
+		}
+		return 0;
+	});
+	const hasBuildsWithAudit = effectiveAuditLoops.some((loop, i) =>
+		params[i].type.toLowerCase() === "build" && loop > 0,
+	);
 
 	if (preventCycles) {
 		const violations = getFlowCycleViolations(requested, ancestorFlowStack);
@@ -416,12 +448,18 @@ export async function executeFlows(
 	}
 
 	const projectFlows = getRequestedProjectFlows(flows, requested);
+	const generatedProjectAudit = hasBuildsWithAudit && !requested.has("audit")
+		? flows.find((flow) => flow.name === "audit" && flow.source === "project")
+		: undefined;
+	const projectFlowsToConfirm = generatedProjectAudit ? [...projectFlows, generatedProjectAudit] : projectFlows;
+	const confirmationNames = new Set(requested);
+	if (generatedProjectAudit) confirmationNames.add("audit");
 	const hasProjectConventions = deps.conventionsSource === "project";
 	let executionDeps = deps;
-	if ((projectFlows.length > 0 || hasProjectConventions) && confirmProjectFlows !== false) {
+	if ((projectFlowsToConfirm.length > 0 || hasProjectConventions) && confirmProjectFlows !== false) {
 		const { ok, blocked } = await confirmProjectFlowsIfNeeded({
-			projectFlows,
-			requestedFlowNames: requested,
+			projectFlows: projectFlowsToConfirm,
+			requestedFlowNames: confirmationNames,
 			projectFlowsDir,
 			conventionsPath: hasProjectConventions ? deps.conventionsPath : undefined,
 			hasUI,
@@ -438,6 +476,9 @@ export async function executeFlows(
 			// A declined convention is not a declined bundled flow. Keep the flow
 			// runnable, but never pass repo-controlled convention text to it.
 			executionDeps = { ...deps, conventions: deps.fallbackConventions };
+			if (generatedProjectAudit) {
+				executionDeps = replaceProjectFlowWithFallback(executionDeps, "audit");
+			}
 		}
 	}
 
@@ -458,16 +499,6 @@ export async function executeFlows(
 	const regularParams: ExecuteFlowParams[] = [];
 	const regularIndices: number[] = [];
 	const groups: PingPongGroup[] = [];
-
-	const effectiveAuditLoops = params.map((p) => {
-		if (p.type.toLowerCase() === "build") {
-			return Math.max(auditLoop ?? 0, getImpliedAuditLoop(p.complexity));
-		}
-		return 0;
-	});
-	const hasBuildsWithAudit = effectiveAuditLoops.some((loop, i) =>
-		params[i].type.toLowerCase() === "build" && loop > 0,
-	);
 
 	let nextIndex = 0;
 	let buildGroup: PingPongGroup | undefined;

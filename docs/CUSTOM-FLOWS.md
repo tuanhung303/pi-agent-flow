@@ -53,4 +53,4 @@ Every child mission also requires a pre-tool `## Base Understanding` block (maxi
 
 ## Project flow confirmation
 
-Project-local flows and project-local `_conventions.md` from `.pi/agents/` prompt for confirmation before running for security. Suppress this with `confirmProjectFlows: false` in the `flow` (or optional `trace`) tool call only for trusted repositories.
+Project-local flows and project-local `_conventions.md` from `.pi/agents/` prompt for confirmation before running for security. This also covers audit-loop audits and the standalone `trace` flow when either resolves to a project override. If approval is declined or unavailable, generated audits and trace fall back to their user/bundled definitions (or safely skip/block when none exists), and project conventions are excluded. Suppress this with `confirmProjectFlows: false` in the `flow` (or optional `trace`) tool call only for trusted repositories.

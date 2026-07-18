@@ -60,6 +60,8 @@ export interface FlowConfig {
 
 export interface FlowDiscoveryResult {
 	flows: FlowConfig[];
+	/** Bundled/user flows available when an unapproved project override must be replaced. */
+	fallbackFlows?: FlowConfig[];
 	projectFlowsDir: string | null;
 	/** Shared prompt conventions resolved with bundled < user < project precedence. */
 	conventions?: string;
@@ -399,6 +401,7 @@ export function discoverFlows(cwd: string, scope: FlowScope): FlowDiscoveryResul
 		...loadFlowsFromDir(userFlowsDirs[1], "user"),
 	];
 	const projectFlows = scope === "user" || scope === "bundled" || !projectFlowsDir ? [] : loadFlowsFromDir(projectFlowsDir, "project");
+	const fallbackFlows = mergeFlows(bundledFlows, userFlows);
 	const bundledConventionDirs: ConventionDirectory[] =
 		scope === "user" || scope === "project" ? [] : [{ dir: bundledFlowsDir, source: "bundled" }];
 	const userConventionDirs: ConventionDirectory[] =
@@ -427,16 +430,17 @@ export function discoverFlows(cwd: string, scope: FlowScope): FlowDiscoveryResul
 	};
 
 	if (scope === "bundled") {
-		return { flows: bundledFlows, projectFlowsDir, ...conventionResult };
+		return { flows: bundledFlows, fallbackFlows, projectFlowsDir, ...conventionResult };
 	}
 	if (scope === "user") {
-		return { flows: mergeFlows(bundledFlows, userFlows), projectFlowsDir, ...conventionResult };
+		return { flows: fallbackFlows, fallbackFlows, projectFlowsDir, ...conventionResult };
 	}
 	if (scope === "project") {
-		return { flows: mergeFlows(projectFlows), projectFlowsDir, ...conventionResult };
+		return { flows: mergeFlows(projectFlows), fallbackFlows, projectFlowsDir, ...conventionResult };
 	}
 	return {
 		flows: mergeFlows(bundledFlows, userFlows, projectFlows),
+		fallbackFlows,
 		projectFlowsDir,
 		...conventionResult,
 	};
