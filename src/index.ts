@@ -44,6 +44,7 @@ import { createTimedBashToolDefinition } from "./tools/timed-bash.js";
 
 import { createTraceTool } from "./tools/trace.js";
 import { prepareFlowArguments } from "./flow/flow-args-prep.js";
+import { DispatchOpSchema } from "./flow/dispatch-schema.js";
 import { executeOperations } from "./batch/execute.js";
 import { runWebOps } from "./tools/web-ops.js";
 import { BASH_DEFAULT_TIMEOUT_MS, type FileOpInput } from "./batch/constants.js";
@@ -56,8 +57,6 @@ import { buildSnapshotWithCompression, parseSharedContext, type SharedContext } 
 import {
 	resolveFlowModelCandidates,
 	resolveModelContextWindow,
-	invalidateSettingsCache,
-	flushAllSettingsCachesSync,
 	onSettingsChange,
 } from "./config/config.js";
 import {
@@ -85,43 +84,7 @@ import {
 // Tool parameter schema
 // ---------------------------------------------------------------------------
 
-const BatchDispatchOp = Type.Object({
-	tool: Type.Literal("batch"),
-	ops: Type.Array(Type.Object({
-		o: Type.String(),
-		p: Type.String(),
-		c: Type.Optional(Type.String()),
-		e: Type.Optional(Type.Array(Type.Object({ f: Type.String(), r: Type.String() }))),
-		s: Type.Optional(Type.Number()),
-		l: Type.Optional(Type.Union([Type.Number(), Type.Boolean()])),
-		i: Type.Optional(Type.Union([Type.String(), Type.Boolean()])),
-		t: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-		h: Type.Optional(Type.String()),
-		q: Type.Optional(Type.String()),
-		n: Type.Optional(Type.Number()),
-		u: Type.Optional(Type.Number()),
-	}), { description: "File/batch operations matching the batch tool schema. Aliases accepted: path=p, content=c, edits=e, offset=s, limit=l, ignoreCase=i, query=q, maxCount=n. Canonical wins." }),
-});
-const BashDispatchOp = Type.Object({
-	tool: Type.Literal("bash"),
-	ops: Type.Array(Type.Object({
-		c: Type.String({ description: "Shell command. Alias: cmd." }),
-		h: Type.Optional(Type.String({ description: "Working directory override. Alias: cwd." })),
-		t: Type.Optional(Type.Number({ description: "Timeout in ms. Alias: timeout." })),
-	}), { description: "Bash command objects." }),
-});
-const WebDispatchOp = Type.Object({
-	tool: Type.Literal("web"),
-	ops: Type.Array(Type.Object({
-		o: Type.Union([Type.Literal("search"), Type.Literal("fetch")]),
-		q: Type.Optional(Type.String()),
-		u: Type.Optional(Type.String()),
-		f: Type.Optional(Type.String()),
-	}), { description: "Web operations matching the web tool schema." }),
-});
-const DispatchOpSchema = Type.Union([BatchDispatchOp, BashDispatchOp, WebDispatchOp], {
-	description: "Pre-dispatch tool call with discriminated tool type and typed ops array. Wrapper aliases: t=tool, o=ops. Canonical wins.",
-});
+// Dispatch op schemas are shared with the trace tool — see src/flow/dispatch-schema.ts.
 
 const FlowItem = Type.Object({
 	type: Type.Union(
@@ -324,6 +287,10 @@ export default function (pi: ExtensionAPI) {
 		description: "Default child-flow complexity: snap (120s no review), simple (300s no review), moderate (600s 1x audit), complex (900s 2x audit), or intricate (1200s 3x audit).",
 		type: "string",
 	});
+	pi.registerFlag("flow-context-compression", {
+		description: "Child context compression: auto, none, light, medium, or aggressive.",
+		type: "string",
+	});
 
 	pi.registerFlag("tool-optimize", {
 		description: "Use the unified batch tool instead of separate read/write/edit tools (default: true).",
@@ -392,7 +359,8 @@ export default function (pi: ExtensionAPI) {
 	// Fix L2: registerFlow() already handles sessionRegistry.register() — removed duplicate here.
 	pi.on("session_start", async (_event, ctx) => {
 		clearClassificationCache();
-		invalidateSettingsCache();
+		// Settings files are read fresh from disk on every access (no cache),
+		// so external edits between sessions are picked up automatically.
 		// models.json may have been edited externally between sessions (text editor,
 		// `pi agent config set provider/model`); drop the in-memory cache so the
 		// first resolveFlowModelCandidates call in this session sees the latest file.
@@ -649,7 +617,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Register the trace tool (available at all depths — quick verbatim reads)
 	pi.registerTool(createTraceTool({
-		getSettings: () => resolved ? { toolOptimize: resolved.toolOptimize, structuredOutput: resolved.structuredOutput, bodyVerbosity: resolved.bodyVerbosity, traceEnabled: resolved.traceEnabled, batchReadEnabled: resolved.batchReadEnabled, contextCompression: resolved.contextCompression } : undefined,
+		getSettings: () => resolved ? { toolOptimize: resolved.toolOptimize, structuredOutput: resolved.structuredOutput, bodyVerbosity: resolved.bodyVerbosity, traceEnabled: resolved.traceEnabled, batchReadEnabled: resolved.batchReadEnabled, contextCompression: resolved.contextCompression.value } : undefined,
 		getDepthConfig: () => depthConfig,
 		getLoadedFlowModelConfigs: () => resolved?.loadedFlowModelConfigs,
 		tierOverrideResolver: getTierOverride,
@@ -676,70 +644,47 @@ export default function (pi: ExtensionAPI) {
 				const discovery = discoverFlows(ctx.cwd, "all");
 				const { flows } = discovery;
 
-				// Build the fork session snapshot. Core-2 applies a 6-stage sanitization
-				// pipeline that strips metadata noise irrelevant to child flow orientation
-				// while preserving chronological conversation history.
-				function resolveSnapshotTier(flows: FlowConfig[], flowParams: Array<Static<typeof FlowItem>>): FlowTier | undefined {
-					if (flowParams.length === 0) return undefined;
-					const tiers = flowParams.map((f) => {
-						const config = flows.find((flow) => flow.name === f.type.toLowerCase());
-						return config?.tier ?? getFlowTier(f.type);
-					});
-					// Most permissive: full > flash > lite
-					if (tiers.includes("full")) return "full";
-					if (tiers.includes("flash")) return "flash";
-					return tiers[0];
-				}
-
+				// Build profile-specific fork snapshots. A generated audit asks the same
+				// factory instead of inheriting the first requested flow's snapshot.
 				function resolveSnapshotMaxContextTokens(
-					flowConfigs: FlowConfig[],
-					flowParams: Array<Static<typeof FlowItem>>,
+					flowConfigs: FlowConfig[], flowType: string,
 					strategy: import("./config/config.js").LoadedFlowModelConfigs["strategy"],
 					tierOverrideResolver: (tier: "lite" | "flash" | "full") => string | undefined,
 					fallbackModel?: string,
 				): number | undefined {
+					const config = flowConfigs.find((flow) => flow.name === flowType.toLowerCase());
+					const tier = config?.tier ?? getFlowTier(flowType);
+					const { candidates } = resolveFlowModelCandidates({ tier, flowModel: config?.model, cliTierOverride: tierOverrideResolver(tier), strategy, fallbackModel });
 					let minTokens: number | undefined;
-					for (const f of flowParams) {
-						const config = flowConfigs.find((flow) => flow.name === f.type.toLowerCase());
-						const tier = config?.tier ?? getFlowTier(f.type);
-						const { effectivePrimary } = resolveFlowModelCandidates({
-							tier,
-							flowModel: config?.model,
-							cliTierOverride: tierOverrideResolver(tier),
-							strategy,
-							fallbackModel,
-						});
-						const tokens = resolveModelContextWindow(effectivePrimary);
-						if (tokens !== undefined) {
-							minTokens = minTokens === undefined ? tokens : Math.min(minTokens, tokens);
-						}
+					for (const candidate of candidates) {
+						const tokens = resolveModelContextWindow(candidate);
+						if (tokens !== undefined) minTokens = minTokens === undefined ? tokens : Math.min(minTokens, tokens);
 					}
 					return minTokens;
 				}
 
 				const firstFlow = params.flow[0];
-				const firstFlowConfig = flows.find((f) => f.name === (firstFlow?.type ?? "").toLowerCase());
-				const maxContextTokens = resolveSnapshotMaxContextTokens(
-					flows,
-					params.flow,
-					resolved.loadedFlowModelConfigs.strategy,
-					getTierOverride,
-					inheritedCliArgs.fallbackModel,
-				);
-				const { snapshot: forkSessionSnapshotJsonl, stats: compressionStats } = buildSnapshotWithCompression(
-					ctx.sessionManager,
-					{
-						activeToolCallId: toolCallId,
-						tier: resolveSnapshotTier(flows, params.flow),
-						compressionProfile: firstFlowConfig?.contextProfile,
-						compressionLevel: resolved?.contextCompression,
-					},
-					maxContextTokens,
-				);
-
-				if (compressionStats) {
-					logWarn(`[pi-agent-flow] Context compression applied: ${compressionStats.level} (${compressionStats.preBytes} → ${compressionStats.postBytes} bytes, ${compressionStats.messagesDropped} messages dropped)`);
-				}
+				// `resolved` already rejected invalid CLI modes and selected the runtime
+				// strategy that executeFlows receives. Never re-read raw flags here.
+				const snapshotModelStrategy = resolved!.loadedFlowModelConfigs.strategy;
+				const snapshotCache = new Map<string, ReturnType<typeof buildSnapshotWithCompression>>();
+				const getForkSnapshot = (flowType: string) => {
+					const key = flowType.toLowerCase();
+					const cached = snapshotCache.get(key);
+					if (cached) return cached;
+					const flowConfig = flows.find((flow) => flow.name === key);
+					const snapshot = buildSnapshotWithCompression(
+						ctx.sessionManager,
+						{ activeToolCallId: toolCallId, tier: flowConfig?.tier ?? getFlowTier(flowType), compressionProfile: flowConfig?.contextProfile, compressionLevel: resolved!.contextCompression.value },
+						resolveSnapshotMaxContextTokens(flows, flowType, snapshotModelStrategy, getTierOverride, inheritedCliArgs.fallbackModel),
+					);
+					snapshotCache.set(key, snapshot);
+					if (snapshot.stats) logWarn(`[pi-agent-flow] Context compression applied: ${snapshot.stats.level} (${snapshot.stats.preBytes} → ${snapshot.stats.postBytes} bytes, ${snapshot.stats.messagesDropped} messages dropped)`);
+					return snapshot;
+				};
+				const flowSnapshots = params.flow.map((flowParam: Static<typeof FlowItem>) => getForkSnapshot(flowParam.type));
+				const forkSessionSnapshotJsonl = flowSnapshots[0]?.snapshot ?? null;
+				const compressionStats = flowSnapshots[0]?.stats;
 
 				const sharedContext = parseSharedContext(forkSessionSnapshotJsonl);
 				const makeDetails = makeFlowDetailsFactory(discovery.projectFlowsDir, sharedContext);
@@ -802,6 +747,7 @@ export default function (pi: ExtensionAPI) {
 							structuredOutput: resolved.structuredOutput,
 							cwd: ctx.cwd,
 							loadedFlowModelConfigs: resolved.loadedFlowModelConfigs,
+							resolvedFlowModelConfig: resolved.loadedFlowModelConfigs,
 							maxConcurrency: resolved.maxConcurrency,
 							debugMode: resolved.debugMode,
 							defaultComplexity: resolved.defaultComplexity,
@@ -813,6 +759,7 @@ export default function (pi: ExtensionAPI) {
 							fallbackModel: inheritedCliArgs.fallbackModel,
 							forkSessionSnapshotJsonl,
 							compressionStats,
+							getForkSnapshot,
 							projectFlowsDir: discovery.projectFlowsDir,
 							sessionManager: ctx.sessionManager,
 							hasUI: ctx.hasUI,
@@ -840,6 +787,8 @@ export default function (pi: ExtensionAPI) {
 							cwd: f.cwd,
 							complexity: f.complexity,
 							preDispatchResults: preDispatchResults[i],
+							forkSessionSnapshotJsonl: flowSnapshots[i]?.snapshot ?? null,
+							compressionStats: flowSnapshots[i]?.stats,
 						})),
 						toolCallId,
 						params.auditLoop ?? 0,
@@ -889,7 +838,7 @@ export default function (pi: ExtensionAPI) {
 					debugMode: resolved.debugMode,
 					traceEnabled: resolved.traceEnabled,
 					batchReadEnabled: resolved.batchReadEnabled,
-					contextCompression: resolved.contextCompression,
+					contextCompression: resolved.contextCompression.value,
 				}
 			: {
 					toolOptimize: true,
@@ -903,7 +852,7 @@ export default function (pi: ExtensionAPI) {
 					debugMode: false,
 					traceEnabled: true,
 					batchReadEnabled: true,
-					contextCompression: undefined,
+					contextCompression: "auto",
 				},
 	};
 
@@ -929,7 +878,9 @@ export default function (pi: ExtensionAPI) {
 			shutdownWakeup();
 			clearAllContinuationState(); // Fix L3: Prevent unbounded Map growth by cleaning up session tracking state
 			flushAllStoreCachesSync();   // Fix P9: Ensure goal state is persisted before process exit
-			flushAllSettingsCachesSync(); // Fix P17: Ensure settings are persisted before process exit
+			// Settings are written to disk immediately at every write site — there is
+			// deliberately no settings flush here. A shutdown flush of read-cached
+			// settings used to revert externally-edited config on every exit.
 			if (typeof pi.emit === "function") {
 				pi.emit("pi-agent-flow:shutdown", { reason: "process-exit" });
 			}

@@ -239,7 +239,7 @@ export type BatchOnUpdate = (partial: BatchToolResult) => void;
 export interface PendingBashResult {
 	id: string;
 	command: string;
-	status: "pending" | "completed";
+	status: "pending" | "completed" | "unknown";
 	exitCode?: number;
 	stdout?: string;
 	stderr?: string;

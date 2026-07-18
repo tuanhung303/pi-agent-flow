@@ -20,7 +20,7 @@ import {
 } from "./config.js";
 import { getInheritedCliArgs } from "../snapshot/cli-args.js";
 import { parseComplexity, type Complexity, DEFAULT_COMPLEXITY } from "../flow/complexity.js";
-import type { CompressionLevel } from "../core2/snapshot.js";
+import type { CompressionPreference } from "../core2/snapshot.js";
 import { logWarn } from "./log.js";
 import { resolveBoolean, resolveString, resolveNumber, type ResolveContext } from "./resolver-helpers.js";
 
@@ -62,7 +62,34 @@ export interface ResolvedSettings {
 	skipFlow: boolean;
 	subAgentMaxRetries: number;
 	subAgentBaseDelayMs: number;
-	contextCompression?: CompressionLevel;
+	/** Resolved once; consumers must use this value rather than re-reading env. */
+	contextCompression: ResolvedContextCompression;
+}
+
+export type ContextCompressionSource = "cli" | "env" | "settings" | "default";
+export interface ResolvedContextCompression {
+	value: CompressionPreference;
+	source: ContextCompressionSource;
+}
+
+function isCompressionPreference(value: unknown): value is CompressionPreference {
+	return value === "auto" || value === "none" || value === "light" || value === "medium" || value === "aggressive";
+}
+
+/**
+ * Return both the selected value and where it came from. Keeping `auto`
+ * explicit prevents downstream snapshot code from treating it as unresolved.
+ */
+function resolveContextCompression(ctx: ResolveContext): ResolvedContextCompression {
+	const cli = ctx.pi.getFlag("flow-context-compression");
+	if (typeof cli === "string" && isCompressionPreference(cli.trim())) {
+		return { value: cli.trim() as CompressionPreference, source: "cli" };
+	}
+	const env = process.env.PI_FLOW_CONTEXT_COMPRESSION?.trim();
+	if (isCompressionPreference(env)) return { value: env, source: "env" };
+	const setting = ctx.settings?.contextCompression;
+	if (isCompressionPreference(setting)) return { value: setting, source: "settings" };
+	return { value: "auto", source: "default" };
 }
 
 export function resolveSettings(
@@ -75,8 +102,16 @@ export function resolveSettings(
 	let loadedFlowModelConfigs: LoadedFlowModelConfigs = loadFlowModelConfigs(cwd);
 	let activeRuntimeFlowMode: string | undefined = undefined;
 
-	// Resolve --flow-mode persistent switch
+	// Resolve CLI strategy selectors once. Downstream snapshot and execution
+	// consumers receive this selected object rather than re-reading raw flags.
 	const requestedFlowMode = normalizeFlowModeName(pi.getFlag("flow-mode"));
+	const requestedFlowModelConfig = normalizeFlowModeName(pi.getFlag("flow-model-config"));
+	if (requestedFlowMode !== undefined && requestedFlowModelConfig !== undefined && requestedFlowMode !== requestedFlowModelConfig) {
+		logWarn(
+			`[pi-agent-flow] Both --flow-mode "${requestedFlowMode}" and --flow-model-config "${requestedFlowModelConfig}" were provided. Using --flow-mode.`,
+		);
+	}
+	// Resolve --flow-mode persistent switch
 	if (requestedFlowMode !== undefined) {
 		if (!Object.prototype.hasOwnProperty.call(loadedFlowModelConfigs.configs, requestedFlowMode)) {
 			const availableModes = Object.keys(loadedFlowModelConfigs.configs).sort().join(", ") || "(none)";
@@ -101,6 +136,18 @@ export function resolveSettings(
 			}
 			activeRuntimeFlowMode = requestedFlowMode;
 			loadedFlowModelConfigs = selectFlowModelStrategy(loadedFlowModelConfigs.configs, requestedFlowMode);
+		}
+	}
+
+	// --flow-model-config is a non-persistent runtime selector. It applies only
+	// when a valid --flow-mode did not take precedence; invalid CLI values leave
+	// the project/global resolved strategy untouched.
+	if (activeRuntimeFlowMode === undefined && requestedFlowModelConfig !== undefined) {
+		if (Object.prototype.hasOwnProperty.call(loadedFlowModelConfigs.configs, requestedFlowModelConfig)) {
+			activeRuntimeFlowMode = requestedFlowModelConfig;
+			loadedFlowModelConfigs = selectFlowModelStrategy(loadedFlowModelConfigs.configs, requestedFlowModelConfig);
+		} else {
+			logWarn(`[pi-agent-flow] Cannot select flow model config "${requestedFlowModelConfig}"; no matching strategy was found.`);
 		}
 	}
 
@@ -172,10 +219,7 @@ export function resolveSettings(
 	const subAgentMaxRetries = resolveNumber(ctx, { envVar: "PI_FLOW_SUB_AGENT_MAX_RETRIES", settingsPath: ["subAgentMaxRetries"], defaultValue: 3, min: 0, max: 10 });
 	const subAgentBaseDelayMs = resolveNumber(ctx, { envVar: "PI_FLOW_SUB_AGENT_BASE_DELAY_MS", settingsPath: ["subAgentBaseDelayMs"], defaultValue: 1000, min: 0, max: 60_000 });
 
-	let contextCompression: CompressionLevel | undefined;
-	if (flowSettings.contextCompression && flowSettings.contextCompression !== "auto") {
-		contextCompression = flowSettings.contextCompression as CompressionLevel;
-	}
+	const contextCompression = resolveContextCompression(ctx);
 
 	return {
 		toolOptimize, structuredOutput, maxConcurrency, defaultComplexity,

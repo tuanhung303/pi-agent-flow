@@ -5,7 +5,6 @@ import * as path from "node:path";
 import registerExtension from "../src/index.js";
 import { runFlow, mapFlowConcurrent } from "../src/flow/runner.js";
 import { emptyFlowUsage, type SingleResult } from "../src/types/flow.js";
-import { flushAllSettingsCachesSync } from "../src/config/config.js";
 
 vi.mock("../src/flow/runner.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../src/flow/runner.js")>();
@@ -191,10 +190,10 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Normal assistant context with implementation details and code examples and a file reference to /src/index.ts for context.");
 		expect(snapshot).toContain("[Historical tool interaction]");
 		expect(snapshot).toContain("Tool: bash");
-		expect(snapshot).toContain("[toolResult: bash]");
+		expect(snapshot).toContain("normal bash output");
 		expect(snapshot).toContain("Implementation summary after transition");
 		expect(snapshot).toContain("Tool: flow");
-		expect(snapshot).toContain("[toolResult: flow]");
+		expect(snapshot).toContain("prior flow result should be inherited");
 		expect(snapshot).not.toContain("bash-call-1");
 		expect(snapshot).not.toContain("flow-call-1");
 		expect(snapshot).not.toContain('"role":"toolResult"');
@@ -270,7 +269,7 @@ describe("flow tool execute", () => {
 		expect(lines).toContain(JSON.stringify(unchangedUserExpected));
 		expect(lines).toContain(JSON.stringify(unchangedAssistantExpected));
 		expect(snapshot).toContain("Tool: bash");
-		expect(snapshot).toContain("[toolResult result omitted]");
+		expect(snapshot).toContain("Unchanged tool result");
 		expect(snapshot).not.toContain("tool-1");
 		expect(snapshot).not.toContain('"role":"toolResult"');
 		expect(lines).not.toContain(JSON.stringify({ type: "system", content: header.systemPrompt }));
@@ -396,7 +395,7 @@ describe("flow tool execute", () => {
 		expect(snapshot).toContain("Original requirement defined in /src/requirements.md for reference");
 		expect(snapshot).toContain("Text before transition.");
 		expect(snapshot).toContain("Text after transition — [debug] completed.");
-		expect(snapshot).toContain("[toolResult result omitted]");
+		expect(snapshot).toContain("FLOW_RESULT_PAYLOAD");
 		expect(snapshot).toContain("Tool: flow");
 		expect(snapshot).not.toContain("flow-call-2");
 		expect(snapshot).not.toContain('"name":"flow"');
@@ -990,7 +989,6 @@ describe("flow tool execute", () => {
 		pi.setFlag("flow-model-config", "balance");
 		registerExtension(pi as any);
 		await pi.trigger("session_start", {}, makeMockCtx(projectCwd));
-		flushAllSettingsCachesSync();
 
 		expect(JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf-8")).flowModelConfig).toBe("mimo");
 		expect(warnSpy).toHaveBeenCalledWith("mode: mimo | lite: mimo-lite - flash: (default) - full: (default)");
@@ -1194,7 +1192,7 @@ describe("flow tool execute", () => {
 				flowModelConfig: "test-strategy",
 				flowModelConfigs: {
 					"test-strategy": {
-						flash: { primary: "model-a", failover: ["model-b"] },
+						flash: { primary: "primary/gemini-large", failover: ["secondary/llama-small"] },
 					},
 				},
 			}),
@@ -1239,14 +1237,25 @@ describe("flow tool execute", () => {
 			{ flow: [{ type: "build", intent: "Fix bug", complexity: "simple", aim: "Fix bug" }], confirmProjectFlows: false, auditLoop: 0 },
 			new AbortController().signal,
 			undefined,
-			makeMockCtx(tmpDir),
+			{
+				...makeMockCtx(tmpDir),
+				sessionManager: {
+					getHeader: () => ({ version: 1 }),
+					getBranch: () => [{ type: "message", message: { role: "user", content: "x".repeat(30_000) } }],
+					getSessionId: () => "test-session-id",
+				},
+			},
 		);
 
 		expect(runFlow).toHaveBeenCalledTimes(2);
-		// First call with model-a (primary)
-		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("model-a");
-		// Second call with model-b (failover)
-		expect(vi.mocked(runFlow).mock.calls[1][0].model).toBe("model-b");
+		// The primary has a large window, but its small failover must receive a
+		// snapshot budgeted to the small candidate before the retry occurs.
+		expect(vi.mocked(runFlow).mock.calls[0][0].model).toBe("primary/gemini-large");
+		expect(vi.mocked(runFlow).mock.calls[1][0].model).toBe("secondary/llama-small");
+		const firstSnapshot = vi.mocked(runFlow).mock.calls[0][0].forkSessionSnapshotJsonl;
+		const failoverSnapshot = vi.mocked(runFlow).mock.calls[1][0].forkSessionSnapshotJsonl;
+		expect(firstSnapshot).toBe(failoverSnapshot);
+		expect(firstSnapshot!.length).toBeLessThanOrEqual(8_000 * 0.6 * 4);
 		expect(result.failed).toBeFalsy();
 	});
 
@@ -1363,6 +1372,59 @@ describe("flow tool execute", () => {
 		const lastResult = vi.mocked(runFlow).mock.results[0]?.value;
 	});
 
+
+	it("uses the project strategy after an invalid CLI mode for audit-specific small-retry snapshots", async () => {
+		setupFlowsDir([
+			{ fileName: "build.md", content: "---\nname: build\ndescription: Code\nmodel: primary/build-large\ncontextProfile: edits-first\n---\nBuild." },
+			{ fileName: "audit.md", content: "---\nname: audit\ndescription: Audit\ncontextProfile: code-first\n---\nAudit." },
+		]);
+		const agentDir = path.join(tmpDir, "audit-snapshot-agent-dir");
+		fs.mkdirSync(agentDir, { recursive: true });
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({
+			providers: {
+				primary: { models: [{ id: "build-large", contextWindow: 100_000 }, { id: "audit-large", contextWindow: 100_000 }] },
+				secondary: { models: [{ id: "audit-small", contextWindow: 8_000 }] },
+			},
+		}), "utf-8");
+		fs.writeFileSync(path.join(tmpDir, ".pi", "settings.json"), JSON.stringify({
+			flowModelConfig: "audit-retry",
+			flowModelConfigs: { "audit-retry": { flash: { primary: "primary/audit-large", failover: ["secondary/audit-small"] } } },
+		}), "utf-8");
+
+		const pi = createMockPi();
+		pi.setFlag("flow-mode", "missing-mode");
+		registerExtension(pi as any);
+		await pi.trigger("session_start", {}, makeMockCtx(tmpDir));
+		vi.mocked(runFlow).mockImplementation(async (options) => ({
+			type: options.flowName,
+			agentSource: "project",
+			intent: options.intent,
+			aim: options.aim,
+			exitCode: 0,
+			messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+			sawAgentEnd: true,
+			stderr: "",
+			usage: emptyFlowUsage(),
+		}));
+
+		await pi.getTool("flow").execute(
+			"audit-snapshot",
+			{ flow: [{ type: "build", intent: "Build it", aim: "Build it", complexity: "moderate" }], confirmProjectFlows: false },
+			new AbortController().signal,
+			undefined,
+			{ ...makeMockCtx(tmpDir), sessionManager: { getHeader: () => ({ version: 1 }), getSessionId: () => "audit-session", getBranch: () => [{ type: "message", message: { role: "user", content: "x".repeat(30_000) } }] } },
+		);
+
+		expect(runFlow).toHaveBeenCalledTimes(2);
+		const buildCall = vi.mocked(runFlow).mock.calls.find(([options]) => options.flowName === "build")![0];
+		const auditCall = vi.mocked(runFlow).mock.calls.find(([options]) => options.flowName === "audit")![0];
+		expect(buildCall.model).toBe("primary/build-large");
+		expect(auditCall.model).toBe("primary/audit-large");
+		expect(buildCall.forkSessionSnapshotJsonl!.length).toBeGreaterThan(19_200);
+		expect(auditCall.forkSessionSnapshotJsonl!.length).toBeLessThanOrEqual(8_000 * 0.6 * 4);
+		expect(auditCall.forkSessionSnapshotJsonl).not.toBe(buildCall.forkSessionSnapshotJsonl);
+	});
 });
 describe("main agent tool restriction", () => {
 	let tmpDir: string;

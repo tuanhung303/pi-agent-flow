@@ -6,23 +6,23 @@ The core transition tool. Accepts an array of flow tasks and runs them in parall
 
 Each flow item accepts:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `string` | Flow name (`scout`, `build`, `debug`, `audit`, `craft`, `ideas`, or custom) |
-| `intent` | `string` | What the flow should do |
-| `aim` | `string` | Short headline of what the flow aims to do |
-| `acceptance` | `string` | One-sentence success criteria |
-| `concern` | `string` | Known risks, uncertainties, or areas requiring extra care. Be specific. |
-| `complexity` | `string` | Override complexity for this flow (`snap`, `simple`, `moderate`, `complex`, `intricate`) |
-| `cwd` | `string` | Override working directory |
-| `dispatch` | `array` | Optional list of pre-flight operations (`batch`, `bash`, `web`) to execute before starting the flow. Results are injected into the prompt. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `string` | ✅ | Flow name (`scout`, `build`, `debug`, `audit`, `craft`, `ideas`, or custom) |
+| `intent` | `string` | ✅ | What the flow should do |
+| `aim` | `string` | ✅ | Short headline of what the flow aims to do |
+| `acceptance` | `string` | — | One-sentence success criteria |
+| `concern` | `string` | ✅ | Known risks, uncertainties, or areas requiring extra care. Be specific. |
+| `complexity` | `string` | ✅ | Budget/audit level for this flow (`snap`, `simple`, `moderate`, `complex`, `intricate`) |
+| `cwd` | `string` | — | Override working directory |
+| `dispatch` | `array` | — | Optional list of pre-flight operations (`batch`, `bash`, `web`) to execute before starting the flow. Results are injected into the prompt. |
 
 Example:
 
 ```json
 {
   "flow": [
-    { "type": "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "acceptance": "All auth files identified with JWT flow traced" }
+    { "type": "scout", "intent": "Find all authentication-related code and trace JWT validation", "aim": "Find auth code and trace JWT", "acceptance": "All auth files identified with JWT flow traced", "concern": "Auth code may be spread across middleware and utils", "complexity": "moderate" }
   ]
 }
 ```
@@ -32,8 +32,8 @@ Example:
 ```json
 {
   "flow": [
-    { "type": "scout", "intent": "Find auth code", "aim": "Find auth code" },
-    { "type": "audit", "intent": "Audit auth module", "aim": "Audit auth module" }
+    { "type": "scout", "intent": "Find auth code", "aim": "Find auth code", "concern": "Recently refactored", "complexity": "simple" },
+    { "type": "audit", "intent": "Audit auth module", "aim": "Audit auth module", "concern": "Token expiry edge cases", "complexity": "moderate" }
   ]
 }
 ```
@@ -43,7 +43,7 @@ Example:
 ```json
 {
   "flow": [
-    { "type": "scout", "intent": "Map packages/ui", "aim": "Map UI package", "cwd": "packages/ui" }
+    { "type": "scout", "intent": "Map packages/ui", "aim": "Map UI package", "concern": "Monorepo paths", "complexity": "simple", "cwd": "packages/ui" }
   ]
 }
 ```
@@ -53,7 +53,7 @@ Suppress the confirmation prompt before running project-local flows:
 ```json
 {
   "flow": [
-    { "type": "scout", "intent": "Map packages/ui", "aim": "Map UI package" }
+    { "type": "scout", "intent": "Map packages/ui", "aim": "Map UI package", "concern": "Monorepo paths", "complexity": "simple" }
   ],
   "confirmProjectFlows": false
 }
@@ -70,6 +70,8 @@ Run commands or setup files locally in one step before the flow starts:
       "type": "build",
       "intent": "Implement auth tests",
       "aim": "Add auth tests",
+      "concern": "Test env vars must load before the suite",
+      "complexity": "moderate",
       "dispatch": [
         { "tool": "bash", "ops": [{ "c": "npm install dotenv" }] }
       ]
@@ -201,7 +203,7 @@ Some malformed inputs are **silently dropped** by the normalizer — the canonic
 
 When **tool optimization** is enabled (default), the separate `read` / `write` / `edit` tools are replaced by:
 
-- **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings.
+- **`batch`** — sequential read, write, edit, and delete operations in one call. Edits use fuzzy matching and preserve line endings. `patch` ops take the **apply_patch envelope format** (`*** Begin Patch` / `*** Update File: <path>` / `@@` hunks / `*** End Patch`), not unified diff. For `rg` ops, `l` defaults to `false` (matching lines with content); set `l: true` for filenames only.
 - **`batch_read`** — read-only variant for multiple reads. Small full-file reads return raw content; large full-file reads return code/infra context maps or total line counts, and oversized targeted reads are capped with continuation guidance. Also accepts web ops (`search` / `fetch`) via the `w` array, executed after read ops.
 
   > **Caution:** the `batch_read` `o` array only supports read-only operations (`read` and `rg`). It does **not** support `edit`, `write`, `delete`, `bash`, or `patch` — use the full `batch` tool for those.
@@ -209,6 +211,8 @@ When **tool optimization** is enabled (default), the separate `read` / `write` /
 ## `batch_bash_poll` — poll pending bash commands
 
 For child flows using the `batch` tool, `batch_bash_poll` lets the agent check on pending bash operations that exceeded the soft timeout. Pass the operation IDs from the pending results to retrieve completed output or see updated partial output.
+
+> **One-shot results:** completed results are returned exactly once and then discarded. Re-polling an already-retrieved ID (or an ID that was never launched) returns `status: "unknown"` — don't keep polling it.
 
 ## `web` — search and fetch
 

@@ -242,10 +242,21 @@ describe("pollBatchBashResults", () => {
 		tracker.abortAll();
 	});
 
-	it("returns pending for unknown IDs", () => {
+	it("returns unknown for IDs that were never launched", () => {
 		const results = pollBatchBashResults(["unknown-id"], tracker);
 		expect(results).toHaveLength(1);
-		expect(results[0].status).toBe("pending");
+		expect(results[0].status).toBe("unknown");
+	});
+
+	it("returns unknown when re-polling an already-retrieved result", async () => {
+		tracker.launch("p1b", "echo consumed", process.cwd());
+		await waitFor(tracker, "p1b", 5000);
+
+		const first = pollBatchBashResults(["p1b"], tracker);
+		expect(first[0].status).toBe("completed");
+
+		const second = pollBatchBashResults(["p1b"], tracker);
+		expect(second[0].status).toBe("unknown");
 	});
 
 	it("handles multiple IDs", async () => {
@@ -258,7 +269,7 @@ describe("pollBatchBashResults", () => {
 		expect(results).toHaveLength(3);
 		expect(results[0].status).toBe("completed");
 		expect(results[1].status).toBe("pending");
-		expect(results[2].status).toBe("pending");
+		expect(results[2].status).toBe("unknown");
 	});
 });
 

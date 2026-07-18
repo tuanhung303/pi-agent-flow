@@ -13,7 +13,12 @@ export function getModelsJsonPath(): string {
 	return defaultPath;
 }
 
+function getModelsStorePath(): string {
+	return path.join(getAgentDir(), "models-store.json");
+}
+
 const _modelsJsonCache = new Map<string, Record<string, unknown> | null>();
+const _modelsStoreCache = new Map<string, Record<string, unknown> | null>();
 
 export function readModelsJson(): Record<string, unknown> | null {
 	const filePath = getModelsJsonPath();
@@ -23,23 +28,57 @@ export function readModelsJson(): Record<string, unknown> | null {
 	return parsed;
 }
 
+function readModelsStore(): Record<string, unknown> | null {
+	const filePath = getModelsStorePath();
+	if (_modelsStoreCache.has(filePath)) return _modelsStoreCache.get(filePath)!;
+	const parsed = readSettingsJson(filePath, { missingIsQuiet: true });
+	_modelsStoreCache.set(filePath, parsed);
+	return parsed;
+}
+
 /** Clear the parsed models.json cache. Exposed for tests and future hot-reload boundaries. */
 export function invalidateModelsJsonCache(): void {
 	_modelsJsonCache.clear();
+	_modelsStoreCache.clear();
 }
 
-function readSettingsJson(filePath: string): Record<string, unknown> | null {
+function readSettingsJson(
+	filePath: string,
+	options: { missingIsQuiet?: boolean } = {},
+): Record<string, unknown> | null {
 	try {
 		const content = fs.readFileSync(filePath, "utf-8");
 		return JSON.parse(content) as Record<string, unknown>;
 	} catch (e) {
+		if (options.missingIsQuiet && isMissingFileError(e)) return null;
 		logWarn(`[pi-agent-flow] Failed to read settings JSON from ${filePath}: ${e}`);
 		return null;
 	}
 }
 
+function isMissingFileError(error: unknown): boolean {
+	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getRegistryProviders(registry: Record<string, unknown>): Record<string, unknown> {
+	return isPlainObject(registry.providers) ? registry.providers : registry;
+}
+
+function findRegisteredModel(
+	registry: Record<string, unknown> | null,
+	providerKey: string,
+	modelId: string,
+): Record<string, unknown> | undefined {
+	if (!isPlainObject(registry)) return undefined;
+	const provider = getRegistryProviders(registry)[providerKey];
+	if (!isPlainObject(provider) || !Array.isArray(provider.models)) return undefined;
+	return provider.models.find((candidate): candidate is Record<string, unknown> =>
+		isPlainObject(candidate) && candidate.id === modelId,
+	);
 }
 
 export function resolveModelContextWindow(model: string): number | undefined {
@@ -49,31 +88,14 @@ export function resolveModelContextWindow(model: string): number | undefined {
 	const providerKey = parts[0];
 	const modelId = parts.slice(1).join("/");
 
-	const raw = readModelsJson();
-	if (!isPlainObject(raw)) return undefined;
-
-	const providers = raw.providers;
-	if (!isPlainObject(providers)) return undefined;
-
-	const provider = providers[providerKey];
-	if (!isPlainObject(provider)) return undefined;
-
-	const models = provider.models;
-	if (!Array.isArray(models)) return undefined;
-
-	for (const m of models) {
-		if (!isPlainObject(m)) continue;
-		if (typeof m.id !== "string") continue;
-		if (m.id === modelId && typeof m.contextWindow === "number") {
-			return m.contextWindow;
-		}
-	}
-
-	return undefined;
+	const registered =
+		findRegisteredModel(readModelsJson(), providerKey, modelId) ??
+		findRegisteredModel(readModelsStore(), providerKey, modelId);
+	return typeof registered?.contextWindow === "number" ? registered.contextWindow : undefined;
 }
 
 /**
- * Return whether a provider/model entry is known in models.json.
+ * Return whether a provider/model entry is known in the local model registries.
  *
  * `undefined` means the local model registry cannot answer authoritatively
  * (for example, no provider/model form or unreadable models.json).
@@ -88,17 +110,12 @@ export function hasConfiguredModel(
 	const providerKey = parts[0];
 	const modelId = parts.slice(1).join("/");
 
-	const raw = registry === undefined ? readModelsJson() : registry;
-	if (!isPlainObject(raw)) return undefined;
+	const customRegistry = registry === undefined ? readModelsJson() : registry;
+	if (findRegisteredModel(customRegistry, providerKey, modelId)) return true;
+	if (findRegisteredModel(readModelsStore(), providerKey, modelId)) return true;
 
-	const providers = raw.providers;
-	if (!isPlainObject(providers)) return undefined;
-
-	const provider = providers[providerKey];
-	if (!isPlainObject(provider)) return undefined;
-
-	const models = provider.models;
-	if (!Array.isArray(models)) return undefined;
-
-	return models.some((m) => isPlainObject(m) && m.id === modelId);
+	const store = readModelsStore();
+	const registryHasProvider = isPlainObject(customRegistry) && providerKey in getRegistryProviders(customRegistry);
+	const storeHasProvider = isPlainObject(store) && providerKey in getRegistryProviders(store);
+	return registryHasProvider || storeHasProvider ? false : undefined;
 }

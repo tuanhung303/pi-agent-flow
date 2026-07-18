@@ -43,109 +43,120 @@ const EditOp = Type.Object({
 	r: Type.String({ description: "Replacement text (newText)." }),
 });
 
-const FileOp = Type.Object({
-	o: Type.Union([
-		Type.Literal("read"),
-		Type.Literal("write"),
-		Type.Literal("edit"),
-		Type.Literal("delete"),
-		Type.Literal("bash"),
-		Type.Literal("rg"),
-		Type.Literal("patch"),
-	]),
-	p: Type.String({ description: "Path to the file (relative or absolute). Use 'bash' or any string for o: 'bash'." }),
-	c: Type.Optional(
-		Type.String({
-			description:
-				"File content for o: 'write'. Shell command for o: 'bash'. Patch text for o: 'patch'.",
-		}),
-	),
-	e: Type.Optional(
-		Type.Array(EditOp, {
-			description:
-				"One or more targeted replacements matched against the original file, not incrementally.",
-		}),
-	),
+const ReadFileOp = Type.Object({
+	o: Type.Literal("read"),
+	p: Type.String({ description: "Path to the file (relative or absolute)." }),
 	s: Type.Optional(
 		Type.Number({
 			minimum: 1,
-			description:
-				"1-indexed line number to start reading from (offset). Used with o: 'read'.",
+			description: "1-indexed line number to start reading from (offset).",
 		}),
 	),
 	l: Type.Optional(
-		Type.Union([
-			Type.Number({
-				minimum: 1,
-				description:
-					"Maximum number of lines to read (limit). Used with o: 'read'.",
-			}),
-			Type.Boolean({
-				description:
-					"Files-with-matches flag for o: 'rg'. Default false — returns matching lines with content. Set true to get filenames only.",
-			}),
-		]),
-	),
-	i: Type.Optional(
-		Type.Union([
-			Type.String({
-				description: "Unique ID for this bash operation. Auto-generated if omitted. Used with o: 'bash'.",
-			}),
-			Type.Boolean({
-				description: "Ignore-case flag for o: 'rg'. Used with o: 'rg'.",
-			}),
-		]),
-	),
-	t: Type.Optional(
-		Type.Union([
-			Type.Number({
-				minimum: 1,
-				description: `Timeout in ms. Default: ${BASH_DEFAULT_TIMEOUT_MS}. Commands keep running after soft timeout; returns partial output with pending status. Used with o: 'bash'.`,
-			}),
-			Type.String({
-				description: "Type filter for o: 'rg' (e.g., 'ts', 'js'). Used with o: 'rg'.",
-			}),
-		]),
-	),
-	h: Type.Optional(
-		Type.String({
-			description: "Working directory override for this command. Used with o: 'bash'.",
+		Type.Number({
+			minimum: 1,
+			description: "Maximum number of lines to read (limit).",
 		}),
 	),
-	q: Type.Optional(
-		Type.String({
-			description: "Search pattern for o: 'rg'.",
+}, { description: "Read a file, whole or a section via s/l." });
+
+const WriteFileOp = Type.Object({
+	o: Type.Literal("write"),
+	p: Type.String({ description: "Path to the file (relative or absolute)." }),
+	c: Type.String({ description: "Full file content to write. Creates parent directories as needed." }),
+}, { description: "Write (create or overwrite) a file." });
+
+const EditFileOp = Type.Object({
+	o: Type.Literal("edit"),
+	p: Type.String({ description: "Path to the file (relative or absolute)." }),
+	e: Type.Array(EditOp, {
+		description:
+			"One or more targeted replacements matched against the original file, not incrementally.",
+	}),
+}, { description: "Apply targeted find/replace edits to a file." });
+
+const DeleteFileOp = Type.Object({
+	o: Type.Literal("delete"),
+	p: Type.String({ description: "Path to the file to delete." }),
+}, { description: "Delete a file." });
+
+const PatchFileOp = Type.Object({
+	o: Type.Literal("patch"),
+	p: Type.Optional(Type.String({ description: "Optional display label. File paths come from the patch text itself." })),
+	c: Type.String({
+		description:
+			"Patch text in apply_patch envelope format — NOT unified diff. Structure: '*** Begin Patch', then one or more '*** Add File: <path>' / '*** Update File: <path>' / '*** Delete File: <path>' sections with '@@' context hunks (' ' keep, '-' remove, '+' add line prefixes), then '*** End Patch'.",
+	}),
+}, { description: "Apply a multi-file patch in apply_patch envelope format." });
+
+const RgFileOp = Type.Object({
+	o: Type.Literal("rg"),
+	p: Type.String({ description: "Path to search (relative or absolute). Use '.' for cwd." }),
+	q: Type.String({ description: "Search pattern (ripgrep regex)." }),
+	l: Type.Optional(
+		Type.Boolean({
+			description: "Files-with-matches flag. Default false — returns matching lines with content. Set true to get filenames only.",
 		}),
 	),
+	i: Type.Optional(Type.Boolean({ description: "Ignore-case flag." })),
+	t: Type.Optional(Type.String({ description: "Type filter (e.g., 'ts', 'js')." })),
 	n: Type.Optional(
 		Type.Number({
 			minimum: 1,
-			description: "Max-count for o: 'rg' (matches per file). Broad searches on '.' auto-default to 50 when omitted.",
+			description: "Max-count (matches per file). Broad searches on '.' auto-default to 50 when omitted.",
 		}),
 	),
 	u: Type.Optional(
 		Type.Number({
 			minimum: 0,
 			maximum: 3,
-			description: "Ignore level for o: 'rg' (0-3). Maps to -u (0), -uu (1), -uuu (2-3).",
+			description: "Ignore level (0-3). Maps to -u (0), -uu (1), -uuu (2-3).",
 		}),
 	),
-});
+}, { description: "Search file contents with ripgrep." });
+
+const BashFileOp = Type.Object({
+	o: Type.Literal("bash"),
+	c: Type.String({ description: "Shell command to run." }),
+	i: Type.Optional(
+		Type.String({
+			description: "Unique ID for this bash operation. Auto-generated if omitted. Needed to poll long-running commands via batch_bash_poll.",
+		}),
+	),
+	t: Type.Optional(
+		Type.Number({
+			minimum: 1,
+			description: `Soft timeout in ms. Default: ${BASH_SOFT_TIMEOUT_MS}. Does NOT kill the command — the batch returns partial output with pending status and the command keeps running (poll via batch_bash_poll). When several bash ops set t, the smallest value bounds the wait for the whole batch.`,
+		}),
+	),
+	h: Type.Optional(Type.String({ description: "Working directory override for this command." })),
+	p: Type.Optional(Type.String({ description: "Unused for bash ops; may be omitted." })),
+}, { description: "Run a shell command. Bash ops run in parallel after file and web ops complete." });
+
+const FileOp = Type.Union([
+	ReadFileOp,
+	WriteFileOp,
+	EditFileOp,
+	DeleteFileOp,
+	PatchFileOp,
+	RgFileOp,
+	BashFileOp,
+], { description: "A single operation, discriminated by o." });
 
 const WebOp = Type.Union([
 	Type.Object({
 		o: Type.Literal("search"),
 		q: Type.String({ minLength: 1, description: "Search query" }),
-	}),
+	}, { description: "Keyless web search. Returns top results with title, URL, and snippet." }),
 	Type.Object({
 		o: Type.Literal("fetch"),
 		u: Type.String({ minLength: 1, description: "URL to fetch" }),
 		f: Type.Optional(
 			Type.Union([Type.Literal("markdown"), Type.Literal("text"), Type.Literal("html")], {
-				description: "Output format (default: markdown). Content is saved to a temp file — use read ops to access.",
+				description: "Output format (default: markdown).",
 			}),
 		),
-	}),
+	}, { description: "Fetch a URL. Full content is saved to a temp file (path returned) with a short inline preview — use a read op on the returned path for the rest." }),
 ]);
 
 export const WeavePatchParams = Type.Object({
@@ -159,6 +170,13 @@ export const WeavePatchParams = Type.Object({
 				"Web ops, run after file ops and before bash. E.g. w: [{ o: 'search', q: '...' }] or [{ o: 'fetch', u: '...' }]",
 		}),
 		),
+}, {
+	title: "BatchToolParams",
+	examples: [
+		{ o: [{ o: "read", p: "src/index.ts" }, { o: "rg", p: ".", q: "TODO", t: "ts" }] },
+		{ o: [{ o: "write", p: "./tmp/check.py", c: "print('ok')" }, { o: "bash", c: "python ./tmp/check.py" }] },
+		{ o: [{ o: "edit", p: "src/app.ts", e: [{ f: "const retries = 1", r: "const retries = 3" }] }], w: [{ o: "search", q: "typescript satisfies operator" }] },
+	],
 });
 
 const BatchReadOp = Type.Union([
@@ -187,7 +205,7 @@ const BatchReadOp = Type.Union([
 		l: Type.Optional(
 			Type.Boolean({
 				description:
-					"Files-with-matches flag for o: 'rg'. Default true.",
+					"Files-with-matches flag for o: 'rg'. Default false — returns matching lines with content. Set true to get filenames only.",
 			}),
 		),
 		i: Type.Optional(
@@ -438,6 +456,7 @@ export function createBatchTool(bashTracker?: BashProcessTracker, toolOptimize?:
 			"File ops run first, then web, then bash — write → bash is safe for scripts.",
 			"Web: `w: [{ o: 'search', q: '...' }]` or `w: [{ o: 'fetch', u: '...' }]`",
 			"Field aliases: cmd/command=c, content=c, path=p, edits=e, offset=s, limit=l. Canonical wins.",
+			"`patch` ops take the apply_patch envelope (`*** Begin Patch` … `*** End Patch`), not unified diff. Prefer `edit` for single-file changes.",
 			...(toolOptimize ? ["Batch is your ONLY edit tool — no separate edit command."] : []),
 		],
 		parameters: WeavePatchParams,

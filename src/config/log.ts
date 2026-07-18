@@ -64,6 +64,12 @@ function initLogging(): void {
 	}
 }
 
+/** Reset memoized process state after tests deliberately change logging env vars. */
+export function _resetLoggingForTests(): void {
+	_isTui = undefined;
+	_logPath = undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------

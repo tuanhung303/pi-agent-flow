@@ -11,7 +11,6 @@ import {
 	writeFlowModelConfig,
 	writeGlobalFlowMode,
 	writeFlowSetting,
-	flushAllSettingsCachesSync,
 	_clearSettingsCache,
 	onSettingsChange,
 	_clearSettingsChangeListeners,
@@ -22,6 +21,7 @@ import {
 	readModelsJson,
 	resolveModelContextWindow,
 } from "../src/config/models.js";
+import { _resetLoggingForTests } from "../src/config/log.js";
 
 describe("loadFlowModelConfigs", () => {
 	let tmpDir: string;
@@ -29,6 +29,7 @@ describe("loadFlowModelConfigs", () => {
 	let originalAgentDir: string | undefined;
 	let originalIsTTY: boolean | undefined;
 	let originalFlowDepth: string | undefined;
+	let originalTuiMode: string | undefined;
 	let warnSpy: ReturnType<typeof vi.spyOn>;
 
 	beforeEach(() => {
@@ -37,11 +38,14 @@ describe("loadFlowModelConfigs", () => {
 		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 		originalIsTTY = process.stdout.isTTY;
 		originalFlowDepth = process.env.PI_FLOW_DEPTH;
+		originalTuiMode = process.env.PI_TUI_MODE;
 		process.env.HOME = tmpDir;
 		delete process.env.PI_CODING_AGENT_DIR;
 		delete process.env.PI_FLOW_DEPTH;
+		delete process.env.PI_TUI_MODE;
 		// @ts-ignore
 		process.stdout.isTTY = false;
+		_resetLoggingForTests();
 		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		_clearSettingsCache();
 	});
@@ -55,6 +59,9 @@ describe("loadFlowModelConfigs", () => {
 		} else {
 			delete process.env.PI_FLOW_DEPTH;
 		}
+		if (originalTuiMode !== undefined) process.env.PI_TUI_MODE = originalTuiMode;
+		else delete process.env.PI_TUI_MODE;
+		_resetLoggingForTests();
 		process.env.HOME = originalHome;
 		if (originalAgentDir !== undefined) {
 			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
@@ -222,7 +229,6 @@ describe("writeGlobalFlowMode", () => {
 
 	it("creates global settings when missing", () => {
 		const result = writeGlobalFlowMode("mimo");
-		flushAllSettingsCachesSync();
 
 		expect(result.path).toBe(path.join(tmpDir, ".pi", "agent", "settings.json"));
 		expect(JSON.parse(fs.readFileSync(result.path, "utf-8"))).toEqual({
@@ -244,7 +250,6 @@ describe("writeGlobalFlowMode", () => {
 		);
 
 		const result = writeGlobalFlowMode("mimo");
-		flushAllSettingsCachesSync();
 
 		expect(result.previous).toBe("balance");
 		expect(JSON.parse(fs.readFileSync(result.path, "utf-8"))).toEqual({
@@ -259,7 +264,6 @@ describe("writeGlobalFlowMode", () => {
 		process.env.PI_CODING_AGENT_DIR = customDir;
 
 		writeGlobalFlowMode("quality");
-		flushAllSettingsCachesSync();
 
 		expect(getGlobalSettingsPath()).toBe(path.join(customDir, "settings.json"));
 		expect(JSON.parse(fs.readFileSync(path.join(customDir, "settings.json"), "utf-8"))).toEqual({
@@ -287,20 +291,38 @@ describe("resolveFlowModelCandidates", () => {
 	let tmpDir: string;
 	let originalHome: string | undefined;
 	let originalAgentDir: string | undefined;
+	let originalFlowDepth: string | undefined;
+	let originalTuiMode: string | undefined;
+	let originalIsTTY: boolean | undefined;
 	let warnSpy: MockInstance<(...args: unknown[]) => void>;
 
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-candidates-test-"));
 		originalHome = process.env.HOME;
 		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		originalFlowDepth = process.env.PI_FLOW_DEPTH;
+		originalTuiMode = process.env.PI_TUI_MODE;
+		originalIsTTY = process.stdout.isTTY;
 		process.env.HOME = tmpDir;
 		delete process.env.PI_CODING_AGENT_DIR;
+		delete process.env.PI_FLOW_DEPTH;
+		delete process.env.PI_TUI_MODE;
+		// @ts-ignore
+		process.stdout.isTTY = false;
+		_resetLoggingForTests();
 		_clearSettingsCache();
 		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 	});
 
 	afterEach(() => {
 		warnSpy.mockRestore();
+		// @ts-ignore
+		process.stdout.isTTY = originalIsTTY;
+		if (originalFlowDepth !== undefined) process.env.PI_FLOW_DEPTH = originalFlowDepth;
+		else delete process.env.PI_FLOW_DEPTH;
+		if (originalTuiMode !== undefined) process.env.PI_TUI_MODE = originalTuiMode;
+		else delete process.env.PI_TUI_MODE;
+		_resetLoggingForTests();
 		process.env.HOME = originalHome;
 		if (originalAgentDir !== undefined) {
 			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
@@ -767,6 +789,76 @@ describe("resolveModelContextWindow", () => {
 			"utf-8",
 		);
 		expect(resolveModelContextWindow("custom/custom-model")).toBe(32000);
+	});
+});
+
+describe("optional models-store registry", () => {
+	let tmpDir: string;
+	let originalAgentDir: string | undefined;
+	let originalFlowDepth: string | undefined;
+	let originalTuiMode: string | undefined;
+	let originalIsTTY: boolean | undefined;
+	let warnSpy: MockInstance<(...args: unknown[]) => void>;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-models-store-test-"));
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		originalFlowDepth = process.env.PI_FLOW_DEPTH;
+		originalTuiMode = process.env.PI_TUI_MODE;
+		originalIsTTY = process.stdout.isTTY;
+		process.env.PI_CODING_AGENT_DIR = path.join(tmpDir, "agent");
+		delete process.env.PI_FLOW_DEPTH;
+		delete process.env.PI_TUI_MODE;
+		// @ts-ignore
+		process.stdout.isTTY = false;
+		_resetLoggingForTests();
+		invalidateModelsJsonCache();
+		warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		warnSpy.mockRestore();
+		// @ts-ignore
+		process.stdout.isTTY = originalIsTTY;
+		if (originalAgentDir !== undefined) process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		else delete process.env.PI_CODING_AGENT_DIR;
+		if (originalFlowDepth !== undefined) process.env.PI_FLOW_DEPTH = originalFlowDepth;
+		else delete process.env.PI_FLOW_DEPTH;
+		if (originalTuiMode !== undefined) process.env.PI_TUI_MODE = originalTuiMode;
+		else delete process.env.PI_TUI_MODE;
+		_resetLoggingForTests();
+		invalidateModelsJsonCache();
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+	function writeRegistry(fileName: string, content: string): void {
+		const agentDir = process.env.PI_CODING_AGENT_DIR!;
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(path.join(agentDir, fileName), content, "utf-8");
+	}
+	it("does not warn when the optional models-store.json fallback is absent", () => {
+		writeRegistry("models.json", JSON.stringify({ providers: {} }));
+		expect(hasConfiguredModel("openai/gpt-4o")).toBeUndefined();
+		expect(resolveModelContextWindow("openai/gpt-4o")).toBeUndefined();
+		expect(warnSpy).not.toHaveBeenCalled();
+	});
+	it("uses a registered model from models-store.json when models.json lacks it", () => {
+		writeRegistry("models.json", JSON.stringify({ providers: {} }));
+		writeRegistry("models-store.json", JSON.stringify({ providers: { openai: { models: [{ id: "gpt-4o", contextWindow: 128000 }] } } }));
+		expect(hasConfiguredModel("openai/gpt-4o")).toBe(true);
+		expect(hasConfiguredModel("openai/gpt-4o-mini")).toBe(false);
+		expect(resolveModelContextWindow("openai/gpt-4o")).toBe(128000);
+		expect(warnSpy).not.toHaveBeenCalled();
+	});
+	it("warns when an existing models-store.json is malformed", () => {
+		writeRegistry("models.json", JSON.stringify({ providers: {} }));
+		writeRegistry("models-store.json", "not json");
+		expect(hasConfiguredModel("openai/gpt-4o")).toBeUndefined();
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("models-store.json"));
+	});
+	it("warns when an existing models-store.json cannot be read", () => {
+		writeRegistry("models.json", JSON.stringify({ providers: {} }));
+		fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR!, "models-store.json"));
+		expect(hasConfiguredModel("openai/gpt-4o")).toBeUndefined();
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("models-store.json"));
 	});
 });
 

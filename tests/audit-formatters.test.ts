@@ -6,22 +6,41 @@ import { resolveAuditModel } from "../src/flow/audit-formatters.js";
 import { _clearSettingsCache } from "../src/config/config.js";
 import type { FlowConfig } from "../src/flow/agents.js";
 import type { FlowModelStrategy } from "../src/config/config.js";
+import { _resetLoggingForTests } from "../src/config/log.js";
 
 describe("resolveAuditModel (effectivePrimary regression)", () => {
 	let tmpDir: string;
 	let originalHome: string | undefined;
 	let originalAgentDir: string | undefined;
+	let originalFlowDepth: string | undefined;
+	let originalTuiMode: string | undefined;
+	let originalIsTTY: boolean | undefined;
 
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-audit-formatters-test-"));
 		originalHome = process.env.HOME;
 		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		originalFlowDepth = process.env.PI_FLOW_DEPTH;
+		originalTuiMode = process.env.PI_TUI_MODE;
+		originalIsTTY = process.stdout.isTTY;
 		process.env.HOME = tmpDir;
 		process.env.PI_CODING_AGENT_DIR = path.join(tmpDir, ".pi", "agent");
+		delete process.env.PI_FLOW_DEPTH;
+		delete process.env.PI_TUI_MODE;
+		// @ts-ignore
+		process.stdout.isTTY = false;
+		_resetLoggingForTests();
 		_clearSettingsCache();
 	});
 
 	afterEach(() => {
+		// @ts-ignore
+		process.stdout.isTTY = originalIsTTY;
+		if (originalFlowDepth !== undefined) process.env.PI_FLOW_DEPTH = originalFlowDepth;
+		else delete process.env.PI_FLOW_DEPTH;
+		if (originalTuiMode !== undefined) process.env.PI_TUI_MODE = originalTuiMode;
+		else delete process.env.PI_TUI_MODE;
+		_resetLoggingForTests();
 		process.env.HOME = originalHome;
 		if (originalAgentDir !== undefined) {
 			process.env.PI_CODING_AGENT_DIR = originalAgentDir;

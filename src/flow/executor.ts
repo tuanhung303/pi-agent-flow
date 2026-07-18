@@ -64,6 +64,8 @@ export interface FlowExecutorDeps {
 	structuredOutput: boolean;
 	cwd: string;
 	loadedFlowModelConfigs: LoadedFlowModelConfigs;
+	/** Root runtime selection, already validated by settings resolution. */
+	resolvedFlowModelConfig?: LoadedFlowModelConfigs;
 	maxConcurrency: number;
 	defaultComplexity: Complexity;
 	signal?: AbortSignal;
@@ -74,6 +76,11 @@ export interface FlowExecutorDeps {
 	fallbackModel?: string;
 	forkSessionSnapshotJsonl: string | null;
 	compressionStats?: import("../core2/snapshot.js").CompressionStats;
+	/** Creates a profile- and retry-budget-specific snapshot for generated flows. */
+	getForkSnapshot?: (flowType: string) => {
+		snapshot: string | null;
+		stats?: import("../core2/snapshot.js").CompressionStats;
+	};
 	projectFlowsDir: string | null;
 	sessionManager: { getHeader: () => unknown; getBranch: () => unknown[]; getSessionId: () => string };
 	hasUI: boolean;
@@ -97,6 +104,9 @@ export interface ExecuteFlowParams {
 	concern?: string;
 	cwd?: string;
 	complexity: Complexity;
+	/** Per-flow snapshot avoids applying one parallel flow's profile to another. */
+	forkSessionSnapshotJsonl?: string | null;
+	compressionStats?: import("../core2/snapshot.js").CompressionStats;
 	_childTools?: string[];
 	preDispatchResults?: string;
 }
@@ -435,17 +445,19 @@ export async function executeFlows(
 		}
 	}
 
-	const cliFlowMode = normalizeFlowModeName(getFlag("flow-mode"));
-	const cliFlowModelConfig = normalizeFlowModeName(getFlag("flow-model-config"));
-	if (cliFlowMode !== undefined && cliFlowModelConfig !== undefined && cliFlowMode !== cliFlowModelConfig) {
-		logWarn(
-			`[pi-agent-flow] Both --flow-mode "${cliFlowMode}" and --flow-model-config "${cliFlowModelConfig}" were provided. Using --flow-mode.`,
+	const selectedFlowModelConfig = deps.resolvedFlowModelConfig ?? (() => {
+		const cliFlowMode = normalizeFlowModeName(getFlag("flow-mode"));
+		const cliFlowModelConfig = normalizeFlowModeName(getFlag("flow-model-config"));
+		if (cliFlowMode !== undefined && cliFlowModelConfig !== undefined && cliFlowMode !== cliFlowModelConfig) {
+			logWarn(
+				`[pi-agent-flow] Both --flow-mode "${cliFlowMode}" and --flow-model-config "${cliFlowModelConfig}" were provided. Using --flow-mode.`,
+			);
+		}
+		return selectFlowModelStrategy(
+			loadedFlowModelConfigs.configs,
+			cliFlowMode ?? cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
 		);
-	}
-	const selectedFlowModelConfig = selectFlowModelStrategy(
-		loadedFlowModelConfigs.configs,
-		cliFlowMode ?? cliFlowModelConfig ?? loadedFlowModelConfigs.selectedName,
-	);
+	})();
 
 	const regularParams: ExecuteFlowParams[] = [];
 	const regularIndices: number[] = [];

@@ -6,7 +6,12 @@ vi.mock("../src/flow/loop.js", () => ({
   recordSessionWarp: vi.fn(),
 }));
 
+vi.mock("../src/flow/store.js", () => ({
+  beginWarpHandoff: vi.fn(), clearWarpHandoff: vi.fn(), completeWarpHandoff: vi.fn(), restoreWarpHandoff: vi.fn(),
+}));
+
 import setupWarp from "../src/flow/warp.js";
+import { beginWarpHandoff, clearWarpHandoff, completeWarpHandoff, restoreWarpHandoff } from "../src/flow/store.js";
 
 describe("setupWarp", () => {
 	const registerCommand = vi.fn();
@@ -125,6 +130,7 @@ describe("setupWarp", () => {
 		const newCtxNotify = vi.fn();
 		await withSessionCallback({
 			sendUserMessage: newCtxSendUserMessage,
+			sessionManager: { getSessionId: () => "new-sid" },
 			ui: { notify: newCtxNotify },
 		});
 
@@ -132,6 +138,8 @@ describe("setupWarp", () => {
 			expect.stringContaining("## Task\nmy goal"),
 		);
 		expect(newCtxNotify).toHaveBeenCalledWith("Warp ready...", "info");
+		expect(beginWarpHandoff).toHaveBeenCalledWith("/tmp/test", "sid");
+		expect(completeWarpHandoff).toHaveBeenCalledWith("/tmp/test", "sid", "new-sid");
 	});
 
 	it("notifies when new session is cancelled", async () => {
@@ -158,6 +166,21 @@ describe("setupWarp", () => {
 		await handler("my goal", ctx);
 		expect(notify).toHaveBeenCalledWith("New session cancelled", "info");
 	});
+
+
+	it("cleans a source lock when distillation cannot produce a warp note", async () => {
+		const handler = registerCommand.mock.calls[0][1].handler;
+		const ctx = {
+			model: { provider: "test", id: "test" }, cwd: "/tmp/test",
+			sessionManager: { getBranch: () => [], getSessionFile: () => "/tmp/session", getSessionId: () => "sid" },
+			ui: { notify: vi.fn() }, newSession: vi.fn(), isIdle: () => true,
+		} as any;
+		const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(Infinity);
+		await handler("my goal", ctx);
+		expect(clearWarpHandoff).toHaveBeenCalledWith("/tmp/test", "sid");
+		dateNowSpy.mockRestore();
+	});
+
 
 	it("rejects assistant responses with non-stop stopReason", async () => {
 		const handler = registerCommand.mock.calls[0][1].handler;

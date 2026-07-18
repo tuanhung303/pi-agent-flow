@@ -4,6 +4,7 @@ description: Hypothesis driven root cause analysis minimal instrumentation targe
 tools: batch bash find grep ls
 maxDepth: 0
 tier: lite
+thinking: high
 contextProfile: errors-first
 ---
 

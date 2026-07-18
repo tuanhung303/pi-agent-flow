@@ -32,6 +32,8 @@ export interface GoalEntry {
   maxFlows?: number;
   /** Session ID that owns this goal. */
   sessionId?: string;
+  /** Exclusive warp handoff lock, owned by the source session. */
+  pendingWarpSessionId?: string;
 }
 
 export type LoopStatus = "active" | "paused" | "terminated";
@@ -46,7 +48,7 @@ export interface LoopState {
   totalFlowsAcrossSessions: number;
   terminatedAt?: string;
   terminationReason?: LoopTerminationReason;
-  /** When an auto-warp is in progress, the session ID we expect to resume in. */
+  /** @deprecated Warp handoff locks are stored on GoalEntry. Read only for migration. */
   pendingWarpSessionId?: string;
 }
 

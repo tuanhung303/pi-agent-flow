@@ -62,6 +62,17 @@ export async function executeSingleFlow(
 		targetFlow?.maxDepth !== undefined ? targetFlow.maxDepth : maxDepth;
 
 	const shouldInheritContext = targetFlow?.inheritContext !== false;
+	// Generated audit flows have no caller-supplied snapshot. Ask the narrowly
+	// scoped factory for their own tier/profile and smallest-retry budget.
+	const generatedSnapshot = item.forkSessionSnapshotJsonl === undefined
+		? deps.getForkSnapshot?.(normalizedType)
+		: undefined;
+	const flowSnapshot = item.forkSessionSnapshotJsonl !== undefined
+		? item.forkSessionSnapshotJsonl
+		: generatedSnapshot?.snapshot ?? forkSessionSnapshotJsonl;
+	const flowCompressionStats = item.compressionStats !== undefined
+		? item.compressionStats
+		: generatedSnapshot?.stats ?? deps.compressionStats;
 	const tier = targetFlow?.tier ?? "flash";
 	const { candidates, invalidCandidates } = resolveFlowModelCandidates({
 		tier,
@@ -156,7 +167,7 @@ export async function executeSingleFlow(
 				acceptance: item.acceptance,
 				concern: item.concern,
 				taskCwd: item.cwd,
-				forkSessionSnapshotJsonl: shouldInheritContext ? forkSessionSnapshotJsonl : null,
+				forkSessionSnapshotJsonl: shouldInheritContext ? flowSnapshot : null,
 				parentDepth: currentDepth,
 				parentFlowStack: ancestorFlowStack,
 				maxDepth: effectiveMaxDepth,
@@ -168,7 +179,7 @@ export async function executeSingleFlow(
 				maxContextTokens,
 				goalContext,
 				debugMode: deps.debugMode,
-				compressionStats: deps.compressionStats,
+				compressionStats: flowCompressionStats,
 				tools: item._childTools,
 				preDispatchResults: item.preDispatchResults,
 				signal,

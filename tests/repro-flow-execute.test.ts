@@ -3,6 +3,7 @@ import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -103,8 +104,20 @@ function makeFakePi(cwd: string, entries: unknown[]) {
 }
 
 describe("repro flow execute", () => {
-	beforeEach(() => vi.clearAllMocks());
-	afterEach(() => vi.restoreAllMocks());
+	const depthEnvNames = ["PI_FLOW_DEPTH", "PI_FLOW_MAX_DEPTH", "PI_FLOW_STACK", "PI_FLOW_PREVENT_CYCLES"] as const;
+	let originalDepthEnv: Record<string, string | undefined>;
+	beforeEach(() => {
+		originalDepthEnv = Object.fromEntries(depthEnvNames.map((name) => [name, process.env[name]]));
+		for (const name of depthEnvNames) delete process.env[name];
+		vi.clearAllMocks();
+	});
+	afterEach(() => {
+		for (const name of depthEnvNames) {
+			if (originalDepthEnv[name] === undefined) delete process.env[name];
+			else process.env[name] = originalDepthEnv[name];
+		}
+		vi.restoreAllMocks();
+	});
 
 	it("bare scout (no dispatch) does not throw 'length'", async () => {
 		const cwd = process.cwd();
@@ -144,4 +157,47 @@ describe("repro flow execute", () => {
 		clearTimeout(timeout);
 		expect(err).toBeUndefined();
 	}, 30000);
+
+	it("builds independent snapshots for mixed parallel flow profiles", async () => {
+		const cwd = process.cwd();
+		const entries = [
+			...createDefaultSession(),
+			{ type: "message", message: { role: "toolResult", name: "bash", content: [{ type: "text", text: "Error: profile-specific failure" }] } },
+		];
+		const dumpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-flow-profile-dumps-"));
+		const dumpBase = path.join(dumpDir, "snapshot");
+		const oldDump = process.env.PI_FLOW_DUMP_SNAPSHOT;
+		const oldCompression = process.env.PI_FLOW_CONTEXT_COMPRESSION;
+		process.env.PI_FLOW_DUMP_SNAPSHOT = dumpBase;
+		process.env.PI_FLOW_CONTEXT_COMPRESSION = "light";
+		try {
+			const { api, ctx, tools, fire } = makeFakePi(cwd, entries);
+			extDefault(api as any);
+			await fire("session_start", { type: "session_start" }, ctx);
+			const flowTool = tools.get("flow");
+			expect(flowTool).toBeTruthy();
+			let count = 0;
+			vi.mocked(childProcess.spawn).mockImplementation((() => {
+				const proc = makeMockProcess();
+				setTimeout(() => { proc.emit("close", 0); }, 5 + count++);
+				return proc;
+			}) as any);
+			const params = flowTool.prepareArguments({ flow: [
+				{ type: "ideas", intent: "consider", aim: "Consider", complexity: "simple" },
+				{ type: "debug", intent: "diagnose", aim: "Diagnose", complexity: "simple" },
+			] });
+			await flowTool.execute("tc-mixed", params, new AbortController().signal, () => {}, ctx);
+			const dumps = fs.readdirSync(dumpDir).filter((name) => name.endsWith(".md"));
+			const ideasDump = fs.readFileSync(path.join(dumpDir, dumps.find((name) => name.includes(".ideas."))!), "utf8");
+			const debugDump = fs.readFileSync(path.join(dumpDir, dumps.find((name) => name.includes(".debug."))!), "utf8");
+			expect(ideasDump).toContain("[toolResult: bash]");
+			expect(ideasDump).not.toContain("Error: profile-specific failure");
+			expect(debugDump).toContain("Error: profile-specific failure");
+		} finally {
+			if (oldDump === undefined) delete process.env.PI_FLOW_DUMP_SNAPSHOT; else process.env.PI_FLOW_DUMP_SNAPSHOT = oldDump;
+			if (oldCompression === undefined) delete process.env.PI_FLOW_CONTEXT_COMPRESSION; else process.env.PI_FLOW_CONTEXT_COMPRESSION = oldCompression;
+			fs.rmSync(dumpDir, { recursive: true, force: true });
+		}
+	});
+
 });

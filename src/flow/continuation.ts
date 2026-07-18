@@ -140,10 +140,10 @@ export function setupContinuation(pi: ExtensionAPI): void {
     if (!goal || goal.status !== "active") return;
 
     const loop = getLoop(cwd);
-    // Guard: if a warp is pending for a different session, skip continuation.
-    if (loop?.pendingWarpSessionId && loop.pendingWarpSessionId !== sessionRegistry.getSessionId(cwd)) {
-      return;
-    }
+    // A pending warp is an exclusive handoff lock. Goal-level state exists
+    // without optional loop budgets; the loop fallback protects legacy state
+    // loaded before migration has been persisted.
+    if (goal.pendingWarpSessionId || loop?.pendingWarpSessionId) return;
 
     // Session guard: only continue goals bound to the current session.
     if (goal.sessionId && goal.sessionId !== sessionRegistry.getSessionId(cwd)) {

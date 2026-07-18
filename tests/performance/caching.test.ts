@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { stableStringify, processFlowJsonLine, type FlowResult } from "../../src/snapshot/runner-events.js";
-import { loadFlowSettings, _clearSettingsCache, flushAllSettingsCachesSync } from "../../src/config/config.js";
+import { loadFlowSettings, _clearSettingsCache } from "../../src/config/config.js";
 import { setupNotify } from "../../src/notify/notify.js";
 import { resetNotifyState } from "../../src/notify/notify-state.js";
 import { FLOW_DEPTH_ENV } from "../../src/flow/depth.js";
@@ -158,26 +158,27 @@ describe("settings cache", () => {
 		writeFileSync(path.join(dir, "settings.json"), JSON.stringify(content, null, 2), "utf-8");
 	}
 
-	it("P17-1: second loadFlowSettings read does not hit disk when cached", () => {
+	it("reads settings fresh from disk on every call (no cache — external edits are picked up)", () => {
 		writeGlobalSettings({
 			flowSettings: {
 				toolOptimize: true,
 			},
 		});
 
-		// First call: prime the cache
 		const result1 = loadFlowSettings(tmpDir);
 		expect(result1).toEqual({ toolOptimize: true });
 
-		// Delete the file from disk — if the second call hits disk it will fail or return {}
-		const settingsPath = path.join(tmpDir, ".pi", "agent", "settings.json");
-		if (existsSync(settingsPath)) {
-			rmSync(settingsPath);
-		}
+		// Simulate an external edit (user or pi host modifying settings.json)
+		writeGlobalSettings({
+			flowSettings: {
+				toolOptimize: false,
+				maxConcurrency: 2,
+			},
+		});
 
-		// Second call: should still return the cached value
+		// Second call must see the edited file, not a stale in-memory snapshot
 		const result2 = loadFlowSettings(tmpDir);
-		expect(result2).toEqual({ toolOptimize: true });
+		expect(result2).toEqual({ toolOptimize: false, maxConcurrency: 2 });
 	});
 });
 

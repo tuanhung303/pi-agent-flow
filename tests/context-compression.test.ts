@@ -43,7 +43,7 @@ describe("estimateTotalContextTokens", () => {
 });
 
 describe("buildCore2Snapshot — compression level none", () => {
-  it("preserves existing tier behavior when level is none", () => {
+  it("preserves bounded semantic tool results when level is none", () => {
     const entries = [
       {
         type: "message",
@@ -58,8 +58,8 @@ describe("buildCore2Snapshot — compression level none", () => {
       tier: "lite",
       compressionLevel: "none",
     });
-    expect(snapshot).not.toContain("long output here");
-    expect(snapshot).toContain("[toolResult: bash]");
+    expect(snapshot).toContain("long output here");
+    expect(snapshot).toContain("[Historical tool result]");
   });
 });
 
@@ -338,5 +338,49 @@ describe("buildCore2Snapshot — profile-aware compression", () => {
     });
     expect(snapshot).not.toContain("All tests passed");
     expect(snapshot).toContain("[toolResult: bash]");
+  });
+});
+
+
+describe("buildSnapshotWithCompression — hard post-build budget", () => {
+  it("keeps a valid sealed snapshot under the model budget and marks an oversized newest mission", () => {
+    const source = makeSource([
+      { type: "message", message: { role: "assistant", content: "old context" } },
+      { type: "message", message: { role: "user", content: "MISSION:" + "x".repeat(20_000) } },
+    ]);
+    const result = buildSnapshotWithCompression(source, {}, 1_000);
+    expect(result.snapshot).toContain("[Context budget: newest user mission truncated to fit child context]");
+    expect(estimateTotalContextTokens(result.snapshot!)).toBeLessThanOrEqual(600);
+    expect(() => parseSnapshot(result.snapshot)).not.toThrow();
+  });
+
+  it("bounds default completed tool output while preserving a trailing failure", () => {
+    const source = makeSource([{
+      type: "message",
+      message: { role: "toolResult", name: "bash", content: [{ type: "text", text: "start\n" + "x".repeat(10_000) + "\nError: terminal failure" }] },
+    }]);
+    const snapshot = buildCore2Snapshot(source, { tier: "lite" });
+    expect(snapshot).toMatch(/\[\.\.\.\d+ chars of completed tool output omitted\.\.\.\]/);
+    expect(snapshot).toContain("Error: terminal failure");
+    expect(snapshot!.length).toBeLessThanOrEqual(5_100);
+  });
+});
+
+
+describe("resolved compression preferences", () => {
+  it("does not re-read an aggressive environment override when passed explicit auto", () => {
+    const prior = process.env.PI_FLOW_CONTEXT_COMPRESSION;
+    process.env.PI_FLOW_CONTEXT_COMPRESSION = "aggressive";
+    try {
+      const { snapshot, stats } = buildSnapshotWithCompression(
+        makeSource([{ type: "message", message: { role: "user", content: "keep adaptive " + "x".repeat(5_000) } }]),
+        { compressionLevel: "auto" },
+      );
+      expect(stats).toBeUndefined();
+      expect(snapshot).toContain("keep adaptive");
+    } finally {
+      if (prior === undefined) delete process.env.PI_FLOW_CONTEXT_COMPRESSION;
+      else process.env.PI_FLOW_CONTEXT_COMPRESSION = prior;
+    }
   });
 });

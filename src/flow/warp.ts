@@ -12,7 +12,8 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { setPendingWarpSessionId, clearPendingWarpSessionId, recordSessionWarp } from "./loop.js";
+import { recordSessionWarp } from "./loop.js";
+import { beginWarpHandoff, clearWarpHandoff, completeWarpHandoff, restoreWarpHandoff } from "./store.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -192,6 +193,9 @@ function getAssistantText(entries: SessionEntry[], fromIndex: number): string | 
 
 const DEFAULT_GOAL = "Continue where we left off — summarize what we have done, where we are, and what the natural next step is.";
 
+// Commands can be triggered twice before the first generated turn settles.
+const warpLocks = new Set<string>();
+
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("flow:warp", {
 		description: "Transfer context to a new focused session",
@@ -207,14 +211,20 @@ export default function (pi: ExtensionAPI) {
 
 			const cwd = ctx.cwd;
 			const sessionId = ctx.sessionManager.getSessionId();
+			if (warpLocks.has(cwd)) {
+				notify("Warp already in progress", "warning");
+				return;
+			}
+			warpLocks.add(cwd);
 
 			const task = args.trim() || DEFAULT_GOAL;
+			let handoffSessionId: string | undefined;
 
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 			const startIndex = ctx.sessionManager.getBranch().length;
 
-			// Mark loop state: warp is pending for this session
-			setPendingWarpSessionId(cwd, sessionId);
+			// Lock the active goal even when it has no loop/budget state.
+			beginWarpHandoff(cwd, sessionId);
 
 			try {
 			const warpRequest = `${WARP_INSTRUCTIONS}\n\nTask for the next agent:\n${task}`;
@@ -230,7 +240,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (!warpTurn) {
 				notify("Timed out waiting for warp note", "error");
-				clearPendingWarpSessionId(cwd);
+				clearWarpHandoff(cwd, sessionId);
 				return;
 			}
 
@@ -238,7 +248,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (!warpNote) {
 				notify("Failed to capture warp note from the assistant response", "error");
-				clearPendingWarpSessionId(cwd);
+				clearWarpHandoff(cwd, sessionId);
 				return;
 			}
 
@@ -247,6 +257,14 @@ export default function (pi: ExtensionAPI) {
 			const newSessionResult = await ctx.newSession({
 				parentSession: currentSessionFile,
 				withSession: async (newCtx) => {
+					const newSessionId = (newCtx as unknown as { sessionManager?: { getSessionId?: () => unknown } }).sessionManager?.getSessionId?.();
+					if (typeof newSessionId === "string" && newSessionId) {
+						// One state write rebinds the goal and releases the old-session
+						// continuation lock before the first new-session turn can fire.
+						if (completeWarpHandoff(cwd, sessionId, newSessionId)) {
+							handoffSessionId = newSessionId;
+						}
+					}
 					await newCtx.sendUserMessage(promptForNewSession);
 					newCtx.ui?.notify?.("Warp ready...", "info");
 				},
@@ -254,16 +272,19 @@ export default function (pi: ExtensionAPI) {
 
 			if (newSessionResult.cancelled) {
 				notify("New session cancelled", "info");
-				clearPendingWarpSessionId(cwd);
+				if (handoffSessionId) restoreWarpHandoff(cwd, sessionId, handoffSessionId);
+				clearWarpHandoff(cwd, sessionId);
 				return;
 			}
 
-			// Warp succeeded — record session count and clear pending state
+			// The atomic handoff already released pending state.
 			recordSessionWarp(cwd);
-			clearPendingWarpSessionId(cwd);
 		} catch (err) {
-			clearPendingWarpSessionId(cwd);
+			if (handoffSessionId) restoreWarpHandoff(cwd, sessionId, handoffSessionId);
+			clearWarpHandoff(cwd, sessionId);
 			throw err;
+		} finally {
+			warpLocks.delete(cwd);
 		}
 		},
 	});

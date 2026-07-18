@@ -18,7 +18,7 @@ import {
 	resolveModelContextWindow as resolveModelContextWindowFromModels,
 } from "./models.js";
 import { getAgentDir, hasAgentDirOverride } from "./paths.js";
-import { atomicWriteFileSync, atomicWriteJsonAsync } from "../io/atomic-write.js";
+import { atomicWriteFileSync } from "../io/atomic-write.js";
 
 // ---------------------------------------------------------------------------
 // Settings-change listener (fires after writeFlowSetting updates the cache)
@@ -137,69 +137,30 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-// Fix P17: Cache settings in memory with async flush
-const _settingsCache = new Map<string, Record<string, unknown>>();
-const _settingsFlushScheduled = new Set<string>();
+// Settings files are deliberately NOT cached in memory. They are shared with
+// the pi host process and with the user's editor: caching whole-file snapshots
+// and flushing them back later (the old "Fix P17" design) silently reverted
+// any external edit — model changes made in pi, or manual edits to
+// settings.json — every time this process exited. Reads always hit disk
+// (the files are tiny and reads are infrequent); writes apply immediately
+// and atomically at the call site.
 
 function readSettingsJson(filePath: string): Record<string, unknown> | null {
-	const cached = _settingsCache.get(filePath);
-	if (cached) return cached;
 	try {
 		const content = fs.readFileSync(filePath, "utf-8");
-		const parsed = JSON.parse(content) as Record<string, unknown>;
-		_settingsCache.set(filePath, parsed);
-		return parsed;
+		return JSON.parse(content) as Record<string, unknown>;
 	} catch (e) {
 		logWarn(`[pi-agent-flow] Failed to read settings JSON from ${filePath}: ${e}`);
 		return null;
 	}
 }
 
-function scheduleSettingsFlush(filePath: string): void {
-	if (!_settingsFlushScheduled.has(filePath)) {
-		_settingsFlushScheduled.add(filePath);
-		setImmediate(() => flushSettings(filePath));
-	}
+function writeSettingsJsonSync(filePath: string, settings: Record<string, unknown>): void {
+	atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
-async function flushSettings(filePath: string): Promise<void> {
-	_settingsFlushScheduled.delete(filePath);
-	const settings = _settingsCache.get(filePath);
-	if (!settings) return;
-	try {
-		await atomicWriteJsonAsync(filePath, settings);
-	} catch (err) {
-		logWarn(`[pi-agent-flow] Async flush failed for settings ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
-	}
-}
-
-/** Synchronous flush of all cached settings entries. For tests or graceful shutdown. */
-export function flushAllSettingsCachesSync(): void {
-	for (const filePath of Array.from(_settingsCache.keys())) {
-		const settings = _settingsCache.get(filePath);
-		if (!settings) continue;
-		try {
-			atomicWriteFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
-		} catch (err) {
-			logWarn(`[pi-agent-flow] Sync flush failed for settings ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
-		}
-	}
-}
-
-/** Invalidate settings cache. For session_start or tests. */
-export function invalidateSettingsCache(filePath?: string): void {
-	if (filePath) {
-		_settingsCache.delete(filePath);
-		_settingsFlushScheduled.delete(filePath);
-	} else {
-		_settingsCache.clear();
-		_settingsFlushScheduled.clear();
-	}
-}
-
-/** Clear the in-memory settings cache. For tests. */
+/** Clear config-related in-memory caches (models.json). For tests. Settings themselves are never cached. */
 export function _clearSettingsCache(): void {
-	invalidateSettingsCache();
 	invalidateModelsJsonCache();
 }
 
@@ -255,8 +216,7 @@ export function writeGlobalFlowMode(mode: string): { path: string; previous?: st
 	const previous = extractSelectedFlowModelConfigName(settings);
 	settings.flowModelConfig = normalized;
 
-	_settingsCache.set(filePath, settings);
-	scheduleSettingsFlush(filePath);
+	writeSettingsJsonSync(filePath, settings);
 
 	return {
 		path: filePath,
@@ -547,8 +507,7 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 		// Reset the entire flowSettings object when keyPath is empty
 		const previous = { ...flowSettings };
 		settings.flowSettings = value;
-		_settingsCache.set(filePath, settings);
-		scheduleSettingsFlush(filePath);
+		writeSettingsJsonSync(filePath, settings);
 		emitSettingsChange(keyPath, value);
 		return { path: filePath, previous };
 	}
@@ -566,8 +525,7 @@ export function writeFlowSetting(cwd: string, keyPath: string, value: unknown): 
 	const previous = target[leafKey];
 	target[leafKey] = value;
 
-	_settingsCache.set(filePath, settings);
-	scheduleSettingsFlush(filePath);
+	writeSettingsJsonSync(filePath, settings);
 	emitSettingsChange(keyPath, value);
 
 	return { path: filePath, previous };
@@ -792,8 +750,7 @@ export function writeFlowModelConfig(
 		delete configs[strategyName];
 	}
 
-	_settingsCache.set(filePath, settings);
-	scheduleSettingsFlush(filePath);
+	writeSettingsJsonSync(filePath, settings);
 	// Flow model config writes change which models are configured, so any
 	// in-memory cache of models.json (registry lookups, provider/model probes)
 	// must be dropped before the next read. Settings.json writes do not touch

@@ -44,6 +44,16 @@ function readFromDisk(cwd: string): GoalState {
       if (typeof parsed.current.totalTokens !== "number") {
         parsed.current.totalTokens = 0;
       }
+      // Older flow.json files stored the handoff lock in optional loop state.
+      // Move it to the always-present active goal without requiring a rewrite
+      // before continuation can safely observe it.
+      if (typeof parsed.current.pendingWarpSessionId !== "string" || !parsed.current.pendingWarpSessionId) {
+        delete parsed.current.pendingWarpSessionId;
+        if (typeof parsed.loop?.pendingWarpSessionId === "string" && parsed.loop.pendingWarpSessionId) {
+          parsed.current.pendingWarpSessionId = parsed.loop.pendingWarpSessionId;
+        }
+      }
+      if (parsed.loop?.pendingWarpSessionId !== undefined) delete parsed.loop.pendingWarpSessionId;
     }
     for (const entry of parsed.history) {
       if (entry) {
@@ -285,6 +295,58 @@ export function updateGoalStatus(cwd: string, status: GoalStatus, sessionId?: st
   state.current.updatedAt = new Date().toISOString();
   writeState(cwd, state);
   return state.current;
+}
+
+/** Acquire the goal-level warp lock before context distillation starts. */
+export function beginWarpHandoff(cwd: string, sourceSessionId: string): GoalEntry | undefined {
+  const state = readState(cwd);
+  const goal = state.current;
+  if (!goal || goal.status !== "active") return undefined;
+  if (goal.sessionId && goal.sessionId !== sourceSessionId) return undefined;
+  if (goal.pendingWarpSessionId && goal.pendingWarpSessionId !== sourceSessionId) return undefined;
+  // Older persisted goals can predate session scoping. Bind them to the
+  // source before taking the lock so the later handoff remains atomic.
+  goal.sessionId ??= sourceSessionId;
+  goal.pendingWarpSessionId = sourceSessionId;
+  goal.updatedAt = new Date().toISOString();
+  writeState(cwd, state);
+  return goal;
+}
+
+/** Release a source-owned warp lock without changing goal ownership. */
+export function clearWarpHandoff(cwd: string, sourceSessionId: string): GoalEntry | undefined {
+  const state = readState(cwd);
+  const goal = state.current;
+  if (!goal || goal.pendingWarpSessionId !== sourceSessionId) return undefined;
+  delete goal.pendingWarpSessionId;
+  goal.updatedAt = new Date().toISOString();
+  writeState(cwd, state);
+  return goal;
+}
+
+/** Atomically rebind a goal and release its source-session warp lock. */
+export function completeWarpHandoff(cwd: string, sourceSessionId: string, newSessionId: string): GoalEntry | undefined {
+  const state = readState(cwd);
+  const goal = state.current;
+  if (!goal || goal.status !== "active" || goal.sessionId !== sourceSessionId || goal.pendingWarpSessionId !== sourceSessionId) return undefined;
+  goal.sessionId = newSessionId;
+  delete goal.pendingWarpSessionId;
+  goal.updatedAt = new Date().toISOString();
+  writeState(cwd, state);
+  return goal;
+}
+
+/** Restore the source binding if new-session creation fails after handoff. */
+export function restoreWarpHandoff(cwd: string, sourceSessionId: string, newSessionId: string): GoalEntry | undefined {
+  const state = readState(cwd);
+  const goal = state.current;
+  if (!goal || goal.sessionId !== newSessionId) return undefined;
+  goal.status = "active";
+  goal.sessionId = sourceSessionId;
+  delete goal.pendingWarpSessionId;
+  goal.updatedAt = new Date().toISOString();
+  writeState(cwd, state);
+  return goal;
 }
 
 export function updateGoalObjective(

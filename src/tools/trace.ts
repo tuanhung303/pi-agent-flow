@@ -34,52 +34,7 @@ import { BASH_DEFAULT_TIMEOUT_MS, type FileOpInput } from "../batch/constants.js
 import type { WebOpInput } from "./web-ops.js";
 import { extractTraceStructuredOutput, resolveToolEvidence } from "../snapshot/trace-output.js";
 import { prepareTraceDispatchArguments } from "./trace-dispatch-prep.js";
-
-// ---------------------------------------------------------------------------
-// Dispatch schemas — mirror of the flow-tool dispatch (kept here to avoid
-// circular imports with src/index.ts).
-// ---------------------------------------------------------------------------
-
-const BatchDispatchOp = Type.Object({
-	tool: Type.Literal("batch"),
-	ops: Type.Array(Type.Object({
-		o: Type.String(),
-		p: Type.Optional(Type.String()),
-		s: Type.Optional(Type.Number()),
-		l: Type.Optional(Type.Number()),
-		i: Type.Optional(Type.Union([Type.String(), Type.Boolean()])),
-		t: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-		c: Type.Optional(Type.String()),
-		e: Type.Optional(Type.Array(Type.Object({ f: Type.String(), r: Type.String() }))),
-		h: Type.Optional(Type.String()),
-		q: Type.Optional(Type.String()),
-		n: Type.Optional(Type.Number()),
-		u: Type.Optional(Type.Number()),
-	}), { description: "File/batch operations matching the batch tool schema." }),
-});
-
-const BashDispatchOp = Type.Object({
-	tool: Type.Literal("bash"),
-	ops: Type.Array(Type.Object({
-		c: Type.String({ description: "Shell command. Alias: cmd." }),
-		h: Type.Optional(Type.String({ description: "Working directory override. Alias: cwd." })),
-		t: Type.Optional(Type.Number({ description: "Timeout in ms. Alias: timeout." })),
-	}), { description: "Bash command objects." }),
-});
-
-const WebDispatchOp = Type.Object({
-	tool: Type.Literal("web"),
-	ops: Type.Array(Type.Object({
-		o: Type.Union([Type.Literal("search"), Type.Literal("fetch")]),
-		q: Type.Optional(Type.String()),
-		u: Type.Optional(Type.String()),
-		f: Type.Optional(Type.String()),
-	}), { description: "Web operations matching the web tool schema." }),
-});
-
-const DispatchOpSchema = Type.Union([BatchDispatchOp, BashDispatchOp, WebDispatchOp], {
-	description: "Pre-dispatch tool call with discriminated tool type and typed ops array.",
-});
+import { DispatchOpSchema } from "../flow/dispatch-schema.js";
 
 async function executeDispatchOps(
 	dispatch: Array<
@@ -193,18 +148,18 @@ export const TraceParams = Type.Object({
 }, {
 	title: "TraceToolParams",
 	description: "Activate trace mode — read files verbatim, run checks, explore codebase. All fields optional.",
+	// Canonical examples only — malformed/alias shapes are handled by the
+	// normalizer (see trace-dispatch-prep.ts and its tests) but must never be
+	// advertised here: schema examples teach the model what to emit.
 	examples: [
 		{},
-		{ dispatch: [{ tool: "batch", ops: [{ o: "read", p: "src/main.ts" }] }] },
-		{ dispatch: [{ tool: "bash", ops: ["git status"] }] },
-		{ dispatch: [{ tool: "batch", ops: [{ p: "src/index.ts" }] }] },
-		{ dispatch: [{ tool: "bash", ops: [{ tool: "bash", ops: { item: { c: "ls" } } }] }] },
-		{ dispatch: [{ t: "bash", o: [{ cmd: "ls -la" }] }] },
+		{ intent: "Verify the auth middleware wiring", dispatch: [{ tool: "batch", ops: [{ o: "read", p: "src/main.ts" }] }] },
+		{ dispatch: [{ tool: "bash", ops: [{ c: "git status" }] }] },
 	],
 });
 
 export interface TraceToolOptions {
-	getSettings?: () => { toolOptimize: boolean; structuredOutput: boolean; bodyVerbosity: "lite" | "full"; contextCompression?: import("../core2/snapshot.js").CompressionLevel } | undefined;
+	getSettings?: () => { toolOptimize: boolean; structuredOutput: boolean; bodyVerbosity: "lite" | "full"; contextCompression?: import("../core2/snapshot.js").CompressionPreference } | undefined;
 	getDepthConfig?: () => { currentDepth: number; maxDepth: number; ancestorFlowStack: string[]; preventCycles: boolean } | undefined;
 	getLoadedFlowModelConfigs?: () => LoadedFlowModelConfigs | undefined;
 	tierOverrideResolver?: (tier: "lite" | "flash" | "full") => string | undefined;

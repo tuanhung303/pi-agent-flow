@@ -80,9 +80,10 @@ export function setPendingWarpSessionId(cwd: string, sessionId: string): LoopSta
   return state.loop;
 }
 
-export function clearPendingWarpSessionId(cwd: string): LoopState | undefined {
+export function clearPendingWarpSessionId(cwd: string, expectedSessionId?: string): LoopState | undefined {
   const state = readState(cwd);
   if (!state.loop) return undefined;
+  if (expectedSessionId !== undefined && state.loop.pendingWarpSessionId !== expectedSessionId) return state.loop;
   delete state.loop.pendingWarpSessionId;
   writeState(cwd, state);
   return state.loop;

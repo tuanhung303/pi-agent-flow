@@ -4,6 +4,7 @@ description: Audit security quality correctness and provide feedback — no code
 tools: batch bash find grep ls
 maxDepth: 0
 tier: flash
+thinking: high
 contextProfile: code-first
 ---
 

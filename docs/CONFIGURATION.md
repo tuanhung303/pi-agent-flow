@@ -2,7 +2,7 @@
 
 Flow behavior is controlled via CLI flags, environment variables, and persistent settings in `.pi/settings.json`.
 
-**Resolution priority:** CLI flag > env var > `settings.json` > default
+**Resolution priority:** CLI flag > env var > `settings.json` > default. An explicit `auto` is a selected CLI value, so it remains adaptive and cannot fall through to a lower-priority environment override.
 
 ## Flow Model Strategies
 
@@ -37,7 +37,7 @@ Use `flowModelConfigs` in your Pi settings to define tiered model strategies. Ea
 
 Settings are merged: project `.pi/settings.json` overrides global `~/.pi/agent/settings.json`.
 
-Models referenced in `flowModelConfigs` are checked against the local `models.json` registry (usually `~/.pi/agent/models.json`). If a model is known to be missing from the registry, a warning is logged, but the model is still tried so that stale or incomplete registries do not silently block valid provider-side models. The missing-model warning is coalesced into a single line per resolution (`N configured flow model(s) are not present in models.json; trying them anyway: a, b, c`) rather than emitted per-candidate. If **every** configured model for a flow or trace is missing from the registry, the invocation fails fast with a clear `Bad settings` error and the synthesized result leaves `model` undefined so per-model telemetry rollups are not poisoned.
+Models referenced in `flowModelConfigs` are checked against the local `models.json` registry (usually `~/.pi/agent/models.json`) and, when present, the optional `models-store.json` fallback. A missing optional store is silent; malformed or unreadable existing registry files still warn. If a model is known to be missing from the registry, a warning is logged, but the model is still tried so that stale or incomplete registries do not silently block valid provider-side models. The missing-model warning is coalesced into a single line per resolution (`N configured flow model(s) are not present in models.json; trying them anyway: a, b, c`) rather than emitted per-candidate. If **every** configured model for a flow or trace is missing from the registry, the invocation fails fast with a clear `Bad settings` error and the synthesized result leaves `model` undefined so per-model telemetry rollups are not poisoned.
 
 ## Persistent Flow Mode Switch
 
@@ -95,6 +95,7 @@ Set flow runtime defaults under `flowSettings`:
 | `--flow-flash-model [model]` | Override the flash-tier model | — |
 | `--flow-full-model [model]` | Override the full-tier model | — |
 | `--flow-complexity [mode]` | Default child-flow complexity | `moderate` |
+| `--flow-context-compression [mode]` | Override child snapshot compression (`auto`, `none`, `light`, `medium`, `aggressive`) | `auto` |
 | `--flow-max-concurrency [n]` | Maximum parallel flows | `4` |
 | `--tool-optimize` | Use unified `batch`/`batch_read` | `true` |
 | `--tools-trace` | Enable the `trace` tool | `true` |
@@ -132,7 +133,11 @@ Set flow runtime defaults under `flowSettings`:
 | `PI_FLOW_NO_GLITCH` | Set to `1` to disable glitch/scramble effect |
 | `PI_FLOW_LOG_FILE` | TUI-safe log file path (default: `$TMPDIR/pi-agent-flow.log`; set to `/dev/null` to suppress) |
 | `PI_FLOW_DUMP_SNAPSHOT` | Base path for snapshot dumps. Each flow appends `.<flowName>.<timestamp>` before the extension so parallel flows don't collide. Must be **exported** in the shell before `pi` starts. |
-| `PI_FLOW_MAX_MESSAGES` | Override the default message cap for tier-based context compression (default: `80`) |
+| `PI_FLOW_LITE_MAX_MESSAGES` | Override lite-tier snapshot message cap (default: `30`) |
+| `PI_FLOW_FLASH_MAX_MESSAGES` | Override flash-tier snapshot message cap (default: `50`) |
+| `PI_FLOW_FULL_MAX_MESSAGES` | Override full-tier snapshot message cap (default: `80`) |
+| `PI_FLOW_CONTEXT_COMPRESSION` | Compression preference: `auto`, `none`, `light`, `medium`, or `aggressive`; overridden by `--flow-context-compression` (including explicit `auto`) |
+| `PI_FLOW_CONTEXT_THRESHOLD` | Automatic compression threshold in estimated tokens (default: `70000`) |
 | `PI_FLOW_DUMP_MAX_AGE_HOURS` | Max age of dump files before auto-cleanup deletes them (default: `168` = 7 days) |
 | `PI_FLOW_SKIP_STRUCTURED_DIRECTIVE` | Set to `1` to skip structured output directive if a provider rejects that prompt shape |
 | `PI_ASK_USER_TIMEOUT` | Override the ask_user default timeout in seconds (e.g., `60` for 1 minute) |

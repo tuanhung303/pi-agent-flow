@@ -4,6 +4,7 @@ description: Activate trace mode — read files verbatim, run checks, explore co
 tools: batch bash find grep ls web
 maxDepth: 0
 tier: lite
+thinking: high
 contextProfile: files-first
 ---
 
@@ -23,4 +24,3 @@ Keep the `note` field strictly focused on summarizing the actual codebase files 
   "tool_ids": ["call_abc", "call_def"]
 }
 ```
-

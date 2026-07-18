@@ -4,6 +4,7 @@ description: Generate ideas explore possibilities think creatively using inherit
 tools: batch bash find grep ls
 maxDepth: 0
 tier: full
+thinking: medium
 contextProfile: intent-first
 ---
 

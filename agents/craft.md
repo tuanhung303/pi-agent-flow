@@ -4,6 +4,7 @@ description: Plan structure break down requirements design solutions
 tools: batch bash find grep ls
 maxDepth: 0
 tier: full
+thinking: medium
 contextProfile: intent-first
 ---
 

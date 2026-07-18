@@ -9,7 +9,7 @@ import { compressOutput } from "./shell-compress.js";
  * tracks running/pending processes, and exposes a polling interface
  * so the agent can retrieve results of long-running commands later.
  *
- * The soft timeout (default 20s) does NOT kill commands. It sets the maximum
+ * The soft timeout (default BASH_SOFT_TIMEOUT_MS) does NOT kill commands. It sets the maximum
  * wait time before the batch tool returns partial results. Commands that
  * haven't finished continue running in the background and can be polled
  * via the `batch_bash_poll` tool.
@@ -455,10 +455,12 @@ export function pollBatchBashResults(
 				stdout: tracker.getRunningTail(id),
 			});
 		} else {
+			// Neither running nor completed: the id was never launched, or its
+			// result was already retrieved (results are consumed on read).
 			results.push({
 				id,
-				command: tracker.getRunningCommand(id) ?? "",
-				status: "pending",
+				command: "",
+				status: "unknown",
 				stdout: "",
 			});
 		}
@@ -485,11 +487,13 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 			"Poll for results of pending bash commands from a previous batch call.",
 			"Pass the IDs of pending commands to check their status.",
 			"Returns completed results with full stdout/stderr, or indicates still-pending with last output lines.",
+			"Completed results are returned exactly once and then discarded — do not re-poll an ID after receiving its result. IDs that were never launched or already retrieved are reported as unknown.",
 		].join("\n"),
 		promptSnippet: "Poll pending bash commands for results",
 		promptGuidelines: [
 			"Use `batch_bash_poll` to check on bash commands that returned pending from a batch call.",
 			"Pass the `i` (id) values from the pending results.",
+			"Completed results are consumed on read — an `unknown` status means the ID was already retrieved or never launched.",
 		],
 		parameters: BatchBashPollParams,
 
@@ -524,6 +528,9 @@ export function createBatchBashPollTool(tracker: BashProcessTracker) {
 					if (r.timingTier) lines.push(`[Execution time: ${r.timingTier}]`);
 					if (r.stdout?.trim()) lines.push(r.stdout.trimEnd());
 					if (r.stderr?.trim()) lines.push(`[stderr]\n${r.stderr.trimEnd()}`);
+				} else if (r.status === "unknown") {
+					lines.push(`--- [${r.id}] unknown ---`);
+					lines.push("No such pending command: the ID was never launched, or its result was already retrieved (results are returned once). Do not poll this ID again.");
 				} else {
 					lines.push(`--- [${r.id}] still running ---`);
 					if (r.stdout?.trim()) lines.push(`[output so far]\n${r.stdout.trimEnd()}`);

@@ -1,0 +1,128 @@
+import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import setupWarp from "../src/flow/warp.js";
+import { setupContinuation, shutdownWakeup } from "../src/flow/continuation.js";
+import { beginWarpHandoff, clearGoal, clearWarpHandoff, completeWarpHandoff, getGoal, readState, restoreWarpHandoff, setGoal, _clearStoreCache } from "../src/flow/store.js";
+import * as sessionRegistry from "../src/flow/session-registry.js";
+
+describe("warp handoff integration", () => {
+  it("unlocks the new session before its first turn while blocking the old-session race", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-handoff-"));
+    const branch: any[] = [];
+    const commands = new Map<string, any>();
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const continuationMessages: string[] = [];
+    let resolveNewSession!: (result: { cancelled: boolean }) => void;
+    const newSessionDone = new Promise<{ cancelled: boolean }>((resolve) => { resolveNewSession = resolve; });
+
+    const pi = {
+      registerCommand: (name: string, command: any) => commands.set(name, command),
+      on: (name: string, handler: any) => handlers.set(name, handler),
+      sendMessage: (message: { content: string }) => continuationMessages.push(message.content),
+      sendUserMessage: (content: string) => {
+        branch.push({ type: "message", message: { role: "user", content } });
+        branch.push({ type: "message", message: { role: "assistant", stopReason: "stop", content: "---\nsummary: handoff" } });
+      },
+    };
+
+    try {
+      setupContinuation(pi as any);
+      setupWarp(pi as any);
+      const sessionStart = handlers.get("session_start")!;
+      const turnEnd = handlers.get("turn_end")!;
+      sessionStart({}, { cwd, sessionManager: { getSessionId: () => "old-session" } });
+      // No maxTokens/maxFlows: this is the historical no-loop race.
+      setGoal(cwd, "Continue safely", { sessionId: "old-session" });
+
+      const ctx = {
+        cwd,
+        model: { provider: "test", id: "test" },
+        sessionManager: {
+          getSessionId: () => "old-session",
+          getSessionFile: () => path.join(cwd, "old.jsonl"),
+          getBranch: () => branch,
+        },
+        isIdle: () => true,
+        ui: { notify: () => {} },
+        newSession: async (options: any) => {
+          // The old session races while distillation/session creation is pending.
+          await turnEnd({ message: { role: "user", content: [{ type: "text", text: "old race" }] } });
+          expect(continuationMessages).toHaveLength(0);
+          sessionStart({}, { cwd, sessionManager: { getSessionId: () => "new-session" } });
+          await options.withSession({
+            sessionManager: { getSessionId: () => "new-session" },
+            ui: { notify: () => {} },
+            sendUserMessage: async () => {
+              // This fires before newSession() resolves, as Pi may do on the first turn.
+              await turnEnd({ message: { role: "user", content: [{ type: "text", text: "new first turn" }] } });
+            },
+          });
+          return newSessionDone;
+        },
+      };
+
+      const warpPromise = commands.get("flow:warp").handler("continue", ctx);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(readState(cwd).current?.pendingWarpSessionId).toBeUndefined();
+      expect(getGoal(cwd)?.sessionId).toBe("new-session");
+      expect(continuationMessages).toHaveLength(1);
+      expect(continuationMessages[0]).toContain("<flow-continuation>");
+      resolveNewSession({ cancelled: false });
+      await warpPromise;
+    } finally {
+      clearGoal(cwd);
+      sessionRegistry.unregister(cwd);
+      _clearStoreCache();
+      shutdownWakeup();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans locks after both pre-handoff failure and post-handoff cancellation", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-cleanup-"));
+    try {
+      setGoal(cwd, "Continue safely", { sessionId: "old-session" });
+      beginWarpHandoff(cwd, "old-session");
+      clearWarpHandoff(cwd, "old-session");
+      expect(getGoal(cwd)?.pendingWarpSessionId).toBeUndefined();
+
+      beginWarpHandoff(cwd, "old-session");
+      completeWarpHandoff(cwd, "old-session", "new-session");
+      restoreWarpHandoff(cwd, "old-session", "new-session");
+      expect(getGoal(cwd)).toMatchObject({ sessionId: "old-session", status: "active" });
+      expect(getGoal(cwd)?.pendingWarpSessionId).toBeUndefined();
+
+      clearGoal(cwd);
+      setGoal(cwd, "Legacy unbound goal");
+      beginWarpHandoff(cwd, "old-session");
+      completeWarpHandoff(cwd, "old-session", "new-session");
+      expect(getGoal(cwd)?.sessionId).toBe("new-session");
+      expect(getGoal(cwd)?.pendingWarpSessionId).toBeUndefined();
+    } finally {
+      clearGoal(cwd);
+      _clearStoreCache();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates a legacy loop lock to the active goal before continuation reads it", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-flow-warp-migration-"));
+    try {
+      fs.mkdirSync(path.join(cwd, ".pi"));
+      fs.writeFileSync(path.join(cwd, ".pi", "flow.json"), JSON.stringify({
+        current: { id: "goal-legacy", objective: "Continue", createdAt: "now", updatedAt: "now", status: "active", completedFlows: [], totalTokens: 0, sessionId: "old-session" },
+        history: [],
+        loop: { objective: "Continue", status: "active", sessionCount: 1, totalTokensAcrossSessions: 0, totalFlowsAcrossSessions: 0, pendingWarpSessionId: "old-session" },
+      }));
+      _clearStoreCache();
+      const state = readState(cwd);
+      expect(state.current?.pendingWarpSessionId).toBe("old-session");
+      expect(state.loop?.pendingWarpSessionId).toBeUndefined();
+    } finally {
+      _clearStoreCache();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});

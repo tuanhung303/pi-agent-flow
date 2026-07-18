@@ -1452,7 +1452,7 @@ describe("buildCore2Snapshot — compaction filtering", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildCore2Snapshot — tier compression", () => {
-	it("lite tier strips toolResult content to placeholder", () => {
+	it("lite tier preserves completed tool-result orientation by default", () => {
 		const entries = [
 			{
 				type: "message",
@@ -1464,11 +1464,11 @@ describe("buildCore2Snapshot — tier compression", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "lite" });
-		expect(snapshot).not.toContain("long output here");
-		expect(snapshot).toContain("[toolResult: bash]");
+		expect(snapshot).toContain("long output here");
+		expect(snapshot).toContain("[Historical tool result]");
 	});
 
-	it("lite tier strips tool content to placeholder", () => {
+	it("lite tier preserves bounded tool output by default", () => {
 		const entries = [
 			{
 				type: "message",
@@ -1479,8 +1479,8 @@ describe("buildCore2Snapshot — tier compression", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "lite" });
-		expect(snapshot).not.toContain("tool output text");
-		expect(snapshot).toContain("[tool result omitted]");
+		expect(snapshot).toContain("tool output text");
+		expect(snapshot).toContain("[Historical tool result]");
 	});
 
 	it("lite tier keeps only the last 30 messages", () => {
@@ -1561,7 +1561,7 @@ describe("buildCore2Snapshot — tier compression", () => {
 		delete process.env.PI_FLOW_FULL_MAX_MESSAGES;
 	});
 
-	it("flash tier strips toolResult content to placeholder", () => {
+	it("flash tier preserves completed tool-result orientation by default", () => {
 		const longText = "a".repeat(600);
 		const entries = [
 			{
@@ -1574,11 +1574,11 @@ describe("buildCore2Snapshot — tier compression", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "flash" });
-		expect(snapshot).not.toContain("a".repeat(10));
-		expect(snapshot).toContain("[toolResult: bash]");
+		expect(snapshot).toContain("a".repeat(10));
+		expect(snapshot).toContain("[Historical tool result]");
 	});
 
-	it("flash tier strips tool content to placeholder", () => {
+	it("flash tier preserves bounded tool output by default", () => {
 		const entries = [
 			{
 				type: "message",
@@ -1589,11 +1589,11 @@ describe("buildCore2Snapshot — tier compression", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "flash" });
-		expect(snapshot).not.toContain("short");
-		expect(snapshot).toContain("[tool result omitted]");
+		expect(snapshot).toContain("short");
+		expect(snapshot).toContain("[Historical tool result]");
 	});
 
-	it("full tier strips toolResult content to placeholder", () => {
+	it("full tier preserves completed tool-result orientation by default", () => {
 		const longText = "b".repeat(600);
 		const entries = [
 			{
@@ -1606,8 +1606,8 @@ describe("buildCore2Snapshot — tier compression", () => {
 			},
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "full" });
-		expect(snapshot).not.toContain("b".repeat(10));
-		expect(snapshot).toContain("[toolResult: trace]");
+		expect(snapshot).toContain("b".repeat(10));
+		expect(snapshot).toContain("[Historical tool result]");
 	});
 
 	it("lite tier significantly reduces snapshot size", () => {
@@ -1623,7 +1623,7 @@ describe("buildCore2Snapshot — tier compression", () => {
 		}));
 		const fullSnapshot = buildCore2Snapshot(makeSource(entries));
 		const liteSnapshot = buildCore2Snapshot(makeSource(entries), { tier: "lite" });
-		expect(fullSnapshot!.length).toBeGreaterThan(liteSnapshot!.length * 2);
+		expect(fullSnapshot!.length).toBeGreaterThan(liteSnapshot!.length);
 	});
 
 	it("tier compression runs after sanitize and compaction", () => {
@@ -1639,8 +1639,8 @@ describe("buildCore2Snapshot — tier compression", () => {
 		];
 		const snapshot = buildCore2Snapshot(makeSource(entries), { tier: "lite" });
 		expect(snapshot).not.toContain("model_change");
-		expect(snapshot).not.toContain("output");
-		expect(snapshot).toContain("[toolResult result omitted]");
+		expect(snapshot).toContain("output");
+		expect(snapshot).toContain("[Historical tool result]");
 	});
 
 	it("lite limit preserves session header inside branchEntries", () => {

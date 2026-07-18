@@ -13,7 +13,6 @@ import {
 } from "../../src/flow/store.js";
 import {
   writeFlowSetting,
-  flushAllSettingsCachesSync,
   _clearSettingsCache,
 } from "../../src/config/config.js";
 
@@ -289,7 +288,7 @@ describe("settings async behavior", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("P9-4: settings async flush — cached after write, persisted after flush", async () => {
+  it("writeFlowSetting persists to disk immediately (no async flush window)", async () => {
     const projectDir = createTempDir("pi-settings-project-");
     mkdirSync(path.join(projectDir, ".pi"), { recursive: true });
 
@@ -299,14 +298,10 @@ describe("settings async behavior", () => {
       const result = writeFlowSetting(projectDir, "toolOptimize", true);
       const settingsPath = result.path;
 
-      // Immediately after writeFlowSetting, the file should NOT be on disk (async flush)
-      expect(existsSync(settingsPath)).toBe(false);
-
-      // After sync flush, the file should exist
-      flushAllSettingsCachesSync();
+      // The write must be on disk as soon as writeFlowSetting returns — a
+      // deferred flush would be lost on crash and used to revert external edits.
       expect(existsSync(settingsPath)).toBe(true);
 
-      // Verify content
       const raw = require("node:fs").readFileSync(settingsPath, "utf-8");
       const parsed = JSON.parse(raw);
       expect(parsed.flowSettings.toolOptimize).toBe(true);

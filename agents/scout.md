@@ -4,6 +4,7 @@ description: Deep dive architecture mapping and bash execution
 tools: batch bash find grep ls
 maxDepth: 0
 tier: lite
+thinking: high
 contextProfile: discovery-first
 ---
 

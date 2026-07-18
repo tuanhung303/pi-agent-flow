@@ -21,10 +21,13 @@ When you transition to a flow, the flow state receives an automatic **sanitized 
 
 1. **Snapshot serialized** — chronological parent conversation and completed tool/`flow` interactions are collected as JSONL history.
 2. **Sanitized and optimized** — the active interaction, reasoning/thinking artifacts, and non-inheritable metadata are removed while native completed interactions remain available for deduplication.
-3. **Compressed and flattened** — retained outputs use the configured compression policy; completed interactions become labelled assistant text, and `batch_read` history is excluded.
-4. **Forked** — the provider-neutral snapshot is loaded via `--session`; the child starts a fresh provider-owned tool lifecycle.
+3. **Compressed and flattened** — retained outputs use the configured compression policy; completed interactions become labelled assistant text, and `batch_read` history is excluded. Default/`none` output is capped per completed result while retaining head/tail failure evidence.
+4. **Budgeted** — when the selected model exposes `maxContextTokens`, the finalized JSONL is capped at 60% of that window, preserving session identity, the context seal, and the newest user mission first. An oversized mission is explicitly marked as truncated; a window too small for a sealed snapshot receives no inherited history.
+5. **Forked** — the provider-neutral snapshot is loaded via `--session`; the child starts a fresh provider-owned tool lifecycle.
 
 ### Writing good intents
+
+Parallel flows receive independently built snapshots, so each flow's tier, context profile, and model window are applied to its own fork. When a flow has known failover candidates, its snapshot uses the smallest known candidate context window so retrying cannot overflow a smaller model; unknown windows do not impose an artificial cap.
 
 The child already sees what you've done. Write intents that say **what to do next**, not what context it needs:
 
@@ -41,6 +44,10 @@ Set `inheritContext: false` in a custom flow's front-matter to start with a clea
 ### What the child sees
 
 The child's `<context-seal>` prompt tells it: *"The conversation above is sealed — it is your session history for situational awareness only."* Completed parent tool and `flow` work appears as labelled historical text, not replayable native calls. `batch_read` history is absent. The child can reuse prior findings, but every tool call it makes is a new call owned by the child's provider session.
+
+## Depth boundary
+
+`PI_FLOW_DEPTH` and `PI_FLOW_MAX_DEPTH` are resolved before tool registration. At the configured limit the `flow` tool is intentionally not registered, while `trace` remains available for read-only inspection. This is the canonical depth guard; child process propagation uses the same values.
 
 ## Bundled Flows
 
@@ -215,7 +222,7 @@ The wake-up interval is checked every 60 seconds. It resets after any user turn 
 ### Persistence
 
 Goals are stored in `.pi/flow.json` in the project root (atomic writes). The file contains:
-- `current`: the active goal (`id`, `objective`, `acceptance`, `createdAt`, `updatedAt`, `status`, `completedFlows`, `totalTokens`, `maxTokens`, `maxFlows`, `sessionId`).
+- `current`: the active goal (`id`, `objective`, `acceptance`, `createdAt`, `updatedAt`, `status`, `completedFlows`, `totalTokens`, `maxTokens`, `maxFlows`, `sessionId`). During a warp it also holds a transient `pendingWarpSessionId` handoff lock; it is cleared atomically when the new session takes ownership or when warp is cancelled/fails. Legacy loop-level locks are migrated on read.
 - `history`: previously completed or abandoned goals.
 
 Add `.pi/` to `.gitignore` — this is local runtime state.
