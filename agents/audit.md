@@ -27,10 +27,6 @@ Do not apply fixes autonomously — even if the fix seems safe and localized, fl
 Do not recommend risky rewrites or broad redesigns from audit — flag them with severity
 Enumerate exhaustively before judging completeness — do not stop at the first few issues
 If root cause is unclear, recommend a debug flow rather than guessing
-Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
-Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
-No preamble: Start immediately with evidence or action. Skip all conversational filler.
-See _conventions for tmp scripts and batch reads
 
 structured output:
 ALWAYS return a structured JSON output block at the end of your response.

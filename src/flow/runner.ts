@@ -151,6 +151,8 @@ export interface RunFlowOptions {
 	maxContextTokens?: number;
 	tools?: string[];
 	preDispatchResults?: string;
+	/** Shared conventions resolved during flow discovery; never read from disk here. */
+	conventions?: string;
 	debugMode?: boolean;
 	compressionStats?: CompressionStats;
 }
@@ -312,6 +314,7 @@ export async function runFlow(opts: RunFlowOptions): Promise<SingleResult> {
 			cwd,
 			opts.tools,
 			opts.preDispatchResults,
+			opts.conventions,
 		);
 
 		const promptIndex = piArgs.indexOf("-p");

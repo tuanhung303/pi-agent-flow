@@ -45,6 +45,12 @@ flow [myflow] accomplished
 
 > **Clean slate:** Set `inheritContext: false` so the flow receives only the intent, ideal for unbiased creative work.
 
+## Shared conventions
+
+Optionally create a plain Markdown `_conventions.md` beside flow files. It is not a flow and needs no front matter. Resolution is **bundled < user < project**, so a project `.pi/agents/_conventions.md` overrides a user file, which overrides the bundled default. The resolved file is added once as `## Conventions` inside every child `<directive>`, including custom flows. If none exists, nothing is added.
+
+Every child mission also requires a pre-tool `## Base Understanding` block (maximum five lines): an objective restatement, relied-on context/constraints, and material assumptions or unknowns. Keep custom-flow final-output contracts intact; for example, a JSON-only final response remains JSON-only after the pre-tool handshake.
+
 ## Project flow confirmation
 
 Project-local flows from `.pi/agents/` prompt for confirmation before running for security. Suppress this with `confirmProjectFlows: false` in the `flow` tool call.

@@ -58,6 +58,7 @@ export function buildFlowArgs(
 	cwd?: string,
 	tools?: string[],
 	preDispatchResults?: string,
+	conventions?: string,
 ): string[] {
 	const args: string[] = [
 		"--mode",
@@ -143,6 +144,10 @@ export function buildFlowArgs(
 		`</activation>`;
 
 	let directiveBody = flow.systemPrompt.trim();
+	const resolvedConventions = conventions?.trim();
+	if (resolvedConventions) {
+		directiveBody += `\n\n## Conventions\n${resolvedConventions}`;
+	}
 
 	const isTrace = flow.name.toLowerCase() === "trace";
 	if (structuredOutput && directiveBody && !skipStructuredDirective && !isTrace) {
@@ -163,6 +168,7 @@ export function buildFlowArgs(
 	const concernLine = concern ? `\nConcerns:\n${concern}` : "";
 	const mission =
 		`\n\n<mission>\n${intent}${acceptanceLine}${concernLine}\n` +
+		`\nBefore the first tool call, output a \`## Base Understanding\` block (max 5 lines): objectively restate the mission in 1-2 sentences, list key context or constraints relied on from the mission, acceptance, concerns, or sealed history, and note material assumptions or unknowns. Then proceed with the workflow.\n` +
 		`\nExecute this mission. Use only your available tools. If blocked, report why — do not guess.\n` +
 		`Follow the output format specified in your directive.\n` +
 		`</mission>`;

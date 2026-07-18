@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { discoverFlows, getFlowTier, type FlowDiscoveryResult } from "../src/flow/agents.js";
+import { buildFlowArgs } from "../src/flow/flow-args.js";
 
 describe("discoverFlows", () => {
 	let tmpDir: string;
@@ -133,6 +134,49 @@ describe("discoverFlows", () => {
 		const build = result.flows.find((f) => f.name === "build");
 		expect(build).toBeDefined();
 		expect(build?.tools).toEqual(["batch", "bash", "find", "grep", "ls"]);
+	});
+
+	it("skips underscore-prefixed support files without warnings", () => {
+		const agentsDir = path.join(tmpDir, ".pi", "agents");
+		writeFlow(agentsDir, "_conventions.md", "Shared conventions.");
+		writeFlow(agentsDir, "_invalid.md", "not a flow");
+		writeFlow(agentsDir, "scout.md", `---\nname: scout\ndescription: Discover\n---\nPrompt.`);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		const result = discoverFlows(tmpDir, "project");
+
+		expect(result.flows.map((flow) => flow.name)).toEqual(["scout"]);
+		expect(result.conventions).toBe("Shared conventions.");
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+	});
+
+	it("uses project conventions over the bundled default", () => {
+		const agentsDir = path.join(tmpDir, ".pi", "agents");
+		writeFlow(agentsDir, "_conventions.md", "Project conventions win.");
+
+		const result = discoverFlows(tmpDir, "all");
+
+		expect(result.conventions).toBe("Project conventions win.");
+	});
+
+	it("injects conventions and the Base Understanding handshake into every bundled prompt", () => {
+		const result = discoverFlows(tmpDir, "bundled");
+		expect(result.conventions).toBeTruthy();
+
+		for (const flow of result.flows) {
+			const args = buildFlowArgs(
+				flow, "Inspect the implementation.", null, undefined, 0, 0,
+				false, true, "moderate", 600_000, undefined, undefined,
+				[], [], true, undefined, undefined, undefined, undefined, result.conventions,
+			);
+			const prompt = args[args.indexOf("-p") + 1];
+			expect(prompt.match(/## Conventions/g)).toHaveLength(1);
+			expect(prompt).toContain("## Base Understanding");
+		}
+
+		const trace = result.flows.find((flow) => flow.name === "trace");
+		expect(trace?.systemPrompt).toContain("Your final output MUST be a JSON code block");
 	});
 });
 

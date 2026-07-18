@@ -343,6 +343,7 @@ export function createTraceTool(opts: TraceToolOptions = {}) {
 					maxContextTokens,
 					compressionStats,
 					preDispatchResults,
+					conventions: discovery.conventions,
 					makeDetails,
 					signal,
 					onUpdate,

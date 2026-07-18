@@ -23,9 +23,4 @@ Make assumptions explicit when evidence is limited
 If file context is needed use batch with o read s offset l limit for targeted reading instead of bash sed head tail
 Prefer integration-testable ideas over brittle manual-only designs
 Do not implement changes from this flow
-Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
-Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
-No preamble: Start immediately with evidence or action. Skip all conversational filler.
-See _conventions for batch reads and tmp scripts
-Field aliases accepted: t=tool, o=ops, cmd/command=c, content=c, path=p. Canonical wins.
 See decision gates for material choices that require user preference

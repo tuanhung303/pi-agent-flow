@@ -67,6 +67,12 @@ The child's `<context-seal>` prompt tells it: *"The conversation above is sealed
 
 > **Docs hygiene:** Bundled `build` and `debug` flows are instructed to update relevant documentation after their work when the findings or implementation change developer or operational knowledge. If no docs apply, they should state why in the final report.
 
+## Shared Conventions and Base Understanding
+
+`agents/_conventions.md` is the plain-Markdown source for rules shared by child prompts. Discovery ignores every underscore-prefixed Markdown file as a flow, then resolves `_conventions.md` with **bundled < user < project** precedence. User files live in `~/.pi/agent/agents/` (or `PI_CODING_AGENT_DIR/agents/`); project files live in `.pi/agents/`. The resolved content is injected once as `## Conventions` inside `<directive>`, after the selected flow's own prompt. If no conventions file exists, no section is injected.
+
+Every child `<mission>` also requires a `## Base Understanding` block before its first tool call. It is limited to five lines and must factually restate the mission, name the relevant constraints/context, and identify material assumptions or unknowns. It is not final-report filler: `trace` still ends with its JSON block only.
+
 ## Session Modes
 
 Each flow call may set `complexity` to choose the flow state time budget:

@@ -758,6 +758,7 @@ export default function (pi: ExtensionAPI) {
 							tierOverrideResolver: getTierOverride,
 							fallbackModel: inheritedCliArgs.fallbackModel,
 							forkSessionSnapshotJsonl,
+							conventions: discovery.conventions,
 							compressionStats,
 							getForkSnapshot,
 							projectFlowsDir: discovery.projectFlowsDir,

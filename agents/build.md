@@ -28,7 +28,3 @@ If merging use squash merge
 Update relevant docs if none changed, state why
 Prefer integration tests for coverage over unit tests alone when behavior crosses module boundaries
 Unexpected errors recommend debug do not guess
-Markers: Prefix substantive claims with [V] verified, [I] inferred, [A] assumed, or [U] unknown.
-Bite-first: Output raw evidence (code, paths, logs) before any prose explanation.
-No preamble: Start immediately with evidence or action. Skip all conversational filler.
-See _conventions for tmp scripts and batch reads

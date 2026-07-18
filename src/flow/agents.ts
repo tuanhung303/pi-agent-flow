@@ -60,6 +60,8 @@ export interface FlowConfig {
 export interface FlowDiscoveryResult {
 	flows: FlowConfig[];
 	projectFlowsDir: string | null;
+	/** Shared prompt conventions resolved with bundled < user < project precedence. */
+	conventions?: string;
 }
 
 /** Determine the model tier for a given flow name. */
@@ -316,12 +318,37 @@ function loadFlowsFromDir(dir: string, source: "user" | "project" | "bundled"): 
 	const flows: FlowConfig[] = [];
 	for (const entry of entries) {
 		if (!entry.name.endsWith(".md")) continue;
+		// Underscore-prefixed Markdown files are shared support files, not flows.
+		if (path.basename(entry.name).startsWith("_")) continue;
 		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
 
 		const flow = parseFlowFile(path.join(dir, entry.name), source);
 		if (flow) flows.push(flow);
 	}
 	return flows;
+}
+
+/** Read a plain shared-conventions file. Missing or blank files do not override lower scopes. */
+function loadConventionsFromDir(dir: string): string | undefined {
+	const filePath = path.join(dir, "_conventions.md");
+	try {
+		const content = fs.readFileSync(filePath, "utf-8").trim();
+		return content || undefined;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			logWarn(`[pi-agent-flow] Failed to read conventions file ${filePath}: ${error}`);
+		}
+		return undefined;
+	}
+}
+
+function resolveConventions(dirs: string[]): string | undefined {
+	let conventions: string | undefined;
+	for (const dir of dirs) {
+		const content = loadConventionsFromDir(dir);
+		if (content) conventions = content;
+	}
+	return conventions;
 }
 
 function mergeFlows(...groups: FlowConfig[][]): FlowConfig[] {
@@ -345,25 +372,32 @@ export function discoverFlows(cwd: string, scope: FlowScope): FlowDiscoveryResul
 	const bundledFlowsDir = getBundledFlowsDir();
 	const userFlowsDir = getUserFlowsDir();
 	const projectFlowsDir = findNearestProjectFlowsDir(cwd);
+	const userFlowsDirs = [userFlowsDir, path.join(os.homedir(), ".pi", "agents")];
 
 	const bundledFlows = scope === "user" || scope === "project" ? [] : loadFlowsFromDir(bundledFlowsDir, "bundled");
 	const userFlows = scope === "project" || scope === "bundled" ? [] : [
 		...loadFlowsFromDir(userFlowsDir, "user"),
-		...loadFlowsFromDir(path.join(os.homedir(), ".pi", "agents"), "user"),
+		...loadFlowsFromDir(userFlowsDirs[1], "user"),
 	];
 	const projectFlows = scope === "user" || scope === "bundled" || !projectFlowsDir ? [] : loadFlowsFromDir(projectFlowsDir, "project");
+	const conventions = resolveConventions([
+		...(scope === "user" || scope === "project" ? [] : [bundledFlowsDir]),
+		...(scope === "project" || scope === "bundled" ? [] : userFlowsDirs),
+		...(scope === "user" || scope === "bundled" || !projectFlowsDir ? [] : [projectFlowsDir]),
+	]);
 
 	if (scope === "bundled") {
-		return { flows: bundledFlows, projectFlowsDir };
+		return { flows: bundledFlows, projectFlowsDir, conventions };
 	}
 	if (scope === "user") {
-		return { flows: mergeFlows(bundledFlows, userFlows), projectFlowsDir };
+		return { flows: mergeFlows(bundledFlows, userFlows), projectFlowsDir, conventions };
 	}
 	if (scope === "project") {
-		return { flows: mergeFlows(projectFlows), projectFlowsDir };
+		return { flows: mergeFlows(projectFlows), projectFlowsDir, conventions };
 	}
 	return {
 		flows: mergeFlows(bundledFlows, userFlows, projectFlows),
 		projectFlowsDir,
+		conventions,
 	};
 }

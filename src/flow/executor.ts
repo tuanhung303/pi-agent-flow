@@ -75,6 +75,8 @@ export interface FlowExecutorDeps {
 	tierOverrideResolver: (tier: "lite" | "flash" | "full") => string | undefined;
 	fallbackModel?: string;
 	forkSessionSnapshotJsonl: string | null;
+	/** Shared conventions resolved during discovery for every child prompt. */
+	conventions?: string;
 	compressionStats?: import("../core2/snapshot.js").CompressionStats;
 	/** Creates a profile- and retry-budget-specific snapshot for generated flows. */
 	getForkSnapshot?: (flowType: string) => {

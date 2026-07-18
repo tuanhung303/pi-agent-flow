@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runFlow, getOptimizedTools, type RunFlowOptions } from "../src/flow/runner.js";
+import { runFlow, buildFlowArgs, getOptimizedTools, type RunFlowOptions } from "../src/flow/runner.js";
 import { computeInitialContextTokens } from "../src/tui/context-display.js";
 import type { FlowConfig } from "../src/flow/agents.js";
 import type { FlowDetails } from "../src/types/flow.js";
@@ -543,6 +543,38 @@ describe("getOptimizedTools", () => {
 		const result = getOptimizedTools(tools, true);
 		expect(result).toEqual(["bash", "batch"]);
 		expect(result).not.toContain("batch_read");
+	});
+});
+
+describe("flow prompt conventions", () => {
+	const flow: FlowConfig = {
+		name: "scout",
+		description: "Discover",
+		systemPrompt: "Flow-specific rules.",
+		source: "bundled",
+		filePath: "/agents/scout.md",
+	};
+
+	function promptFor(conventions?: string): string {
+		const args = buildFlowArgs(
+			flow, "Inspect the implementation.", null, undefined, 0, 0,
+			false, true, "moderate", 600_000, undefined, undefined,
+			[], [], true, undefined, undefined, undefined, undefined, conventions,
+		);
+		return args[args.indexOf("-p") + 1];
+	}
+
+	it("injects resolved conventions once inside the directive and requires Base Understanding", () => {
+		const prompt = promptFor("Shared convention token.");
+
+		expect(prompt).toContain("<directive>\nFlow-specific rules.\n\n## Conventions\nShared convention token.");
+		expect(prompt.match(/Shared convention token\./g)).toHaveLength(1);
+		expect(prompt).toContain("<mission>");
+		expect(prompt).toContain("Before the first tool call, output a `## Base Understanding` block (max 5 lines)");
+	});
+
+	it("does not inject a conventions section when none was resolved", () => {
+		expect(promptFor()).not.toContain("## Conventions");
 	});
 });
 
@@ -1835,4 +1867,3 @@ describe("acceptance field propagation", () => {
 		expect(result.usage.contextTokens).toBe(expectedContext);
 	});
 });
-

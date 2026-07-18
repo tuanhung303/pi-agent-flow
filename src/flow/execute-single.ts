@@ -182,6 +182,7 @@ export async function executeSingleFlow(
 				compressionStats: flowCompressionStats,
 				tools: item._childTools,
 				preDispatchResults: item.preDispatchResults,
+				conventions: deps.conventions,
 				signal,
 				toolCallId,
 				onUpdate: (partial) => {
